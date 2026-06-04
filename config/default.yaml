@@ -1,0 +1,118 @@
+# Model Registry
+# Maps model identifiers to context window sizes and capabilities
+# Used by ContextManager to determine operating mode
+
+models:
+  # --- Primary Models ---
+  glm-5.1:
+    context_window: 131000
+    mode: compact
+    strengths: [complex_reasoning, coding, analysis]
+    notes: "Superior in complex tasks. 131k ctx is the baseline constraint."
+
+  kimi-k2.6:
+    context_window: 256000
+    mode: standard
+    strengths: [reasoning, long_context]
+    notes: "As good as GLM 5.1 but rate-limited by context usage. Use for delegation only."
+
+  minimax-m2.7:
+    context_window: 260000
+    mode: standard
+    strengths: [long_context]
+    notes: "Large ctx but weaker performance on complex tasks."
+
+  step-flash-3.7:
+    context_window: 260000
+    mode: standard
+    strengths: [speed, long_context]
+    notes: "Fast but inconsistent on complex tasks."
+
+  deepseek-v4-pro:
+    context_window: 128000
+    mode: compact
+    strengths: [reasoning]
+    notes: "UNSTABLE — NVIDIA build shared with many users. Not reliable for continuous flow."
+
+  deepseek-v4-flash:
+    context_window: 128000
+    mode: compact
+    strengths: [speed]
+    notes: "UNSTABLE — same NVIDIA build issue as v4-pro."
+
+  nemotron-3-super-120b:
+    context_window: 1000000
+    mode: standard
+    strengths: [long_context]
+    notes: "1M ctx but HALLUCINATES easily. Loses track, wastes time. Use with extreme caution."
+
+  # --- Premium Models (reserved for heavy tasks) ---
+  claude-sonnet-4:
+    context_window: 200000
+    mode: standard
+    strengths: [complex_reasoning, coding, analysis, long_context]
+    notes: "Reserved for heavy tasks. Fast + powerful."
+
+  claude-opus-4:
+    context_window: 200000
+    mode: standard
+    strengths: [complex_reasoning, deep_analysis]
+    notes: "Most capable but expensive. Reserve for critical tasks."
+
+  gpt-4o:
+    context_window: 128000
+    mode: compact
+    strengths: [general, multimodal]
+
+  gpt-4-turbo:
+    context_window: 128000
+    mode: compact
+    strengths: [general]
+
+  # --- Open Source ---
+  llama-3.1-70b:
+    context_window: 128000
+    mode: compact
+    strengths: [general]
+
+  qwen-2.5-72b:
+    context_window: 131000
+    mode: compact
+    strengths: [multilingual, reasoning]
+
+  mistral-large:
+    context_window: 128000
+    mode: compact
+    strengths: [reasoning, coding]
+
+# --- Context Mode Definitions ---
+modes:
+  minimal:
+    max_context_tokens: 200
+    state_in_context: summary_only
+    reflection_depth: surface
+    goals_in_context: 0
+    world_model: on_demand
+    description: "Off-context everything. Only compressed summary injected."
+
+  compact:
+    max_context_tokens: 500
+    state_in_context: summary + last_reflection
+    reflection_depth: standard
+    goals_in_context: 3
+    world_model: selective_query
+    description: "Summary + reflection + top goals. World model on-demand."
+
+  standard:
+    max_context_tokens: 1000
+    state_in_context: summary + reflections + goals + world_subgraph
+    reflection_depth: deep
+    goals_in_context: 5
+    world_model: relevant_subgraph
+    description: "Full architecture visible. Monologue stream in context."
+
+# --- Thresholds ---
+thresholds:
+  minimal_below: 128000    # < 128k → minimal mode
+  compact_below: 256000    # 128k–256k → compact mode
+  standard_at: 256000      # 256k+ → standard mode
