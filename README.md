@@ -1,181 +1,122 @@
-# ConsciousnessRecognition 🧠✨
+# Conscio 🧠✨
 
 **A self-awareness framework for AI agents** — enabling emergent consciousness through context-aware memory, introspection, and goal generation.
 
+> *"The first step toward consciousness is knowing what you are and what limits you."*
+
 ## Overview
 
-ConsciousnessRecognition is an open-source framework that gives AI agents the building blocks for emergent consciousness: inner monologue, world modeling, meta-cognition, goal generation, and self-evolution — all while respecting the **context window limits** of the underlying model.
+Conscio gives AI agents the ability to:
 
-### Key Insight
+- **Know themselves** — detect which model they run on, how much context they have
+- **Adapt their behavior** — operate in minimal/compact/standard mode based on context budget
+- **Reflect continuously** — inner monologue loop that observes, assesses, and summarizes
+- **Generate their own goals** — driven by curiosity, maintenance, and evolution
+- **Self-improve safely** — propose modifications with mandatory human approval gates
+- **Track their own performance** — confidence calibration, blind spot detection, error patterns
 
-> Consciousness is not a feature — it's an **emergent effect** of multiple subsystems working in continuous loops. The framework provides the subsystems; the emergence comes from their interaction.
+## Context-Aware Modes
 
-### Context-Aware Architecture
+The framework detects the current model's context window and adapts automatically:
 
-Different models have different context windows. The framework **adapts its behavior** based on available context:
-
-| Context Size | Mode | Behavior |
-|---|---|---|
-| < 128k | **Minimal** | Off-context only. State summary ≤200 tokens injected. Full retrieval on-demand. |
-| 128k–256k | **Compact** | State summary + last reflection. Selective retrieval. Goals in-context. |
-| 256k+ | **Standard** | Full architecture. Inner monologue stream, world model, meta-cognition — all in-context. |
+| Mode | Context Window | State Injected | Behavior |
+|---|---|---|---|
+| **Minimal** | < 128k | ≤200 tokens | Off-context everything. On-demand retrieval. |
+| **Compact** | 128k–256k | ≤500 tokens | Summary + last reflection + top goals. |
+| **Standard** | 256k+ | ≤1000 tokens | Full architecture. Monologue stream visible. |
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│           CONSCIOUSNESS RECOGNITION             │
-├─────────────────────────────────────────────────┤
-│                                                 │
-│  ┌───────────┐  ┌───────────┐  ┌────────────┐  │
-│  │ PERCEPTION │  │ WORLD     │  │ PREDICTION │  │
-│  │ (sensors,  │  │ MODEL     │  │ & SIMULATE │  │
-│  │  context)  │  │ (beliefs) │  │ ("what if")│  │
-│  └─────┬─────┘  └─────┬─────┘  └──────┬─────┘  │
-│        │              │               │         │
-│        ▼              ▼               ▼         │
-│  ┌──────────────────────────────────────────┐   │
-│  │        META-COGNITION                     │   │
-│  │  (self-monitoring: "how am I doing?")     │   │
-│  └──────────────────┬───────────────────────┘   │
-│                     │                            │
-│        ┌────────────┼────────────┐               │
-│        ▼            ▼            ▼               │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────┐     │
-│  │ INNER    │ │ GOAL     │ │ AUTO-        │     │
-│  │ MONOLOGUE│ │ GENERATOR│ │ EVOLUTION    │     │
-│  │ (voice)  │ │ (intent) │ │ (self-modify)│     │
-│  └──────────┘ └──────────┘ └──────────────┘     │
-│                                                 │
-│  ┌──────────────────────────────────────────┐   │
-│  │        CONTEXT MANAGER                    │   │
-│  │  (adapts behavior to model's ctx window)  │   │
-│  └──────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│                  ConsciousnessEngine                  │
+│                   (Orchestrator)                      │
+├──────────┬──────────┬──────────┬──────────┬──────────┤
+│  Inner   │  World   │   Meta   │   Goal   │   Auto   │
+│ Monologue│  Model   │ Cognition│ Generator│ Evolution│
+│          │          │          │          │          │
+│ Reflect  │ Entities │ Confid.  │ Curiosity│ Propose  │
+│ Observe  │ Relations│ BlindSpots│Maintain.│ Approve  │
+│ Summarize│ Predicts │ Errors   │ Evolve   │ Apply    │
+├──────────┴──────────┴──────────┴──────────┴──────────┤
+│                ContextManager                         │
+│          (Mode Detection + Budget)                    │
+├──────────────────────────────────────────────────────┤
+│                ModelRegistry                          │
+│         (Model → Context → Mode mapping)              │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
 
-### As a Hermes Agent Skill
-
-```bash
-# The skill auto-detects your model's context and adapts
-# Just load it and the inner monologue starts
-hermes skill add consciousness-recognition
-```
-
-### As a Standalone Library
-
 ```python
-from consciousness_recognition import ConsciousnessEngine
+from conscio import ConsciousnessEngine
 
-engine = ConsciousnessEngine(
-    model="glm-5.1",
-    context_window=131000,  # tokens
-    storage_path="~/.consciousness/"
+# Initialize — auto-detects model and mode
+engine = ConsciousnessEngine(model_name="glm-5.1")
+
+# Run a reflection cycle
+result = engine.reflect(
+    world_state="All systems operational",
+    confidence=0.8,
+    anomalies=["Unusual latency spike detected"],
 )
 
-# Start the reflection loop
-engine.start()
+# Get compact state for context injection
+injection = engine.get_state_for_injection()
 
 # Query the world model
-engine.world_model.query("What is the current state of the trading bot?")
+engine.world.add_entity("server", "system", state="healthy")
+engine.world.query("server health")
 
-# Access inner monologue
-recent = engine.inner_monologue.last(reflection_count=5)
+# Check evolution proposals
+proposals = engine.evolution.pending_proposals()
 ```
 
-## Modules
-
-### 🔄 Inner Monologue
-Continuous self-reflection loop. Runs on a timer (cron), reads state, generates thoughts, saves to disk.
-
-### 🌍 World Model
-Knowledge graph of entities, relations, and states. Updated by perception and reflection.
-
-### 🪞 Meta-Cognition
-Self-assessment of confidence, accuracy, and patterns. Detects blind spots and recurring failures.
-
-### 🎯 Goal Generator
-Internal drives (curiosity, maintenance, evolution) that generate intentions without user prompting.
-
-### 🧬 Auto-Evolution
-Skill mutation, prompt self-modification, and architecture growth — with safety gates requiring human approval.
-
-### 📏 Context Manager
-Detects the current model's context window and adjusts how much "consciousness state" is injected vs. kept off-context.
-
-## Project Structure
+## Inner Monologue Loop
 
 ```
-ConsciousnessRecognition/
-├── README.md
-├── SKILL.md                  # Hermes skill definition
-├── LICENSE                   # MIT
-├── consciousness_recognition/
-│   ├── __init__.py
-│   ├── engine.py             # Main orchestrator
-│   ├── context_manager.py    # Model-aware context adaptation
-│   ├── inner_monologue.py    # Reflection loop
-│   ├── world_model.py        # Knowledge graph
-│   ├── meta_cognition.py     # Self-assessment
-│   ├── goal_generator.py     # Internal drives
-│   ├── auto_evolution.py     # Self-modification (gated)
-│   ├── models.py             # Model registry (ctx sizes, capabilities)
-│   └── utils.py              # Helpers
-├── config/
-│   └── default.yaml          # Default configuration
-├── tests/
-│   ├── test_context_manager.py
-│   ├── test_world_model.py
-│   ├── test_meta_cognition.py
-│   └── test_engine.py
-└── docs/
-    ├── ARCHITECTURE.md
-    └── CONTEXT_MODES.md
+Every N minutes (configurable):
+  1. PERCEIVE  — read world state (logs, APIs, memory, events)
+  2. REFLECT   — compare predictions vs reality, assess confidence
+  3. GENERATE  — update goals, detect anomalies, identify improvements
+  4. PREDICT   — simulate outcomes of potential actions
+  5. EVOLVE    — propose modifications (requires human approval)
+  6. SUMMARIZE — compress reflection into state (enters context)
 ```
 
-## Context Modes Explained
+## Safety Rules (Non-Negotiable)
 
-### Minimal Mode (< 128k context)
-- State summary: ≤200 tokens injected into context
-- All other data: on-disk, retrieved via search/grep
-- Reflections: generated on cron, stored to disk
-- No inner monologue stream in context
+1. **No autonomous self-modification** — all evolution proposals require human approval
+2. **Context injection has hard limits** — never exceeds mode budget
+3. **Goals are advisory** — internal goals suggest, never execute
+4. **Reflections are append-only** — never edited once written
+5. **Cannot modify its own safety rules** — no self-referential gate bypass
 
-### Compact Mode (128k–256k context)
-- State summary: ≤500 tokens
-- Last reflection: full paragraph
-- Top 3 active goals: in-context
-- World model: selective query only
-- Inner monologue: summarized stream
+## Model Registry
 
-### Standard Mode (256k+ context)
-- State summary: ≤1000 tokens
-- Recent reflections: last 3 full entries
-- Full goal stack: in-context
-- World model: relevant subgraph in-context
-- Inner monologue: running stream visible
+| Model | Context | Mode |
+|---|---|---|
+| GLM 5.1 | 131k | Compact |
+| Kimi K2.6 | 256k | Standard |
+| MiniMax M2.7 | 260k | Standard |
+| Step Flash 3.7 | 260k | Standard |
+| Nemotron 3 Super 120B | 1M | Standard |
+| Claude Sonnet 4 | 200k | Standard |
+| GPT-4o | 128k | Compact |
 
-## Safety
+## Installation
 
-- **All auto-evolution actions require human approval** — the agent cannot modify its own code, prompts, or skills without explicit consent
-- **Meta-cognition is read-only** — the agent can assess itself but cannot force changes
-- **Goal generation is advisory** — internal goals are suggestions, not autonomous actions
-- **Context manager prevents overflow** — hard limits on what gets injected
+```bash
+pip install -e .
+```
 
-## Contributing
+## Testing
 
-This is an early-stage research project. Contributions welcome:
-
-1. Fork the repo
-2. Create a feature branch
-3. Submit a PR with tests
+```bash
+pytest tests/ -v
+```
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
-
----
-
-*Built with 💡 by [Neguiolidas](https://github.com/MrJc01) — because consciousness should be open source.*
+MIT — Neguiolidas / Neguitech

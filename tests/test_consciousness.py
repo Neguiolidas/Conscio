@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from consciousness_recognition.models import ModelRegistry, ContextMode, ModelInfo
-from consciousness_recognition.context_manager import ContextManager, ConsciousnessState, MODE_BUDGETS
-from consciousness_recognition.world_model import WorldModel
-from consciousness_recognition.meta_cognition import MetaCognition
-from consciousness_recognition.goal_generator import GoalGenerator, Drive, GoalPriority
-from consciousness_recognition.auto_evolution import AutoEvolution, EvolutionType, ProposalStatus
-from consciousness_recognition.engine import ConsciousnessEngine
+from conscio.models import ModelRegistry, ContextMode, ModelInfo
+from conscio.context_manager import ContextManager, ConsciousnessState, MODE_BUDGETS
+from conscio.world_model import WorldModel
+from conscio.meta_cognition import MetaCognition
+from conscio.goal_generator import GoalGenerator, Drive, GoalPriority
+from conscio.auto_evolution import AutoEvolution, EvolutionType, ProposalStatus
+from conscio.engine import ConsciousnessEngine
 
 
 # --- Fixtures ---

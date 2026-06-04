@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "consciousness-recognition"
+name = "conscio"
 version = "0.1.0"
 description = "Self-awareness framework for AI agents — emergent consciousness via context-aware memory, introspection, and goal generation"
 readme = "README.md"
@@ -35,4 +35,4 @@ testpaths = ["tests"]
 addopts = "-v --tb=short"
 
 [tool.setuptools.packages.find]
-include = ["consciousness_recognition*"]
+include = ["conscio*"]

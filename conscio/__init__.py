@@ -1,5 +1,5 @@
 """
-ConsciousnessRecognition — A self-awareness framework for AI agents.
+Conscio — A self-awareness framework for AI agents.
 
 Enables emergent consciousness through context-aware memory, introspection,
 and goal generation. Adapts behavior based on the underlying model's
