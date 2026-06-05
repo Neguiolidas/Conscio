@@ -28,6 +28,9 @@ from .output_filter import FilterPipeline, build_pipeline_from_dict
 from .token_tracker import TokenTracker
 
 
+_RAG_UNSET = object()
+
+
 class ConsciousnessEngine:
     """
     The main orchestrator for the consciousness framework.
@@ -93,6 +96,9 @@ class ConsciousnessEngine:
 
         # Load previous state
         self._state = self.ctx.load_state()
+
+        # Lazy SessionRAG handle (probed on first recall; None if unavailable)
+        self._session_rag = _RAG_UNSET
 
     # --- Meta-Cognition → Goal Generator Feed ---
 
@@ -174,6 +180,12 @@ class ConsciousnessEngine:
             calibration=self.meta.calibration_score(),
         )
 
+        # Cross-session recall: surface relevant past context (gap #3).
+        recall_query = " ".join([world_state, *anomalies]).strip()
+        past_context = self.recall(recall_query, k=3) if recall_query else []
+        recent_events = list(recent_events or [])
+        recent_events.extend(f"[recall] {s}" for s in past_context)
+
         # Run the inner monologue reflection
         result = self.monologue.reflect(
             world_state=world_state,
@@ -240,6 +252,80 @@ class ConsciousnessEngine:
         to give the agent self-awareness.
         """
         return self._state.to_injection()
+
+    @property
+    def session_rag(self):
+        """
+        Lazily construct SessionRAG, gated by an Ollama availability probe.
+
+        Returns a SessionRAG instance if embeddings are reachable, else None.
+        The probe runs at most once per engine; failures degrade gracefully.
+        """
+        if self._session_rag is _RAG_UNSET:
+            try:
+                from .session_rag import SessionRAG
+                rag = SessionRAG()
+                self._session_rag = rag if rag.available() else None
+            except Exception:
+                self._session_rag = None
+        return self._session_rag
+
+    def recall(
+        self,
+        query: str,
+        k: int = 3,
+        categories: Optional[list[str]] = None,
+    ) -> list[str]:
+        """
+        Retrieve relevant past context across sessions.
+
+        Primary source is ContentStore FTS5 (BM25 + RRF). When SessionRAG is
+        available (local Ollama up), semantic hits are merged in. Each snippet
+        is length-bounded; results are de-duplicated and capped at k.
+
+        Args:
+            query: Free-text query (e.g., current world_state + anomalies).
+            k: Max snippets to return.
+            categories: Optional ContentStore category filter(s).
+
+        Returns:
+            List of short context snippets (<= ~300 chars each), best first.
+        """
+        if not query or not query.strip():
+            return []
+
+        snippets: list[str] = []
+        seen: set[str] = set()
+
+        def _add(text: str) -> None:
+            t = " ".join((text or "").split())[:300]
+            key = t[:80].lower()
+            if t and key not in seen:
+                seen.add(key)
+                snippets.append(t)
+
+        # ── ContentStore FTS5 ──
+        try:
+            if categories:
+                for cat in categories:
+                    for r in self.content_store.search(query, limit=k, category=cat):
+                        _add(r.content)
+            else:
+                for r in self.content_store.search(query, limit=k):
+                    _add(r.content)
+        except Exception:
+            pass
+
+        # ── SessionRAG semantic (optional) ──
+        try:
+            rag = self.session_rag
+            if rag is not None:
+                for r in rag.search(query, limit=k):
+                    _add(r.content)
+        except Exception:
+            pass
+
+        return snippets[:k]
 
     # --- World Model Interactions ---
 
