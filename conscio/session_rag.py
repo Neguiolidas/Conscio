@@ -427,11 +427,26 @@ class SessionRAG:
     """
 
     def __init__(self, session_db: Path = SESSION_DB,
-                 rag_db: Path = RAG_DB):
+                 rag_db: Path = RAG_DB,
+                 embedder: Optional["OllamaEmbedder"] = None,
+                 chunker: Optional["SessionChunker"] = None):
         self.session_db = session_db
-        self.chunker = SessionChunker()
-        self.embedder = OllamaEmbedder()
+        self.chunker = chunker or SessionChunker()
+        self.embedder = embedder or OllamaEmbedder()
         self.store = SessionVectorStore(rag_db)
+
+    def available(self) -> bool:
+        """
+        Probe whether semantic embedding is reachable (Ollama up).
+
+        Returns True if the embedder returns a non-empty vector for a tiny
+        prompt. Cheap and safe — used by the engine to decide whether to use
+        SessionRAG or fall back to ContentStore FTS5.
+        """
+        try:
+            return bool(self.embedder.embed("ping"))
+        except Exception:
+            return False
 
     def _get_sessions(self, n: int = 5, source_filter: str = "telegram",
                       min_messages: int = 2) -> list[dict]:
