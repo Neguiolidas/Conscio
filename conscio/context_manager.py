@@ -67,6 +67,7 @@ class ConsciousnessState:
     model_name: str = ""              # Which model I'm running on
     context_mode: ContextMode = ContextMode.COMPACT
     context_window: int = 131000      # Available context in tokens
+    metabolic: str = ""               # Optional metabolic tier note, e.g. "FATIGUE 61%"
 
     def to_injection(self) -> str:
         """
@@ -94,7 +95,10 @@ class ConsciousnessState:
         
         if self.meta_cognition:
             lines.append(f"🪞 {self.meta_cognition}")
-        
+
+        if self.metabolic and self.context_mode != ContextMode.MINIMAL:
+            lines.append(f"⊘ metabolic: {self.metabolic}")
+
         lines.append("═══ END CONSCIOUSNESS STATE ═══")
         return "\n".join(lines)
 
@@ -138,6 +142,7 @@ class ContextManager:
         active_goals: Optional[list[str]] = None,
         world_model_snippet: str = "",
         meta_cognition: str = "",
+        metabolic: str = "",
     ) -> ConsciousnessState:
         """
         Build a ConsciousnessState, trimming each component to fit the budget.
@@ -168,6 +173,7 @@ class ContextManager:
             model_name=self.model_info.name,
             context_mode=self.mode,
             context_window=self.model_info.context_window,
+            metabolic=metabolic,
         )
 
         # Final safety check — if total exceeds budget, truncate summary
@@ -239,3 +245,14 @@ class ContextManager:
             "budget": self.budget,
             "storage_path": str(self.storage_path),
         }
+
+    def metabolic_state(self, used_tokens: int):
+        """
+        Map live context usage to a MetabolicState tier (advisory).
+
+        Args:
+            used_tokens: Tokens currently consumed in the live session
+                         (supplied by the caller — Conscio does not track it).
+        """
+        from .metabolic import MetabolicContext
+        return MetabolicContext.assess(used_tokens, self.model_info.context_window)
