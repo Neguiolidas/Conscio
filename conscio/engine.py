@@ -22,6 +22,10 @@ from .world_model import WorldModel
 from .meta_cognition import MetaCognition
 from .goal_generator import GoalGenerator, Drive
 from .auto_evolution import AutoEvolution
+from .content_store import ContentStore
+from .event_bus import EventBus
+from .output_filter import FilterPipeline, build_pipeline_from_dict
+from .token_tracker import TokenTracker
 
 
 class ConsciousnessEngine:
@@ -74,8 +78,56 @@ class ConsciousnessEngine:
 
         self.evolution = AutoEvolution(self.storage)
 
+        # --- v0.2: SQLite-backed modules (shared DB) ---
+        db_path = self.storage / "conscio.db"
+        self.event_bus = EventBus(db_path=db_path)
+        self.content_store = ContentStore(db_path=db_path)
+        self.token_tracker = TokenTracker(db_path=db_path)
+        self.output_filter = build_pipeline_from_dict({
+            "stages": [
+                {"strip_ansi": None},
+                {"max_lines": {"max_lines": 200}},
+                {"truncate_lines": {"max_width": 8000}},
+            ]
+        })
+
         # Load previous state
         self._state = self.ctx.load_state()
+
+    # --- Meta-Cognition → Goal Generator Feed ---
+
+    def feed_meta_to_goals(self, meta: MetaCognition, goals: GoalGenerator) -> None:
+        """
+        Feed meta-cognition insights (blind spots, error patterns, confidence)
+        into the goal generator to create improvement goals.
+        """
+        # Get existing active goal descriptions for deduplication
+        active_descriptions = {g.description for g in goals.active_goals()}
+
+        # Generate EVOLUTION goals from blind spots
+        # GoalGenerator prefixes with "Evolve:" — match that for dedup
+        for blind_spot in meta._data.get("blind_spots", []):
+            expected_desc = f"Evolve: {blind_spot} \u2014 low confidence area"
+            if expected_desc not in active_descriptions:
+                goals.generate_from_evolution(blind_spot, target="low confidence area")
+                active_descriptions.add(expected_desc)
+
+        # Generate MAINTENANCE goals from frequent errors
+        # GoalGenerator prefixes with "Maintenance:" — match that for dedup
+        for error in meta.frequent_errors(min_count=2):
+            expected_desc = f"Maintenance: fix_recurring_error \u2014 {error['pattern']} ({error['count']}x recurring)"
+            if expected_desc not in active_descriptions:
+                goals.generate_from_maintenance(
+                    "fix_recurring_error", f"{error['pattern']} ({error['count']}x recurring)"
+                )
+                active_descriptions.add(expected_desc)
+
+        # Modulate drive strengths based on average confidence (capped at 1.0)
+        avg_conf = meta.average_confidence()
+        if avg_conf < 0.5:
+            goals.drives[Drive.EVOLUTION] = min(1.0, goals.drives.get(Drive.EVOLUTION, 0.5) + 0.2)
+        elif avg_conf > 0.8:
+            goals.drives[Drive.CURIOSITY] = min(1.0, goals.drives.get(Drive.CURIOSITY, 0.7) + 0.2)
 
     # --- Main Loop ---
 
@@ -110,6 +162,18 @@ class ConsciousnessEngine:
                 "prune_stale", f"{len(stale)} stale entities: {', '.join(stale[:3])}"
             )
 
+        # Feed meta-cognition insights into goals BEFORE reflection
+        self.feed_meta_to_goals(self.meta, self.goals)
+
+        # Auto-observe errors and propose evolution fixes
+        self.evolution.observe_errors(self.meta)
+
+        # Score all goals with current MetaCognition state
+        self.goals.score_all_goals(
+            confidence=confidence,
+            calibration=self.meta.calibration_score(),
+        )
+
         # Run the inner monologue reflection
         result = self.monologue.reflect(
             world_state=world_state,
@@ -119,13 +183,45 @@ class ConsciousnessEngine:
             goals_update=[g.description for g in self.goals.active_goals()],
         )
 
+        # --- v0.2: Post-reflection pipeline ---
+        raw_summary = result["summary"]
+        filtered_summary = self.output_filter.apply(raw_summary)
+        self.token_tracker.record(
+            source="reflection",
+            raw=raw_summary,
+            filtered=filtered_summary,
+        )
+
+        # Index reflection into ContentStore for future search
+        self.content_store.index(
+            label=f"reflection_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
+            content=filtered_summary,
+            category="reflection",
+        )
+
+        # Emit reflection event
+        self.event_bus.emit(
+            type="reflection",
+            category="consciousness",
+            data={"confidence": confidence, "anomalies": anomalies},
+        )
+
+        # Emit anomaly events
+        for anomaly in anomalies:
+            self.event_bus.emit(
+                type="anomaly",
+                category="system",
+                data={"description": anomaly},
+                priority=8,
+            )
+
         # Record confidence in meta-cognition
         self.meta.record_confidence("general", confidence)
 
         # Build the new consciousness state
         self._state = self.ctx.build_state(
-            state_summary=result["summary"],
-            last_reflection=result["summary"][:200],  # Compact version
+            state_summary=filtered_summary,
+            last_reflection=filtered_summary[:200],  # Compact version
             active_goals=[g.description for g in self.goals.active_goals()],
             world_model_snippet=self.world.query(world_state)[:100] if world_state else "",
             meta_cognition=self.meta.summary(),
@@ -198,9 +294,12 @@ class ConsciousnessEngine:
             "budget": self.ctx.budget,
             "monologue": self.monologue.status(),
             "world_model": self.world.status(),
-            "meta_cognition": self.meta.status(),
+            "meta_cognition": self.meta.summary(),
             "goals": self.goals.status(),
             "evolution": self.evolution.status(),
+            "content_store": self.content_store.stats(),
+            "event_bus": self.event_bus.stats(),
+            "token_tracker": self.token_tracker.gain(),
             "state_tokens_approx": self._state.total_tokens_approx(),
             "storage_path": str(self.storage),
         }
@@ -215,6 +314,22 @@ class ConsciousnessEngine:
             "active_goals": len(self.goals.active_goals()),
             "stale_entities": len(self.world.stale_entities()),
         }
+
+    # --- Lifecycle / Resource Cleanup ---
+
+    def close(self) -> None:
+        """Close all SQLite-backed modules and flush WAL."""
+        for mod in (self.content_store, self.event_bus, self.token_tracker):
+            try:
+                mod.close()
+            except Exception:
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
 
 
 # --- CLI Entry Point ---

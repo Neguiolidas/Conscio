@@ -41,7 +41,7 @@ class Goal:
         source: str = "internal",
         metadata: Optional[dict] = None,
     ):
-        self.id = f"{drive.value}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        self.id = f"{drive.value}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
         self.description = description
         self.drive = drive
         self.priority = priority
@@ -49,6 +49,30 @@ class Goal:
         self.status = "active"  # active | completed | cancelled | expired
         self.created_at = datetime.now().isoformat()
         self.metadata = metadata or {}
+        self.meta_score: float = 0.0  # MetaCognition-adjusted score (0-1)
+
+    def compute_meta_score(self, confidence: float, calibration: float) -> float:
+        """
+        Adjust goal priority based on MetaCognition confidence and calibration.
+
+        High confidence + high calibration = trust the goal (boost).
+        Low confidence = be cautious (reduce).
+        High confidence + low calibration = overconfident (penalize).
+
+        Returns the computed score (0-1).
+        """
+        # Base: priority value normalized (1-4 → 0.25-1.0)
+        base = self.priority.value / 4.0
+
+        # Confidence factor: higher confidence → more trust in goal
+        conf_factor = 0.5 + 0.5 * confidence  # range 0.5-1.0
+
+        # Calibration penalty: overconfident → reduce
+        # calibration = accuracy / confidence; <1 means overconfident
+        cal_penalty = max(0.0, 1.0 - (1.0 - calibration) * 0.5)
+
+        self.meta_score = min(1.0, base * conf_factor * cal_penalty)
+        return self.meta_score
 
     def to_dict(self) -> dict:
         return {
@@ -60,6 +84,7 @@ class Goal:
             "status": self.status,
             "created_at": self.created_at,
             "metadata": self.metadata,
+            "meta_score": self.meta_score,
         }
 
     @classmethod
@@ -74,6 +99,7 @@ class Goal:
         goal.id = data.get("id", goal.id)
         goal.status = data.get("status", "active")
         goal.created_at = data.get("created_at", goal.created_at)
+        goal.meta_score = data.get("meta_score", 0.0)
         return goal
 
 
@@ -204,15 +230,14 @@ class GoalGenerator:
 
         self._goals.append(goal)
 
-        # Enforce max active goals — cancel lowest priority if over limit
+        # Enforce max active goals — expire lowest priority if over limit
         active = [g for g in self._goals if g.status == "active"]
         if len(active) > self.MAX_ACTIVE_GOALS:
-            # Sort by priority (ascending = lowest first)
-            active.sort(key=lambda g: g.priority.value)
-            while len([g for g in self._goals if g.status == "active"]) > self.MAX_ACTIVE_GOALS:
-                lowest = next(g for g in self._goals if g.status == "active" and g.priority.value == active[0].priority.value)
-                lowest.status = "expired"
-                break
+            # Sort by (priority ascending, then oldest first)
+            active.sort(key=lambda g: (g.priority.value, g.created_at))
+            to_expire = len(active) - self.MAX_ACTIVE_GOALS
+            for i in range(to_expire):
+                active[i].status = "expired"
 
         self._save()
 
@@ -236,11 +261,24 @@ class GoalGenerator:
                 return True
         return False
 
-    def active_goals(self, max_count: int = 5) -> list[Goal]:
-        """Get active goals sorted by priority (highest first)."""
+    def active_goals(self, max_count: int = 5, sort_by_meta: bool = False) -> list[Goal]:
+        """Get active goals sorted by priority (or meta_score if sort_by_meta)."""
         active = [g for g in self._goals if g.status == "active"]
-        active.sort(key=lambda g: g.priority.value, reverse=True)
+        if sort_by_meta and any(g.meta_score > 0 for g in active):
+            active.sort(key=lambda g: g.meta_score, reverse=True)
+        else:
+            active.sort(key=lambda g: g.priority.value, reverse=True)
         return active[:max_count]
+
+    def score_all_goals(self, confidence: float, calibration: float) -> None:
+        """
+        Apply MetaCognition confidence/calibration to all active goals.
+        Updates each goal's meta_score in place.
+        """
+        for g in self._goals:
+            if g.status == "active":
+                g.compute_meta_score(confidence, calibration)
+        self._save()
 
     def expire_stale(self, max_age_hours: int = 24) -> int:
         """Expire goals that haven't progressed in a while."""

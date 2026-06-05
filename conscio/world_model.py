@@ -9,7 +9,8 @@ Queried on-demand for context injection (only relevant subgraph).
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import math
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -63,11 +64,16 @@ class WorldModel:
                    attributes: Optional[dict] = None,
                    state: str = "") -> None:
         """Add or update an entity in the world model."""
+        existing = self._data["entities"].get(name)
+        relevance = existing.get("relevance", 1.0) if existing else 1.0
+        # Boost relevance on re-add (entity is being referenced)
+        relevance = min(relevance + 0.3, 1.0)
         self._data["entities"][name] = {
             "type": entity_type,
             "attributes": attributes or {},
             "state": state,
             "last_updated": datetime.now().isoformat(),
+            "relevance": relevance,
         }
         self._save()
 
@@ -104,6 +110,9 @@ class WorldModel:
             "relation": relation,
             "to": to_entity,
         })
+        # Boost relevance of both entities
+        self._boost_relevance(from_entity)
+        self._boost_relevance(to_entity)
         self._save()
 
     def get_relations(self, entity: str) -> list[dict]:
@@ -161,6 +170,8 @@ class WorldModel:
                 keyword in info.get("type", "").lower() or
                 any(keyword in str(v).lower() for v in info.get("attributes", {}).values())):
                 relevant_entities[name] = info
+                # Boost relevance when entity is queried
+                self._boost_relevance(name)
 
         # Find matching relations
         for r in self._data["relations"]:
@@ -168,6 +179,9 @@ class WorldModel:
                 keyword in r["relation"].lower() or
                 keyword in r["to"].lower()):
                 relevant_relations.append(r)
+
+        if relevant_entities:
+            self._save()
 
         if not relevant_entities and not relevant_relations:
             return "No relevant information found."
@@ -178,7 +192,7 @@ class WorldModel:
             parts.append(f"{name} ({info['type']}): {info.get('state', 'unknown')}")
 
         for r in relevant_relations:
-            parts.append(f"{r['from']} → {r['relation']} → {r['to']}")
+            parts.append(f"{r['from']} \u2192 {r['relation']} \u2192 {r['to']}")
 
         return "; ".join(parts)
 
@@ -203,11 +217,15 @@ class WorldModel:
         return "\n".join(result_parts) if result_parts else "Entity not found."
 
     def stale_entities(self, max_age_hours: int = 24) -> list[str]:
-        """Find entities whose state hasn't been updated in a while."""
-        from datetime import timedelta
+        """Find entities whose state hasn't been updated or whose relevance is low."""
         cutoff = datetime.now() - timedelta(hours=max_age_hours)
         stale = []
         for name, info in self._data["entities"].items():
+            relevance = info.get("relevance", 1.0)
+            # Entity is stale if low relevance OR too old
+            if relevance < 0.2:
+                stale.append(name)
+                continue
             try:
                 updated = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
                 if updated < cutoff:
@@ -216,16 +234,78 @@ class WorldModel:
                 stale.append(name)
         return stale
 
+    # --- Relevance & Decay ---
+
+    def _boost_relevance(self, name: str, amount: float = 0.3) -> None:
+        """Boost an entity's relevance (capped at 1.0)."""
+        if name in self._data["entities"]:
+            current = self._data["entities"][name].get("relevance", 1.0)
+            self._data["entities"][name]["relevance"] = min(current + amount, 1.0)
+
+    def _compute_relevance(self, hours_since_update: float, current_relevance: float) -> float:
+        """
+        Compute decayed relevance.
+        
+        Formula: relevance * exp(-lambda * hours)
+        Lambda = 0.05 → half-life ~14 hours
+        """
+        decay = math.exp(-0.05 * hours_since_update)
+        return current_relevance * decay
+
+    def decay_all_entities(self) -> int:
+        """
+        Recalculate relevance for all entities based on time decay.
+        
+        Returns the number of entities updated.
+        """
+        now = datetime.now()
+        updated = 0
+        for name, info in self._data["entities"].items():
+            try:
+                last = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
+                hours = (now - last).total_seconds() / 3600
+                current = info.get("relevance", 1.0)
+                new_rel = self._compute_relevance(hours, current)
+                # Only update if significantly different
+                if abs(new_rel - current) > 0.001:
+                    info["relevance"] = new_rel
+                    updated += 1
+            except (ValueError, TypeError):
+                info["relevance"] = 0.0
+                updated += 1
+        if updated > 0:
+            self._save()
+        return updated
+
+    def prune_irrelevant(self, min_relevance: float = 0.1) -> int:
+        """
+        Remove entities below the minimum relevance threshold.
+        
+        Returns the number of entities pruned.
+        """
+        to_remove = [
+            name for name, info in self._data["entities"].items()
+            if info.get("relevance", 1.0) < min_relevance
+        ]
+        for name in to_remove:
+            self.remove_entity(name)
+        return len(to_remove)
+
     def to_dict(self) -> dict:
         """Return the raw world model data."""
         return dict(self._data)
 
     def status(self) -> dict:
         """Return status for monitoring."""
+        entities = self._data["entities"]
+        relevances = [info.get("relevance", 1.0) for info in entities.values()]
+        avg_rel = sum(relevances) / len(relevances) if relevances else 0.0
         return {
-            "entities": len(self._data["entities"]),
+            "entities": len(entities),
             "relations": len(self._data["relations"]),
             "predictions": len(self._data["predictions"]),
             "stale": len(self.stale_entities()),
+            "avg_relevance": round(avg_rel, 3),
+            "prunable": sum(1 for r in relevances if r < 0.1),
             "path": str(self.path),
         }
