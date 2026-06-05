@@ -6,7 +6,7 @@ and goal generation. Adapts behavior based on the underlying model's
 context window size.
 """
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 __author__ = "Neguiolidas / Neguitech"
 
 from .engine import ConsciousnessEngine
@@ -18,6 +18,12 @@ from .output_filter import FilterPipeline, build_pipeline_from_dict
 from .token_tracker import TokenTracker
 from .migrate import Migrator
 from .session_lifecycle import SessionSummary, record_session_lifecycle
+from .metabolic import MetabolicContext, MetabolicState
+from .dreaming import DreamCycle, DreamReport
+
+# Note: SessionRAG is intentionally NOT imported here — it depends on numpy
+# and probes Ollama. Import it lazily (`from conscio.session_rag import
+# SessionRAG`) so `import conscio` stays dependency-light and RAG stays optional.
 
 __all__ = [
  "ConsciousnessEngine",
@@ -32,4 +38,8 @@ __all__ = [
  "Migrator",
  "SessionSummary",
  "record_session_lifecycle",
+ "MetabolicContext",
+ "MetabolicState",
+ "DreamCycle",
+ "DreamReport",
 ]

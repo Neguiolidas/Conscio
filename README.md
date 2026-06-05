@@ -187,7 +187,14 @@ Every N minutes (configurable):
 ### v0.2.3 Modules
 
 - **SessionLifecycle** — 6-step pipeline for session continuity: extract → enrich → emit → index → reflect → write. Produces heartbeat (<1.5KB) + handoff. Best-effort enrichment with graceful fallback.
-- **SessionRAG** (WIP v0.3) — Semantic search over session DB using Ollama nomic-embed-text (768d). SQLite vector store (numpy cosine, no FAISS). 572 lines, compiles clean. Not yet integrated.
+- **SessionRAG** — Semantic search over session DB using Ollama nomic-embed-text (768d). SQLite vector store (numpy cosine, no FAISS). Injectable embedder + `available()` probe; engine-integrated via `recall()` with graceful FTS5 fallback when Ollama is down.
+
+### v0.3 Modules
+
+- **MetabolicContext** — Context-as-life-energy tier model (VITAL/ACTIVE/FATIGUE/CRITICAL), advisory only. Adapted from Noosphere-Manifold. See `docs/noosphere/metabolic-model.md`.
+- **DreamCycle** — Consolidation orchestrator. Release (EventBus `purge_duplicates`/`compact`) → Prune (WorldModel `prune_stale`) → Crystallize (ContentStore reflection summary, append-only safe). Runs on `engine.dream()`, on session handoff (Mitosis), or via cron.
+- **engine.recall()** — Cross-session memory retrieval over ContentStore FTS5 + SessionRAG (when Ollama reachable). Injected into `reflect()`, budget-bounded.
+- **OutputFilter** — Adds `DedupBlocks` (collapse repeated lines → `… (×N)`) and `SecretMask` (redact API keys/tokens/key:value secrets); both wired into the engine default pipeline.
 
 ### Category/Source/Type Reference
 
@@ -226,7 +233,7 @@ pip install -e .
 ## Testing
 
 ```bash
-# Full suite (347 tests)
+# Full suite (415 tests)
 pytest tests/ -v
 
 # Quick run
@@ -268,6 +275,7 @@ All SQLite databases use WAL mode for concurrent read/write. Location:
 
 ## Audit History
 
+- **v0.3.0 (2026-06-05)** — Metabolic Consciousness. New `metabolic.py` (Noosphere tier model, advisory) + `dreaming.py` (DreamCycle: Release/Prune/Crystallize, wires dormant cleanup methods). Added `EventBus.purge_duplicates`, `WorldModel.prune_stale`, `engine.recall()` cross-session memory injected into reflect, SessionRAG tests + graceful integration, OutputFilter `DedupBlocks`+`SecretMask`, 10k-event perf guard. Mitosis (handoff) now triggers Dream. 68 new tests. **415 total tests.**
 - **v0.2.3 (2026-06-05)** — Session lifecycle integration. Added `session` type/category to EventBus/ContentStore. New `session_lifecycle.py` module with 6-step pipeline (extract → enrich → emit → index → reflect → write). Rewritten hook handler + heartbeat generator. 31 new tests. **347 total tests.**
 - **v0.2.2 (2026-06-05)** — Session handoff system + on-demand heartbeat injection. AGENTS.md boot instructions. SessionRAG stub (572 lines).
 - **v0.2.1 (2026-06-05)** — Full audit of 14 modules + 6 test files (~8400 lines). Found and fixed 3 bugs: OutputFilter config keys, missing lifecycle cleanup, dead import. Added 3 regression tests. 316 tests.
