@@ -303,6 +303,17 @@ class ConsciousnessEngine:
         from .session_lifecycle import record_session_lifecycle as _record
         return _record(event_type, context, engine=self)
 
+    def dream(self, dry_run: bool = False) -> "DreamReport":
+        """
+        Run a consolidation cycle (Noosphere "Dreaming").
+
+        Release (purge duplicate/trivial events) → Prune (remove stale world
+        entities) → Crystallize (compress old reflections). Safe to call
+        on-demand, on session handoff, or from cron. Not run per-reflect.
+        """
+        from .dreaming import DreamCycle
+        return DreamCycle().run(self, dry_run=dry_run)
+
     # --- Status & Monitoring ---
 
     def status(self) -> dict:
