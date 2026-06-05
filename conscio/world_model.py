@@ -291,6 +291,65 @@ class WorldModel:
             self.remove_entity(name)
         return len(to_remove)
 
+    def prune_stale(
+        self,
+        min_relevance: float = 0.2,
+        max_age_hours: int = 168,
+        dry_run: bool = False,
+    ) -> list[str]:
+        """
+        Decay relevance, then remove stale entities (and their relations).
+
+        An entity is pruned if, after decay, its relevance is below
+        ``min_relevance`` OR it has not been updated within ``max_age_hours``
+        (default 7 days — deliberately more conservative than the 24h
+        advisory threshold used by ``stale_entities``).
+
+        Args:
+            min_relevance: Relevance floor; below this → prune.
+            max_age_hours: Age ceiling in hours; older → prune.
+            dry_run: If True, return the names that WOULD be pruned without
+                     decaying or deleting anything. The preview projects decay
+                     in-line so it matches what a real (non-dry) run removes.
+
+        Returns:
+            List of entity names removed (or that would be removed if dry_run).
+        """
+        if not dry_run:
+            self.decay_all_entities()
+
+        now = datetime.now()
+        cutoff = now - timedelta(hours=max_age_hours)
+        to_remove: list[str] = []
+        for name, info in self._data["entities"].items():
+            # Effective relevance: a real run has already decayed+saved, so
+            # info["relevance"] is current. dry_run projects the same decay
+            # in-line (no persistence) so the preview matches a real run.
+            relevance = info.get("relevance", 1.0)
+            if dry_run:
+                try:
+                    last = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
+                    hours = (now - last).total_seconds() / 3600
+                    relevance = self._compute_relevance(hours, relevance)
+                except (ValueError, TypeError):
+                    relevance = 0.0
+
+            if relevance < min_relevance:
+                to_remove.append(name)
+                continue
+            try:
+                updated = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
+                if updated < cutoff:
+                    to_remove.append(name)
+            except (ValueError, TypeError):
+                to_remove.append(name)
+
+        if not dry_run:
+            for name in to_remove:
+                self.remove_entity(name)  # also drops relations + saves
+
+        return to_remove
+
     def to_dict(self) -> dict:
         """Return the raw world model data."""
         return dict(self._data)
