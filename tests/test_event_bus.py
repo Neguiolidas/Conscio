@@ -84,7 +84,7 @@ class TestSchema:
 
     def test_valid_categories(self):
         """All documented categories are in VALID_CATEGORIES."""
-        expected = {"system", "trading", "consciousness", "external"}
+        expected = {"system", "trading", "consciousness", "external", "session"}
         assert VALID_CATEGORIES == expected
 
 

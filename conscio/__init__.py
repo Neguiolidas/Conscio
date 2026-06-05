@@ -17,16 +17,19 @@ from .event_bus import EventBus
 from .output_filter import FilterPipeline, build_pipeline_from_dict
 from .token_tracker import TokenTracker
 from .migrate import Migrator
+from .session_lifecycle import SessionSummary, record_session_lifecycle
 
 __all__ = [
-    "ConsciousnessEngine",
-    "ContextManager",
-    "ContextMode",
-    "ModelRegistry",
-    "ContentStore",
-    "EventBus",
-    "FilterPipeline",
-    "build_pipeline_from_dict",
-    "TokenTracker",
-    "Migrator",
+ "ConsciousnessEngine",
+ "ContextManager",
+ "ContextMode",
+ "ModelRegistry",
+ "ContentStore",
+ "EventBus",
+ "FilterPipeline",
+ "build_pipeline_from_dict",
+ "TokenTracker",
+ "Migrator",
+ "SessionSummary",
+ "record_session_lifecycle",
 ]

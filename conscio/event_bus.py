@@ -57,12 +57,12 @@ class Event:
 DEFAULT_DB_PATH = Path.home() / ".hermes" / "consciousness" / "conscio.db"
 
 VALID_TYPES = {
-    "tool_call", "reflection", "trade", "error", "anomaly",
-    "decision", "perception", "goal_created", "goal_expired",
-    "evolution_proposed", "system", "consciousness",
+ "tool_call", "reflection", "trade", "error", "anomaly",
+ "decision", "perception", "goal_created", "goal_expired",
+ "evolution_proposed", "system", "consciousness", "session",
 }
 
-VALID_CATEGORIES = {"system", "trading", "consciousness", "external"}
+VALID_CATEGORIES = {"system", "trading", "consciousness", "external", "session"}
 
 # Priority scale: 0 = critical (life-threatening/error), 10 = trivial
 PRIORITY_CRITICAL = 0

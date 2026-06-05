@@ -66,7 +66,7 @@ class SourceInfo:
 
 DEFAULT_DB_PATH = Path.home() / ".hermes" / "consciousness" / "conscio.db"
 
-VALID_CATEGORIES = {"reflection", "perception", "trading", "system", "error", "consciousness", "external"}
+VALID_CATEGORIES = {"reflection", "perception", "trading", "system", "error", "consciousness", "external", "session"}
 VALID_CONTENT_TYPES = {"prose", "code", "metric", "log"}
 
 # RRF constant (original paper uses k=60)

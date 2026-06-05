@@ -283,6 +283,26 @@ class ConsciousnessEngine:
         proposal = handler(**kwargs)
         return proposal.to_dict()
 
+    def record_session_lifecycle(
+        self,
+        event_type: str,
+        context: dict,
+    ) -> Optional["SessionSummary"]:
+        """
+        Record a session lifecycle event through Conscio.
+
+        Convenience method that uses this engine instance (no temp engine created).
+
+        Args:
+            event_type: "session:end" or "session:reset"
+            context: Hook context dict (platform, user_id, session_key, session_id)
+
+        Returns:
+            SessionSummary if successful, None if no data.
+        """
+        from .session_lifecycle import record_session_lifecycle as _record
+        return _record(event_type, context, engine=self)
+
     # --- Status & Monitoring ---
 
     def status(self) -> dict:
