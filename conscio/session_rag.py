@@ -158,9 +158,13 @@ class SessionChunker:
                         metadata={"msg_id": msg_id, "chunk_idx": idx},
                     ))
 
-                start = end - self.overlap
-                if start >= len(content):
+                next_start = end - self.overlap
+                # Guard: ensure progress — if overlap would send us backward or stall, advance
+                if next_start <= start:
+                    next_start = end
+                if next_start >= len(content):
                     break
+                start = next_start
                 idx += 1
 
         return chunks

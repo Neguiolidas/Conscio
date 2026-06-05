@@ -373,11 +373,14 @@ class ContentStore:
             # Trigram: exact substring match — wrap entire query as phrase
             return f'"{cleaned}"'
         else:
-            # Porter: token-based search with implicit AND
+            # Porter: token-based search with OR for broader recall
+            # FTS5 implicit AND means multi-term queries miss docs that
+            # don't contain *every* term. Using OR gives better recall,
+            # and BM25 ranking still prioritises docs with more matches.
             tokens = cleaned.split()
             if len(tokens) > 10:
-                tokens = tokens[:10]  # Limit query complexity
-            return " ".join(f'"{t}"' for t in tokens)
+                tokens = tokens[:10] # Limit query complexity
+            return " OR ".join(f'"{t}"' for t in tokens)
 
     def _rrf_merge(
         self,

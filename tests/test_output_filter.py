@@ -482,7 +482,8 @@ class TestEdgeCases:
         assert result == "important data"
 
     def test_stage_registry_completeness(self):
-        """All 8 stages are registered."""
+        """All stages are registered (8 original + dedup_blocks + secret_mask)."""
         expected = {"strip_ansi", "replace", "match_output", "filter_lines",
-                    "truncate_lines", "head_tail", "max_lines", "on_empty"}
+                    "truncate_lines", "head_tail", "max_lines", "on_empty",
+                    "dedup_blocks", "secret_mask"}
         assert set(STAGE_REGISTRY.keys()) == expected
