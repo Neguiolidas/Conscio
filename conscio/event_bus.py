@@ -405,6 +405,47 @@ class EventBus:
         after_count = self.db.execute("SELECT COUNT(*) as c FROM events").fetchone()["c"]
         return before_count - after_count
 
+    def purge_duplicates(self, dry_run: bool = False) -> int:
+        """
+        Collapse exact duplicate events across all time.
+
+        Two events are exact duplicates when they share the same
+        (type, data_hash). The newest row in each group is kept; older
+        copies are hard-deleted. This addresses cross-window accumulation
+        that emit()'s 60s dedup window cannot catch.
+
+        Args:
+            dry_run: If True, count what would be removed without deleting.
+
+        Returns:
+            Number of rows removed (or that would be removed if dry_run).
+        """
+        # Newest-first within each (type, data_hash) group.
+        rows = self.db.execute(
+            """
+            SELECT id, type, data_hash
+            FROM events
+            ORDER BY type, data_hash, timestamp DESC, id DESC
+            """
+        ).fetchall()
+
+        seen: set[tuple[str, str]] = set()
+        to_delete: list[int] = []
+        for r in rows:
+            key = (r["type"], r["data_hash"])
+            if key in seen:
+                to_delete.append(r["id"])
+            else:
+                seen.add(key)
+
+        if not dry_run and to_delete:
+            self.db.executemany(
+                "DELETE FROM events WHERE id = ?", [(i,) for i in to_delete]
+            )
+            self.db.commit()
+
+        return len(to_delete)
+
     def mark_duplicate(self, event_id: int) -> bool:
         """Mark an event as duplicate (soft delete)."""
         cursor = self.db.execute(
