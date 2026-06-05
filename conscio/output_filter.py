@@ -244,6 +244,78 @@ class OnEmpty(FilterStage):
         return "on_empty"
 
 
+class DedupBlocks(FilterStage):
+    """Stage: collapse consecutive identical lines into one + a count marker."""
+
+    def __init__(self, min_run: int = 3, marker: str = "… (×{n})"):
+        """
+        Args:
+            min_run: Minimum consecutive repeats before collapsing (>=2).
+            marker: Template for the collapse marker; {n} = run length.
+        """
+        self.min_run = max(2, min_run)
+        self.marker = marker
+
+    def apply(self, text: str) -> str:
+        lines = text.split("\n")
+        out: list[str] = []
+        i = 0
+        n = len(lines)
+        while i < n:
+            j = i + 1
+            while j < n and lines[j] == lines[i]:
+                j += 1
+            run = j - i
+            out.append(lines[i])
+            if run >= self.min_run:
+                out.append(self.marker.format(n=run))
+            elif run > 1:
+                out.extend([lines[i]] * (run - 1))  # keep short runs verbatim
+            i = j
+        return "\n".join(out)
+
+    def name(self) -> str:
+        return "dedup_blocks"
+
+
+# Secret shapes redacted whole; the key:value rule redacts only the value.
+_SECRET_WHOLE = [
+    re.compile(r"sk-[A-Za-z0-9]{20,}"),
+    re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
+    re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),
+    re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),  # JWT
+]
+_SECRET_KEYVALUE = re.compile(
+    r"(?i)\b(api[_-]?key|token|secret|password|passwd|bearer)\b(\s*[:=]\s*)(\S+)"
+)
+
+
+class SecretMask(FilterStage):
+    """Stage: redact common secret shapes (API keys, tokens, key:value pairs)."""
+
+    def __init__(self, extra_patterns: list[str] | None = None,
+                 replacement: str = "***REDACTED***"):
+        """
+        Args:
+            extra_patterns: Additional whole-match regexes to redact.
+            replacement: Replacement string for redacted secrets.
+        """
+        self.replacement = replacement
+        self._whole = list(_SECRET_WHOLE) + [re.compile(p) for p in (extra_patterns or [])]
+
+    def apply(self, text: str) -> str:
+        for rx in self._whole:
+            text = rx.sub(self.replacement, text)
+        text = _SECRET_KEYVALUE.sub(
+            lambda m: f"{m.group(1)}{m.group(2)}{self.replacement}", text
+        )
+        return text
+
+    def name(self) -> str:
+        return "secret_mask"
+
+
 # ─── Stage Registry ─────────────────────────────────────────────────────
 
 STAGE_REGISTRY: dict[str, type] = {
@@ -255,6 +327,8 @@ STAGE_REGISTRY: dict[str, type] = {
     "head_tail": HeadTail,
     "max_lines": MaxLines,
     "on_empty": OnEmpty,
+    "dedup_blocks": DedupBlocks,
+    "secret_mask": SecretMask,
 }
 
 
@@ -281,6 +355,12 @@ def build_stage(name: str, config: dict | None = None) -> FilterStage:
                     separator=config.get("separator", "..."))
     elif cls is MaxLines:
         return cls(max_lines=config.get("max_lines", 100))
+    elif cls is DedupBlocks:
+        return cls(min_run=config.get("min_run", 3),
+                   marker=config.get("marker", "… (×{n})"))
+    elif cls is SecretMask:
+        return cls(extra_patterns=config.get("extra_patterns"),
+                   replacement=config.get("replacement", "***REDACTED***"))
     else:
         return cls()
 

@@ -89,6 +89,8 @@ class ConsciousnessEngine:
         self.output_filter = build_pipeline_from_dict({
             "stages": [
                 {"strip_ansi": None},
+                {"secret_mask": None},
+                {"dedup_blocks": {"min_run": 3}},
                 {"max_lines": {"max_lines": 200}},
                 {"truncate_lines": {"max_width": 8000}},
             ]
