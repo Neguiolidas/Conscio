@@ -8,7 +8,7 @@
 | Versão | Codinome | Foco | Status |
 |--------|----------|------|--------|
 | v0.2.3 | Session Lifecycle | Persistência + handoff | ✅ Done (347 tests) |
-| v0.3 | Metabolic Consciousness | DreamCycle + recall + metabolic | 🔄 Implementando (414 tests, 2 bugs) |
+| v0.3 | Metabolic Consciousness | DreamCycle + recall + metabolic | ✅ Done (414 tests, 3 post-bugs fixed) |
 | v0.4 | Phenomenological Consciousness | Shard Engine + entropy + friction + layers | 📋 Planejado |
 
 ---
@@ -24,9 +24,10 @@
 - **WorldModel prune** — `prune_stale()` (decay + prune + cascade)
 - **EventBus purge** — `purge_duplicates()` (dedup por data_hash)
 
-### Bugs conhecidos (v0.3)
-1. **SessionChunker infinite loop** — `chunk_message()` com overlap entra loop infinito quando `end == len(content)` e `start = end - overlap` não avança. Fix: garantir progressão de `start`.
-2. **reflect() recall empty** — FTS5 com 3+ termos de busca (AND implícito) retorna vazio quando nem todos os termos existem no conteúdo indexado. Fix: FTS5 OR ou fallback para termos individuais.
+### Bugs conhecidos (v0.3) — TODOS CORRIGIDOS
+1. **SessionChunker infinite loop** — `chunk_message()` com overlap entrava em loop infinito quando `end == len(content)` e `start = end - overlap` não avançava. **Fix:** guard `if next_start <= start: next_start = end` garante progressão.
+2. **reflect() recall empty** — FTS5 com AND implícito entre termos fazia queries multi-termo retornarem vazio quando nem todos os termos existiam no conteúdo. **Fix:** porter search usa OR explícito — BM25 ainda ranqueia por número de matches.
+3. **OutputFilter registry test desatualizado** — teste esperava 8 stages mas v0.3 adicionou `dedup_blocks` e `secret_mask`. **Fix:** expected set atualizado pra 10.
 
 ---
 
