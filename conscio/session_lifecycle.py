@@ -517,6 +517,14 @@ def record_session_lifecycle(
             anomalies=anomalies,
         )
 
+        # Mitosis → Dream: consolidate the DB now that the session is captured.
+        # Best-effort: the handoff is already recorded; a dream failure must
+        # not prevent persistence below.
+        try:
+            engine.dream()
+        except Exception:
+            pass
+
     finally:
         if own_engine:
             engine.close()
