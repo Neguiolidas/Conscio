@@ -161,6 +161,13 @@ class ConsciousnessEngine:
         """
         anomalies = anomalies or []
 
+        # Infer active cognitive shard from events at reflect-entry — BEFORE this
+        # cycle emits its own reflection/anomaly events, so they don't pollute the
+        # signal (advisory; never feeds drives/goals).
+        recent = [e.to_dict() for e in self.event_bus.query(limit=20)]
+        active_shard = self.shard_engine.update(recent)
+        shard_value = active_shard.value if active_shard else ""
+
         # Generate goals from anomalies (curiosity drive)
         for anomaly in anomalies:
             self.goals.generate_from_curiosity(anomaly, context=world_state)
@@ -251,11 +258,6 @@ class ConsciousnessEngine:
 
         # Record confidence in meta-cognition
         self.meta.record_confidence("general", confidence)
-
-        # Infer active cognitive shard from recent events (advisory).
-        recent = [e.to_dict() for e in self.event_bus.query(limit=20)]
-        active_shard = self.shard_engine.update(recent)
-        shard_value = active_shard.value if active_shard else ""
 
         # Build the new consciousness state
         self._state = self.ctx.build_state(

@@ -122,8 +122,8 @@ from conscio.engine import ConsciousnessEngine
 
 def test_reflect_sets_shard_from_recent_events(tmp_path):
     eng = ConsciousnessEngine(model_name="claude-opus-4-8", storage_path=tmp_path)
-    # A strong, multi-hit ENGINEER signal dominates any events reflect() itself
-    # emits (reflection/anomaly events carry no shard keywords on a fresh engine).
+    # Shard is computed at reflect-entry from prior events; the ENGINEER tool_call
+    # emitted before reflect() drives the inference (reflect's own events come later).
     eng.event_bus.emit(
         type="tool_call", category="system",
         data={"text": "implement feature and build code"},  # 4 ENGINEER hits
