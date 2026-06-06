@@ -201,6 +201,11 @@ Every N minutes (configurable):
 - **Friction** (`DreamCycle._friction`) — defers crystallizing reflections whose subject entities changed since (Release → Prune → Friction → Crystallize).
 - **Meta-reflect** (`engine.reflect` → `meta_confidence`) — advisory reflection-quality signal (HIGH/MEDIUM/LOW) on the Witness loop.
 
+### v0.5 Modules (Cognitive Modes)
+- **ShardEngine** (`conscio/shard_engine.py`) — deterministic cognitive-mode inference (ARCHITECT/ENGINEER/JANITOR/SECURITY_ANALYST/ARCHAEOLOGIST/EXPERT_CODER/DREAMER) from recent EventBus event keywords. Advisory; surfaces as `▷ shard:` in state injection.
+- **Trajectory Vector** (`SessionSummary.trajectory/vibes/identity_anchor`) — soul-package soft fields bridging sessions. `trajectory` is code-owned; `vibes` and `identity_anchor` are LLM-authored and never overwritten by code.
+- **Content Layering** (`ContentLayer` enum, `recall()` tiebreak) — ROUTINE/PROCESSING/INTUITION layers derived at query time from result category; used as near-tie tiebreak in recall so relevant processed hits rank above barely-relevant routine ones.
+
 ### Category/Source/Type Reference
 
 **ContentStore categories:** reflection, perception, trading, system, error, consciousness, external, **session**
@@ -238,7 +243,7 @@ pip install -e .
 ## Testing
 
 ```bash
-# Full suite (438 tests)
+# Full suite (475 tests)
 pytest tests/ -v
 
 # Quick run
@@ -280,6 +285,7 @@ All SQLite databases use WAL mode for concurrent read/write. Location:
 
 ## Audit History
 
+- **v0.5.0 — Cognitive Modes** — Shard Engine (cognitive-mode inference), Trajectory Vector (soul-package soft fields + list_entities fix), Content Layering (layer-priority recall). 37 new tests. #6 Coherence Check deferred to v0.6.
 - **v0.4.0** — Self-Judgment: entropy pruning, friction, meta-reflect. 24 new tests. 438 total tests.
 - **v0.3.0 (2026-06-05)** — Metabolic Consciousness. New `metabolic.py` (Noosphere tier model, advisory) + `dreaming.py` (DreamCycle: Release/Prune/Crystallize, wires dormant cleanup methods). Added `EventBus.purge_duplicates`, `WorldModel.prune_stale`, `engine.recall()` cross-session memory injected into reflect, SessionRAG tests + graceful integration, OutputFilter `DedupBlocks`+`SecretMask`, 10k-event perf guard. Mitosis (handoff) now triggers Dream. 68 new tests. **415 total tests.**
 - **v0.2.3 (2026-06-05)** — Session lifecycle integration. Added `session` type/category to EventBus/ContentStore. New `session_lifecycle.py` module with 6-step pipeline (extract → enrich → emit → index → reflect → write). Rewritten hook handler + heartbeat generator. 31 new tests. **347 total tests.**
