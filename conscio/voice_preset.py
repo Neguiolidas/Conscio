@@ -22,7 +22,8 @@ def resolve_voice_preset(name: str) -> str:
     A missing preset disables injection rather than crashing — selection is
     advisory, never fatal.
     """
-    if not name or name.strip().lower() == "none":
+    name = (name or "").strip()
+    if not name or name.lower() == "none":
         return ""
     if (PRESET_DIR / f"{name}.md").is_file():
         return name

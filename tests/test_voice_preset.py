@@ -19,5 +19,9 @@ def test_resolve_missing_preset_disables():
     assert resolve_voice_preset("does-not-exist") == ""
 
 
+def test_resolve_strips_whitespace():
+    assert resolve_voice_preset("  coherence-style  ") == "coherence-style"
+
+
 def test_available_includes_coherence_style():
     assert "coherence-style" in available_presets()
