@@ -197,6 +197,20 @@ class ConsciousnessEngine:
             goals_update=[g.description for g in self.goals.active_goals()],
         )
 
+        # --- v0.4: Meta-reflect — advisory quality signal on this reflection ---
+        error_rate = self.world.recent_prediction_error_rate(window_hours=24)
+        anomaly_pen = min(0.1 * len(anomalies), 0.5)
+        meta_confidence = max(
+            0.0, min(1.0, confidence * (1.0 - error_rate) * (1.0 - anomaly_pen))
+        )
+        reflection_quality = (
+            "HIGH" if meta_confidence >= 0.66
+            else "MEDIUM" if meta_confidence >= 0.33
+            else "LOW"
+        )
+        result["meta_confidence"] = round(meta_confidence, 3)
+        result["reflection_quality"] = reflection_quality
+
         # --- v0.2: Post-reflection pipeline ---
         raw_summary = result["summary"]
         filtered_summary = self.output_filter.apply(raw_summary)
@@ -217,7 +231,11 @@ class ConsciousnessEngine:
         self.event_bus.emit(
             type="reflection",
             category="consciousness",
-            data={"confidence": confidence, "anomalies": anomalies},
+            data={
+                "confidence": confidence,
+                "anomalies": anomalies,
+                "meta_confidence": round(meta_confidence, 3),
+            },
         )
 
         # Emit anomaly events
@@ -239,6 +257,7 @@ class ConsciousnessEngine:
             active_goals=[g.description for g in self.goals.active_goals()],
             world_model_snippet=self.world.query(world_state)[:100] if world_state else "",
             meta_cognition=self.meta.summary(),
+            reflection_quality=reflection_quality,
         )
 
         # Persist state
