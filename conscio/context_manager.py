@@ -70,6 +70,9 @@ class ConsciousnessState:
     metabolic: str = ""               # Optional metabolic tier note, e.g. "FATIGUE 61%"
     reflection_quality: str = ""      # Optional meta-reflect label: HIGH/MEDIUM/LOW
     shard: str = ""                   # Optional active cognitive mode, e.g. "ENGINEER"
+    coherence: Optional[float] = None  # Optional aggregate coherence [0,1]; None=not computed
+    coherence_note: str = ""           # Dominant dissonance dimension, e.g. "epistemic"
+    voice: str = ""                    # Active voice preset name, e.g. "coherence-style"
 
     def to_injection(self) -> str:
         """
@@ -106,6 +109,15 @@ class ConsciousnessState:
 
         if self.shard and self.context_mode != ContextMode.MINIMAL:
             lines.append(f"▷ shard: {self.shard}")
+
+        if self.coherence is not None and self.context_mode != ContextMode.MINIMAL:
+            line = f"▷ coherence: {self.coherence:.2f}"
+            if self.coherence_note:
+                line += f" dominant: {self.coherence_note}"
+            lines.append(line)
+
+        if self.voice and self.context_mode != ContextMode.MINIMAL:
+            lines.append(f"⊙ voice: {self.voice}")
 
         lines.append("═══ END CONSCIOUSNESS STATE ═══")
         return "\n".join(lines)
@@ -153,6 +165,9 @@ class ContextManager:
         metabolic: str = "",
         reflection_quality: str = "",
         shard: str = "",
+        coherence: Optional[float] = None,
+        coherence_note: str = "",
+        voice: str = "",
     ) -> ConsciousnessState:
         """
         Build a ConsciousnessState, trimming each component to fit the budget.
@@ -186,6 +201,9 @@ class ContextManager:
             metabolic=metabolic,
             reflection_quality=reflection_quality,
             shard=shard,
+            coherence=coherence,
+            coherence_note=coherence_note,
+            voice=voice,
         )
 
         # Final safety check — if total exceeds budget, truncate summary
@@ -213,6 +231,9 @@ class ContextManager:
             "metabolic": state.metabolic,
             "reflection_quality": state.reflection_quality,
             "shard": state.shard,
+            "coherence": state.coherence,
+            "coherence_note": state.coherence_note,
+            "voice": state.voice,
         }
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
         # Also write the human-readable injection for manual inspection
@@ -237,6 +258,9 @@ class ContextManager:
                 metabolic=data.get("metabolic", ""),
                 reflection_quality=data.get("reflection_quality", ""),
                 shard=data.get("shard", ""),
+                coherence=data.get("coherence"),
+                coherence_note=data.get("coherence_note", ""),
+                voice=data.get("voice", ""),
             )
 
         # Fallback: parse legacy text format (pre-v0.5.1 saves)
