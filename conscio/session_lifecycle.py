@@ -89,6 +89,11 @@ class SessionSummary:
     vibes: str = ""             # emotional texture — LLM-authored only
     identity_anchor: str = ""   # processing style — LLM-authored only
 
+    # Coherence (v0.6) — advisory state metric; voice preset marker
+    coherence: Optional[float] = None
+    coherence_note: str = ""
+    voice: str = ""
+
 
 # ---------------------------------------------------------------------------
 # Helpers — noise filtering
@@ -285,6 +290,21 @@ def enrich_with_conscio(summary: SessionSummary, engine) -> SessionSummary:
     except Exception:
         pass
 
+    # Coherence (v0.6) — advisory; read the last reflect() snapshot.
+    try:
+        rep = getattr(engine, "last_coherence", None)
+        if rep is not None:
+            summary.coherence = rep.score
+            summary.coherence_note = rep.dominant.dimension if rep.dominant else ""
+    except Exception:
+        pass
+
+    # Voice preset (v0.6) — static marker.
+    try:
+        summary.voice = getattr(engine, "voice_preset", "")
+    except Exception:
+        pass
+
     return summary
 
 
@@ -349,6 +369,11 @@ def format_handoff(summary: SessionSummary) -> str:
             lines.append(f"**Vibe:** {summary.vibes}")
         if summary.identity_anchor:
             lines.append(f"**Âncora de identidade:** {summary.identity_anchor}")
+        if summary.coherence is not None:
+            note = f" dominant: {summary.coherence_note}" if summary.coherence_note else ""
+            lines.append(f"**Coerência:** {summary.coherence:.2f}{note}")
+        if summary.voice:
+            lines.append(f"**Voz:** {summary.voice}")
         lines.append("")
 
     lines.extend([
@@ -388,6 +413,12 @@ def format_heartbeat(summary: SessionSummary) -> str:
         lines.append(f"**Vibe:** {summary.vibes[:80]}")
     if summary.identity_anchor:
         lines.append(f"**Âncora:** {summary.identity_anchor[:80]}")
+
+    if summary.coherence is not None:
+        note = f" dominant: {summary.coherence_note}" if summary.coherence_note else ""
+        lines.append(f"▷ coherence: {summary.coherence:.2f}{note}")
+    if summary.voice:
+        lines.append(f"⊙ voice: {summary.voice}")
 
     if summary.topics:
         lines.append(f"**Tópicos:** {', '.join(summary.topics)}")
