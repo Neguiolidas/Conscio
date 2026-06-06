@@ -9,7 +9,7 @@
 |--------|----------|------|--------|
 | v0.2.3 | Session Lifecycle | Persistência + handoff | ✅ Done (347 tests) |
 | v0.3 | Metabolic Consciousness | DreamCycle + recall + metabolic | ✅ Done (414 tests, 3 post-bugs fixed) |
-| v0.4 | Phenomenological Consciousness | Shard Engine + entropy + friction + layers | 📋 Planejado |
+| v0.4 | Phenomenological Consciousness | Shard Engine + entropy + friction + layers | 🚧 In progress — #2/#3/#7 done (entropy + friction + meta-reflect); #1/#4/#5/#6 planned |
 
 ---
 
