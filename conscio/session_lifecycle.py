@@ -84,6 +84,11 @@ class SessionSummary:
     meta_confidence: float = 0.0
     stale_entities: list[str] = field(default_factory=list)
 
+    # Trajectory (v0.5) — code-owned `trajectory`; LLM-only `vibes`/`identity_anchor`
+    trajectory: str = ""        # where the agent is heading (overwritten by enrich)
+    vibes: str = ""             # emotional texture — LLM-authored only
+    identity_anchor: str = ""   # processing style — LLM-authored only
+
 
 # ---------------------------------------------------------------------------
 # Helpers — noise filtering
@@ -219,6 +224,17 @@ def infer_topics(intents: list[str], actions: list[str]) -> list[str]:
 # Enrichment — add Conscio context
 # ---------------------------------------------------------------------------
 
+def _active_shard_value(engine) -> str:
+    """The engine's current cognitive shard value, or '' if unset/unavailable."""
+    try:
+        shard_engine = getattr(engine, "shard_engine", None)
+        if shard_engine is not None and shard_engine.current is not None:
+            return shard_engine.current.value
+    except Exception:
+        pass
+    return ""
+
+
 def enrich_with_conscio(summary: SessionSummary, engine) -> SessionSummary:
     """
     Enrich session summary with Conscio engine state.
@@ -254,6 +270,18 @@ def enrich_with_conscio(summary: SessionSummary, engine) -> SessionSummary:
     # Stale entities (need attention)
     try:
         summary.stale_entities = engine.world.stale_entities()[:3]
+    except Exception:
+        pass
+
+    # Trajectory — code-owned; always overwrite (more current than last heartbeat).
+    # vibes + identity_anchor are LLM-only and are never touched here.
+    try:
+        shard_val = _active_shard_value(engine)
+        top_goal = summary.active_goals[0] if summary.active_goals else ""
+        if shard_val and top_goal:
+            summary.trajectory = f"{shard_val} → {top_goal}"
+        elif shard_val or top_goal:
+            summary.trajectory = shard_val or top_goal
     except Exception:
         pass
 
@@ -315,6 +343,12 @@ def format_handoff(summary: SessionSummary) -> str:
             lines.append(f"**Confiança média:** {summary.meta_confidence:.2f}")
         if summary.stale_entities:
             lines.append(f"**Entidades stale:** {', '.join(summary.stale_entities)}")
+        if summary.trajectory:
+            lines.append(f"**Trajetória:** {summary.trajectory}")
+        if summary.vibes:
+            lines.append(f"**Vibe:** {summary.vibes}")
+        if summary.identity_anchor:
+            lines.append(f"**Âncora de identidade:** {summary.identity_anchor}")
         lines.append("")
 
     lines.extend([
@@ -347,6 +381,13 @@ def format_heartbeat(summary: SessionSummary) -> str:
         f"**Mensagens:** {summary.message_count}",
         f"**Título:** {summary.title}",
     ]
+
+    if summary.trajectory:
+        lines.append(f"**Trajetória:** {summary.trajectory[:80]}")
+    if summary.vibes:
+        lines.append(f"**Vibe:** {summary.vibes[:80]}")
+    if summary.identity_anchor:
+        lines.append(f"**Âncora:** {summary.identity_anchor[:80]}")
 
     if summary.topics:
         lines.append(f"**Tópicos:** {', '.join(summary.topics)}")
