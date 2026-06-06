@@ -32,8 +32,10 @@ def test_layer_of_unknown_defaults_processing():
 
 
 def test_sort_prefers_higher_layer_within_epsilon_bucket():
-    routine = _result("system", "prose", 0.030)                  # ROUTINE
-    processing = _result("consciousness", "reflection", 0.029)   # PROCESSING, same bucket
+    # Both in floor-bucket 3 (int(0.039/0.01)==int(0.031/0.01)==3) — mid-bucket, no
+    # boundary straddle. ROUTINE has the higher raw rank, yet PROCESSING wins the band.
+    routine = _result("system", "prose", 0.039)                  # ROUTINE, higher rank
+    processing = _result("consciousness", "reflection", 0.031)   # PROCESSING, same bucket
     ordered = sorted([routine, processing], key=layer_sort_key)
     assert ordered[0] is processing                              # layer wins the near-tie
 

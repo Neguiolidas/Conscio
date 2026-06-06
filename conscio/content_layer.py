@@ -58,5 +58,5 @@ def layer_sort_key(result):
     `result` is any object exposing `.source_category`, `.content_type`, `.rank`.
     """
     layer = layer_of(result.source_category, result.content_type)
-    bucket = round(result.rank / LAYER_EPSILON)
+    bucket = int(result.rank / LAYER_EPSILON)
     return (-bucket, -_LAYER_PRIORITY[layer], -result.rank)
