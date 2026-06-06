@@ -396,6 +396,57 @@ class WorldModel:
 
         return to_remove
 
+    def prune_by_entropy(self, threshold: float = 0.85, dry_run: bool = False) -> list[str]:
+        """
+        Decay relevance, then remove entities whose entropy exceeds ``threshold``.
+
+        Unlike ``prune_stale`` (relevance OR age), entropy lets connectivity
+        rescue an old node: a well-connected, still-relevant entity stays below
+        threshold even when old, while isolated/faded nodes are pruned.
+
+        dry_run projects the decay in-line (no persistence) so the preview
+        matches a real run, matching the fidelity discipline of ``prune_stale``.
+
+        Returns the list of names removed (or that would be removed if dry_run).
+        """
+        if not dry_run:
+            self.decay_all_entities()
+
+        now = datetime.now()
+        to_remove: list[str] = []
+        for name, info in self._data["entities"].items():
+            if dry_run:
+                try:
+                    last = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
+                    hours = (now - last).total_seconds() / 3600.0
+                    projected = self._compute_relevance(hours, info.get("relevance", 1.0))
+                except (ValueError, TypeError):
+                    projected = 0.0
+                score = self.entropy(name, _relevance=projected)
+            else:
+                score = self.entropy(name)
+            if score > threshold:
+                to_remove.append(name)
+
+        if not dry_run:
+            for name in to_remove:
+                self.remove_entity(name)  # drops relations + saves
+
+        return to_remove
+
+    def recently_changed(self, hours: int = 24) -> set[str]:
+        """Names of entities whose ``last_updated`` is within the last ``hours``."""
+        cutoff = datetime.now() - timedelta(hours=hours)
+        changed: set[str] = set()
+        for name, info in self._data["entities"].items():
+            try:
+                updated = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
+                if updated >= cutoff:
+                    changed.add(name)
+            except (ValueError, TypeError):
+                continue
+        return changed
+
     def to_dict(self) -> dict:
         """Return the raw world model data."""
         return dict(self._data)

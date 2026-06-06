@@ -62,3 +62,38 @@ def test_entropy_bad_timestamp_treated_old(tmp_path):
     }
     # age_norm=1.0, isolation=1.0, rel_gap=0.0 -> 0.4 + 0.3 + 0 = 0.7
     assert wm.entropy("bad") == pytest.approx(0.7)
+
+
+def test_prune_by_entropy_kills_isolated_faded(tmp_path):
+    wm = WorldModel(tmp_path)
+    _put(wm, "junk", days_old=30, relevance=0.02, relations=0)
+    _put(wm, "hub", days_old=30, relevance=0.9, relations=8)
+    removed = wm.prune_by_entropy(threshold=0.85)
+    assert "junk" in removed
+    assert "hub" not in removed
+    assert wm.get_entity("junk") is None
+    assert wm.get_entity("hub") is not None
+
+
+def test_prune_by_entropy_dry_run_no_mutation_and_matches_real(tmp_path):
+    wm = WorldModel(tmp_path)
+    _put(wm, "a", days_old=40, relevance=0.5, relations=0)
+    _put(wm, "b", days_old=0.1, relevance=1.0, relations=8)
+    preview = set(wm.prune_by_entropy(threshold=0.85, dry_run=True))
+    assert wm.get_entity("a") is not None          # dry_run mutates nothing
+    real = set(wm.prune_by_entropy(threshold=0.85, dry_run=False))
+    assert preview == real
+
+
+def test_recently_changed(tmp_path):
+    wm = WorldModel(tmp_path)
+    _put(wm, "fresh", days_old=0.2)
+    _put(wm, "old", days_old=5)
+    wm._data["entities"]["broken"] = {
+        "type": "system", "attributes": {}, "state": "ok",
+        "last_updated": "xxx", "relevance": 1.0,
+    }
+    changed = wm.recently_changed(hours=24)
+    assert "fresh" in changed
+    assert "old" not in changed
+    assert "broken" not in changed
