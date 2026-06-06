@@ -84,3 +84,24 @@ def test_prune_dry_run_matches_real_prune_after_decay(wm):
     assert "decaying" in removed                     # real run removes it
     assert wm.get_entity("decaying") is None
     assert set(preview) == set(removed)              # preview matched reality
+
+
+def test_list_entities_top_n_by_relevance(tmp_path):
+    from conscio.world_model import WorldModel
+    wm = WorldModel(tmp_path)
+    wm.add_entity("alpha", "concept", state="idle")
+    wm.add_entity("beta", "concept", state="active")
+    wm.add_entity("gamma", "concept", state="idle")
+    wm._data["entities"]["alpha"]["relevance"] = 0.2
+    wm._data["entities"]["beta"]["relevance"] = 0.9
+    wm._data["entities"]["gamma"]["relevance"] = 0.5
+
+    top = wm.list_entities(limit=2)
+    assert [e["name"] for e in top] == ["beta", "gamma"]
+    assert top[0]["state"] == "active"          # carries the full entity dict
+
+
+def test_list_entities_empty_world(tmp_path):
+    from conscio.world_model import WorldModel
+    wm = WorldModel(tmp_path)
+    assert wm.list_entities() == []

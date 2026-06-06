@@ -112,6 +112,12 @@ class WorldModel:
         """Get an entity by name."""
         return self._data["entities"].get(name)
 
+    def list_entities(self, limit: int = 5) -> list[dict]:
+        """Top-N entities by relevance (descending). Each dict carries its 'name'."""
+        items = [{"name": name, **info} for name, info in self._data["entities"].items()]
+        items.sort(key=lambda e: e.get("relevance", 0.0), reverse=True)
+        return items[:limit]
+
     # --- Relations ---
 
     def add_relation(self, from_entity: str, relation: str, to_entity: str) -> None:
