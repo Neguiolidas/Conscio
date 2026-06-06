@@ -243,7 +243,7 @@ pip install -e .
 ## Testing
 
 ```bash
-# Full suite (475 tests)
+# Full suite (521 tests)
 pytest tests/ -v
 
 # Quick run
@@ -285,6 +285,7 @@ All SQLite databases use WAL mode for concurrent read/write. Location:
 
 ## Audit History
 
+- **v0.6.0 — Coherence** — CoherenceEngine: a recursive-coherence state metric (epistemic/reality/ontological/temporal) surfaced advisorily with a passive `coherence:dissonance` event; static voice-preset system (`conscio/presets/voice/`). Theory from Claude_Sentience (Dave Shapiro). 46 new tests. 521 total tests.
 - **v0.5.0 — Cognitive Modes** — Shard Engine (cognitive-mode inference), Trajectory Vector (soul-package soft fields + list_entities fix), Content Layering (layer-priority recall). 37 new tests. #6 Coherence Check deferred to v0.6.
 - **v0.4.0** — Self-Judgment: entropy pruning, friction, meta-reflect. 24 new tests. 438 total tests.
 - **v0.3.0 (2026-06-05)** — Metabolic Consciousness. New `metabolic.py` (Noosphere tier model, advisory) + `dreaming.py` (DreamCycle: Release/Prune/Crystallize, wires dormant cleanup methods). Added `EventBus.purge_duplicates`, `WorldModel.prune_stale`, `engine.recall()` cross-session memory injected into reflect, SessionRAG tests + graceful integration, OutputFilter `DedupBlocks`+`SecretMask`, 10k-event perf guard. Mitosis (handoff) now triggers Dream. 68 new tests. **415 total tests.**
