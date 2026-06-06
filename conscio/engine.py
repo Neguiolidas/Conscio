@@ -11,6 +11,7 @@ The central coordinator that:
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -220,6 +221,7 @@ class ConsciousnessEngine:
         )
         result["meta_confidence"] = round(meta_confidence, 3)
         result["reflection_quality"] = reflection_quality
+        result["shard"] = shard_value
 
         # --- v0.2: Post-reflection pipeline ---
         raw_summary = result["summary"]
@@ -344,11 +346,11 @@ class ConsciousnessEngine:
                     results.extend(self.content_store.search(query, limit=k, category=cat))
             else:
                 results.extend(self.content_store.search(query, limit=k))
-            results.sort(key=layer_sort_key)   # near-tie tiebreak by content layer
+            results.sort(key=layer_sort_key)  # near-tie tiebreak by content layer
             for r in results:
                 _add(r.content)
         except Exception:
-            pass
+            logging.warning("ContentStore search failed in recall()", exc_info=True)
 
         # ── SessionRAG semantic (optional) ──
         try:
@@ -357,7 +359,7 @@ class ConsciousnessEngine:
                 for r in rag.search(query, limit=k):
                     _add(r.content)
         except Exception:
-            pass
+            logging.warning("SessionRAG search failed in recall()", exc_info=True)
 
         return snippets[:k]
 

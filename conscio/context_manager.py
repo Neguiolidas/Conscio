@@ -196,32 +196,71 @@ class ContextManager:
         return state
 
     def save_state(self, state: ConsciousnessState) -> Path:
-        """Save consciousness state to disk for persistence across sessions."""
-        path = self.storage_path / "state_summary.txt"
-        path.write_text(state.to_injection())
+        """Save consciousness state to disk for persistence across sessions.
+
+        Persists the full dataclass as JSON so that load_state() can round-trip
+        every field — including shard, reflection_quality, and metabolic —
+        regardless of the injection mode (MINIMAL may omit these from
+        to_injection(), but they must survive save/load).
+        """
+        path = self.storage_path / "state_summary.json"
+        data = {
+            "state_summary": state.state_summary,
+            "last_reflection": state.last_reflection,
+            "active_goals": state.active_goals,
+            "world_model_snippet": state.world_model_snippet,
+            "meta_cognition": state.meta_cognition,
+            "metabolic": state.metabolic,
+            "reflection_quality": state.reflection_quality,
+            "shard": state.shard,
+        }
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+        # Also write the human-readable injection for manual inspection
+        inj_path = self.storage_path / "state_summary.txt"
+        inj_path.write_text(state.to_injection())
         return path
 
     def load_state(self) -> ConsciousnessState:
         """Load the last saved consciousness state from disk."""
-        path = self.storage_path / "state_summary.txt"
-        if not path.exists():
+        json_path = self.storage_path / "state_summary.json"
+        if json_path.exists():
+            data = json.loads(json_path.read_text())
             return ConsciousnessState(
                 model_name=self.model_info.name,
                 context_mode=self.mode,
                 context_window=self.model_info.context_window,
+                state_summary=data.get("state_summary", ""),
+                last_reflection=data.get("last_reflection", ""),
+                active_goals=data.get("active_goals", []),
+                world_model_snippet=data.get("world_model_snippet", ""),
+                meta_cognition=data.get("meta_cognition", ""),
+                metabolic=data.get("metabolic", ""),
+                reflection_quality=data.get("reflection_quality", ""),
+                shard=data.get("shard", ""),
             )
 
-        # Parse the saved state (simple text format)
-        text = path.read_text()
-        state = ConsciousnessState(
+        # Fallback: parse legacy text format (pre-v0.5.1 saves)
+        txt_path = self.storage_path / "state_summary.txt"
+        if txt_path.exists():
+            text = txt_path.read_text()
+            return ConsciousnessState(
+                model_name=self.model_info.name,
+                context_mode=self.mode,
+                context_window=self.model_info.context_window,
+                state_summary=self._extract_section(text, "§"),
+                last_reflection=self._extract_section(text, "⧖"),
+                meta_cognition=self._extract_section(text, "🪞"),
+                metabolic=self._extract_section(text, "⊘"),
+                reflection_quality=self._extract_section(text, "◈"),
+                shard=self._extract_section(text, "▷"),
+            )
+
+        # No saved state at all
+        return ConsciousnessState(
             model_name=self.model_info.name,
             context_mode=self.mode,
             context_window=self.model_info.context_window,
-            state_summary=self._extract_section(text, "§"),
-            last_reflection=self._extract_section(text, "⧖"),
-            meta_cognition=self._extract_section(text, "🪞"),
         )
-        return state
 
     def get_off_context_path(self, component: str) -> Path:
         """
