@@ -419,7 +419,13 @@ class WorldModel:
                 try:
                     last = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
                     hours = (now - last).total_seconds() / 3600.0
-                    projected = self._compute_relevance(hours, info.get("relevance", 1.0))
+                    current = info.get("relevance", 1.0)
+                    projected = self._compute_relevance(hours, current)
+                    # Mirror decay_all_entities: it skips writes when the change is
+                    # negligible (<= 0.001), so a real run keeps the un-decayed value.
+                    # Apply the same skip here to keep dry_run/real parity exact.
+                    if abs(projected - current) <= 0.001:
+                        projected = current
                 except (ValueError, TypeError):
                     projected = 0.0
                 score = self.entropy(name, _relevance=projected)
