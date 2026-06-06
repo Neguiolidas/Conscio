@@ -27,6 +27,7 @@ from .event_bus import EventBus
 from .shard_engine import ShardEngine
 from .output_filter import FilterPipeline, build_pipeline_from_dict
 from .token_tracker import TokenTracker
+from .content_layer import layer_sort_key
 
 
 _RAG_UNSET = object()
@@ -335,15 +336,17 @@ class ConsciousnessEngine:
                 seen.add(key)
                 snippets.append(t)
 
-        # ── ContentStore FTS5 ──
+        # ── ContentStore FTS5 (layer-prioritized reorder) ──
         try:
+            results = []
             if categories:
                 for cat in categories:
-                    for r in self.content_store.search(query, limit=k, category=cat):
-                        _add(r.content)
+                    results.extend(self.content_store.search(query, limit=k, category=cat))
             else:
-                for r in self.content_store.search(query, limit=k):
-                    _add(r.content)
+                results.extend(self.content_store.search(query, limit=k))
+            results.sort(key=layer_sort_key)   # near-tie tiebreak by content layer
+            for r in results:
+                _add(r.content)
         except Exception:
             pass
 

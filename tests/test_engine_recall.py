@@ -69,3 +69,27 @@ def test_reflect_injects_past_context(engine, monkeypatch):
     engine.reflect(world_state="latency spike investigation", confidence=0.7)
     joined = " ".join(captured.get("recent_events") or [])
     assert "recall" in joined.lower() or "latency" in joined.lower()
+
+
+def test_recall_prioritizes_processing_layer_on_near_tie(tmp_path):
+    from conscio.engine import ConsciousnessEngine
+    eng = ConsciousnessEngine(model_name="claude-opus-4-8", storage_path=tmp_path)
+
+    # Both docs match the query. The ROUTINE doc is SHORTER (just the query terms),
+    # so BM25 ranks it higher pre-reorder — without the layer reorder it sorts first.
+    # The PROCESSING doc is longer/lower-BM25 but co-retrieved. The reorder flips it.
+    # category="system" → ROUTINE layer; category="consciousness" → PROCESSING (default).
+    eng.content_store.index(
+        label="sysmetric", content="alpha beta gamma",
+        category="system", content_type="prose",
+    )
+    eng.content_store.index(
+        label="reflect",
+        content="alpha beta gamma reflected insight with extra padding words here today",
+        category="consciousness", content_type="prose",
+    )
+
+    snippets = eng.recall("alpha beta gamma", k=2)
+    assert len(snippets) == 2
+    # PROCESSING content surfaces first once the layer reorder is applied.
+    assert "reflected insight" in snippets[0]
