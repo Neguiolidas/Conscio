@@ -45,7 +45,10 @@ def test_dream_release_purges_duplicate_events(engine):
 
 def test_dream_prune_removes_stale_entity(engine):
     engine.world.add_entity("ghost", "system")
-    old = (datetime.now() - timedelta(hours=1)).isoformat()
+    # Entropy prunes on age compounded with isolation/irrelevance — a genuinely
+    # old (30d), isolated, faded entity crosses the 0.85 threshold; a fresh one
+    # would be kept by design (recency rescues).
+    old = (datetime.now() - timedelta(days=30)).isoformat()
     engine.world._data["entities"]["ghost"]["relevance"] = 0.0
     engine.world._data["entities"]["ghost"]["last_updated"] = old
     engine.world._save()
