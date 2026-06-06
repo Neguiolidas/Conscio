@@ -69,6 +69,7 @@ class ConsciousnessState:
     context_window: int = 131000      # Available context in tokens
     metabolic: str = ""               # Optional metabolic tier note, e.g. "FATIGUE 61%"
     reflection_quality: str = ""      # Optional meta-reflect label: HIGH/MEDIUM/LOW
+    shard: str = ""                   # Optional active cognitive mode, e.g. "ENGINEER"
 
     def to_injection(self) -> str:
         """
@@ -102,6 +103,9 @@ class ConsciousnessState:
 
         if self.reflection_quality and self.context_mode != ContextMode.MINIMAL:
             lines.append(f"◈ reflection quality: {self.reflection_quality}")
+
+        if self.shard and self.context_mode != ContextMode.MINIMAL:
+            lines.append(f"▷ shard: {self.shard}")
 
         lines.append("═══ END CONSCIOUSNESS STATE ═══")
         return "\n".join(lines)
@@ -148,6 +152,7 @@ class ContextManager:
         meta_cognition: str = "",
         metabolic: str = "",
         reflection_quality: str = "",
+        shard: str = "",
     ) -> ConsciousnessState:
         """
         Build a ConsciousnessState, trimming each component to fit the budget.
@@ -180,6 +185,7 @@ class ContextManager:
             context_window=self.model_info.context_window,
             metabolic=metabolic,
             reflection_quality=reflection_quality,
+            shard=shard,
         )
 
         # Final safety check — if total exceeds budget, truncate summary

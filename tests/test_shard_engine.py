@@ -91,3 +91,27 @@ def test_shard_engine_none_keeps_last_shard():
     eng.update([{"type": "perception", "data": {"text": "quiet window"}}])  # None inferred
     assert eng.current is Shard.ENGINEER       # unchanged
     assert len(bus.events) == 1                # no transition emitted
+
+
+from conscio.context_manager import ConsciousnessState, ContextManager, ContextMode
+
+
+def test_state_injection_includes_shard():
+    st = ConsciousnessState(shard="ENGINEER", context_mode=ContextMode.COMPACT)
+    assert "▷ shard: ENGINEER" in st.to_injection()
+
+
+def test_state_injection_suppresses_empty_shard():
+    st = ConsciousnessState(shard="", context_mode=ContextMode.COMPACT)
+    assert "shard:" not in st.to_injection()
+
+
+def test_state_injection_suppresses_shard_in_minimal():
+    st = ConsciousnessState(shard="ENGINEER", context_mode=ContextMode.MINIMAL)
+    assert "shard:" not in st.to_injection()
+
+
+def test_build_state_passes_shard(tmp_path):
+    cm = ContextManager(model_name="claude-opus-4-8", storage_path=tmp_path)
+    st = cm.build_state(state_summary="working", shard="JANITOR")
+    assert st.shard == "JANITOR"
