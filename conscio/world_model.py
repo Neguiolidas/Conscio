@@ -21,6 +21,10 @@ W_AGE = 0.4              # entropy weights — must sum to 1.0
 W_ISO = 0.3
 W_REL = 0.3
 
+# Prediction-error log (v0.4): bounded sliding window, kept in the world JSON.
+PREDICTION_LOG_RETENTION_HOURS = 168   # 7 days
+PREDICTION_LOG_MAX = 500               # hard cap backstop
+
 
 def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
@@ -63,7 +67,7 @@ class WorldModel:
                 return json.loads(self.path.read_text())
             except json.JSONDecodeError:
                 pass
-        return {"entities": {}, "relations": [], "predictions": []}
+        return {"entities": {}, "relations": [], "predictions": [], "prediction_log": []}
 
     def _save(self) -> None:
         """Save world model to disk."""
@@ -452,6 +456,57 @@ class WorldModel:
             except (ValueError, TypeError):
                 continue
         return changed
+
+    def record_prediction(self, entity: str, expected_state: str, actual_state: str) -> bool:
+        """
+        Record a world prediction outcome. Returns True on surprise (mismatch).
+
+        Appends to a bounded sliding-window log in the world JSON: entries older
+        than PREDICTION_LOG_RETENTION_HOURS are dropped, then a hard cap of
+        PREDICTION_LOG_MAX newest entries is enforced (prevents file inflation).
+        """
+        error = 0 if expected_state == actual_state else 1
+        now = datetime.now()
+        log = self._data.setdefault("prediction_log", [])
+        log.append({
+            "entity": entity,
+            "expected": expected_state,
+            "actual": actual_state,
+            "error": error,
+            "ts": now.isoformat(),
+        })
+
+        cutoff = now - timedelta(hours=PREDICTION_LOG_RETENTION_HOURS)
+        kept: list[dict] = []
+        for e in log:
+            try:
+                if datetime.fromisoformat(e["ts"]) >= cutoff:
+                    kept.append(e)
+            except (ValueError, TypeError, KeyError):
+                continue
+        if len(kept) > PREDICTION_LOG_MAX:
+            kept = kept[-PREDICTION_LOG_MAX:]
+        self._data["prediction_log"] = kept
+
+        self._save()
+        return bool(error)
+
+    def recent_prediction_error_rate(self, window_hours: int = 24) -> float:
+        """Fraction of recorded predictions in the window that were wrong (0.0 if none)."""
+        log = self._data.get("prediction_log", [])
+        if not log:
+            return 0.0
+        cutoff = datetime.now() - timedelta(hours=window_hours)
+        errors = 0
+        total = 0
+        for e in log:
+            try:
+                if datetime.fromisoformat(e["ts"]) >= cutoff:
+                    total += 1
+                    errors += int(e.get("error", 0))
+            except (ValueError, TypeError, KeyError):
+                continue
+        return errors / total if total else 0.0
 
     def to_dict(self) -> dict:
         """Return the raw world model data."""
