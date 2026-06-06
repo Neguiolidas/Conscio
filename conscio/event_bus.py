@@ -60,6 +60,7 @@ VALID_TYPES = {
  "tool_call", "reflection", "trade", "error", "anomaly",
  "decision", "perception", "goal_created", "goal_expired",
  "evolution_proposed", "system", "consciousness", "session",
+ "coherence:dissonance",  # v0.6: passive low-coherence signal (advisory)
 }
 
 VALID_CATEGORIES = {"system", "trading", "consciousness", "external", "session"}

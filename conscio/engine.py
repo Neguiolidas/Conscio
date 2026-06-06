@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -26,6 +27,8 @@ from .auto_evolution import AutoEvolution
 from .content_store import ContentStore
 from .event_bus import EventBus
 from .shard_engine import ShardEngine
+from .coherence import CoherenceEngine, COHERENCE_EVENT_THRESHOLD
+from .voice_preset import resolve_voice_preset
 from .output_filter import FilterPipeline, build_pipeline_from_dict
 from .token_tracker import TokenTracker
 from .content_layer import layer_sort_key
@@ -62,6 +65,7 @@ class ConsciousnessEngine:
         context_window: Optional[int] = None,
         storage_path: Optional[str | Path] = None,
         drive_strengths: Optional[dict[str, float]] = None,
+        voice_preset: Optional[str] = None,
     ):
         self.storage = Path(storage_path) if storage_path else self.DEFAULT_STORAGE
         self.storage.mkdir(parents=True, exist_ok=True)
@@ -88,6 +92,15 @@ class ConsciousnessEngine:
         db_path = self.storage / "conscio.db"
         self.event_bus = EventBus(db_path=db_path)
         self.shard_engine = ShardEngine(self.event_bus)
+        self.coherence = CoherenceEngine(self.meta, self.world)
+        self.last_coherence = None
+
+        # Voice preset (v0.6) — static marker. Precedence: param > env > default.
+        effective_voice = (
+            voice_preset if voice_preset is not None
+            else os.getenv("CONSCIO_VOICE_PRESET", "coherence-style")
+        )
+        self.voice_preset = resolve_voice_preset(effective_voice)
         self.content_store = ContentStore(db_path=db_path)
         self.token_tracker = TokenTracker(db_path=db_path)
         self.output_filter = build_pipeline_from_dict({
@@ -170,6 +183,25 @@ class ConsciousnessEngine:
         active_shard = self.shard_engine.update(recent)
         shard_value = active_shard.value if active_shard else ""
 
+        # v0.6: coherence snapshot over the SAME pre-update window (advisory, pure).
+        # Reuses `recent` so it never counts the shard transition it just caused.
+        coherence_report = self.coherence.assess(recent)
+        self.last_coherence = coherence_report
+        if coherence_report.score < COHERENCE_EVENT_THRESHOLD:
+            self.event_bus.emit(
+                type="coherence:dissonance",
+                category="consciousness",
+                data={
+                    "score": coherence_report.score,
+                    "dominant": (
+                        coherence_report.dominant.dimension
+                        if coherence_report.dominant else None
+                    ),
+                    "dimensions": coherence_report.dimensions,
+                },
+                priority=7,
+            )
+
         # Generate goals from anomalies (curiosity drive)
         for anomaly in anomalies:
             self.goals.generate_from_curiosity(anomaly, context=world_state)
@@ -222,6 +254,11 @@ class ConsciousnessEngine:
         result["meta_confidence"] = round(meta_confidence, 3)
         result["reflection_quality"] = reflection_quality
         result["shard"] = shard_value
+        result["coherence"] = coherence_report.score
+        result["coherence_dimensions"] = coherence_report.dimensions
+        result["dominant_dissonance"] = (
+            coherence_report.dominant.dimension if coherence_report.dominant else None
+        )
 
         # --- v0.2: Post-reflection pipeline ---
         raw_summary = result["summary"]
@@ -271,6 +308,12 @@ class ConsciousnessEngine:
             meta_cognition=self.meta.summary(),
             reflection_quality=reflection_quality,
             shard=shard_value,
+            coherence=coherence_report.score,
+            coherence_note=(
+                coherence_report.dominant.dimension
+                if coherence_report.dominant else ""
+            ),
+            voice=self.voice_preset,
         )
 
         # Persist state
