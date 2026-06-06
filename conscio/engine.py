@@ -24,6 +24,7 @@ from .goal_generator import GoalGenerator, Drive
 from .auto_evolution import AutoEvolution
 from .content_store import ContentStore
 from .event_bus import EventBus
+from .shard_engine import ShardEngine
 from .output_filter import FilterPipeline, build_pipeline_from_dict
 from .token_tracker import TokenTracker
 
@@ -84,6 +85,7 @@ class ConsciousnessEngine:
         # --- v0.2: SQLite-backed modules (shared DB) ---
         db_path = self.storage / "conscio.db"
         self.event_bus = EventBus(db_path=db_path)
+        self.shard_engine = ShardEngine(self.event_bus)
         self.content_store = ContentStore(db_path=db_path)
         self.token_tracker = TokenTracker(db_path=db_path)
         self.output_filter = build_pipeline_from_dict({
@@ -250,6 +252,11 @@ class ConsciousnessEngine:
         # Record confidence in meta-cognition
         self.meta.record_confidence("general", confidence)
 
+        # Infer active cognitive shard from recent events (advisory).
+        recent = [e.to_dict() for e in self.event_bus.query(limit=20)]
+        active_shard = self.shard_engine.update(recent)
+        shard_value = active_shard.value if active_shard else ""
+
         # Build the new consciousness state
         self._state = self.ctx.build_state(
             state_summary=filtered_summary,
@@ -258,6 +265,7 @@ class ConsciousnessEngine:
             world_model_snippet=self.world.query(world_state)[:100] if world_state else "",
             meta_cognition=self.meta.summary(),
             reflection_quality=reflection_quality,
+            shard=shard_value,
         )
 
         # Persist state

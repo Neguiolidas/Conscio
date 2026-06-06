@@ -115,3 +115,19 @@ def test_build_state_passes_shard(tmp_path):
     cm = ContextManager(model_name="claude-opus-4-8", storage_path=tmp_path)
     st = cm.build_state(state_summary="working", shard="JANITOR")
     assert st.shard == "JANITOR"
+
+
+from conscio.engine import ConsciousnessEngine
+
+
+def test_reflect_sets_shard_from_recent_events(tmp_path):
+    eng = ConsciousnessEngine(model_name="claude-opus-4-8", storage_path=tmp_path)
+    # A strong, multi-hit ENGINEER signal dominates any events reflect() itself
+    # emits (reflection/anomaly events carry no shard keywords on a fresh engine).
+    eng.event_bus.emit(
+        type="tool_call", category="system",
+        data={"text": "implement feature and build code"},  # 4 ENGINEER hits
+    )
+    eng.reflect(world_state="status nominal")
+    assert eng.shard_engine.current is Shard.ENGINEER
+    assert eng._state.shard == "ENGINEER"
