@@ -14,6 +14,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+# Entropy scoring (v0.4): higher entropy = more disordered = better prune candidate.
+HALFLIFE_DAYS = 7        # age normalization half-life
+MAX_RELATIONS = 8        # relations at/above which an entity is fully "connected"
+W_AGE = 0.4              # entropy weights — must sum to 1.0
+W_ISO = 0.3
+W_REL = 0.3
+
+
+def _clamp01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
 
 class WorldModel:
     """
@@ -245,12 +256,47 @@ class WorldModel:
     def _compute_relevance(self, hours_since_update: float, current_relevance: float) -> float:
         """
         Compute decayed relevance.
-        
+
         Formula: relevance * exp(-lambda * hours)
         Lambda = 0.05 → half-life ~14 hours
         """
         decay = math.exp(-0.05 * hours_since_update)
         return current_relevance * decay
+
+    def entropy(self, name: str, _relevance: Optional[float] = None) -> float:
+        """
+        Entropy score in [0, 1] for an entity. Higher = more disordered.
+
+        entropy = W_AGE*age_norm + W_ISO*isolation + W_REL*rel_gap
+          age_norm  = 1 - exp(-age_days / HALFLIFE_DAYS)
+          isolation = 1 - min(relation_count / MAX_RELATIONS, 1.0)
+          rel_gap   = 1 - clamp01(relevance)
+
+        A connected, relevant node stays low even when old; an isolated,
+        faded node climbs toward 1.0. Unknown name -> 1.0 (nothing to keep).
+
+        _relevance: optional override (used by prune_by_entropy's dry_run to
+        project decay without persisting).
+        """
+        info = self._data["entities"].get(name)
+        if info is None:
+            return 1.0
+
+        now = datetime.now()
+        try:
+            last = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
+            age_days = max((now - last).total_seconds() / 86400.0, 0.0)
+            age_norm = 1.0 - math.exp(-age_days / HALFLIFE_DAYS)
+        except (ValueError, TypeError):
+            age_norm = 1.0
+
+        relation_count = len(self.get_relations(name))
+        isolation = 1.0 - min(relation_count / MAX_RELATIONS, 1.0)
+
+        rel = info.get("relevance", 1.0) if _relevance is None else _relevance
+        rel_gap = 1.0 - _clamp01(rel)
+
+        return _clamp01(W_AGE * age_norm + W_ISO * isolation + W_REL * rel_gap)
 
     def decay_all_entities(self) -> int:
         """
