@@ -12,6 +12,7 @@
 | v0.4 | Self-Judgment | entropy + friction + meta-reflect | ✅ Done (438 tests) |
 | v0.5 | Cognitive Modes | Shard + Trajectory + Layering | ✅ Done (#1/#5/#4); #6 Coherence deferred to v0.6 |
 | v0.6 | Coherence | CoherenceEngine (recursive-coherence state metric) + voice presets | ✅ Done (#6 reframed — state metric, not output dedup) |
+| v0.7 | Recursive Coherence | dream+coherence loop + self-prompting | ✅ Done |
 
 ---
 
