@@ -118,33 +118,22 @@ def reality_score(world) -> float:
 
 
 def ontological_score(world) -> float:
-    """1 - contradicted/total entities over the knowledge graph.
+    """1 - contradicted/total entities, read from CACHED contradiction flags.
 
-    TECH DEBT: reads `world._data` directly (private). WorldModel exposes no
-    public read of the full relation list; `get_relations(entity)` is per-entity
-    and would force an N-query scan. Tracked for a future public
-    `WorldModel.list_relations()` — see docs/noosphere/coherence-engine-model.md.
-    The try/except keeps this defensive if the internal shape changes.
+    v0.8: the synchronous lexical relation scan moved off the hot path into the
+    dream Reconcile sub-phase (world.mark_contradictions). Here we only read
+    public accessors — no private world._data access (the v0.6 tech debt is
+    resolved). A cold world (never dreamed) has no flags → 1.0 (no false
+    dissonance before the first reconcile; documented in
+    docs/noosphere/semantic-reconciliation.md). The try/except stays defensive.
     """
     try:
-        data = world._data
-        entities = data.get("entities", {})
-        relations = data.get("relations", [])
+        total = world.entity_count()
+        contradicted = world.contradicted_entities()
     except Exception:
         return 1.0
-    total = len(entities)
     if total == 0:
         return 1.0
-    by_pair: dict = {}
-    for r in relations:
-        key = (r.get("from", ""), r.get("to", ""))
-        by_pair.setdefault(key, []).append(r.get("relation", ""))
-    contradicted = set()
-    for (frm, _to), preds in by_pair.items():
-        for i in range(len(preds)):
-            for j in range(i + 1, len(preds)):
-                if _relations_contradict(preds[i], preds[j]):
-                    contradicted.add(frm)
     return _clamp(1.0 - len(contradicted) / total)
 
 

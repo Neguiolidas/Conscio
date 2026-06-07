@@ -15,11 +15,16 @@ class FakeMeta:
 
 
 class FakeWorld:
-    def __init__(self, err=0.0, entities=None, relations=None):
+    def __init__(self, err=0.0, entities=None, relations=None, contradicted=None):
         self._err = err
         self._data = {"entities": entities or {}, "relations": relations or []}
+        self._contradicted = contradicted or []
     def recent_prediction_error_rate(self, window_hours=24):
         return self._err
+    def entity_count(self):
+        return len(self._data["entities"])
+    def contradicted_entities(self):
+        return list(self._contradicted)
 
 
 def _evt(transition=False):
@@ -98,14 +103,10 @@ def test_ontological_no_entities_is_one():
 
 
 def test_ontological_contradiction_lowers_score():
-    world = FakeWorld(
-        entities={"market": {}, "btc": {}},
-        relations=[
-            {"from": "market", "relation": "is bullish", "to": "btc"},
-            {"from": "market", "relation": "is not bullish", "to": "btc"},
-        ],
-    )
-    assert ontological_score(world) == 0.5  # 1 of 2 entities contradicted
+    # v0.8: ontological_score reads cached `contradicted` flags (detection moved
+    # to dream Reconcile). One of two entities flagged → 0.5.
+    world = FakeWorld(entities={"market": {}, "btc": {}}, contradicted=["market"])
+    assert ontological_score(world) == 0.5
 
 
 def test_temporal_free_transitions_no_penalty():
