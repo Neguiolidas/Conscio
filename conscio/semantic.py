@@ -167,3 +167,29 @@ class SemanticEngine:
         if p1 is None or p2 is None:
             return False
         return p1[0] == p2[0] and p1[1] != p2[1]
+
+
+class ContradictionDetector:
+    """Lexical fast-path → semantic axis opposition. Offline → lexical only.
+
+    The lexical layer REUSES coherence._relations_contradict (single source of
+    truth for negation tokens — no _NEG_TOKENS duplication). relations and
+    states share one contradiction rule: lexical negation OR axis opposition.
+    """
+
+    def __init__(self, semantic: "SemanticEngine | None" = None):
+        self.semantic = semantic
+
+    def _contradict(self, a: str, b: str) -> bool:
+        from .coherence import _relations_contradict
+        if _relations_contradict(a, b):          # offline-safe lexical negation
+            return True
+        if self.semantic is not None and self.semantic.available():
+            return self.semantic.opposes(a, b)   # semantic axis opposition
+        return False
+
+    def relations_contradict(self, p1: str, p2: str) -> bool:
+        return self._contradict(p1, p2)
+
+    def states_contradict(self, s1: str, s2: str) -> bool:
+        return self._contradict(s1, s2)
