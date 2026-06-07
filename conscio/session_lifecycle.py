@@ -482,7 +482,7 @@ def format_heartbeat(summary: SessionSummary) -> str:
     if summary.identity_anchor:
         lines.append(f"**Âncora:** {summary.identity_anchor[:80]}")
 
-    if summary.coherence is not None:
+    if summary.coherence is not None and isinstance(summary.coherence, (int, float)):
         note = f" dominant: {summary.coherence_note}" if summary.coherence_note else ""
         lines.append(f"▷ coherence: {summary.coherence:.2f}{note}")
     if summary.voice:
