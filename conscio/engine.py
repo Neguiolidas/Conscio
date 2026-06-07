@@ -122,6 +122,12 @@ class ConsciousnessEngine:
             ]
         })
 
+        # v0.8: opt-in semantic output dedup (annotate near-dups, never merge).
+        # NOT in the default pipeline — the hot path must stay network-free.
+        if os.getenv("CONSCIO_SEMANTIC_DEDUP", "").strip().lower() in ("1", "true", "yes", "on"):
+            from .output_filter import SemanticDedup
+            self.output_filter.add_stage(SemanticDedup(semantic=self._semantic))
+
         # Load previous state
         self._state = self.ctx.load_state()
 
