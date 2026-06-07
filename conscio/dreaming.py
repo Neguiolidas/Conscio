@@ -17,8 +17,6 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from .coherence import _relations_contradict
-
 
 MIN_ENTITY_MATCH_LEN = 3   # friction ignores 1-2 char entity names (would over-defer)
 
@@ -41,34 +39,6 @@ class DreamRecommendation:
         return "recommended"
 
 
-def _lexically_contradicted_entities(world) -> list[str]:
-    """`from`-entities whose relations on the same (from→to) pair lexically
-    contradict (one negated, same core).
-
-    v0.7 TECH DEBT: reads world._data directly, consistent with the v0.6
-    ontological scan. v0.8 replaces this with world.contradicted_entities()
-    (semantic, cached). Reuses coherence._relations_contradict — single source
-    of truth for negation tokens.
-    """
-    try:
-        relations = world._data.get("relations", [])
-    except Exception:
-        return []
-    by_pair: dict = {}
-    for r in relations:
-        key = (r.get("from", ""), r.get("to", ""))
-        by_pair.setdefault(key, []).append(r.get("relation", ""))
-    contradicted: list[str] = []
-    for (frm, _to), preds in by_pair.items():
-        hit = any(
-            _relations_contradict(preds[i], preds[j])
-            for i in range(len(preds)) for j in range(i + 1, len(preds))
-        )
-        if hit and frm and frm not in contradicted:
-            contradicted.append(frm)
-    return contradicted
-
-
 @dataclass
 class DreamReport:
     """Summary of a single dream cycle."""
@@ -82,6 +52,7 @@ class DreamReport:
     coherence_before: float | None = None
     coherence_after: float | None = None
     contradictions_pruned: list[str] = field(default_factory=list)
+    reconciled_entities: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -95,6 +66,7 @@ class DreamReport:
             "coherence_before": self.coherence_before,
             "coherence_after": self.coherence_after,
             "contradictions_pruned": self.contradictions_pruned,
+            "reconciled_entities": self.reconciled_entities,
         }
 
 
@@ -118,8 +90,15 @@ class DreamCycle:
         self.crystallize_min_count = crystallize_min_count
 
     def run(self, engine, dry_run: bool = False) -> DreamReport:
-        """Release → Prune → (ontological targeting) → Crystallize. Records the
-        coherence delta the cycle produced; clears engine.dream_recommended."""
+        """Release → Prune → Reconcile → Crystallize. Records the coherence delta
+        the cycle produced; clears engine.dream_recommended.
+
+        NOTE: the delta can be NEGATIVE by design. Reconcile marks contradictions
+        the hot path had never measured (cold ontological reads 1.0); when the
+        dominant dissonance is NOT ontological those contradictions are flagged
+        but not pruned, so coherence_after legitimately drops below
+        coherence_before — the dream surfaced latent incoherence, it didn't cause
+        it. Ontological-dominant dreams prune the contradicted set, so they recover."""
         start = time.perf_counter()
         report = DreamReport(dry_run=dry_run)
 
@@ -140,16 +119,23 @@ class DreamCycle:
             dry_run=dry_run,
         )
 
-        # ── Ontological targeting (v0.7): when the dominant dissonance is
-        # ontological, prune entities with contradictory relations even if not
-        # entropy-stale. v0.7 detector is lexical; v0.8 makes it semantic. ──
+        # ── Reconcile (v0.8): mark contradicted entities via the detector
+        # (lexical fast-path → semantic axis opposition). The ONLY ontology
+        # embedding I/O, off the hot path. dry_run computes without writing. ──
+        from .semantic import ContradictionDetector
+        detector = getattr(engine, "_contradiction_detector", None) or ContradictionDetector()
+        reconciled = engine.world.mark_contradictions(detector, dry_run=dry_run)
+        report.reconciled_entities = list(reconciled)
+
+        # ── Ontological targeting (v0.7, now semantic): when the dominant
+        # dissonance is ontological, prune the reconciled (contradicted) set
+        # even if not entropy-stale. ──
         last = getattr(engine, "last_coherence", None)
         dominant = last.dominant.dimension if (last and last.dominant) else None
         if dominant == "ontological":
-            contradicted = _lexically_contradicted_entities(engine.world)
-            report.contradictions_pruned = list(contradicted)
+            report.contradictions_pruned = list(reconciled)
             if not dry_run:
-                for name in contradicted:
+                for name in reconciled:
                     engine.world.remove_entity(name)  # drops relations + saves
 
         # ── Friction + Crystallize: defer reflections the world moved on from ──
