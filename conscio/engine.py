@@ -350,29 +350,39 @@ class ConsciousnessEngine:
 
     def _spawn_self_prompt_goal(self, prompts):
         """Spawn ONE bounded goal from the highest-severity self-prompt, tagged
-        source="self_prompt". GoalGenerator dedups by active description and caps
-        active goals, so repeats are no-ops. Returns the Goal or None.
+        source="self_prompt", returning the goal actually tracked in the store
+        (or None when no prompt exists / the drive is too weak to spawn).
 
-        Note: on a dedup hit, GoalGenerator returns the *pre-existing* matching
-        goal (possibly spawned in an earlier cycle), so the id surfaced in
-        result["self_prompt_goal"] may reference a goal not freshly created this
-        cycle. That is correct — the self-prompt mapped to an already-tracked
-        goal — but read reflect() output as "the goal this prompt resolves to",
-        not "a goal created right now"."""
+        GoalGenerator dedups by active description and caps active goals, so a
+        repeated self-prompt is a no-op in the store. The generators, however,
+        always return a freshly-built Goal even on a dedup no-op — and that object
+        is NOT the persisted one (its id is never in `_goals`). So after generating
+        we resolve the canonical active goal by description, ensuring
+        result["self_prompt_goal"] carries a real stored id rather than a phantom
+        from a discarded duplicate."""
         if not prompts:
             return None
         p = prompts[0]
         if p.drive == "maintenance":
-            return self.goals.generate_from_maintenance(
+            goal = self.goals.generate_from_maintenance(
                 "self_prompt", p.target, source="self_prompt"
             )
-        if p.drive == "evolution":
-            return self.goals.generate_from_evolution(
+        elif p.drive == "evolution":
+            goal = self.goals.generate_from_evolution(
                 p.question, target=p.target, source="self_prompt"
             )
-        return self.goals.generate_from_curiosity(
-            p.question, context=p.target, source="self_prompt"
-        )
+        else:
+            goal = self.goals.generate_from_curiosity(
+                p.question, context=p.target, source="self_prompt"
+            )
+        if goal is None:
+            return None
+        # Resolve the canonical tracked goal — generators hand back a fresh
+        # (possibly non-persisted) Goal even on a dedup no-op.
+        for g in self.goals._goals:
+            if g.status == "active" and g.description == goal.description:
+                return g
+        return goal
 
     def get_state_for_injection(self) -> str:
         """

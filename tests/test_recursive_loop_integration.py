@@ -38,3 +38,23 @@ def test_healthy_coherence_no_flag(tmp_path):
     assert eng.dream_recommended.recommended is False
     assert "self_prompts" in res and "dream_recommended" in res
     eng.close()
+
+
+def test_self_prompt_goal_id_is_real_across_dedup(tmp_path, monkeypatch):
+    # Reflect twice with the same forced dissonance: the second cycle dedups
+    # (same description → no new goal). The surfaced result["self_prompt_goal"]
+    # must still be a REAL stored goal id, never a phantom from the discarded
+    # duplicate the generator hands back.
+    eng = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
+    monkeypatch.setattr(eng.coherence, "assess", lambda recent=None: _low_ontological())
+    eng.reflect(world_state="test", confidence=0.5)
+    res2 = eng.reflect(world_state="test", confidence=0.5)
+    # Dedup held: exactly one self_prompt goal in the store.
+    sp_goals = [g for g in eng.goals._goals if g.source == "self_prompt"]
+    assert len(sp_goals) == 1
+    # The id surfaced on the dedup cycle resolves to that real stored goal.
+    surfaced = res2["self_prompt_goal"]
+    assert surfaced is not None
+    assert surfaced in {g.id for g in eng.goals._goals}
+    assert surfaced == sp_goals[0].id
+    eng.close()
