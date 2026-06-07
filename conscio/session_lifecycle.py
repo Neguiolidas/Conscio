@@ -94,6 +94,10 @@ class SessionSummary:
     coherence_note: str = ""
     voice: str = ""
 
+    # Self-prompt + dream (v0.7)
+    self_prompt: str = ""
+    dream_recommended: str = ""
+
 
 # ---------------------------------------------------------------------------
 # Helpers — noise filtering
@@ -305,6 +309,18 @@ def enrich_with_conscio(summary: SessionSummary, engine) -> SessionSummary:
     except Exception:
         pass
 
+    # Self-prompt + dream recommendation (v0.7)
+    try:
+        prompts = getattr(engine, "last_self_prompts", None)
+        summary.self_prompt = prompts[0].question if prompts else ""
+    except Exception:
+        pass
+    try:
+        rec = getattr(engine, "dream_recommended", None)
+        summary.dream_recommended = rec.marker() if rec is not None else ""
+    except Exception:
+        pass
+
     return summary
 
 
@@ -374,6 +390,10 @@ def format_handoff(summary: SessionSummary) -> str:
             lines.append(f"**Coerência:** {summary.coherence:.2f}{note}")
         if summary.voice:
             lines.append(f"**Voz:** {summary.voice}")
+        if summary.self_prompt:
+            lines.append(f"**Self-prompt:** {summary.self_prompt}")
+        if summary.dream_recommended:
+            lines.append(f"**Dream:** {summary.dream_recommended}")
         lines.append("")
 
     lines.extend([
@@ -419,6 +439,12 @@ def format_heartbeat(summary: SessionSummary) -> str:
         lines.append(f"▷ coherence: {summary.coherence:.2f}{note}")
     if summary.voice:
         lines.append(f"⊙ voice: {summary.voice}")
+    if summary.self_prompt:
+        q = summary.self_prompt
+        shown = q[:80] + ("…" if len(q) > 80 else "")
+        lines.append(f"❓ self-prompt: {shown}")
+    if summary.dream_recommended:
+        lines.append(f"☾ dream: {summary.dream_recommended}")
 
     if summary.topics:
         lines.append(f"**Tópicos:** {', '.join(summary.topics)}")

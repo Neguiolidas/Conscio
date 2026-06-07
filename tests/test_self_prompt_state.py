@@ -36,3 +36,22 @@ def test_empty_fields_omitted():
     st = ConsciousnessState(context_mode=ContextMode.STANDARD)
     inj = st.to_injection()
     assert "self-prompt" not in inj and "☾ dream" not in inj
+
+
+from conscio.session_lifecycle import SessionSummary, format_heartbeat, format_handoff
+
+
+def test_heartbeat_renders_self_prompt_and_dream():
+    s = SessionSummary(session_id="x", self_prompt="why contradiction?",
+                       dream_recommended="recommended (ontological 0.30)")
+    hb = format_heartbeat(s)
+    assert "❓ self-prompt: why contradiction?" in hb
+    assert "☾ dream: recommended (ontological 0.30)" in hb
+
+
+def test_handoff_renders_self_prompt_and_dream():
+    s = SessionSummary(session_id="x", active_goals=["g"],
+                       self_prompt="why?", dream_recommended="recommended")
+    ho = format_handoff(s)
+    assert "**Self-prompt:** why?" in ho
+    assert "**Dream:** recommended" in ho
