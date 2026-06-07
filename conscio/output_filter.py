@@ -278,6 +278,44 @@ class DedupBlocks(FilterStage):
         return "dedup_blocks"
 
 
+class SemanticDedup(FilterStage):
+    """Annotate semantically redundant ADJACENT blocks. NON-DESTRUCTIVE: never
+    deletes or merges — appends a marker to the later block and keeps both
+    verbatim. Offline (semantic unavailable / None) → returns text unchanged.
+
+    Duck-typed `semantic`: any object with available() -> bool and
+    cosine(a, b) -> float (e.g. conscio.semantic.SemanticEngine). embed() is
+    cached there, so re-embedding adjacent blocks is free.
+
+    Single-pass: meant to run once over fresh text inside FilterPipeline. Do NOT
+    re-apply to already-annotated output — markers could stack.
+    """
+
+    def __init__(self, semantic=None, threshold: float = 0.88,
+                 marker: str = " ↺ near-dup of above ({score:.2f})"):
+        self.semantic = semantic
+        self.threshold = threshold
+        self.marker = marker
+
+    def apply(self, text: str) -> str:
+        if self.semantic is None or not self.semantic.available():
+            return text
+        blocks = text.split("\n\n")
+        if len(blocks) < 2:
+            return text
+        out = [blocks[0]]
+        for i in range(1, len(blocks)):
+            score = self.semantic.cosine(blocks[i - 1], blocks[i])
+            if score >= self.threshold:
+                out.append(blocks[i] + self.marker.format(score=score))
+            else:
+                out.append(blocks[i])
+        return "\n\n".join(out)
+
+    def name(self) -> str:
+        return "semantic_dedup"
+
+
 # Secret shapes redacted whole; the key:value rule redacts only the value.
 _SECRET_WHOLE = [
     re.compile(r"sk-[A-Za-z0-9]{20,}"),
@@ -328,6 +366,7 @@ STAGE_REGISTRY: dict[str, type] = {
     "max_lines": MaxLines,
     "on_empty": OnEmpty,
     "dedup_blocks": DedupBlocks,
+    "semantic_dedup": SemanticDedup,
     "secret_mask": SecretMask,
 }
 
@@ -358,6 +397,10 @@ def build_stage(name: str, config: dict | None = None) -> FilterStage:
     elif cls is DedupBlocks:
         return cls(min_run=config.get("min_run", 3),
                    marker=config.get("marker", "… (×{n})"))
+    elif cls is SemanticDedup:
+        return cls(semantic=config.get("semantic"),
+                   threshold=config.get("threshold", 0.88),
+                   marker=config.get("marker", " ↺ near-dup of above ({score:.2f})"))
     elif cls is SecretMask:
         return cls(extra_patterns=config.get("extra_patterns"),
                    replacement=config.get("replacement", "***REDACTED***"))
