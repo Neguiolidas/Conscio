@@ -117,8 +117,56 @@ def is_noise(content: str) -> bool:
 # Extraction — from state.db
 # ---------------------------------------------------------------------------
 
+def _fetch_session(cur, session_id: str) -> dict | None:
+    """Fetch a single session row + messages by session_id."""
+    cur.execute("""
+        SELECT id, source, model, started_at, message_count, title
+        FROM sessions
+        WHERE id = ?
+    """, (session_id,))
+    row = cur.fetchone()
+    if not row:
+        return None
+
+    session = dict(row)
+
+    cur.execute("""
+        SELECT role, substr(content, 1, 300) as content_preview
+        FROM messages
+        WHERE session_id = ? AND role IN ('user', 'assistant')
+        ORDER BY id DESC
+        LIMIT 200
+    """, (session["id"],))
+    session["messages"] = [dict(m) for m in cur.fetchall()]
+
+    return session
+
+
+def get_session_by_id(db_path: str | Path, session_id: str) -> dict | None:
+    """Get a specific session by its ID from state.db.
+
+    Used by the hook handler when the hook context provides session_id
+    (e.g. session:end / session:reset events), avoiding the race condition
+    where get_latest_session() returns the WRONG session because the DB
+    has already rotated to a new session by the time the hook fires.
+    """
+    if not os.path.exists(db_path) or not session_id:
+        return None
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        return _fetch_session(conn.cursor(), session_id)
+    finally:
+        conn.close()
+
+
 def get_latest_session(db_path: str | Path) -> dict | None:
-    """Get the most recent non-cron session from state.db."""
+    """Get the most recent non-cron session from state.db.
+
+    Fallback only — prefer get_session_by_id() when session_id is known,
+    to avoid race conditions at session expiry/reset time.
+    """
     if not os.path.exists(db_path):
         return None
 
@@ -533,7 +581,13 @@ def record_session_lifecycle(
         return None
 
     # 1. Extract session from state.db
-    session = get_latest_session(SESSION_DB)
+    # Prefer session_id from hook context — avoids race condition where
+    # get_latest_session() returns the wrong (already-rotated) session.
+    context_sid = context.get("session_id") if context else None
+    if context_sid and context_sid != "cron":
+        session = get_session_by_id(SESSION_DB, context_sid)
+    else:
+        session = get_latest_session(SESSION_DB)
     if session is None:
         return None
 
