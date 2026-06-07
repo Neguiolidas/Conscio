@@ -7,8 +7,10 @@ an axis is a named pair of poles, each pole the centroid (mean) of its anchor
 terms' embeddings. Two terms contradict on an axis iff they project onto
 OPPOSITE poles, each with cosine >= AXIS_THRESHOLD and a >= AXIS_MARGIN lead
 over the other pole (a near-equidistant term is neutral, not contradictory).
-This generalizes: `crashed`, `unreachable` project to the negative availability
-pole without being in any lexicon — similarity to a LABELED pole, used honestly.
+This generalizes: an out-of-lexicon term like `unresponsive` projects to the
+negative availability pole — similarity to a LABELED pole, used honestly (the
+anchor terms `offline`/`crashed`/`unreachable` define the pole; novel synonyms
+land near it).
 
 Offline-degradable + dependency-free: cosine is pure Python (no numpy); the
 default Ollama embedder is imported LAZILY (from .session_rag) only on first

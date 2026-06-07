@@ -243,7 +243,7 @@ pip install -e .
 ## Testing
 
 ```bash
-# Full suite (544 tests)
+# Full suite (600 tests)
 pytest tests/ -v
 
 # Quick run
@@ -285,6 +285,7 @@ All SQLite databases use WAL mode for concurrent read/write. Location:
 
 ## Audit History
 
+- **v0.8.0 — Semantic Reconciliation** — Contradiction detection is now semantic: embedding **antonym axes** (`conscio/semantic.py`, packs in `conscio/presets/axes/*.json`) give polarity that plain similarity can't, so `crashed`/`unreachable` read as opposites of `operational` without any lexicon. It runs **off the hot path** in the dream Reconcile sub-phase (`world.mark_contradictions(detector)`, between Prune and Crystallize), which caches `contradicted` flags into the world model; `ontological_score` reads only those cached flags (a cold, never-dreamed world reports ontological 1.0). Lexical-negation-first with full offline fallback to the v0.6 rule. Retired the v0.6 `world._data` tech debt via public `WorldModel.list_relations()` / `entity_count()` / `contradicted_entities()`. Adds the opt-in, **non-destructive** `SemanticDedup` output stage (`CONSCIO_SEMANTIC_DEDUP=1`) — it flags a near-duplicate adjacent block and keeps both verbatim, never merging. Theory from Claude_Sentience (Dave Shapiro). 56 new tests. 600 total tests.
 - **v0.7.0 — Recursive Coherence** — Closes the coherence→action loop: `reflect()` sets an advisory `DreamRecommendation` (dream targets the dominant dissonance off the hot path, recording the coherence delta) and runs pure self-prompting (`conscio/self_prompt.py`) that spawns ONE bounded goal/cycle tagged `source="self_prompt"`. New `❓ self-prompt:` / `☾ dream:` markers in live state and heartbeat (surfaced as `**Self-prompt:**` / `**Dream:**` bold labels in the handoff). v0.7 uses the lexical contradiction detector (semantic arrives in v0.8). Theory from Claude_Sentience (Dave Shapiro). 23 new tests. 544 total tests.
 - **v0.6.0 — Coherence** — CoherenceEngine: a recursive-coherence state metric (epistemic/reality/ontological/temporal) surfaced advisorily with a passive `coherence:dissonance` event; static voice-preset system (`conscio/presets/voice/`). Theory from Claude_Sentience (Dave Shapiro). 46 new tests. 521 total tests.
 - **v0.5.0 — Cognitive Modes** — Shard Engine (cognitive-mode inference), Trajectory Vector (soul-package soft fields + list_entities fix), Content Layering (layer-priority recall). 37 new tests. #6 Coherence Check deferred to v0.6.

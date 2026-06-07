@@ -78,3 +78,26 @@ lives at `conscio/presets/voice/coherence-style.md`. The framework surfaces only
 the preset **name** as a heartbeat marker (`⊙ voice: coherence-style`) — the full
 directives are the agent's installed system-prompt skill, never token-injected
 per heartbeat.
+
+## v0.8 update — Semantic Reconciliation
+
+See [`semantic-reconciliation.md`](semantic-reconciliation.md) for the full model.
+The v0.8 changes that touch this engine:
+
+- **Tech debt RESOLVED.** `ontological_score()` (and `dreaming`) no longer read
+  the private `world._data`. New public accessors —
+  `WorldModel.list_relations()`, `entity_count()`, `contradicted_entities()` —
+  retire the private access flagged in *Known tech debt* above.
+- **Detection moved OFF the hot path.** Ontological contradiction detection now
+  runs in the dream Reconcile sub-phase (`world.mark_contradictions(detector)`,
+  between Prune and Crystallize), which caches `contradicted` flags into the
+  world model. `ontological_score()` reads those cached flags only — no network
+  on `reflect()`. A cold world (never dreamed) reports ontological **1.0** until
+  the first reconcile.
+- **Contradiction is now semantic.** The *Ontological limitation* above (lexical
+  EN+PT only) is lifted: detection uses embedding antonym axes, **lexical-
+  negation-first** with an offline fallback to the v0.6 lexical rule.
+- **Non-destructive dedup.** The opt-in `SemanticDedup` output stage is the
+  sanctioned answer to the *Reframe*'s rejection of merge-based semantic dedup:
+  it **flags** a near-duplicate adjacent block, never merges, and keeps both
+  verbatim (off by default; `CONSCIO_SEMANTIC_DEDUP=1`).
