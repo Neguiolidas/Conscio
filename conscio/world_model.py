@@ -25,6 +25,9 @@ W_REL = 0.3
 PREDICTION_LOG_RETENTION_HOURS = 168   # 7 days
 PREDICTION_LOG_MAX = 500               # hard cap backstop
 
+# Per-entity state history (v0.8): bounded log for state-contradiction scans.
+STATE_LOG_MAX = 5
+
 
 def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
@@ -78,17 +81,33 @@ class WorldModel:
     def add_entity(self, name: str, entity_type: str,
                    attributes: Optional[dict] = None,
                    state: str = "") -> None:
-        """Add or update an entity in the world model."""
+        """Add or update an entity in the world model.
+
+        Preserves and extends the bounded state_log (v0.8): a state that differs
+        from the prior one is appended (kept to STATE_LOG_MAX). Re-adding clears
+        any stale `contradicted` flag — re-perception invalidates the cached
+        verdict until the next dream reconciles.
+
+        NOTE (pre-existing contract): calling without `state=` resets `state` to
+        "" (and logs nothing, since "" is falsy). A re-add without a state blanks
+        the entity's state — expected, not new in v0.8.
+        """
         existing = self._data["entities"].get(name)
         relevance = existing.get("relevance", 1.0) if existing else 1.0
         # Boost relevance on re-add (entity is being referenced)
         relevance = min(relevance + 0.3, 1.0)
+        state_log = list(existing.get("state_log", [])) if existing else []
+        prev_state = existing.get("state", "") if existing else ""
+        if state and state != prev_state:
+            state_log.append({"state": state, "ts": datetime.now().isoformat()})
+        state_log = state_log[-STATE_LOG_MAX:]  # normalize even an oversized legacy log
         self._data["entities"][name] = {
             "type": entity_type,
             "attributes": attributes or {},
             "state": state,
             "last_updated": datetime.now().isoformat(),
             "relevance": relevance,
+            "state_log": state_log,
         }
         self._save()
 
@@ -102,11 +121,19 @@ class WorldModel:
         self._save()
 
     def update_state(self, name: str, state: str) -> None:
-        """Update an entity's state."""
-        if name in self._data["entities"]:
-            self._data["entities"][name]["state"] = state
-            self._data["entities"][name]["last_updated"] = datetime.now().isoformat()
-            self._save()
+        """Update an entity's state, appending to the bounded state_log only when
+        the state actually changes (dedup consecutive identical)."""
+        if name not in self._data["entities"]:
+            return
+        info = self._data["entities"][name]
+        if state != info.get("state", ""):
+            info.setdefault("state_log", []).append(
+                {"state": state, "ts": datetime.now().isoformat()})
+        info["state"] = state
+        info["last_updated"] = datetime.now().isoformat()
+        if "state_log" in info:
+            info["state_log"] = info["state_log"][-STATE_LOG_MAX:]
+        self._save()
 
     def get_entity(self, name: str) -> Optional[dict]:
         """Get an entity by name."""
@@ -142,6 +169,11 @@ class WorldModel:
             r for r in self._data["relations"]
             if r["from"] == entity or r["to"] == entity
         ]
+
+    def list_relations(self) -> list[dict]:
+        """All relations as a shallow-copied list (public read — replaces the
+        private world._data scan in coherence/dreaming, killing the v0.6 tech debt)."""
+        return [dict(r) for r in self._data["relations"]]
 
     # --- Predictions ---
 
@@ -517,6 +549,59 @@ class WorldModel:
     def to_dict(self) -> dict:
         """Return the raw world model data."""
         return dict(self._data)
+
+    def entity_count(self) -> int:
+        """Total entities (public read — coherence touches no private state)."""
+        return len(self._data["entities"])
+
+    def mark_contradictions(self, detector, dry_run: bool = False) -> list[str]:
+        """Scan relations (per from→to pair) + entity state_logs via `detector`,
+        writing a cached `contradicted: bool` onto each entity. The ONLY place
+        ontology embedding I/O happens — runs off the hot path (dream Reconcile).
+
+        Relations flag their `from` entity, but ONLY when it is a real entity —
+        an orphan `from` (relation referencing a non-modeled name) is skipped, so
+        the returned set always equals what `contradicted_entities()` will read.
+
+        State-log contradictions use the bounded window: a flag set from opposed
+        states (e.g. operational/offline) is SELF-RESOLVING — it ages out as the
+        opposed state rolls past STATE_LOG_MAX. Relations are the primary
+        simultaneous-contradiction signal; state-log is a recency-window heuristic.
+
+        Returns the sorted names flagged. dry_run computes the would-flag set
+        WITHOUT writing (so a dry dream reports without mutating the graph).
+        """
+        flagged: set[str] = set()
+
+        by_pair: dict = {}
+        for r in self._data["relations"]:
+            by_pair.setdefault((r.get("from", ""), r.get("to", "")), []).append(
+                r.get("relation", "")
+            )
+        for (frm, _to), preds in by_pair.items():
+            if not frm or frm not in self._data["entities"]:
+                continue
+            if any(detector.relations_contradict(preds[i], preds[j])
+                   for i in range(len(preds)) for j in range(i + 1, len(preds))):
+                flagged.add(frm)
+
+        for name, info in self._data["entities"].items():
+            states = [e.get("state", "") for e in info.get("state_log", [])]
+            if any(detector.states_contradict(states[i], states[j])
+                   for i in range(len(states)) for j in range(i + 1, len(states))):
+                flagged.add(name)
+
+        if not dry_run:
+            for name, info in self._data["entities"].items():
+                info["contradicted"] = name in flagged
+            self._save()
+
+        return sorted(flagged)
+
+    def contradicted_entities(self) -> list[str]:
+        """Cheap read of cached `contradicted` flags. No network, no scan."""
+        return [n for n, info in self._data["entities"].items()
+                if info.get("contradicted")]
 
     def status(self) -> dict:
         """Return status for monitoring."""
