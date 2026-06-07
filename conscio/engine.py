@@ -31,6 +31,7 @@ from .coherence import CoherenceEngine, COHERENCE_EVENT_THRESHOLD
 from .voice_preset import resolve_voice_preset
 from .self_prompt import generate_self_prompts
 from .dreaming import DreamRecommendation
+from .semantic import SemanticEngine, ContradictionDetector
 from .output_filter import FilterPipeline, build_pipeline_from_dict
 from .token_tracker import TokenTracker
 from .content_layer import layer_sort_key
@@ -95,6 +96,10 @@ class ConsciousnessEngine:
         self.event_bus = EventBus(db_path=db_path)
         self.shard_engine = ShardEngine(self.event_bus)
         self.coherence = CoherenceEngine(self.meta, self.world)
+        # v0.8: shared semantic engine (lazy embedder) + contradiction detector.
+        # Built once; reused by dream Reconcile and the opt-in output stage.
+        self._semantic = SemanticEngine()
+        self._contradiction_detector = ContradictionDetector(self._semantic)
         self.last_coherence = None
         self.dream_recommended = DreamRecommendation(False, None, None)
         self.last_self_prompts = []
