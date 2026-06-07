@@ -73,6 +73,8 @@ class ConsciousnessState:
     coherence: Optional[float] = None  # Optional aggregate coherence [0,1]; None=not computed
     coherence_note: str = ""           # Dominant dissonance dimension, e.g. "epistemic"
     voice: str = ""                    # Active voice preset name, e.g. "coherence-style"
+    self_prompt: str = ""              # Top self-prompt question (v0.7)
+    dream_recommended: str = ""        # Dream-recommended marker text (v0.7)
 
     def to_injection(self) -> str:
         """
@@ -118,6 +120,12 @@ class ConsciousnessState:
 
         if self.voice and self.context_mode != ContextMode.MINIMAL:
             lines.append(f"⊙ voice: {self.voice}")
+
+        if self.self_prompt and self.context_mode != ContextMode.MINIMAL:
+            lines.append(f"❓ self-prompt: {self.self_prompt}")
+
+        if self.dream_recommended and self.context_mode != ContextMode.MINIMAL:
+            lines.append(f"☾ dream: {self.dream_recommended}")
 
         lines.append("═══ END CONSCIOUSNESS STATE ═══")
         return "\n".join(lines)
@@ -168,6 +176,8 @@ class ContextManager:
         coherence: Optional[float] = None,
         coherence_note: str = "",
         voice: str = "",
+        self_prompt: str = "",
+        dream_recommended: str = "",
     ) -> ConsciousnessState:
         """
         Build a ConsciousnessState, trimming each component to fit the budget.
@@ -204,6 +214,8 @@ class ContextManager:
             coherence=coherence,
             coherence_note=coherence_note,
             voice=voice,
+            self_prompt=self_prompt,
+            dream_recommended=dream_recommended,
         )
 
         # Final safety check — if total exceeds budget, truncate summary
@@ -234,6 +246,8 @@ class ContextManager:
             "coherence": state.coherence,
             "coherence_note": state.coherence_note,
             "voice": state.voice,
+            "self_prompt": state.self_prompt,
+            "dream_recommended": state.dream_recommended,
         }
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
         # Also write the human-readable injection for manual inspection
@@ -261,6 +275,8 @@ class ContextManager:
                 coherence=data.get("coherence"),
                 coherence_note=data.get("coherence_note", ""),
                 voice=data.get("voice", ""),
+                self_prompt=data.get("self_prompt", ""),
+                dream_recommended=data.get("dream_recommended", ""),
             )
 
         # Fallback: parse legacy text format (pre-v0.5.1 saves)

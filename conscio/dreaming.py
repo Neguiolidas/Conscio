@@ -17,8 +17,56 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from .coherence import _relations_contradict
+
 
 MIN_ENTITY_MATCH_LEN = 3   # friction ignores 1-2 char entity names (would over-defer)
+
+
+@dataclass(frozen=True)
+class DreamRecommendation:
+    """Advisory signal: coherence dropped, a dream would help. Named fields
+    (not a tuple) for readable access, mirroring CoherenceReport."""
+    recommended: bool
+    dominant: str | None = None   # dominant dissonance dimension
+    score: float | None = None    # coherence score that triggered it
+
+    def marker(self) -> str:
+        """Heartbeat/state marker text; '' when not recommended."""
+        if not self.recommended:
+            return ""
+        if self.dominant:
+            tail = f" {self.score:.2f}" if self.score is not None else ""
+            return f"recommended ({self.dominant}{tail})"
+        return "recommended"
+
+
+def _lexically_contradicted_entities(world) -> list[str]:
+    """`from`-entities whose relations on the same (from→to) pair lexically
+    contradict (one negated, same core).
+
+    v0.7 TECH DEBT: reads world._data directly, consistent with the v0.6
+    ontological scan. v0.8 replaces this with world.contradicted_entities()
+    (semantic, cached). Reuses coherence._relations_contradict — single source
+    of truth for negation tokens.
+    """
+    try:
+        relations = world._data.get("relations", [])
+    except Exception:
+        return []
+    by_pair: dict = {}
+    for r in relations:
+        key = (r.get("from", ""), r.get("to", ""))
+        by_pair.setdefault(key, []).append(r.get("relation", ""))
+    contradicted: list[str] = []
+    for (frm, _to), preds in by_pair.items():
+        hit = any(
+            _relations_contradict(preds[i], preds[j])
+            for i in range(len(preds)) for j in range(i + 1, len(preds))
+        )
+        if hit and frm and frm not in contradicted:
+            contradicted.append(frm)
+    return contradicted
 
 
 @dataclass
@@ -31,6 +79,9 @@ class DreamReport:
     reflections_deferred: int = 0
     dry_run: bool = False
     duration_ms: float = 0.0
+    coherence_before: float | None = None
+    coherence_after: float | None = None
+    contradictions_pruned: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -41,6 +92,9 @@ class DreamReport:
             "reflections_deferred": self.reflections_deferred,
             "dry_run": self.dry_run,
             "duration_ms": round(self.duration_ms, 1),
+            "coherence_before": self.coherence_before,
+            "coherence_after": self.coherence_after,
+            "contradictions_pruned": self.contradictions_pruned,
         }
 
 
@@ -64,9 +118,14 @@ class DreamCycle:
         self.crystallize_min_count = crystallize_min_count
 
     def run(self, engine, dry_run: bool = False) -> DreamReport:
-        """Execute Release → Prune → Friction → Crystallize. Returns a DreamReport."""
+        """Release → Prune → (ontological targeting) → Crystallize. Records the
+        coherence delta the cycle produced; clears engine.dream_recommended."""
         start = time.perf_counter()
         report = DreamReport(dry_run=dry_run)
+
+        # Coherence before — over the current recent-event window.
+        recent = [e.to_dict() for e in engine.event_bus.query(limit=20)]
+        report.coherence_before = engine.coherence.assess(recent).score
 
         # ── Release: dissolve duplicate/trivial event noise ──
         report.events_purged = engine.event_bus.purge_duplicates(dry_run=dry_run)
@@ -81,12 +140,31 @@ class DreamCycle:
             dry_run=dry_run,
         )
 
+        # ── Ontological targeting (v0.7): when the dominant dissonance is
+        # ontological, prune entities with contradictory relations even if not
+        # entropy-stale. v0.7 detector is lexical; v0.8 makes it semantic. ──
+        last = getattr(engine, "last_coherence", None)
+        dominant = last.dominant.dimension if (last and last.dominant) else None
+        if dominant == "ontological":
+            contradicted = _lexically_contradicted_entities(engine.world)
+            report.contradictions_pruned = list(contradicted)
+            if not dry_run:
+                for name in contradicted:
+                    engine.world.remove_entity(name)  # drops relations + saves
+
         # ── Friction + Crystallize: defer reflections the world moved on from ──
         consolidated, deferred = self._crystallize(
             engine, report.entities_pruned, dry_run=dry_run
         )
         report.reflections_consolidated = consolidated
         report.reflections_deferred = deferred
+
+        # Coherence after — same window; reflects this cycle's mutations.
+        report.coherence_after = engine.coherence.assess(recent).score
+
+        # The dream addressed the recommendation — clear the advisory flag.
+        if not dry_run:
+            engine.dream_recommended = DreamRecommendation(False, None, None)
 
         report.duration_ms = (time.perf_counter() - start) * 1000.0
         return report

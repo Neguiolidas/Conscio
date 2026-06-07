@@ -149,7 +149,7 @@ class GoalGenerator:
 
     # --- Goal Generation from Drives ---
 
-    def generate_from_curiosity(self, anomaly: str, context: str = "") -> Optional[Goal]:
+    def generate_from_curiosity(self, anomaly: str, context: str = "", source: str = "internal") -> Optional[Goal]:
         """
         Generate a curiosity-driven goal from an anomaly.
         
@@ -164,13 +164,13 @@ class GoalGenerator:
             description=f"Investigate: {anomaly}",
             drive=Drive.CURIOSITY,
             priority=GoalPriority.MEDIUM,
-            source="internal",
+            source=source,
             metadata={"anomaly": anomaly, "context": context},
         )
         self._add_goal(goal)
         return goal
 
-    def generate_from_maintenance(self, check_type: str, target: str) -> Optional[Goal]:
+    def generate_from_maintenance(self, check_type: str, target: str, source: str = "internal") -> Optional[Goal]:
         """
         Generate a maintenance-driven goal.
         
@@ -184,13 +184,13 @@ class GoalGenerator:
             description=f"Maintenance: {check_type} — {target}",
             drive=Drive.MAINTENANCE,
             priority=GoalPriority.HIGH,  # Maintenance is usually high priority
-            source="internal",
+            source=source,
             metadata={"check_type": check_type, "target": target},
         )
         self._add_goal(goal)
         return goal
 
-    def generate_from_evolution(self, improvement: str, target: str = "") -> Optional[Goal]:
+    def generate_from_evolution(self, improvement: str, target: str = "", source: str = "internal") -> Optional[Goal]:
         """
         Generate an evolution-driven goal.
         
@@ -204,7 +204,7 @@ class GoalGenerator:
             description=f"Evolve: {improvement}" + (f" — {target}" if target else ""),
             drive=Drive.EVOLUTION,
             priority=GoalPriority.LOW,  # Evolution is important but not urgent
-            source="internal",
+            source=source,
             metadata={"improvement": improvement, "target": target},
         )
         self._add_goal(goal)

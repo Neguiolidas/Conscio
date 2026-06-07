@@ -29,6 +29,8 @@ from .event_bus import EventBus
 from .shard_engine import ShardEngine
 from .coherence import CoherenceEngine, COHERENCE_EVENT_THRESHOLD
 from .voice_preset import resolve_voice_preset
+from .self_prompt import generate_self_prompts
+from .dreaming import DreamRecommendation
 from .output_filter import FilterPipeline, build_pipeline_from_dict
 from .token_tracker import TokenTracker
 from .content_layer import layer_sort_key
@@ -94,6 +96,8 @@ class ConsciousnessEngine:
         self.shard_engine = ShardEngine(self.event_bus)
         self.coherence = CoherenceEngine(self.meta, self.world)
         self.last_coherence = None
+        self.dream_recommended = DreamRecommendation(False, None, None)
+        self.last_self_prompts = []
 
         # Voice preset (v0.6) — static marker. Precedence: param > env > default.
         effective_voice = (
@@ -202,6 +206,23 @@ class ConsciousnessEngine:
                 priority=7,
             )
 
+        # v0.7: dream-recommended advisory flag (hot path: one assignment).
+        if coherence_report.score < COHERENCE_EVENT_THRESHOLD:
+            self.dream_recommended = DreamRecommendation(
+                recommended=True,
+                dominant=(coherence_report.dominant.dimension
+                          if coherence_report.dominant else None),
+                score=coherence_report.score,
+            )
+        else:
+            self.dream_recommended = DreamRecommendation(False, None, None)
+
+        # v0.7: self-prompting — pure introspection, then ONE bounded goal.
+        self.last_self_prompts = generate_self_prompts(
+            self.meta, self.world, coherence_report, recent
+        )
+        spawned = self._spawn_self_prompt_goal(self.last_self_prompts)
+
         # Generate goals from anomalies (curiosity drive)
         for anomaly in anomalies:
             self.goals.generate_from_curiosity(anomaly, context=world_state)
@@ -259,6 +280,9 @@ class ConsciousnessEngine:
         result["dominant_dissonance"] = (
             coherence_report.dominant.dimension if coherence_report.dominant else None
         )
+        result["self_prompts"] = [p.question for p in self.last_self_prompts]
+        result["self_prompt_goal"] = spawned.id if spawned else None
+        result["dream_recommended"] = self.dream_recommended.recommended
 
         # --- v0.2: Post-reflection pipeline ---
         raw_summary = result["summary"]
@@ -314,12 +338,51 @@ class ConsciousnessEngine:
                 if coherence_report.dominant else ""
             ),
             voice=self.voice_preset,
+            self_prompt=(self.last_self_prompts[0].question
+                         if self.last_self_prompts else ""),
+            dream_recommended=self.dream_recommended.marker(),
         )
 
         # Persist state
         self.ctx.save_state(self._state)
 
         return result
+
+    def _spawn_self_prompt_goal(self, prompts):
+        """Spawn ONE bounded goal from the highest-severity self-prompt, tagged
+        source="self_prompt", returning the goal actually tracked in the store
+        (or None when no prompt exists / the drive is too weak to spawn).
+
+        GoalGenerator dedups by active description and caps active goals, so a
+        repeated self-prompt is a no-op in the store. The generators, however,
+        always return a freshly-built Goal even on a dedup no-op — and that object
+        is NOT the persisted one (its id is never in `_goals`). So after generating
+        we resolve the canonical active goal by description, ensuring
+        result["self_prompt_goal"] carries a real stored id rather than a phantom
+        from a discarded duplicate."""
+        if not prompts:
+            return None
+        p = prompts[0]
+        if p.drive == "maintenance":
+            goal = self.goals.generate_from_maintenance(
+                "self_prompt", p.target, source="self_prompt"
+            )
+        elif p.drive == "evolution":
+            goal = self.goals.generate_from_evolution(
+                p.question, target=p.target, source="self_prompt"
+            )
+        else:
+            goal = self.goals.generate_from_curiosity(
+                p.question, context=p.target, source="self_prompt"
+            )
+        if goal is None:
+            return None
+        # Resolve the canonical tracked goal — generators hand back a fresh
+        # (possibly non-persisted) Goal even on a dedup no-op.
+        for g in self.goals._goals:
+            if g.status == "active" and g.description == goal.description:
+                return g
+        return goal
 
     def get_state_for_injection(self) -> str:
         """
