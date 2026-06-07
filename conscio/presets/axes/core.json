@@ -1,0 +1,20 @@
+{
+  "name": "core",
+  "axes": [
+    {
+      "axis": "availability",
+      "positive": ["operational", "online", "up", "running", "healthy"],
+      "negative": ["offline", "down", "crashed", "failed", "unreachable"]
+    },
+    {
+      "axis": "ownership",
+      "positive": ["owns", "holds", "possesses", "controls"],
+      "negative": ["sold", "released", "divested", "lost"]
+    },
+    {
+      "axis": "outcome",
+      "positive": ["success", "passed", "resolved", "completed"],
+      "negative": ["failure", "failed", "broken", "unresolved"]
+    }
+  ]
+}
