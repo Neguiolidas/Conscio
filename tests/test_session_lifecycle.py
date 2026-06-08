@@ -34,6 +34,7 @@ from conscio.session_lifecycle import (
     enrich_with_conscio,
     record_session_lifecycle,
     get_latest_session,
+    get_session_by_id,
     HB_MAX_CHARS,
     SKIP_PREFIXES,
 )
@@ -278,6 +279,37 @@ class TestDBQuery:
     def test_get_latest_session_nonexistent(self, tmp_path):
         """get_latest_session returns None for nonexistent DB."""
         session = get_latest_session(tmp_path / "nope.db")
+        assert session is None
+
+    def test_get_session_by_id(self, tmp_db):
+        """get_session_by_id returns session by exact ID."""
+        session = get_session_by_id(tmp_db, "test_20260605")
+        assert session is not None
+        assert session["id"] == "test_20260605"
+        assert session["source"] == "telegram"
+        assert session["message_count"] == 12
+        assert len(session["messages"]) == 12
+
+    def test_get_session_by_id_not_found(self, tmp_db):
+        """get_session_by_id returns None for unknown session ID."""
+        session = get_session_by_id(tmp_db, "nonexistent_session")
+        assert session is None
+
+    def test_get_session_by_id_empty_db(self, empty_db):
+        """get_session_by_id returns None for empty DB."""
+        session = get_session_by_id(empty_db, "any_id")
+        assert session is None
+
+    def test_get_session_by_id_nonexistent_db(self, tmp_path):
+        """get_session_by_id returns None for nonexistent DB."""
+        session = get_session_by_id(tmp_path / "nope.db", "any_id")
+        assert session is None
+
+    def test_get_session_by_id_no_session_id(self, tmp_db):
+        """get_session_by_id returns None when session_id is empty."""
+        session = get_session_by_id(tmp_db, "")
+        assert session is None
+        session = get_session_by_id(tmp_db, None)
         assert session is None
 
 
