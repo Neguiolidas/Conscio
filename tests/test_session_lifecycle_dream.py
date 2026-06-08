@@ -26,6 +26,9 @@ def test_dream_called_after_handoff(monkeypatch, tmp_path):
     engine.world.list_entities.return_value = []
     engine.goals.active_goals.return_value = []
     engine.meta.average_confidence.return_value = 0.5
+    # Mock output_filter to pass through strings unchanged
+    engine.output_filter = MagicMock()
+    engine.output_filter.apply = lambda x: x
 
     summary = record_session_lifecycle("session:reset", {}, engine=engine)
 

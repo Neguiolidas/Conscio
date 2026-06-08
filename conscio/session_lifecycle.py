@@ -636,6 +636,9 @@ def record_session_lifecycle(
 
         # Index heartbeat into ContentStore (searchable via FTS5)
         heartbeat = format_heartbeat(summary)
+        # Apply output filter for clean handoff/heartbeat
+        if hasattr(engine, "output_filter") and engine.output_filter:
+            heartbeat = engine.output_filter.apply(heartbeat)
         engine.content_store.index(
             label=f"heartbeat_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
             content=heartbeat,
@@ -645,6 +648,9 @@ def record_session_lifecycle(
 
         # Index handoff too (richer, for semantic search)
         handoff = format_handoff(summary)
+        # Apply output filter for clean handoff/heartbeat
+        if hasattr(engine, "output_filter") and engine.output_filter:
+            handoff = engine.output_filter.apply(handoff)
         engine.content_store.index(
             label=f"handoff_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
             content=handoff,
