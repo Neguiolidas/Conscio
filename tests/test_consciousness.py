@@ -100,6 +100,25 @@ class TestModelRegistry:
         # Should be ~80% of 131k
         assert 100_000 < info.available_context_tokens < 110_000
 
+    def test_context_for_consciousness(self):
+        info = ModelRegistry.lookup("glm-5.1")
+        # CONTEXT_BUDGET_PCT = 0.02, available_context ~104k
+        # context_for_consciousness = 104k * 0.02 = ~2.1k
+        ctx = info.context_for_consciousness()
+        assert 2_000 < ctx < 2_200
+
+    def test_all_models(self):
+        all_models = ModelRegistry.all_models()
+        assert isinstance(all_models, dict)
+        assert len(all_models) > 0
+        assert "glm-5.1" in all_models
+        assert "gpt-4o" in all_models  # not "gpt-4"
+        # All values should be ModelInfo
+        for name, info in all_models.items():
+            assert isinstance(info, ModelInfo)
+            assert info.name == name
+            assert info.context_window > 0
+
 
 # --- Context Manager Tests ---
 
@@ -152,6 +171,17 @@ class TestContextManager:
         assert "CONSCIOUSNESS STATE" in injection
         assert "compact" in injection
         assert "GLM 5.1" in injection.lower() or "glm-5.1" in injection.lower()
+
+    def test_get_off_context_path(self, ctx_manager):
+        # Known components
+        assert ctx_manager.get_off_context_path("world_model").name == "world_model.json"
+        assert ctx_manager.get_off_context_path("meta_cognition").name == "meta_cognition.json"
+        assert ctx_manager.get_off_context_path("goals").name == "goals.json"
+        assert ctx_manager.get_off_context_path("reflections").name == "reflections"
+        # Unknown component gets .json extension
+        custom_path = ctx_manager.get_off_context_path("custom_component")
+        assert custom_path.name == "custom_component.json"
+        assert custom_path.parent == ctx_manager.storage_path
 
 
 # --- World Model Tests ---
