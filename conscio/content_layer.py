@@ -97,13 +97,9 @@ class ContentLayerManager:
     
     @property
     def session_rag(self):
-        """Lazily construct SessionRAG, gated by Ollama availability."""
+        """Lazily construct SessionRAG via the shared factory provider."""
         if self._session_rag is None and self._session_rag_provider is not None:
-            try:
-                rag = self._session_rag_provider()
-                self._session_rag = rag if rag.available() else None
-            except Exception:
-                self._session_rag = None
+            self._session_rag = self._session_rag_provider()
         return self._session_rag
     
     def recall(
