@@ -48,3 +48,49 @@ def test_reflection_quality_in_injection(tmp_path):
     e.reflect(world_state="s", confidence=0.9)
     assert "reflection quality" in e.get_state_for_injection().lower()
     e.close()
+
+
+def test_propose_evolution(tmp_path):
+    """propose_evolution creates proposals for known types."""
+    e = _engine(tmp_path)
+
+    # Skill patch proposal
+    prop = e.propose_evolution("skill_patch",
+                               skill_name="test_skill",
+                               issue="bug in code",
+                               suggested_fix="fix the bug",
+                               rationale="improves reliability")
+    assert prop.get("type") == "skill_patch"
+    assert prop.get("status") == "pending"
+
+    # Skill create proposal
+    prop = e.propose_evolution("skill_create",
+                               skill_name="new_skill",
+                               description="does something",
+                               content_sketch="def run():\n    pass",
+                               rationale="adds new capability")
+    assert prop.get("type") == "skill_create"
+    assert prop.get("status") == "pending"
+
+    # Memory update proposal
+    prop = e.propose_evolution("memory_update",
+                               key="test_key",
+                               value="new_value",
+                               rationale="update data")
+    assert prop.get("type") == "memory_update"
+    assert prop.get("status") == "pending"
+
+    # Pattern learn proposal
+    prop = e.propose_evolution("pattern_learn",
+                               pattern="recurring error",
+                               lesson="handle it gracefully",
+                               rationale="prevents future issues")
+    assert prop.get("type") == "pattern_learn"
+    assert prop.get("status") == "pending"
+
+    # Unknown type returns error
+    prop = e.propose_evolution("unknown_type")
+    assert "error" in prop
+    assert "Unknown evolution type" in prop["error"]
+
+    e.close()

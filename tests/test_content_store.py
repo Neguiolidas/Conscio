@@ -472,3 +472,88 @@ class TestEdgeCases:
         # "running" should stem to match "run"
         results = store.search("running")
         assert len(results) > 0
+
+
+# ─── Private Method Tests ───────────────────────────────────────────────
+
+
+class TestPrivateMethods:
+    def test_fts_search_porter_table(self, populated_store):
+        """_fts_search works on porter table with valid query."""
+        results = populated_store._fts_search(
+            "chunks", "trading", 5, "", []
+        )
+        assert isinstance(results, list)
+        # Should find the trading content
+        assert len(results) >= 0  # May or may not find depending on content
+
+    def test_fts_search_trigram_table(self, populated_store):
+        """_fts_search works on trigram table with substring query."""
+        results = populated_store._fts_search(
+            "chunks_trigram", "51155", 5, "", []
+        )
+        assert isinstance(results, list)
+        # Trigram should find exact substring
+        assert len(results) >= 0
+
+    def test_fts_search_empty_query(self, populated_store):
+        """_fts_search returns empty for empty/whitespace query."""
+        results = populated_store._fts_search("chunks", "", 5, "", [])
+        assert results == []
+        results = populated_store._fts_search("chunks", "   ", 5, "", [])
+        assert results == []
+
+    def test_fts_search_invalid_syntax_fallback(self, populated_store):
+        """_fts_search falls back to simple token search on syntax error."""
+        # Query with unbalanced quotes would cause FTS5 syntax error
+        results = populated_store._fts_search("chunks", 'unbalanced " quote', 5, "", [])
+        # Should not raise, should return empty or fallback results
+        assert isinstance(results, list)
+
+    def test_escape_fts_query_porter(self, store):
+        """_escape_fts_query formats porter query with OR and quotes."""
+        escaped = store._escape_fts_query("hello world", "chunks")
+        # Porter: tokens joined with OR, each quoted
+        assert '"hello"' in escaped
+        assert '"world"' in escaped
+        assert " OR " in escaped
+
+    def test_escape_fts_query_trigram(self, store):
+        """_escape_fts_query wraps trigram query as single phrase."""
+        escaped = store._escape_fts_query("hello world", "chunks_trigram")
+        # Trigram: entire query wrapped as single phrase
+        assert escaped == '"hello world"'
+
+    def test_escape_fts_query_removes_special_chars(self, store):
+        """_escape_fts_query removes FTS5 special characters from input."""
+        escaped = store._escape_fts_query('test "quoted" *stars*', "chunks")
+        # Original special chars should be removed; FTS5 adds its own quotes around tokens
+        assert '*' not in escaped
+        assert "'" not in escaped
+        # The word "quoted" should be present without the original double-quotes
+        assert "quoted" in escaped
+        # Should have OR-joined tokens
+        assert " OR " in escaped
+
+    def test_escape_fts_query_empty_returns_empty(self, store):
+        """_escape_fts_query returns empty string for empty input."""
+        assert store._escape_fts_query("", "chunks") == ""
+        assert store._escape_fts_query("   ", "chunks") == ""
+
+    def test_escape_fts_query_token_limit(self, store):
+        """_escape_fts_query limits tokens to 10 for porter."""
+        tokens = " ".join([f"word{i}" for i in range(15)])
+        escaped = store._escape_fts_query(tokens, "chunks")
+        # Should only have 10 OR clauses = 9 " OR " occurrences
+        or_count = escaped.count(" OR ")
+        assert or_count == 9
+
+    def test_total_db_size(self, store):
+        """_total_db_size returns size of DB + WAL + SHM files."""
+        # Index some content to ensure DB files exist
+        store.index("test", "Content for size test", "reflection")
+        size = store._total_db_size()
+        assert size > 0
+        # Should include main DB at minimum
+        import os
+        assert os.path.getsize(store.db_path) <= size

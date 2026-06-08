@@ -15,10 +15,13 @@ from __future__ import annotations
 import sqlite3
 import os
 import re
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Config
@@ -287,8 +290,8 @@ def _active_shard_value(engine) -> str:
         shard_engine = getattr(engine, "shard_engine", None)
         if shard_engine is not None and shard_engine.current is not None:
             return shard_engine.current.value
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("shard_engine.current.value failed: %s", e)
     return ""
 
 
@@ -309,26 +312,26 @@ def enrich_with_conscio(summary: SessionSummary, engine) -> SessionSummary:
         summary.world_model_entities = [
             f"{e['name']}:{e.get('state', '?')}" for e in entities
         ]
-    except Exception:
-        pass
+    except Exception as e:
+            logger.debug("world.list_entities failed: %s", e)
 
     # Active goals
     try:
         summary.active_goals = [g.description for g in engine.goals.active_goals()[:3]]
-    except Exception:
-        pass
+    except Exception as e:
+            logger.debug("goals.active_goals failed: %s", e)
 
     # Meta-cognition
     try:
         summary.meta_confidence = engine.meta.average_confidence()
-    except Exception:
-        pass
+    except Exception as e:
+            logger.debug("meta.average_confidence failed: %s", e)
 
     # Stale entities (need attention)
     try:
         summary.stale_entities = engine.world.stale_entities()[:3]
-    except Exception:
-        pass
+    except Exception as e:
+            logger.debug("world.stale_entities failed: %s", e)
 
     # Trajectory — code-owned; always overwrite (more current than last heartbeat).
     # vibes + identity_anchor are LLM-only and are never touched here.
@@ -339,8 +342,8 @@ def enrich_with_conscio(summary: SessionSummary, engine) -> SessionSummary:
             summary.trajectory = f"{shard_val} → {top_goal}"
         elif shard_val or top_goal:
             summary.trajectory = shard_val or top_goal
-    except Exception:
-        pass
+    except Exception as e:
+            logger.debug("trajectory enrichment failed: %s", e)
 
     # Coherence (v0.6) — advisory; read the last reflect() snapshot.
     try:
@@ -348,26 +351,26 @@ def enrich_with_conscio(summary: SessionSummary, engine) -> SessionSummary:
         if rep is not None:
             summary.coherence = rep.score
             summary.coherence_note = rep.dominant.dimension if rep.dominant else ""
-    except Exception:
-        pass
+    except Exception as e:
+            logger.debug("coherence read failed: %s", e)
 
     # Voice preset (v0.6) — static marker.
     try:
         summary.voice = getattr(engine, "voice_preset", "")
-    except Exception:
-        pass
+    except Exception as e:
+            logger.debug("voice_preset read failed: %s", e)
 
     # Self-prompt + dream recommendation (v0.7)
     try:
         prompts = getattr(engine, "last_self_prompts", None)
         summary.self_prompt = prompts[0].question if prompts else ""
-    except Exception:
-        pass
+    except Exception as e:
+            logger.debug("last_self_prompts read failed: %s", e)
     try:
         rec = getattr(engine, "dream_recommended", None)
         summary.dream_recommended = rec.marker() if rec is not None else ""
-    except Exception:
-        pass
+    except Exception as e:
+            logger.debug("dream_recommended.marker failed: %s", e)
 
     return summary
 
@@ -614,6 +617,11 @@ def record_session_lifecycle(
         from .engine import ConsciousnessEngine
         engine = ConsciousnessEngine(model_name=summary.model or "glm-5.1")
 
+    # Initialize heartbeat/handoff before try so they're always defined
+    # even if an exception occurs before they're set inside the try block.
+    heartbeat = ""
+    handoff = ""
+
     try:
         # Enrich summary with Conscio state
         enrich_with_conscio(summary, engine)
@@ -636,6 +644,9 @@ def record_session_lifecycle(
 
         # Index heartbeat into ContentStore (searchable via FTS5)
         heartbeat = format_heartbeat(summary)
+        # Apply output filter for clean handoff/heartbeat
+        if hasattr(engine, "output_filter") and engine.output_filter:
+            heartbeat = engine.output_filter.apply(heartbeat)
         engine.content_store.index(
             label=f"heartbeat_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
             content=heartbeat,
@@ -645,6 +656,9 @@ def record_session_lifecycle(
 
         # Index handoff too (richer, for semantic search)
         handoff = format_handoff(summary)
+        # Apply output filter for clean handoff/heartbeat
+        if hasattr(engine, "output_filter") and engine.output_filter:
+            handoff = engine.output_filter.apply(handoff)
         engine.content_store.index(
             label=f"handoff_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
             content=handoff,
@@ -674,8 +688,12 @@ def record_session_lifecycle(
         # not prevent persistence below.
         try:
             engine.dream()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("engine.dream() failed: %s", e)
+
+    except Exception as e:
+        logger.debug("session enrichment/indexing/reflection failed: %s", e)
+        pass
 
     finally:
         if own_engine:
@@ -687,3 +705,43 @@ def record_session_lifecycle(
     HEARTBEAT_PATH.write_text(heartbeat, encoding="utf-8")
 
     return summary
+
+
+class SessionLifecycle:
+    """
+    Session lifecycle manager for Conscio Engine.
+    
+    Provides a clean API for managing session persistence, heartbeats, and handoffs.
+    The engine can register callbacks for session start/end events.
+    
+    Usage:
+        lifecycle = SessionLifecycle(engine)
+        # Engine registers its methods as handlers
+        lifecycle.on_session_end = engine._on_session_end
+        lifecycle.on_session_reset = engine._on_session_reset
+    """
+    
+    def __init__(self, engine=None):
+        self.engine = engine
+        self.on_session_start = None  # callback(event_type, context) -> str|None
+        self.on_session_end = None    # callback(event_type, context) -> None
+        self.on_session_reset = None  # callback(event_type, context) -> None
+    
+    def handle_event(self, event_type: str, context: dict):
+        """Route event to appropriate handler."""
+        if event_type == "session:start":
+            if self.on_session_start:
+                return self.on_session_start(event_type, context)
+        elif event_type == "session:end":
+            if self.on_session_end:
+                self.on_session_end(event_type, context)
+        elif event_type == "session:reset":
+            if self.on_session_reset:
+                self.on_session_reset(event_type, context)
+    
+    def record_session(self, event_type: str, context: dict) -> SessionSummary | None:
+        """Record session lifecycle using the existing pipeline."""
+        if self.engine:
+            return record_session_lifecycle(event_type, context, engine=self.engine)
+        else:
+            return record_session_lifecycle(event_type, context, engine=None)

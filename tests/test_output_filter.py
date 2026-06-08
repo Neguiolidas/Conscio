@@ -22,6 +22,7 @@ from conscio.output_filter import (
     FilterPipeline,
     build_stage,
     build_pipeline_from_dict,
+    build_pipeline_from_config,
     STAGE_REGISTRY,
 )
 
@@ -487,3 +488,77 @@ class TestEdgeCases:
                     "truncate_lines", "head_tail", "max_lines", "on_empty",
                     "dedup_blocks", "semantic_dedup", "secret_mask"}
         assert set(STAGE_REGISTRY.keys()) == expected
+
+
+# ─── Build from Config Tests ──────────────────────────────────────────────
+
+class TestBuildPipelineFromConfig:
+    def test_loads_from_yaml_config(self, tmp_path):
+        """build_pipeline_from_config loads stages from YAML."""
+        config_path = tmp_path / "filters.yaml"
+        config_path.write_text("""
+filters:
+  - name: test
+    stages:
+      - strip_ansi: {}
+      - filter_lines:
+          mode: strip
+          patterns: ["^DEBUG:"]
+      - max_lines:
+          max_lines: 30
+""")
+        pipeline = build_pipeline_from_config(config_path)
+        stages = pipeline.list_stages()
+        assert stages == ["strip_ansi", "filter_lines", "max_lines"]
+
+    def test_nonexistent_config_returns_default(self):
+        """Nonexistent config returns default pipeline."""
+        pipeline = build_pipeline_from_config("/nonexistent/path.yaml")
+        stages = pipeline.list_stages()
+        assert len(stages) == 8  # Default pipeline
+
+    def test_empty_config_returns_default(self, tmp_path):
+        """Empty YAML returns default pipeline."""
+        config_path = tmp_path / "empty.yaml"
+        config_path.write_text("")
+        pipeline = build_pipeline_from_config(config_path)
+        stages = pipeline.list_stages()
+        assert len(stages) == 8  # Default pipeline
+
+    def test_config_without_filters_returns_default(self, tmp_path):
+        """Config without 'filters' key returns default."""
+        config_path = tmp_path / "no_filters.yaml"
+        config_path.write_text("other_key: value")
+        pipeline = build_pipeline_from_config(config_path)
+        stages = pipeline.list_stages()
+        assert len(stages) == 8
+
+    def test_yaml_missing_returns_default(self, tmp_path):
+        """If PyYAML not installed, returns default."""
+        pipeline = build_pipeline_from_config(tmp_path / "test.yaml")
+        stages = pipeline.list_stages()
+        assert len(stages) == 8
+
+    def test_applies_loaded_pipeline(self, tmp_path):
+        """Loaded pipeline correctly filters output."""
+        config_path = tmp_path / "filters.yaml"
+        config_path.write_text("""
+filters:
+  - name: test
+    stages:
+      - strip_ansi: {}
+      - filter_lines:
+          mode: strip
+          patterns: ["DEBUG:", "TRACE:"]
+      - max_lines:
+          max_lines: 5
+""")
+        pipeline = build_pipeline_from_config(config_path)
+        raw = "\x1b[32m[OK]\x1b[0m Connected\nDEBUG: ping\nINFO: ready\nTRACE: trace\nERROR: fail\n"
+        result = pipeline.apply(raw)
+        assert "\x1b" not in result
+        assert "DEBUG:" not in result
+        assert "TRACE:" not in result
+        assert "INFO: ready" in result
+        assert "ERROR: fail" in result
+        assert len(result.split("\n")) <= 5 + 1  # 5 lines max + potential empty

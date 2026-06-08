@@ -100,6 +100,25 @@ class TestModelRegistry:
         # Should be ~80% of 131k
         assert 100_000 < info.available_context_tokens < 110_000
 
+    def test_context_for_consciousness(self):
+        info = ModelRegistry.lookup("glm-5.1")
+        # CONTEXT_BUDGET_PCT = 0.02, available_context ~104k
+        # context_for_consciousness = 104k * 0.02 = ~2.1k
+        ctx = info.context_for_consciousness()
+        assert 2_000 < ctx < 2_200
+
+    def test_all_models(self):
+        all_models = ModelRegistry.all_models()
+        assert isinstance(all_models, dict)
+        assert len(all_models) > 0
+        assert "glm-5.1" in all_models
+        assert "gpt-4o" in all_models  # not "gpt-4"
+        # All values should be ModelInfo
+        for name, info in all_models.items():
+            assert isinstance(info, ModelInfo)
+            assert info.name == name
+            assert info.context_window > 0
+
 
 # --- Context Manager Tests ---
 
@@ -152,6 +171,17 @@ class TestContextManager:
         assert "CONSCIOUSNESS STATE" in injection
         assert "compact" in injection
         assert "GLM 5.1" in injection.lower() or "glm-5.1" in injection.lower()
+
+    def test_get_off_context_path(self, ctx_manager):
+        # Known components
+        assert ctx_manager.get_off_context_path("world_model").name == "world_model.json"
+        assert ctx_manager.get_off_context_path("meta_cognition").name == "meta_cognition.json"
+        assert ctx_manager.get_off_context_path("goals").name == "goals.json"
+        assert ctx_manager.get_off_context_path("reflections").name == "reflections"
+        # Unknown component gets .json extension
+        custom_path = ctx_manager.get_off_context_path("custom_component")
+        assert custom_path.name == "custom_component.json"
+        assert custom_path.parent == ctx_manager.storage_path
 
 
 # --- World Model Tests ---
@@ -276,6 +306,55 @@ class TestMetaCognition:
         summary = meta_cognition.summary()
         assert "Confidence" in summary
 
+    def test_update_outcome(self, meta_cognition):
+        # First record confidence with pending outcome, then update
+        meta_cognition.record_confidence("coding", 0.9, "pending")
+        meta_cognition.update_outcome("coding", "failure")
+        # Average confidence should still work
+        assert meta_cognition.average_confidence("coding") == 0.9
+        # Accuracy should reflect the failure
+        assert meta_cognition.accuracy("coding") == 0.0  # 0 successes, 1 failure
+
+    def test_update_outcome_without_pending(self, meta_cognition):
+        # Record with outcome already set - update_outcome won't change it
+        meta_cognition.record_confidence("coding", 0.9, "success")
+        meta_cognition.update_outcome("coding", "failure")  # Won't find pending entry
+        # Accuracy should still be 1.0 (the original success)
+        assert meta_cognition.accuracy("coding") == 1.0
+
+    def test_update_outcome_no_history(self, meta_cognition):
+        # update_outcome should not raise even without prior confidence
+        meta_cognition.update_outcome("new_task", "success")
+        # No confidence recorded, so average_confidence returns default 0.5
+        assert meta_cognition.average_confidence("new_task") == 0.5
+        assert meta_cognition.accuracy("new_task") == 0.5
+
+    def test_add_critique(self, meta_cognition):
+        meta_cognition.add_critique(
+            task="code_review",
+            what_i_did="Missed edge case in null handling",
+            what_i_should_do="Add explicit null checks before dereferencing"
+        )
+        critiques = meta_cognition.recent_critiques(1)
+        assert len(critiques) == 1
+        assert critiques[0]["task"] == "code_review"
+        assert "null" in critiques[0]["what_i_did"]
+        assert "null checks" in critiques[0]["what_i_should_do"]
+
+    def test_recent_critiques_limit(self, meta_cognition):
+        for i in range(10):
+            meta_cognition.add_critique(f"task_{i}", f"did {i}", f"should {i}")
+        critiques = meta_cognition.recent_critiques(3)
+        assert len(critiques) == 3
+        # Returns last 3 in chronological order (oldest of recent first)
+        assert critiques[0]["task"] == "task_7"
+        assert critiques[1]["task"] == "task_8"
+        assert critiques[2]["task"] == "task_9"
+
+    def test_recent_critiques_empty(self, meta_cognition):
+        critiques = meta_cognition.recent_critiques(5)
+        assert critiques == []
+
 
 # --- Goal Generator Tests ---
 
@@ -308,6 +387,81 @@ class TestGoalGenerator:
         goal_generator.generate_from_curiosity("Test anomaly")
         summary = goal_generator.summary()
         assert len(summary) > 0
+
+    def test_generate_from_evolution(self, goal_generator):
+        goal = goal_generator.generate_from_evolution("improve error handling", target="trading")
+        assert goal is not None
+        assert "Evolve" in goal.description or "improve" in goal.description.lower()
+        assert goal.drive == Drive.EVOLUTION
+
+    def test_add_user_goal(self, goal_generator):
+        goal = goal_generator.add_user_goal("User requested: check portfolio risk", priority=GoalPriority.HIGH)
+        assert goal is not None
+        assert "check portfolio risk" in goal.description
+        assert goal.priority == GoalPriority.HIGH
+
+    def test_cancel_goal(self, goal_generator):
+        goal = goal_generator.generate_from_curiosity("Test anomaly for cancellation")
+        assert goal is not None
+        goal_id = goal.id
+        # Cancel the goal
+        result = goal_generator.cancel_goal(goal_id)
+        assert result is True
+        # Goal should no longer be active
+        active_ids = [g.id for g in goal_generator.active_goals()]
+        assert goal_id not in active_ids
+
+    def test_cancel_nonexistent_goal(self, goal_generator):
+        result = goal_generator.cancel_goal("nonexistent-id-12345")
+        assert result is False
+
+    def test_expire_stale_goals(self, goal_generator):
+        # Add a goal
+        goal = goal_generator.generate_from_curiosity("Fresh anomaly")
+        assert goal is not None
+        # Manually age it by updating the internal goals list
+        from datetime import datetime, timedelta
+        for g in goal_generator._goals:
+            if g.id == goal.id:
+                old_time = (datetime.utcnow() - timedelta(hours=48)).isoformat()
+                g.created_at = old_time
+        goal_generator._save()
+        # Expire stale goals (max_age_hours=24)
+        expired_count = goal_generator.expire_stale(max_age_hours=24)
+        assert expired_count == 1
+        # Goal should be marked expired
+        aged_goal = next(g for g in goal_generator._goals if g.id == goal.id)
+        assert aged_goal.status == "expired"
+
+    def test_expire_stale_no_stale_goals(self, goal_generator):
+        goal_generator.generate_from_curiosity("Fresh anomaly")
+        expired_count = goal_generator.expire_stale(max_age_hours=24)
+        assert expired_count == 0
+
+    def test_to_dict(self, goal_generator):
+        goal_generator.generate_from_curiosity("Test for to_dict")
+        goal_dicts = goal_generator.to_dict()
+        assert isinstance(goal_dicts, list)
+        assert len(goal_dicts) > 0
+        for gd in goal_dicts:
+            assert "id" in gd
+            assert "description" in gd
+            assert "drive" in gd
+            assert "priority" in gd
+            assert "meta_score" in gd
+            assert "created_at" in gd
+            assert "status" in gd
+
+    def test_status(self, goal_generator):
+        goal_generator.generate_from_curiosity("Test anomaly")
+        status = goal_generator.status()
+        assert isinstance(status, dict)
+        assert "total_goals" in status
+        assert "active_goals" in status
+        assert "drive_strengths" in status
+        assert "path" in status
+        assert status["total_goals"] >= 1
+        assert status["active_goals"] >= 1
 
 
 # --- Goal Meta-Score Tests ---

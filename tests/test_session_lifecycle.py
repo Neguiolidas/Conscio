@@ -34,6 +34,7 @@ from conscio.session_lifecycle import (
     enrich_with_conscio,
     record_session_lifecycle,
     get_latest_session,
+    get_session_by_id,
     HB_MAX_CHARS,
     SKIP_PREFIXES,
 )
@@ -280,6 +281,37 @@ class TestDBQuery:
         session = get_latest_session(tmp_path / "nope.db")
         assert session is None
 
+    def test_get_session_by_id(self, tmp_db):
+        """get_session_by_id returns session by exact ID."""
+        session = get_session_by_id(tmp_db, "test_20260605")
+        assert session is not None
+        assert session["id"] == "test_20260605"
+        assert session["source"] == "telegram"
+        assert session["message_count"] == 12
+        assert len(session["messages"]) == 12
+
+    def test_get_session_by_id_not_found(self, tmp_db):
+        """get_session_by_id returns None for unknown session ID."""
+        session = get_session_by_id(tmp_db, "nonexistent_session")
+        assert session is None
+
+    def test_get_session_by_id_empty_db(self, empty_db):
+        """get_session_by_id returns None for empty DB."""
+        session = get_session_by_id(empty_db, "any_id")
+        assert session is None
+
+    def test_get_session_by_id_nonexistent_db(self, tmp_path):
+        """get_session_by_id returns None for nonexistent DB."""
+        session = get_session_by_id(tmp_path / "nope.db", "any_id")
+        assert session is None
+
+    def test_get_session_by_id_no_session_id(self, tmp_db):
+        """get_session_by_id returns None when session_id is empty."""
+        session = get_session_by_id(tmp_db, "")
+        assert session is None
+        session = get_session_by_id(tmp_db, None)
+        assert session is None
+
 
 # ─── Enrichment Tests ─────────────────────────────────────────────────────
 
@@ -472,6 +504,39 @@ class TestRecordSessionLifecycle:
                 )
                 assert result is not None
 
+
+    def test_no_unbound_local_error_on_early_exception(self, tmp_db, mock_engine, tmp_path):
+        """UnboundLocalError bug: if an exception occurs before heartbeat/handoff
+        are defined inside the try block, the finally block and subsequent
+        disk writes crash with UnboundLocalError.
+
+        This test forces an early exception (in enrich_with_conscio) and
+        verifies the function still completes without UnboundLocalError,
+        writing empty fallback values to disk rather than crashing.
+        """
+        heartbeat_path = tmp_path / "_latest_heartbeat.md"
+        handoff_path = tmp_path / "_session_handoff.md"
+
+        with patch("conscio.session_lifecycle.SESSION_DB", tmp_db), \
+             patch("conscio.session_lifecycle.MEMPALACE_DIR", tmp_path), \
+             patch("conscio.session_lifecycle.HEARTBEAT_PATH", heartbeat_path), \
+             patch("conscio.session_lifecycle.HANDOFF_PATH", handoff_path), \
+             patch("conscio.session_lifecycle.enrich_with_conscio", side_effect=RuntimeError("DB locked")):
+
+            # Before the fix, this raises UnboundLocalError because
+            # heartbeat/handoff are only defined inside the try block,
+            # but used after the finally block in the disk-write section.
+            result = record_session_lifecycle(
+                event_type="session:end",
+                context={"session_id": "test_20260605"},
+                engine=mock_engine,
+            )
+
+            # The function should not crash — it should return the summary
+            # (or at minimum not raise UnboundLocalError)
+            # Files should be written (possibly empty if exception was early)
+            assert heartbeat_path.exists()
+            assert handoff_path.exists()
 
 # ─── EventBus Integration Tests ────────────────────────────────────────────
 
