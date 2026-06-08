@@ -309,6 +309,81 @@ class TestGoalGenerator:
         summary = goal_generator.summary()
         assert len(summary) > 0
 
+    def test_generate_from_evolution(self, goal_generator):
+        goal = goal_generator.generate_from_evolution("improve error handling", target="trading")
+        assert goal is not None
+        assert "Evolve" in goal.description or "improve" in goal.description.lower()
+        assert goal.drive == Drive.EVOLUTION
+
+    def test_add_user_goal(self, goal_generator):
+        goal = goal_generator.add_user_goal("User requested: check portfolio risk", priority=GoalPriority.HIGH)
+        assert goal is not None
+        assert "check portfolio risk" in goal.description
+        assert goal.priority == GoalPriority.HIGH
+
+    def test_cancel_goal(self, goal_generator):
+        goal = goal_generator.generate_from_curiosity("Test anomaly for cancellation")
+        assert goal is not None
+        goal_id = goal.id
+        # Cancel the goal
+        result = goal_generator.cancel_goal(goal_id)
+        assert result is True
+        # Goal should no longer be active
+        active_ids = [g.id for g in goal_generator.active_goals()]
+        assert goal_id not in active_ids
+
+    def test_cancel_nonexistent_goal(self, goal_generator):
+        result = goal_generator.cancel_goal("nonexistent-id-12345")
+        assert result is False
+
+    def test_expire_stale_goals(self, goal_generator):
+        # Add a goal
+        goal = goal_generator.generate_from_curiosity("Fresh anomaly")
+        assert goal is not None
+        # Manually age it by updating the internal goals list
+        from datetime import datetime, timedelta
+        for g in goal_generator._goals:
+            if g.id == goal.id:
+                old_time = (datetime.utcnow() - timedelta(hours=48)).isoformat()
+                g.created_at = old_time
+        goal_generator._save()
+        # Expire stale goals (max_age_hours=24)
+        expired_count = goal_generator.expire_stale(max_age_hours=24)
+        assert expired_count == 1
+        # Goal should be marked expired
+        aged_goal = next(g for g in goal_generator._goals if g.id == goal.id)
+        assert aged_goal.status == "expired"
+
+    def test_expire_stale_no_stale_goals(self, goal_generator):
+        goal_generator.generate_from_curiosity("Fresh anomaly")
+        expired_count = goal_generator.expire_stale(max_age_hours=24)
+        assert expired_count == 0
+
+    def test_to_dict(self, goal_generator):
+        goal_generator.generate_from_curiosity("Test for to_dict")
+        goal_dicts = goal_generator.to_dict()
+        assert isinstance(goal_dicts, list)
+        assert len(goal_dicts) > 0
+        for gd in goal_dicts:
+            assert "id" in gd
+            assert "description" in gd
+            assert "drive" in gd
+            assert "priority" in gd
+            assert "meta_score" in gd
+            assert "created_at" in gd
+            assert "status" in gd
+
+    def test_status(self, goal_generator):
+        goal_generator.generate_from_curiosity("Test anomaly")
+        status = goal_generator.status()
+        assert isinstance(status, dict)
+        assert "total_goals" in status
+        assert "active_goals" in status
+        assert "drive_strengths" in status
+        assert "path" in status
+        assert status["total_goals"] >= 1
+        assert status["active_goals"] >= 1
+
 
 # --- Goal Meta-Score Tests ---
 
