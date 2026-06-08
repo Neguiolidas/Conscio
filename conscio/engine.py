@@ -36,6 +36,7 @@ from .output_filter import FilterPipeline, build_pipeline_from_dict
 from .token_tracker import TokenTracker
 from .content_layer import layer_sort_key, ContentLayerManager
 from .session_lifecycle import SessionLifecycle
+from .metabolic import MetabolicContext
 
 
 _RAG_UNSET = object()
@@ -363,7 +364,6 @@ class ConsciousnessEngine:
         )
 
         # v0.9: Metabolic wiring — assess context health and inject tier_action
-        from .metabolic import MetabolicContext
         used_tokens = self._state.total_tokens_approx()
         total_window = self.model_info.context_window
         metabolic_state = MetabolicContext.assess(used_tokens, total_window)
