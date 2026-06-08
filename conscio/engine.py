@@ -354,6 +354,15 @@ class ConsciousnessEngine:
             dream_recommended=self.dream_recommended.marker(),
         )
 
+        # v0.9: Metabolic wiring — assess context health and inject tier_action
+        from .metabolic import MetabolicContext
+        used_tokens = self._state.total_tokens_approx()
+        total_window = self.model_info.context_window
+        metabolic_state = MetabolicContext.assess(used_tokens, total_window)
+        metabolic_note = f"{metabolic_state.value} {MetabolicContext.usage_pct(used_tokens, total_window):.0f}%"
+        tier_action = MetabolicContext.tier_action(metabolic_state)
+        self._state.metabolic = f"{metabolic_note} — {tier_action}"
+
         # Persist state
         self.ctx.save_state(self._state)
 
