@@ -614,6 +614,11 @@ def record_session_lifecycle(
         from .engine import ConsciousnessEngine
         engine = ConsciousnessEngine(model_name=summary.model or "glm-5.1")
 
+    # Initialize heartbeat/handoff before try so they're always defined
+    # even if an exception occurs before they're set inside the try block.
+    heartbeat = ""
+    handoff = ""
+
     try:
         # Enrich summary with Conscio state
         enrich_with_conscio(summary, engine)
@@ -682,6 +687,11 @@ def record_session_lifecycle(
             engine.dream()
         except Exception:
             pass
+
+    except Exception:
+        # Best-effort: enrichment/indexing/reflection errors must not
+        # prevent disk writes of heartbeat/handoff below.
+        pass
 
     finally:
         if own_engine:

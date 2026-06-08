@@ -505,6 +505,39 @@ class TestRecordSessionLifecycle:
                 assert result is not None
 
 
+    def test_no_unbound_local_error_on_early_exception(self, tmp_db, mock_engine, tmp_path):
+        """UnboundLocalError bug: if an exception occurs before heartbeat/handoff
+        are defined inside the try block, the finally block and subsequent
+        disk writes crash with UnboundLocalError.
+
+        This test forces an early exception (in enrich_with_conscio) and
+        verifies the function still completes without UnboundLocalError,
+        writing empty fallback values to disk rather than crashing.
+        """
+        heartbeat_path = tmp_path / "_latest_heartbeat.md"
+        handoff_path = tmp_path / "_session_handoff.md"
+
+        with patch("conscio.session_lifecycle.SESSION_DB", tmp_db), \
+             patch("conscio.session_lifecycle.MEMPALACE_DIR", tmp_path), \
+             patch("conscio.session_lifecycle.HEARTBEAT_PATH", heartbeat_path), \
+             patch("conscio.session_lifecycle.HANDOFF_PATH", handoff_path), \
+             patch("conscio.session_lifecycle.enrich_with_conscio", side_effect=RuntimeError("DB locked")):
+
+            # Before the fix, this raises UnboundLocalError because
+            # heartbeat/handoff are only defined inside the try block,
+            # but used after the finally block in the disk-write section.
+            result = record_session_lifecycle(
+                event_type="session:end",
+                context={"session_id": "test_20260605"},
+                engine=mock_engine,
+            )
+
+            # The function should not crash — it should return the summary
+            # (or at minimum not raise UnboundLocalError)
+            # Files should be written (possibly empty if exception was early)
+            assert heartbeat_path.exists()
+            assert handoff_path.exists()
+
 # ─── EventBus Integration Tests ────────────────────────────────────────────
 
 class TestEventBusIntegration:
