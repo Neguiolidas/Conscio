@@ -52,7 +52,8 @@ def layer_of(category: str, content_type: str = "") -> ContentLayer:
 
 
 # Recall reorder constants. RRF rank is higher = better.
-LAYER_EPSILON = 0.01    # rank-bucket width (~1% of RRF range); a one-line tunable
+MAX_K = 50  # upper bound for recall() k parameter
+LAYER_EPSILON = 0.01 # rank-bucket width (~1% of RRF range); a one-line tunable
 _LAYER_PRIORITY = {
     ContentLayer.PROCESSING: 2,
     ContentLayer.INTUITION: 1,
@@ -125,6 +126,9 @@ class ContentLayerManager:
         """
         if not query or not query.strip():
             return []
+
+        if k <= 0 or k > MAX_K:
+            raise ValueError(f"k must be between 1 and {MAX_K}, got {k}")
         
         snippets: list[str] = []
         seen: set[str] = set()
