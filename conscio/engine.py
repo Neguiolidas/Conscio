@@ -41,6 +41,23 @@ from .metabolic import MetabolicContext
 
 _RAG_UNSET = object()
 
+logger = logging.getLogger(__name__)
+
+
+def _create_session_rag():
+    """Factory for SessionRAG — lazy, graceful on missing dependency.
+
+    Used as the ``session_rag_provider`` callback for ContentLayerManager
+    so that the import of ``conscio.session_rag`` is deferred until first
+    use and any ImportError is handled cleanly.
+    """
+    try:
+        from .session_rag import SessionRAG
+        return SessionRAG()
+    except ImportError:
+        logger.debug("session_rag module unavailable — RAG provider disabled")
+        return None
+
 
 class ConsciousnessEngine:
     """
@@ -134,7 +151,7 @@ class ConsciousnessEngine:
         self.content_layer = ContentLayerManager(
             content_store=self.content_store,
             world_model=self.world,
-            session_rag_provider=lambda: __import__("conscio.session_rag", fromlist=["SessionRAG"]).SessionRAG(),
+            session_rag_provider=_create_session_rag,
         )
 
         # v0.9: SessionLifecycle — unified session persistence hooks
