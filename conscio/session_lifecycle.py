@@ -687,3 +687,43 @@ def record_session_lifecycle(
     HEARTBEAT_PATH.write_text(heartbeat, encoding="utf-8")
 
     return summary
+
+
+class SessionLifecycle:
+    """
+    Session lifecycle manager for Conscio Engine.
+    
+    Provides a clean API for managing session persistence, heartbeats, and handoffs.
+    The engine can register callbacks for session start/end events.
+    
+    Usage:
+        lifecycle = SessionLifecycle(engine)
+        # Engine registers its methods as handlers
+        lifecycle.on_session_end = engine._on_session_end
+        lifecycle.on_session_reset = engine._on_session_reset
+    """
+    
+    def __init__(self, engine=None):
+        self.engine = engine
+        self.on_session_start = None  # callback(event_type, context) -> str|None
+        self.on_session_end = None    # callback(event_type, context) -> None
+        self.on_session_reset = None  # callback(event_type, context) -> None
+    
+    def handle_event(self, event_type: str, context: dict):
+        """Route event to appropriate handler."""
+        if event_type == "session:start":
+            if self.on_session_start:
+                return self.on_session_start(event_type, context)
+        elif event_type == "session:end":
+            if self.on_session_end:
+                self.on_session_end(event_type, context)
+        elif event_type == "session:reset":
+            if self.on_session_reset:
+                self.on_session_reset(event_type, context)
+    
+    def record_session(self, event_type: str, context: dict) -> SessionSummary | None:
+        """Record session lifecycle using the existing pipeline."""
+        if self.engine:
+            return record_session_lifecycle(event_type, context, engine=self.engine)
+        else:
+            return record_session_lifecycle(event_type, context, engine=None)

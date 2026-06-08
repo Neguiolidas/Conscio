@@ -35,6 +35,7 @@ from .semantic import SemanticEngine, ContradictionDetector
 from .output_filter import FilterPipeline, build_pipeline_from_dict
 from .token_tracker import TokenTracker
 from .content_layer import layer_sort_key, ContentLayerManager
+from .session_lifecycle import SessionLifecycle
 
 
 _RAG_UNSET = object()
@@ -135,11 +136,11 @@ class ConsciousnessEngine:
             session_rag_provider=lambda: __import__("conscio.session_rag", fromlist=["SessionRAG"]).SessionRAG(),
         )
 
+        # v0.9: SessionLifecycle — unified session persistence hooks
+        self.session_lifecycle = SessionLifecycle(engine=self)
+
         self._session_rag = _RAG_UNSET
         self._state = self.ctx.load_state()
-
-        # Lazy SessionRAG handle (probed on first recall; None if unavailable)
-        self._session_rag = _RAG_UNSET
 
     # --- Meta-Cognition → Goal Generator Feed ---
 
