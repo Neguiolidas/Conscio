@@ -22,8 +22,9 @@ from .metabolic import MetabolicContext, MetabolicState
 from .dreaming import DreamCycle, DreamReport
 
 # Note: SessionRAG is intentionally NOT imported here — it depends on numpy
-# and probes Ollama. Import it lazily (`from conscio.session_rag import
-# SessionRAG`) so `import conscio` stays dependency-light and RAG stays optional.
+# and probes Ollama. Use the shared factory (`from conscio.session_rag_factory
+# import create_session_rag`) for lazy, graceful construction, or import
+# SessionRAG directly when you know it's available.
 
 __all__ = [
  "ConsciousnessEngine",
