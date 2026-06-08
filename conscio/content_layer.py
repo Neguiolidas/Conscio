@@ -9,7 +9,9 @@ unvalidated hypothesis (INTUITION, N+1).
 """
 from __future__ import annotations
 
+import logging
 from enum import Enum
+from typing import Optional
 
 
 class ContentLayer(Enum):
@@ -69,3 +71,113 @@ def layer_sort_key(result):
     layer = layer_of(result.source_category, result.content_type)
     bucket = int(result.rank / LAYER_EPSILON)
     return (-bucket, -_LAYER_PRIORITY[layer], -result.rank)
+
+
+class ContentLayerManager:
+    """
+    Unified content layer managing ContentStore, SessionRAG, and WorldModel.
+    
+    This class consolidates all content-related operations:
+    - recall(): Unified search across ContentStore (FTS5 + layer reorder) and SessionRAG (semantic)
+    - perceive(): Update WorldModel with observed state
+    
+    The engine delegates to this manager for all content operations.
+    """
+    
+    def __init__(
+        self,
+        content_store,
+        world_model,
+        session_rag_provider=None,
+    ):
+        self.content_store = content_store
+        self.world_model = world_model
+        self._session_rag_provider = session_rag_provider
+        self._session_rag = None
+    
+    @property
+    def session_rag(self):
+        """Lazily construct SessionRAG, gated by Ollama availability."""
+        if self._session_rag is None and self._session_rag_provider is not None:
+            try:
+                rag = self._session_rag_provider()
+                self._session_rag = rag if rag.available() else None
+            except Exception:
+                self._session_rag = None
+        return self._session_rag
+    
+    def recall(
+        self,
+        query: str,
+        k: int = 3,
+        categories: Optional[list[str]] = None,
+    ) -> list[str]:
+        """
+        Retrieve relevant past context across sessions.
+        
+        Primary source is ContentStore FTS5 (BM25 + RRF) with layer-prioritized reorder.
+        When SessionRAG is available (local Ollama up), semantic hits are merged in.
+        Each snippet is length-bounded; results are de-duplicated and capped at k.
+        
+        Args:
+            query: Free-text query (e.g., current world_state + anomalies).
+            k: Max snippets to return.
+            categories: Optional ContentStore category filter(s).
+            
+        Returns:
+            List of short context snippets (<= ~300 chars each), best first.
+        """
+        if not query or not query.strip():
+            return []
+        
+        snippets: list[str] = []
+        seen: set[str] = set()
+        
+        def _add(text: str) -> None:
+            t = " ".join((text or "").split())[:300]
+            key = t[:80].lower()
+            if t and key not in seen:
+                seen.add(key)
+                snippets.append(t)
+        
+        # ── ContentStore FTS5 (layer-prioritized reorder) ──
+        try:
+            results = []
+            if categories:
+                for cat in categories:
+                    results.extend(self.content_store.search(query, limit=k, category=cat))
+            else:
+                results.extend(self.content_store.search(query, limit=k))
+            results.sort(key=layer_sort_key)  # near-tie tiebreak by content layer
+            for r in results:
+                _add(r.content)
+        except Exception:
+            logging.warning("ContentStore search failed in recall()", exc_info=True)
+        
+        # ── SessionRAG semantic (optional) ──
+        try:
+            rag = self.session_rag
+            if rag is not None:
+                for r in rag.search(query, limit=k):
+                    _add(r.content)
+        except Exception:
+            logging.warning("SessionRAG search failed in recall()", exc_info=True)
+        
+        return snippets[:k]
+    
+    def perceive(self, world_state: str, entities: Optional[dict] = None) -> None:
+        """
+        Update the world model with perceived state.
+        
+        Args:
+            world_state: Text description of current world state
+            entities: Dict of {entity_name: {type, state, attributes}} to update
+        """
+        if entities:
+            for name, info in entities.items():
+                self.world_model.add_entity(
+                    name=name,
+                    entity_type=info.get("type", "unknown"),
+                    attributes=info.get("attributes"),
+                    state=info.get("state", ""),
+                )

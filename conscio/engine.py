@@ -34,7 +34,7 @@ from .dreaming import DreamRecommendation
 from .semantic import SemanticEngine, ContradictionDetector
 from .output_filter import FilterPipeline, build_pipeline_from_dict
 from .token_tracker import TokenTracker
-from .content_layer import layer_sort_key
+from .content_layer import layer_sort_key, ContentLayerManager
 
 
 _RAG_UNSET = object()
@@ -128,7 +128,14 @@ class ConsciousnessEngine:
             from .output_filter import SemanticDedup
             self.output_filter.add_stage(SemanticDedup(semantic=self._semantic))
 
-        # Load previous state
+        # v0.9: ContentLayerManager — unified content operations (recall, perceive)
+        self.content_layer = ContentLayerManager(
+            content_store=self.content_store,
+            world_model=self.world,
+            session_rag_provider=lambda: __import__("conscio.session_rag", fromlist=["SessionRAG"]).SessionRAG(),
+        )
+
+        self._session_rag = _RAG_UNSET
         self._state = self.ctx.load_state()
 
         # Lazy SessionRAG handle (probed on first recall; None if unavailable)
@@ -438,56 +445,19 @@ class ConsciousnessEngine:
     ) -> list[str]:
         """
         Retrieve relevant past context across sessions.
-
-        Primary source is ContentStore FTS5 (BM25 + RRF). When SessionRAG is
-        available (local Ollama up), semantic hits are merged in. Each snippet
-        is length-bounded; results are de-duplicated and capped at k.
-
+        
+        Delegates to ContentLayerManager which unifies ContentStore FTS5 (with
+        layer-prioritized reorder) and SessionRAG semantic search.
+        
         Args:
             query: Free-text query (e.g., current world_state + anomalies).
             k: Max snippets to return.
             categories: Optional ContentStore category filter(s).
-
+            
         Returns:
             List of short context snippets (<= ~300 chars each), best first.
         """
-        if not query or not query.strip():
-            return []
-
-        snippets: list[str] = []
-        seen: set[str] = set()
-
-        def _add(text: str) -> None:
-            t = " ".join((text or "").split())[:300]
-            key = t[:80].lower()
-            if t and key not in seen:
-                seen.add(key)
-                snippets.append(t)
-
-        # ── ContentStore FTS5 (layer-prioritized reorder) ──
-        try:
-            results = []
-            if categories:
-                for cat in categories:
-                    results.extend(self.content_store.search(query, limit=k, category=cat))
-            else:
-                results.extend(self.content_store.search(query, limit=k))
-            results.sort(key=layer_sort_key)  # near-tie tiebreak by content layer
-            for r in results:
-                _add(r.content)
-        except Exception:
-            logging.warning("ContentStore search failed in recall()", exc_info=True)
-
-        # ── SessionRAG semantic (optional) ──
-        try:
-            rag = self.session_rag
-            if rag is not None:
-                for r in rag.search(query, limit=k):
-                    _add(r.content)
-        except Exception:
-            logging.warning("SessionRAG search failed in recall()", exc_info=True)
-
-        return snippets[:k]
+        return self.content_layer.recall(query, k, categories)
 
     # --- World Model Interactions ---
 
@@ -495,18 +465,13 @@ class ConsciousnessEngine:
         """
         Update the world model with perceived state.
         
+        Delegates to ContentLayerManager which manages the WorldModel.
+        
         Args:
             world_state: Text description of current world state
             entities: Dict of {entity_name: {type, state, attributes}} to update
         """
-        if entities:
-            for name, info in entities.items():
-                self.world.add_entity(
-                    name=name,
-                    entity_type=info.get("type", "unknown"),
-                    attributes=info.get("attributes"),
-                    state=info.get("state", ""),
-                )
+        self.content_layer.perceive(world_state, entities)
 
     # --- Evolution Interactions ---
 
