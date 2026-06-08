@@ -276,6 +276,55 @@ class TestMetaCognition:
         summary = meta_cognition.summary()
         assert "Confidence" in summary
 
+    def test_update_outcome(self, meta_cognition):
+        # First record confidence with pending outcome, then update
+        meta_cognition.record_confidence("coding", 0.9, "pending")
+        meta_cognition.update_outcome("coding", "failure")
+        # Average confidence should still work
+        assert meta_cognition.average_confidence("coding") == 0.9
+        # Accuracy should reflect the failure
+        assert meta_cognition.accuracy("coding") == 0.0  # 0 successes, 1 failure
+
+    def test_update_outcome_without_pending(self, meta_cognition):
+        # Record with outcome already set - update_outcome won't change it
+        meta_cognition.record_confidence("coding", 0.9, "success")
+        meta_cognition.update_outcome("coding", "failure")  # Won't find pending entry
+        # Accuracy should still be 1.0 (the original success)
+        assert meta_cognition.accuracy("coding") == 1.0
+
+    def test_update_outcome_no_history(self, meta_cognition):
+        # update_outcome should not raise even without prior confidence
+        meta_cognition.update_outcome("new_task", "success")
+        # No confidence recorded, so average_confidence returns default 0.5
+        assert meta_cognition.average_confidence("new_task") == 0.5
+        assert meta_cognition.accuracy("new_task") == 0.5
+
+    def test_add_critique(self, meta_cognition):
+        meta_cognition.add_critique(
+            task="code_review",
+            what_i_did="Missed edge case in null handling",
+            what_i_should_do="Add explicit null checks before dereferencing"
+        )
+        critiques = meta_cognition.recent_critiques(1)
+        assert len(critiques) == 1
+        assert critiques[0]["task"] == "code_review"
+        assert "null" in critiques[0]["what_i_did"]
+        assert "null checks" in critiques[0]["what_i_should_do"]
+
+    def test_recent_critiques_limit(self, meta_cognition):
+        for i in range(10):
+            meta_cognition.add_critique(f"task_{i}", f"did {i}", f"should {i}")
+        critiques = meta_cognition.recent_critiques(3)
+        assert len(critiques) == 3
+        # Returns last 3 in chronological order (oldest of recent first)
+        assert critiques[0]["task"] == "task_7"
+        assert critiques[1]["task"] == "task_8"
+        assert critiques[2]["task"] == "task_9"
+
+    def test_recent_critiques_empty(self, meta_cognition):
+        critiques = meta_cognition.recent_critiques(5)
+        assert critiques == []
+
 
 # --- Goal Generator Tests ---
 
