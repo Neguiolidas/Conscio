@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.0a1] — 2026-06-11
+
+### Added
+
+- **`conscio/agency/` subpackage (F1 "Spine")** — contracts + zero-dep validator;
+  `InferenceAdapter` (Mock, Ollama, llama.cpp, OpenAI-compat — stdlib urllib, localhost
+  defaults); `OutputGateway` with JSON repair/retry (T2) and KV-line tier for small
+  models (T3); sandboxed `ToolRegistry` (fs_read/fs_write/memory_note/emit_event, risk
+  levels, no network, no shell); append-only `ActionLedger` in the shared `conscio.db`;
+  minimal `CircuitBreaker` (fixed threshold until the F2 TrustMatrix).
+- **`engine.act()` (L1 PROPOSE)** + `engine.attach_adapter()` / `approve()` / `reject()`.
+- **`ConsciousnessState.action_lockdown`** persisted via `save_state`/`load_state`.
+- **`ModelInfo.has_json_mode` / `ModelInfo.supports_gbnf`** capability flags.
+- **README Safety Rules amended** — R3 rewritten for the audited action pipeline; R6–R8 added.
+
+### Notes
+
+- `reflect()` untouched (advisory core preserved). Zero new dependencies.
+
 ## [0.9.1] — 2026-06-10
 
 ### Fixed
