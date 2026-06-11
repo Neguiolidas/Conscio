@@ -14,7 +14,10 @@ import json
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from .meta_cognition import MetaCognition
 
 
 class EvolutionType(Enum):
@@ -215,7 +218,6 @@ class AutoEvolution:
 
         Returns list of newly created proposals (empty if nothing new).
         """
-        from .meta_cognition import MetaCognition
 
         frequent = meta_cognition.frequent_errors(min_count=2)
         if not frequent:

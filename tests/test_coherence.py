@@ -1,7 +1,6 @@
 # tests/test_coherence.py
 from conscio.coherence import (
-    CoherenceEngine, CoherenceReport, Dissonance,
-    epistemic_score, reality_score, ontological_score, temporal_score,
+    CoherenceEngine, epistemic_score, reality_score, ontological_score, temporal_score,
     _relations_contradict, _strip_neg, _clamp,
     _WEIGHTS, TEMPORAL_FREE_TRANSITIONS,
 )

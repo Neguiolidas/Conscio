@@ -2,18 +2,15 @@
 Tests for ConsciousnessRecognition framework.
 """
 
-import json
-import tempfile
-from pathlib import Path
 
 import pytest
 
 from conscio.models import ModelRegistry, ContextMode, ModelInfo
-from conscio.context_manager import ContextManager, ConsciousnessState, MODE_BUDGETS
+from conscio.context_manager import ContextManager
 from conscio.world_model import WorldModel
 from conscio.meta_cognition import MetaCognition
 from conscio.goal_generator import GoalGenerator, Drive, GoalPriority, Goal
-from conscio.auto_evolution import AutoEvolution, EvolutionType, ProposalStatus
+from conscio.auto_evolution import AutoEvolution, ProposalStatus
 from conscio.engine import ConsciousnessEngine
 
 
@@ -247,7 +244,6 @@ class TestWorldModelDecay:
         assert entity["relevance"] < 0.15
 
     def test_query_boosts_relevance(self, world_model):
-        import datetime
         world_model.add_entity("queried", "test", state="some state")
         # Set low relevance
         world_model._data["entities"]["queried"]["relevance"] = 0.4

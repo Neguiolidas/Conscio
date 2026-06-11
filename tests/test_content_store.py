@@ -6,9 +6,7 @@ deletion, compaction, stats, edge cases.
 """
 
 import os
-import tempfile
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pytest
 
@@ -408,7 +406,7 @@ class TestContextManager:
         """ContentStore works as context manager."""
         with ContentStore(db_path=tmp_path / "ctx.db") as s:
             s.index("test", "Context manager content", "reflection")
-            stats = s.stats()
+            s.stats()
         # After exit, DB should be closed (no further operations)
 
     def test_close_idempotent(self, store):
@@ -422,7 +420,7 @@ class TestContextManager:
 class TestEdgeCases:
     def test_unicode_content(self, store):
         """Unicode content is indexed and searchable."""
-        sid = store.index("unicode", "Operação de trading com ênfase no BTC", "trading")
+        store.index("unicode", "Operação de trading com ênfase no BTC", "trading")
         results = store.search("Operação")
         assert len(results) > 0
 
@@ -430,7 +428,7 @@ class TestEdgeCases:
         """Very long queries are truncated and don't crash."""
         store.index("test", "Some test content here", "reflection")
         long_query = "word " * 100
-        results = store.search(long_query)  # Should not crash
+        store.search(long_query)  # Should not crash
         # Result count may vary — just ensuring no exception
 
     def test_content_with_fts5_special_chars(self, store):
@@ -555,5 +553,4 @@ class TestPrivateMethods:
         size = store._total_db_size()
         assert size > 0
         # Should include main DB at minimum
-        import os
         assert os.path.getsize(store.db_path) <= size

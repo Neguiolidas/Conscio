@@ -5,9 +5,7 @@ Covers: emit, dedup, query, filters, summary, compact, stats, edge cases.
 """
 
 import json
-import time
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pytest
 

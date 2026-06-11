@@ -12,11 +12,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from .models import ContextMode, ModelRegistry, ModelInfo
+from .models import ContextMode, ModelRegistry
 
 
 # Maximum percentage of available context that consciousness state can occupy

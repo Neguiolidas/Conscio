@@ -1,4 +1,6 @@
 # tests/test_shard_engine.py
+from conscio.context_manager import ConsciousnessState, ContextManager, ContextMode
+from conscio.engine import ConsciousnessEngine
 from conscio.shard_engine import Shard, infer_shard, ShardEngine, _event_text
 
 
@@ -93,9 +95,6 @@ def test_shard_engine_none_keeps_last_shard():
     assert len(bus.events) == 1                # no transition emitted
 
 
-from conscio.context_manager import ConsciousnessState, ContextManager, ContextMode
-
-
 def test_state_injection_includes_shard():
     st = ConsciousnessState(shard="ENGINEER", context_mode=ContextMode.COMPACT)
     assert "▷ shard: ENGINEER" in st.to_injection()
@@ -115,9 +114,6 @@ def test_build_state_passes_shard(tmp_path):
     cm = ContextManager(model_name="claude-opus-4-8", storage_path=tmp_path)
     st = cm.build_state(state_summary="working", shard="JANITOR")
     assert st.shard == "JANITOR"
-
-
-from conscio.engine import ConsciousnessEngine
 
 
 def test_reflect_sets_shard_from_recent_events(tmp_path):

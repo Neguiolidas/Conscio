@@ -1,7 +1,6 @@
 # tests/test_semantic_reconcile_integration.py
 from conscio.engine import ConsciousnessEngine
 from conscio.semantic import SemanticEngine, ContradictionDetector
-from conscio.coherence import CoherenceReport, Dissonance
 
 
 class StubEmbedder:

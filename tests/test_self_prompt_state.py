@@ -1,6 +1,7 @@
 # tests/test_self_prompt_state.py
 from conscio.context_manager import ContextManager, ConsciousnessState
 from conscio.models import ContextMode
+from conscio.session_lifecycle import SessionSummary, format_heartbeat, format_handoff
 
 
 def test_state_fields_roundtrip(tmp_path):
@@ -36,9 +37,6 @@ def test_empty_fields_omitted():
     st = ConsciousnessState(context_mode=ContextMode.STANDARD)
     inj = st.to_injection()
     assert "self-prompt" not in inj and "☾ dream" not in inj
-
-
-from conscio.session_lifecycle import SessionSummary, format_heartbeat, format_handoff
 
 
 def test_heartbeat_renders_self_prompt_and_dream():

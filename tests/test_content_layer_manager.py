@@ -1,6 +1,6 @@
 """Tests for ContentLayerManager — k validation, recall, perceive, session_rag, layer_sort."""
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock
 from dataclasses import dataclass
 
 from conscio.content_layer import (
