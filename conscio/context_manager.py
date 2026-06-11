@@ -238,7 +238,7 @@ class ContextManager:
         path = self.storage_path / "state_summary.json"
         try:
             return bool(json.loads(path.read_text()).get("action_lockdown", False))
-        except (OSError, ValueError):
+        except (OSError, ValueError, AttributeError):
             return False
 
     def save_state(self, state: ConsciousnessState) -> Path:

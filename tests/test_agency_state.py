@@ -43,6 +43,11 @@ class TestLockdownField:
         cleared = manager.build_state(action_lockdown=False)
         assert cleared.action_lockdown is False
 
+    def test_latch_ignores_non_dict_state_file(self, tmp_path):
+        manager = ContextManager("glm-5.1", storage_path=tmp_path)
+        (tmp_path / "state_summary.json").write_text("[1, 2]")
+        assert manager.build_state().action_lockdown is False
+
 
 class TestModelInfoFlags:
     def test_flags_default_false(self):
