@@ -2,7 +2,7 @@
 from unittest.mock import MagicMock
 
 import conscio.session_lifecycle as sl
-from conscio.session_lifecycle import record_session_lifecycle, SessionSummary
+from conscio.session_lifecycle import record_session_lifecycle
 
 
 def test_dream_called_after_handoff(monkeypatch, tmp_path):

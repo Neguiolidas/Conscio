@@ -5,14 +5,12 @@ Covers: record, estimate_tokens, gain, budget_status, stats, compact, edge cases
 """
 
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pytest
 
 from conscio.token_tracker import (
     TokenTracker,
     CHARS_PER_TOKEN,
-    DEFAULT_DAILY_LIMIT,
     VALID_SOURCES,
 )
 

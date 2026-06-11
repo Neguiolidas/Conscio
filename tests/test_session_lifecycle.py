@@ -12,11 +12,7 @@ Covers:
 - Edge cases (empty DB, no engine, invalid events)
 """
 
-import os
 import sqlite3
-import tempfile
-from datetime import datetime, timezone
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -536,7 +532,7 @@ class TestRecordSessionLifecycle:
             # Before the fix, this raises UnboundLocalError because
             # heartbeat/handoff are only defined inside the try block,
             # but used after the finally block in the disk-write section.
-            result = record_session_lifecycle(
+            record_session_lifecycle(
                 event_type="session:end",
                 context={"session_id": "test_20260605"},
                 engine=mock_engine,

@@ -14,9 +14,7 @@ from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 # YAML is optional — fall back to manual config if unavailable
 try:

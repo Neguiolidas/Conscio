@@ -9,12 +9,11 @@ state_summary that enters the LLM context.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .context_manager import ContextManager, ConsciousnessState
+from .context_manager import ContextManager
 from .models import ContextMode
 
 
@@ -74,11 +73,11 @@ class InnerMonologue:
         # Build the full reflection
         reflection_parts = [
             f"# Reflection — {now}",
-            f"",
-            f"## World State",
+            "",
+            "## World State",
             world_state or "No world state available.",
-            f"",
-            f"## Recent Events",
+            "",
+            "## Recent Events",
         ]
 
         if events:
@@ -88,28 +87,28 @@ class InnerMonologue:
             reflection_parts.append("- No events since last reflection.")
 
         reflection_parts.extend([
-            f"",
-            f"## Self-Assessment",
+            "",
+            "## Self-Assessment",
             f"- Confidence: {confidence:.0%}",
             f"- Mode: {self.ctx.mode.value}",
             f"- Model: {self.ctx.model_info.name}",
         ])
 
         if anomalies:
-            reflection_parts.append(f"\n## Anomalies / Concerns")
+            reflection_parts.append("\n## Anomalies / Concerns")
             for a in anomalies:
                 reflection_parts.append(f"- ⚠️ {a}")
 
         if goals:
-            reflection_parts.append(f"\n## Goals Update")
+            reflection_parts.append("\n## Goals Update")
             for g in goals:
                 reflection_parts.append(f"- → {g}")
 
         # Prediction section
         reflection_parts.extend([
-            f"",
-            f"## Predictions",
-            f"- Next likely events: [to be filled by perception module]",
+            "",
+            "## Predictions",
+            "- Next likely events: [to be filled by perception module]",
         ])
 
         full_reflection = "\n".join(reflection_parts)

@@ -1,13 +1,10 @@
 # tests/test_auto_evolution.py
 """Tests for AutoEvolution — self-modification with safety gates."""
-import json
-from pathlib import Path
 
 import pytest
 
 from conscio.auto_evolution import (
     AutoEvolution,
-    EvolutionProposal,
     EvolutionType,
     ProposalStatus,
 )
@@ -122,7 +119,7 @@ def test_applied_proposals_empty(evo):
 
 def test_applied_proposals_with_applied(evo):
     p1 = evo.propose_skill_create("a", "b", "c", "d")
-    p2 = evo.propose_memory_update("k", "v", "r")
+    evo.propose_memory_update("k", "v", "r")
     evo.approve(p1.id)
     evo.mark_applied(p1.id)
     # p2 still pending

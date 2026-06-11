@@ -6,8 +6,6 @@ edge cases (missing files, invalid JSON, empty data).
 """
 
 import json
-from datetime import datetime
-from pathlib import Path
 
 import pytest
 

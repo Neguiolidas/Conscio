@@ -1,5 +1,4 @@
 """Tests for EventBus.purge_duplicates — all-time exact-duplicate collapse."""
-import sqlite3
 from datetime import datetime, timedelta
 
 import pytest

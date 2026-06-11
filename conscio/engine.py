@@ -10,15 +10,13 @@ The central coordinator that:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from .context_manager import ContextManager, ConsciousnessState
-from .models import ModelRegistry, ModelInfo, ContextMode
+from .context_manager import ContextManager
 from .inner_monologue import InnerMonologue
 from .world_model import WorldModel
 from .meta_cognition import MetaCognition
@@ -32,12 +30,16 @@ from .voice_preset import resolve_voice_preset
 from .self_prompt import generate_self_prompts
 from .dreaming import DreamRecommendation
 from .semantic import SemanticEngine, ContradictionDetector
-from .output_filter import FilterPipeline, build_pipeline_from_dict
+from .output_filter import build_pipeline_from_dict
 from .token_tracker import TokenTracker
-from .content_layer import layer_sort_key, ContentLayerManager
+from .content_layer import ContentLayerManager
 from .session_lifecycle import SessionLifecycle
 from .metabolic import MetabolicContext
 from .session_rag_factory import create_session_rag
+
+if TYPE_CHECKING:
+    from .dreaming import DreamReport
+    from .session_lifecycle import SessionSummary
 
 logger = logging.getLogger(__name__)
 

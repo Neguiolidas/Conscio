@@ -17,7 +17,6 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 
 # ─── Constants ──────────────────────────────────────────────────────────
