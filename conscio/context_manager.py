@@ -75,6 +75,7 @@ class ConsciousnessState:
     voice: str = ""                    # Active voice preset name, e.g. "coherence-style"
     self_prompt: str = ""              # Top self-prompt question (v0.7)
     dream_recommended: str = ""        # Dream-recommended marker text (v0.7)
+    action_lockdown: bool = False      # Circuit breaker latch (v1.0, blueprint §5)
 
     def to_injection(self) -> str:
         """
@@ -248,6 +249,7 @@ class ContextManager:
             "voice": state.voice,
             "self_prompt": state.self_prompt,
             "dream_recommended": state.dream_recommended,
+            "action_lockdown": state.action_lockdown,
         }
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
         # Also write the human-readable injection for manual inspection
@@ -277,6 +279,7 @@ class ContextManager:
                 voice=data.get("voice", ""),
                 self_prompt=data.get("self_prompt", ""),
                 dream_recommended=data.get("dream_recommended", ""),
+                action_lockdown=data.get("action_lockdown", False),
             )
 
         # Fallback: parse legacy text format (pre-v0.5.1 saves)

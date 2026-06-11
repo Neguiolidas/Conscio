@@ -30,6 +30,8 @@ class ModelInfo:
     mode: ContextMode
     strengths: list[str] = field(default_factory=list)
     notes: str = ""
+    has_json_mode: bool = False   # backend reliably honors JSON output mode
+    supports_gbnf: bool = False   # backend supports GBNF grammar constraint
 
     @property
     def available_context_tokens(self) -> int:
