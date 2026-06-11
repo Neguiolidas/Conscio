@@ -5,12 +5,11 @@ Covers: each stage individually, pipeline composition, crash safety,
 YAML config, edge cases.
 """
 
-import re
-from pathlib import Path
 
 import pytest
 
 from conscio.output_filter import (
+    HAS_YAML,
     StripAnsi,
     Replace,
     MatchOutput,
@@ -493,6 +492,7 @@ class TestEdgeCases:
 # ─── Build from Config Tests ──────────────────────────────────────────────
 
 class TestBuildPipelineFromConfig:
+    @pytest.mark.skipif(not HAS_YAML, reason="PyYAML not installed")
     def test_loads_from_yaml_config(self, tmp_path):
         """build_pipeline_from_config loads stages from YAML."""
         config_path = tmp_path / "filters.yaml"
@@ -539,6 +539,7 @@ filters:
         stages = pipeline.list_stages()
         assert len(stages) == 8
 
+    @pytest.mark.skipif(not HAS_YAML, reason="PyYAML not installed")
     def test_applies_loaded_pipeline(self, tmp_path):
         """Loaded pipeline correctly filters output."""
         config_path = tmp_path / "filters.yaml"
