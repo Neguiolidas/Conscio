@@ -572,12 +572,61 @@ class ConsciousnessEngine:
                 mod.close()
             except Exception:
                 pass
+        pipeline = getattr(self, "_act_pipeline", None)
+        if pipeline is not None:
+            try:
+                pipeline.ledger.close()
+            except Exception:
+                pass
 
     def __enter__(self):
         return self
 
     def __exit__(self, *args):
         self.close()
+
+    # ── v1.0 volition layer (spec section 6) ────────────────────────────
+
+    def attach_adapter(self, adapter, *, sandbox_root=None, registry=None):
+        """Wire the agentic pipeline. reflect() is unaffected."""
+        from pathlib import Path
+
+        from .agency.act import ActPipeline
+        from .agency.breaker import CircuitBreaker
+        from .agency.ledger import ActionLedger
+        from .agency.tools import make_default_registry
+
+        sandbox = Path(sandbox_root or Path.home() / ".conscio" / "sandbox")
+        registry = registry or make_default_registry(
+            sandbox_root=sandbox, content_store=self.content_store,
+            event_bus=self.event_bus)
+        ledger = ActionLedger(self.storage / "conscio.db")  # shared DB
+        self._act_pipeline = ActPipeline(
+            adapter=adapter, registry=registry, ledger=ledger,
+            breaker=CircuitBreaker(ledger, self.event_bus),
+            recall_fn=lambda q: self.recall(q, k=3),
+            emit_fn=self.event_bus.emit)
+        return self._act_pipeline
+
+    def act(self, state=None):
+        """Run one L1 PROPOSE cycle downstream of reflect()."""
+        from .agency.act import ActReport, ActStatus
+
+        if getattr(self, "_act_pipeline", None) is None:
+            return ActReport(status=ActStatus.FAILED,
+                             reason="no adapter attached")
+        state = state or self._state          # current state held by engine
+        report = self._act_pipeline.act(state)
+        if report.lockdown:
+            state.action_lockdown = True
+            self.ctx.save_state(state)
+        return report
+
+    def approve(self, ledger_id: int):
+        return self._act_pipeline.approve(ledger_id)
+
+    def reject(self, ledger_id: int, reason: str = "") -> None:
+        self._act_pipeline.reject(ledger_id, reason)
 
 
 # --- CLI Entry Point ---

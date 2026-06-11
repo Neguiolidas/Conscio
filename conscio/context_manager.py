@@ -75,6 +75,7 @@ class ConsciousnessState:
     voice: str = ""                    # Active voice preset name, e.g. "coherence-style"
     self_prompt: str = ""              # Top self-prompt question (v0.7)
     dream_recommended: str = ""        # Dream-recommended marker text (v0.7)
+    action_lockdown: bool = False      # Circuit breaker latch (v1.0, blueprint §5)
 
     def to_injection(self) -> str:
         """
@@ -178,6 +179,7 @@ class ContextManager:
         voice: str = "",
         self_prompt: str = "",
         dream_recommended: str = "",
+        action_lockdown: Optional[bool] = None,
     ) -> ConsciousnessState:
         """
         Build a ConsciousnessState, trimming each component to fit the budget.
@@ -216,6 +218,11 @@ class ContextManager:
             voice=voice,
             self_prompt=self_prompt,
             dream_recommended=dream_recommended,
+            action_lockdown=(
+                self._persisted_lockdown()
+                if action_lockdown is None
+                else action_lockdown
+            ),
         )
 
         # Final safety check — if total exceeds budget, truncate summary
@@ -224,6 +231,15 @@ class ContextManager:
             state.state_summary = " ".join(words[:len(words)//2]) + "..."
 
         return state
+
+    def _persisted_lockdown(self) -> bool:
+        """Read the circuit-breaker latch from disk (blueprint §5: the
+        latch survives reflect() cycles until a human clears it)."""
+        path = self.storage_path / "state_summary.json"
+        try:
+            return bool(json.loads(path.read_text()).get("action_lockdown", False))
+        except (OSError, ValueError, AttributeError):
+            return False
 
     def save_state(self, state: ConsciousnessState) -> Path:
         """Save consciousness state to disk for persistence across sessions.
@@ -248,6 +264,7 @@ class ContextManager:
             "voice": state.voice,
             "self_prompt": state.self_prompt,
             "dream_recommended": state.dream_recommended,
+            "action_lockdown": state.action_lockdown,
         }
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
         # Also write the human-readable injection for manual inspection
@@ -277,6 +294,7 @@ class ContextManager:
                 voice=data.get("voice", ""),
                 self_prompt=data.get("self_prompt", ""),
                 dream_recommended=data.get("dream_recommended", ""),
+                action_lockdown=data.get("action_lockdown", False),
             )
 
         # Fallback: parse legacy text format (pre-v0.5.1 saves)

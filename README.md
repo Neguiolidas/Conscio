@@ -113,6 +113,17 @@ with ConsciousnessEngine(model_name="glm-5.1") as engine:
     # Resources auto-closed on exit
 ```
 
+```python
+# v1.0: volition — propose-only (L1), human approves
+from conscio.agency import OllamaAdapter
+
+engine.attach_adapter(OllamaAdapter(model="hermes3:4b"))
+report = engine.act()                  # downstream of reflect(); proposes only
+if report.status.value == "proposed":
+    print(report.proposal.tool, report.proposal.args)
+    engine.approve(report.ledger_id)   # human gate executes it
+```
+
 ## Session Lifecycle Integration (v0.2.3)
 
 When an agent session ends or resets, the handoff hook runs a 6-step pipeline:
@@ -206,11 +217,25 @@ Every N minutes (configurable):
 - **Trajectory Vector** (`SessionSummary.trajectory/vibes/identity_anchor`) — soul-package soft fields bridging sessions. `trajectory` is code-owned; `vibes` and `identity_anchor` are LLM-authored and never overwritten by code.
 - **Content Layering** (`ContentLayer` enum, `recall()` tiebreak) — ROUTINE/PROCESSING/INTUITION layers derived at query time from result category; used as near-tie tiebreak in recall so relevant processed hits rank above barely-relevant routine ones.
 
+### v1.0 Modules (Agency — F1 "Spine")
+
+- **InferenceAdapter** (`conscio/agency/adapter.py`) — stateless inference interface;
+  MockAdapter (tests), Ollama/llama.cpp/OpenAI-compat via stdlib urllib, localhost defaults.
+- **OutputGateway** (`conscio/agency/gateway.py`) — tiered decoding: JSON mode + lenient
+  repair + validation retry (T2), flat KV-line format for small models (T3). GBNF (T1) in F3.
+- **ToolRegistry** (`conscio/agency/tools.py`) — local Python callables with risk levels;
+  sandboxed fs_read/fs_write, memory_note, emit_event. No network tools; no shell in core.
+- **ActPipeline / engine.act()** (`conscio/agency/act.py`) — L1 PROPOSE cycle consuming
+  active_goals + dominant dissonance; approve()/reject() human gate; ActionLedger audit;
+  circuit breaker with persistent `action_lockdown` (reflect() keeps running).
+
 ### Category/Source/Type Reference
 
 **ContentStore categories:** reflection, perception, trading, system, error, consciousness, external, **session**
 
-**EventBus types:** system, trading, consciousness, external, **session**, error
+**EventBus types:** tool_call, reflection, trade, error, anomaly, decision, perception,
+goal_created, goal_expired, evolution_proposed, system, consciousness, **session**,
+coherence:dissonance
 
 **TokenTracker sources:** reflection, perception, injection, trading, system, consciousness, tool_output, external
 
@@ -218,9 +243,16 @@ Every N minutes (configurable):
 
 1. **No autonomous self-modification** — all evolution proposals require human approval
 2. **Context injection has hard limits** — never exceeds mode budget
-3. **Goals are advisory** — internal goals suggest, never execute
+3. **Goals never execute directly** — execution happens exclusively through the audited
+   `act()` pipeline: validated output contract + deterministic checks + risk gating +
+   persistent circuit-breaker lockdown (semantic audit arrives with the Skeptic phase)
 4. **Reflections are append-only** — never edited once written
 5. **Cannot modify its own safety rules** — no self-referential gate bypass
+6. **HIGH-risk actions always require human approval** — never auto-executed
+7. **No network access in the tool registry** — the only network the core may touch is
+   the InferenceAdapter (localhost by default); shell execution lives outside this
+   repository entirely (sibling package `conscio-shell`)
+8. **Every external effect goes through the ActionLedger** — append-only, auditable
 
 ## Model Registry
 
@@ -284,6 +316,12 @@ All SQLite databases use WAL mode for concurrent read/write. Default location:
 
 ## Audit History
 
+- **v1.0.0a1 — F1 "Spine"** — The volition layer lands: `conscio/agency/` subpackage
+  (contracts + zero-dep validator, InferenceAdapter with Mock/Ollama/llama.cpp/OpenAI-compat,
+  OutputGateway T2/T3, sandboxed ToolRegistry, append-only ActionLedger in the shared
+  conscio.db, minimal CircuitBreaker), `engine.act()` L1 PROPOSE with `approve()`/`reject()`,
+  persistent `action_lockdown` on ConsciousnessState, `ModelInfo.has_json_mode/supports_gbnf`.
+  Safety Rules amended (R3 rewritten; R6–R8 added). reflect() untouched. +83 new tests.
 - **v0.8.0 — Semantic Reconciliation** — Contradiction detection is now semantic: embedding **antonym axes** (`conscio/semantic.py`, packs in `conscio/presets/axes/*.json`) give polarity that plain similarity can't, so `crashed`/`unreachable` read as opposites of `operational` without any lexicon. It runs **off the hot path** in the dream Reconcile sub-phase (`world.mark_contradictions(detector)`, between Prune and Crystallize), which caches `contradicted` flags into the world model; `ontological_score` reads only those cached flags (a cold, never-dreamed world reports ontological 1.0). Lexical-negation-first with full offline fallback to the v0.6 rule. Retired the v0.6 `world._data` tech debt via public `WorldModel.list_relations()` / `entity_count()` / `contradicted_entities()`. Adds the opt-in, **non-destructive** `SemanticDedup` output stage (`CONSCIO_SEMANTIC_DEDUP=1`) — it flags a near-duplicate adjacent block and keeps both verbatim, never merging. Theory from Claude_Sentience (Dave Shapiro). 56 new tests. 600 total tests.
 - **v0.7.0 — Recursive Coherence** — Closes the coherence→action loop: `reflect()` sets an advisory `DreamRecommendation` (dream targets the dominant dissonance off the hot path, recording the coherence delta) and runs pure self-prompting (`conscio/self_prompt.py`) that spawns ONE bounded goal/cycle tagged `source="self_prompt"`. New `❓ self-prompt:` / `☾ dream:` markers in live state and heartbeat (surfaced as `**Self-prompt:**` / `**Dream:**` bold labels in the handoff). v0.7 uses the lexical contradiction detector (semantic arrives in v0.8). Theory from Claude_Sentience (Dave Shapiro). 23 new tests. 544 total tests.
 - **v0.6.0 — Coherence** — CoherenceEngine: a recursive-coherence state metric (epistemic/reality/ontological/temporal) surfaced advisorily with a passive `coherence:dissonance` event; static voice-preset system (`conscio/presets/voice/`). Theory from Claude_Sentience (Dave Shapiro). 46 new tests. 521 total tests.

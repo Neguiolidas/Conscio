@@ -6,7 +6,7 @@ and goal generation. Adapts behavior based on the underlying model's
 context window size.
 """
 
-__version__ = "0.8.0"
+__version__ = "1.0.0a1"
 __author__ = "Neguiolidas / Neguitech"
 
 from .engine import ConsciousnessEngine
@@ -20,6 +20,8 @@ from .migrate import Migrator
 from .session_lifecycle import SessionSummary, record_session_lifecycle
 from .metabolic import MetabolicContext, MetabolicState
 from .dreaming import DreamCycle, DreamReport
+from .agency import MockAdapter, OllamaAdapter, LlamaCppAdapter, \
+    OpenAICompatAdapter  # noqa: F401
 
 # Note: SessionRAG is intentionally NOT imported here — it depends on numpy
 # and probes Ollama. Use the shared factory (`from conscio.session_rag_factory
@@ -43,4 +45,8 @@ __all__ = [
  "MetabolicState",
  "DreamCycle",
  "DreamReport",
+ "MockAdapter",
+ "OllamaAdapter",
+ "LlamaCppAdapter",
+ "OpenAICompatAdapter",
 ]
