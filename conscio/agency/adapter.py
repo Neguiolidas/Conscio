@@ -9,7 +9,7 @@ is the deterministic backend used by the entire test suite.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 

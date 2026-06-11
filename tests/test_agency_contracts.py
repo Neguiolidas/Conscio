@@ -1,6 +1,5 @@
 # tests/test_agency_contracts.py
 """Tests for conscio.agency.contracts — dataclass contracts + zero-dep validator."""
-import pytest
 
 from conscio.agency.contracts import (
     PROPOSAL_SCHEMA,
