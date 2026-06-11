@@ -572,6 +572,12 @@ class ConsciousnessEngine:
                 mod.close()
             except Exception:
                 pass
+        pipeline = getattr(self, "_act_pipeline", None)
+        if pipeline is not None:
+            try:
+                pipeline.ledger.close()
+            except Exception:
+                pass
 
     def __enter__(self):
         return self

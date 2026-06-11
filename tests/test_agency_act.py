@@ -3,6 +3,9 @@
 A1 (no context leakage across 100 cycles) and A4 (breaker -> lockdown
 persistence, reflect untouched)."""
 import json
+import sqlite3
+
+import pytest
 
 from conscio.agency.act import ActStatus, ActPipeline
 from conscio.agency.adapter import (AdapterError, InferenceAdapter,
@@ -166,6 +169,15 @@ class TestEngineIntegration:
             done = engine.approve(report.ledger_id)
             assert done.status is ActStatus.EXECUTED
             assert (tmp_path / "sb" / "out.md").read_text() == "hi"
+
+    def test_close_closes_action_ledger(self, tmp_path):
+        from conscio import ConsciousnessEngine
+        with ConsciousnessEngine(model_name="glm-5.1",
+                                 storage_path=tmp_path) as engine:
+            pipeline = engine.attach_adapter(MockAdapter(script=[]),
+                                             sandbox_root=tmp_path / "sb")
+        with pytest.raises(sqlite3.ProgrammingError):
+            pipeline.ledger.get(1)
 
     def test_act_without_adapter_fails_cleanly(self, tmp_path):
         from conscio import ConsciousnessEngine
