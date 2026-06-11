@@ -27,6 +27,22 @@ class TestLockdownField:
         path.write_text(json.dumps(data))
         assert manager.load_state().action_lockdown is False
 
+    def test_latch_survives_build_state_cycle(self, tmp_path):
+        """reflect() rebuilds state via build_state + save_state; the
+        latch must survive that cycle (A4 — persistent lockdown)."""
+        manager = ContextManager("glm-5.1", storage_path=tmp_path)
+        manager.save_state(ConsciousnessState(action_lockdown=True))
+        rebuilt = manager.build_state(state_summary="fresh reflect output")
+        assert rebuilt.action_lockdown is True
+        manager.save_state(rebuilt)
+        assert manager.load_state().action_lockdown is True
+
+    def test_latch_clearable_explicitly(self, tmp_path):
+        manager = ContextManager("glm-5.1", storage_path=tmp_path)
+        manager.save_state(ConsciousnessState(action_lockdown=True))
+        cleared = manager.build_state(action_lockdown=False)
+        assert cleared.action_lockdown is False
+
 
 class TestModelInfoFlags:
     def test_flags_default_false(self):

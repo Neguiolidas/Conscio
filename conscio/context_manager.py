@@ -179,6 +179,7 @@ class ContextManager:
         voice: str = "",
         self_prompt: str = "",
         dream_recommended: str = "",
+        action_lockdown: Optional[bool] = None,
     ) -> ConsciousnessState:
         """
         Build a ConsciousnessState, trimming each component to fit the budget.
@@ -217,6 +218,11 @@ class ContextManager:
             voice=voice,
             self_prompt=self_prompt,
             dream_recommended=dream_recommended,
+            action_lockdown=(
+                self._persisted_lockdown()
+                if action_lockdown is None
+                else action_lockdown
+            ),
         )
 
         # Final safety check — if total exceeds budget, truncate summary
@@ -225,6 +231,15 @@ class ContextManager:
             state.state_summary = " ".join(words[:len(words)//2]) + "..."
 
         return state
+
+    def _persisted_lockdown(self) -> bool:
+        """Read the circuit-breaker latch from disk (blueprint §5: the
+        latch survives reflect() cycles until a human clears it)."""
+        path = self.storage_path / "state_summary.json"
+        try:
+            return bool(json.loads(path.read_text()).get("action_lockdown", False))
+        except (OSError, ValueError):
+            return False
 
     def save_state(self, state: ConsciousnessState) -> Path:
         """Save consciousness state to disk for persistence across sessions.
