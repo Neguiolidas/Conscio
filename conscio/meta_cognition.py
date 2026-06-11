@@ -149,7 +149,11 @@ class MetaCognition:
             if avg_conf < 0.4 or (avg_conf > 0.7 and accuracy < 0.4):
                 blind_spots.append(task)
 
-        self._data["blind_spots"] = blind_spots
+        # Merge: keep manually-added blind spots that aren't auto-detected
+        auto_detected = set(blind_spots)
+        manual_blind_spots = [b for b in self._data.get("blind_spots", [])
+                              if b not in auto_detected]
+        self._data["blind_spots"] = blind_spots + manual_blind_spots
 
     # --- Error Patterns ---
 

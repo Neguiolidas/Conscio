@@ -67,6 +67,14 @@ class ConsciousnessState:
     model_name: str = ""              # Which model I'm running on
     context_mode: ContextMode = ContextMode.COMPACT
     context_window: int = 131000      # Available context in tokens
+    metabolic: str = ""               # Optional metabolic tier note, e.g. "FATIGUE 61%"
+    reflection_quality: str = ""      # Optional meta-reflect label: HIGH/MEDIUM/LOW
+    shard: str = ""                   # Optional active cognitive mode, e.g. "ENGINEER"
+    coherence: Optional[float] = None  # Optional aggregate coherence [0,1]; None=not computed
+    coherence_note: str = ""           # Dominant dissonance dimension, e.g. "epistemic"
+    voice: str = ""                    # Active voice preset name, e.g. "coherence-style"
+    self_prompt: str = ""              # Top self-prompt question (v0.7)
+    dream_recommended: str = ""        # Dream-recommended marker text (v0.7)
 
     def to_injection(self) -> str:
         """
@@ -94,7 +102,31 @@ class ConsciousnessState:
         
         if self.meta_cognition:
             lines.append(f"🪞 {self.meta_cognition}")
-        
+
+        if self.metabolic and self.context_mode != ContextMode.MINIMAL:
+            lines.append(f"⊘ metabolic: {self.metabolic}")
+
+        if self.reflection_quality and self.context_mode != ContextMode.MINIMAL:
+            lines.append(f"◈ reflection quality: {self.reflection_quality}")
+
+        if self.shard and self.context_mode != ContextMode.MINIMAL:
+            lines.append(f"▷ shard: {self.shard}")
+
+        if self.coherence is not None and self.context_mode != ContextMode.MINIMAL:
+            line = f"▷ coherence: {self.coherence:.2f}"
+            if self.coherence_note:
+                line += f" dominant: {self.coherence_note}"
+            lines.append(line)
+
+        if self.voice and self.context_mode != ContextMode.MINIMAL:
+            lines.append(f"⊙ voice: {self.voice}")
+
+        if self.self_prompt and self.context_mode != ContextMode.MINIMAL:
+            lines.append(f"❓ self-prompt: {self.self_prompt}")
+
+        if self.dream_recommended and self.context_mode != ContextMode.MINIMAL:
+            lines.append(f"☾ dream: {self.dream_recommended}")
+
         lines.append("═══ END CONSCIOUSNESS STATE ═══")
         return "\n".join(lines)
 
@@ -138,6 +170,14 @@ class ContextManager:
         active_goals: Optional[list[str]] = None,
         world_model_snippet: str = "",
         meta_cognition: str = "",
+        metabolic: str = "",
+        reflection_quality: str = "",
+        shard: str = "",
+        coherence: Optional[float] = None,
+        coherence_note: str = "",
+        voice: str = "",
+        self_prompt: str = "",
+        dream_recommended: str = "",
     ) -> ConsciousnessState:
         """
         Build a ConsciousnessState, trimming each component to fit the budget.
@@ -168,6 +208,14 @@ class ContextManager:
             model_name=self.model_info.name,
             context_mode=self.mode,
             context_window=self.model_info.context_window,
+            metabolic=metabolic,
+            reflection_quality=reflection_quality,
+            shard=shard,
+            coherence=coherence,
+            coherence_note=coherence_note,
+            voice=voice,
+            self_prompt=self_prompt,
+            dream_recommended=dream_recommended,
         )
 
         # Final safety check — if total exceeds budget, truncate summary
@@ -178,32 +226,81 @@ class ContextManager:
         return state
 
     def save_state(self, state: ConsciousnessState) -> Path:
-        """Save consciousness state to disk for persistence across sessions."""
-        path = self.storage_path / "state_summary.txt"
-        path.write_text(state.to_injection())
+        """Save consciousness state to disk for persistence across sessions.
+
+        Persists the full dataclass as JSON so that load_state() can round-trip
+        every field — including shard, reflection_quality, and metabolic —
+        regardless of the injection mode (MINIMAL may omit these from
+        to_injection(), but they must survive save/load).
+        """
+        path = self.storage_path / "state_summary.json"
+        data = {
+            "state_summary": state.state_summary,
+            "last_reflection": state.last_reflection,
+            "active_goals": state.active_goals,
+            "world_model_snippet": state.world_model_snippet,
+            "meta_cognition": state.meta_cognition,
+            "metabolic": state.metabolic,
+            "reflection_quality": state.reflection_quality,
+            "shard": state.shard,
+            "coherence": state.coherence,
+            "coherence_note": state.coherence_note,
+            "voice": state.voice,
+            "self_prompt": state.self_prompt,
+            "dream_recommended": state.dream_recommended,
+        }
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+        # Also write the human-readable injection for manual inspection
+        inj_path = self.storage_path / "state_summary.txt"
+        inj_path.write_text(state.to_injection())
         return path
 
     def load_state(self) -> ConsciousnessState:
         """Load the last saved consciousness state from disk."""
-        path = self.storage_path / "state_summary.txt"
-        if not path.exists():
+        json_path = self.storage_path / "state_summary.json"
+        if json_path.exists():
+            data = json.loads(json_path.read_text())
             return ConsciousnessState(
                 model_name=self.model_info.name,
                 context_mode=self.mode,
                 context_window=self.model_info.context_window,
+                state_summary=data.get("state_summary", ""),
+                last_reflection=data.get("last_reflection", ""),
+                active_goals=data.get("active_goals", []),
+                world_model_snippet=data.get("world_model_snippet", ""),
+                meta_cognition=data.get("meta_cognition", ""),
+                metabolic=data.get("metabolic", ""),
+                reflection_quality=data.get("reflection_quality", ""),
+                shard=data.get("shard", ""),
+                coherence=data.get("coherence"),
+                coherence_note=data.get("coherence_note", ""),
+                voice=data.get("voice", ""),
+                self_prompt=data.get("self_prompt", ""),
+                dream_recommended=data.get("dream_recommended", ""),
             )
 
-        # Parse the saved state (simple text format)
-        text = path.read_text()
-        state = ConsciousnessState(
+        # Fallback: parse legacy text format (pre-v0.5.1 saves)
+        txt_path = self.storage_path / "state_summary.txt"
+        if txt_path.exists():
+            text = txt_path.read_text()
+            return ConsciousnessState(
+                model_name=self.model_info.name,
+                context_mode=self.mode,
+                context_window=self.model_info.context_window,
+                state_summary=self._extract_section(text, "§"),
+                last_reflection=self._extract_section(text, "⧖"),
+                meta_cognition=self._extract_section(text, "🪞"),
+                metabolic=self._extract_section(text, "⊘"),
+                reflection_quality=self._extract_section(text, "◈"),
+                shard=self._extract_section(text, "▷"),
+            )
+
+        # No saved state at all
+        return ConsciousnessState(
             model_name=self.model_info.name,
             context_mode=self.mode,
             context_window=self.model_info.context_window,
-            state_summary=self._extract_section(text, "§"),
-            last_reflection=self._extract_section(text, "⧖"),
-            meta_cognition=self._extract_section(text, "🪞"),
         )
-        return state
 
     def get_off_context_path(self, component: str) -> Path:
         """
@@ -239,3 +336,14 @@ class ContextManager:
             "budget": self.budget,
             "storage_path": str(self.storage_path),
         }
+
+    def metabolic_state(self, used_tokens: int):
+        """
+        Map live context usage to a MetabolicState tier (advisory).
+
+        Args:
+            used_tokens: Tokens currently consumed in the live session
+                         (supplied by the caller — Conscio does not track it).
+        """
+        from .metabolic import MetabolicContext
+        return MetabolicContext.assess(used_tokens, self.model_info.context_window)

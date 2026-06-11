@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from consciousness_recognition.models import ModelRegistry, ContextMode, ModelInfo
-from consciousness_recognition.context_manager import ContextManager, ConsciousnessState, MODE_BUDGETS
-from consciousness_recognition.world_model import WorldModel
-from consciousness_recognition.meta_cognition import MetaCognition
-from consciousness_recognition.goal_generator import GoalGenerator, Drive, GoalPriority
-from consciousness_recognition.auto_evolution import AutoEvolution, EvolutionType, ProposalStatus
-from consciousness_recognition.engine import ConsciousnessEngine
+from conscio.models import ModelRegistry, ContextMode, ModelInfo
+from conscio.context_manager import ContextManager, ConsciousnessState, MODE_BUDGETS
+from conscio.world_model import WorldModel
+from conscio.meta_cognition import MetaCognition
+from conscio.goal_generator import GoalGenerator, Drive, GoalPriority, Goal
+from conscio.auto_evolution import AutoEvolution, EvolutionType, ProposalStatus
+from conscio.engine import ConsciousnessEngine
 
 
 # --- Fixtures ---
@@ -100,6 +100,25 @@ class TestModelRegistry:
         # Should be ~80% of 131k
         assert 100_000 < info.available_context_tokens < 110_000
 
+    def test_context_for_consciousness(self):
+        info = ModelRegistry.lookup("glm-5.1")
+        # CONTEXT_BUDGET_PCT = 0.02, available_context ~104k
+        # context_for_consciousness = 104k * 0.02 = ~2.1k
+        ctx = info.context_for_consciousness()
+        assert 2_000 < ctx < 2_200
+
+    def test_all_models(self):
+        all_models = ModelRegistry.all_models()
+        assert isinstance(all_models, dict)
+        assert len(all_models) > 0
+        assert "glm-5.1" in all_models
+        assert "gpt-4o" in all_models  # not "gpt-4"
+        # All values should be ModelInfo
+        for name, info in all_models.items():
+            assert isinstance(info, ModelInfo)
+            assert info.name == name
+            assert info.context_window > 0
+
 
 # --- Context Manager Tests ---
 
@@ -153,6 +172,17 @@ class TestContextManager:
         assert "compact" in injection
         assert "GLM 5.1" in injection.lower() or "glm-5.1" in injection.lower()
 
+    def test_get_off_context_path(self, ctx_manager):
+        # Known components
+        assert ctx_manager.get_off_context_path("world_model").name == "world_model.json"
+        assert ctx_manager.get_off_context_path("meta_cognition").name == "meta_cognition.json"
+        assert ctx_manager.get_off_context_path("goals").name == "goals.json"
+        assert ctx_manager.get_off_context_path("reflections").name == "reflections"
+        # Unknown component gets .json extension
+        custom_path = ctx_manager.get_off_context_path("custom_component")
+        assert custom_path.name == "custom_component.json"
+        assert custom_path.parent == ctx_manager.storage_path
+
 
 # --- World Model Tests ---
 
@@ -194,6 +224,58 @@ class TestWorldModel:
         assert "stale_entity" in stale
 
 
+# --- World Model Decay Tests ---
+
+class TestWorldModelDecay:
+    def test_relevance_starts_at_1(self, world_model):
+        world_model.add_entity("fresh_entity", "test", state="new")
+        entity = world_model.get_entity("fresh_entity")
+        assert entity["relevance"] == 1.0
+
+    def test_relevance_decays_over_time(self, world_model):
+        import datetime
+        world_model.add_entity("old_entity", "test", state="old")
+        # Manually set old timestamp (48h ago)
+        entity = world_model._data["entities"]["old_entity"]
+        entity["last_updated"] = (datetime.datetime.now() - datetime.timedelta(hours=48)).isoformat()
+        entity["relevance"] = 1.0
+        world_model._save()
+        # Run decay
+        world_model.decay_all_entities()
+        entity = world_model.get_entity("old_entity")
+        # After 48h with lambda=0.05: exp(-0.05*48) ≈ 0.09
+        assert entity["relevance"] < 0.15
+
+    def test_query_boosts_relevance(self, world_model):
+        import datetime
+        world_model.add_entity("queried", "test", state="some state")
+        # Set low relevance
+        world_model._data["entities"]["queried"]["relevance"] = 0.4
+        world_model._save()
+        # Query it
+        world_model.query("queried")
+        entity = world_model.get_entity("queried")
+        # Should be boosted by 0.3, capped at 1.0
+        assert entity["relevance"] == 0.7
+
+    def test_prune_removes_low_relevance(self, world_model):
+        world_model.add_entity("keeper", "test", state="active")
+        world_model.add_entity("goner", "test", state="dead")
+        world_model._data["entities"]["goner"]["relevance"] = 0.05
+        world_model._save()
+        pruned = world_model.prune_irrelevant(min_relevance=0.1)
+        assert pruned == 1
+        assert world_model.get_entity("goner") is None
+        assert world_model.get_entity("keeper") is not None
+
+    def test_stale_includes_low_relevance(self, world_model):
+        world_model.add_entity("irrelevant", "test", state="meh")
+        world_model._data["entities"]["irrelevant"]["relevance"] = 0.1
+        world_model._save()
+        stale = world_model.stale_entities()
+        assert "irrelevant" in stale
+
+
 # --- Meta-Cognition Tests ---
 
 class TestMetaCognition:
@@ -223,6 +305,55 @@ class TestMetaCognition:
         meta_cognition.record_confidence("general", 0.8, "success")
         summary = meta_cognition.summary()
         assert "Confidence" in summary
+
+    def test_update_outcome(self, meta_cognition):
+        # First record confidence with pending outcome, then update
+        meta_cognition.record_confidence("coding", 0.9, "pending")
+        meta_cognition.update_outcome("coding", "failure")
+        # Average confidence should still work
+        assert meta_cognition.average_confidence("coding") == 0.9
+        # Accuracy should reflect the failure
+        assert meta_cognition.accuracy("coding") == 0.0  # 0 successes, 1 failure
+
+    def test_update_outcome_without_pending(self, meta_cognition):
+        # Record with outcome already set - update_outcome won't change it
+        meta_cognition.record_confidence("coding", 0.9, "success")
+        meta_cognition.update_outcome("coding", "failure")  # Won't find pending entry
+        # Accuracy should still be 1.0 (the original success)
+        assert meta_cognition.accuracy("coding") == 1.0
+
+    def test_update_outcome_no_history(self, meta_cognition):
+        # update_outcome should not raise even without prior confidence
+        meta_cognition.update_outcome("new_task", "success")
+        # No confidence recorded, so average_confidence returns default 0.5
+        assert meta_cognition.average_confidence("new_task") == 0.5
+        assert meta_cognition.accuracy("new_task") == 0.5
+
+    def test_add_critique(self, meta_cognition):
+        meta_cognition.add_critique(
+            task="code_review",
+            what_i_did="Missed edge case in null handling",
+            what_i_should_do="Add explicit null checks before dereferencing"
+        )
+        critiques = meta_cognition.recent_critiques(1)
+        assert len(critiques) == 1
+        assert critiques[0]["task"] == "code_review"
+        assert "null" in critiques[0]["what_i_did"]
+        assert "null checks" in critiques[0]["what_i_should_do"]
+
+    def test_recent_critiques_limit(self, meta_cognition):
+        for i in range(10):
+            meta_cognition.add_critique(f"task_{i}", f"did {i}", f"should {i}")
+        critiques = meta_cognition.recent_critiques(3)
+        assert len(critiques) == 3
+        # Returns last 3 in chronological order (oldest of recent first)
+        assert critiques[0]["task"] == "task_7"
+        assert critiques[1]["task"] == "task_8"
+        assert critiques[2]["task"] == "task_9"
+
+    def test_recent_critiques_empty(self, meta_cognition):
+        critiques = meta_cognition.recent_critiques(5)
+        assert critiques == []
 
 
 # --- Goal Generator Tests ---
@@ -256,6 +387,122 @@ class TestGoalGenerator:
         goal_generator.generate_from_curiosity("Test anomaly")
         summary = goal_generator.summary()
         assert len(summary) > 0
+
+    def test_generate_from_evolution(self, goal_generator):
+        goal = goal_generator.generate_from_evolution("improve error handling", target="trading")
+        assert goal is not None
+        assert "Evolve" in goal.description or "improve" in goal.description.lower()
+        assert goal.drive == Drive.EVOLUTION
+
+    def test_add_user_goal(self, goal_generator):
+        goal = goal_generator.add_user_goal("User requested: check portfolio risk", priority=GoalPriority.HIGH)
+        assert goal is not None
+        assert "check portfolio risk" in goal.description
+        assert goal.priority == GoalPriority.HIGH
+
+    def test_cancel_goal(self, goal_generator):
+        goal = goal_generator.generate_from_curiosity("Test anomaly for cancellation")
+        assert goal is not None
+        goal_id = goal.id
+        # Cancel the goal
+        result = goal_generator.cancel_goal(goal_id)
+        assert result is True
+        # Goal should no longer be active
+        active_ids = [g.id for g in goal_generator.active_goals()]
+        assert goal_id not in active_ids
+
+    def test_cancel_nonexistent_goal(self, goal_generator):
+        result = goal_generator.cancel_goal("nonexistent-id-12345")
+        assert result is False
+
+    def test_expire_stale_goals(self, goal_generator):
+        # Add a goal
+        goal = goal_generator.generate_from_curiosity("Fresh anomaly")
+        assert goal is not None
+        # Manually age it by updating the internal goals list
+        from datetime import datetime, timedelta
+        for g in goal_generator._goals:
+            if g.id == goal.id:
+                old_time = (datetime.utcnow() - timedelta(hours=48)).isoformat()
+                g.created_at = old_time
+        goal_generator._save()
+        # Expire stale goals (max_age_hours=24)
+        expired_count = goal_generator.expire_stale(max_age_hours=24)
+        assert expired_count == 1
+        # Goal should be marked expired
+        aged_goal = next(g for g in goal_generator._goals if g.id == goal.id)
+        assert aged_goal.status == "expired"
+
+    def test_expire_stale_no_stale_goals(self, goal_generator):
+        goal_generator.generate_from_curiosity("Fresh anomaly")
+        expired_count = goal_generator.expire_stale(max_age_hours=24)
+        assert expired_count == 0
+
+    def test_to_dict(self, goal_generator):
+        goal_generator.generate_from_curiosity("Test for to_dict")
+        goal_dicts = goal_generator.to_dict()
+        assert isinstance(goal_dicts, list)
+        assert len(goal_dicts) > 0
+        for gd in goal_dicts:
+            assert "id" in gd
+            assert "description" in gd
+            assert "drive" in gd
+            assert "priority" in gd
+            assert "meta_score" in gd
+            assert "created_at" in gd
+            assert "status" in gd
+
+    def test_status(self, goal_generator):
+        goal_generator.generate_from_curiosity("Test anomaly")
+        status = goal_generator.status()
+        assert isinstance(status, dict)
+        assert "total_goals" in status
+        assert "active_goals" in status
+        assert "drive_strengths" in status
+        assert "path" in status
+        assert status["total_goals"] >= 1
+        assert status["active_goals"] >= 1
+
+
+# --- Goal Meta-Score Tests ---
+
+class TestGoalMetaScore:
+    def test_compute_meta_score_high_confidence(self):
+        goal = Goal("Test", Drive.CURIOSITY, priority=GoalPriority.HIGH)
+        score = goal.compute_meta_score(confidence=0.9, calibration=0.85)
+        # HIGH=3, base=0.75, conf_factor=0.95, cal_penalty≈0.925
+        # score ≈ 0.75 * 0.95 * 0.925 ≈ 0.66
+        assert 0.5 < score <= 1.0
+
+    def test_compute_meta_score_low_confidence(self):
+        goal = Goal("Test", Drive.CURIOSITY, priority=GoalPriority.HIGH)
+        score = goal.compute_meta_score(confidence=0.2, calibration=0.9)
+        # conf_factor = 0.6 → much lower score
+        assert score < 0.5
+
+    def test_compute_meta_score_overconfident_penalty(self):
+        goal_high_cal = Goal("A", Drive.CURIOSITY, priority=GoalPriority.MEDIUM)
+        goal_low_cal = Goal("B", Drive.CURIOSITY, priority=GoalPriority.MEDIUM)
+        score_good = goal_high_cal.compute_meta_score(confidence=0.8, calibration=0.9)
+        score_over = goal_low_cal.compute_meta_score(confidence=0.8, calibration=0.3)
+        assert score_good > score_over
+
+    def test_score_all_goals(self, goal_generator):
+        goal_generator.generate_from_curiosity("Anomaly A")
+        goal_generator.generate_from_maintenance("check", "system")
+        goal_generator.score_all_goals(confidence=0.8, calibration=0.7)
+        for g in goal_generator.active_goals(max_count=10):
+            assert g.meta_score > 0
+
+    def test_active_goals_sort_by_meta(self, goal_generator):
+        g1 = goal_generator.generate_from_curiosity("Low priority anomaly")
+        g2 = goal_generator.generate_from_maintenance("health", "bot")
+        if g1 and g2:
+            g1.compute_meta_score(0.3, 0.5)  # low score
+            g2.compute_meta_score(0.9, 0.9)  # high score
+            sorted_goals = goal_generator.active_goals(sort_by_meta=True)
+            if len(sorted_goals) >= 2:
+                assert sorted_goals[0].meta_score >= sorted_goals[1].meta_score
 
 
 # --- Auto Evolution Tests ---
@@ -300,7 +547,115 @@ class TestAutoEvolution:
         assert len(pending) >= 2
 
 
-# --- Engine Integration Tests ---
+# --- Auto-Evolution Observer Tests ---
+
+class TestAutoEvolutionObserver:
+    def test_observe_errors_creates_proposals(self, tmp_storage):
+        meta = MetaCognition(tmp_storage)
+        evo = AutoEvolution(tmp_storage)
+        # Create recurring errors
+        meta.record_error("API timeout")
+        meta.record_error("API timeout")
+        # Observe
+        new = evo.observe_errors(meta)
+        assert len(new) == 1
+        assert new[0].status == ProposalStatus.PENDING
+        assert "API timeout" in new[0].description
+
+    def test_observe_errors_deduplicates(self, tmp_storage):
+        meta = MetaCognition(tmp_storage)
+        evo = AutoEvolution(tmp_storage)
+        meta.record_error("API timeout")
+        meta.record_error("API timeout")
+        # First observe
+        evo.observe_errors(meta)
+        # Second observe — should not create duplicate
+        new = evo.observe_errors(meta)
+        assert len(new) == 0
+        # Only 1 pending proposal total
+        assert len(evo.pending_proposals()) == 1
+
+    def test_observe_errors_no_errors(self, tmp_storage):
+        meta = MetaCognition(tmp_storage)
+        evo = AutoEvolution(tmp_storage)
+        new = evo.observe_errors(meta)
+        assert len(new) == 0
+
+
+# --- Meta-Cognition → Goal Generator Connection Tests ---
+
+class TestMetaGoalConnection:
+    def test_blind_spot_generates_evolution_goal(self, tmp_storage):
+        meta = MetaCognition(tmp_storage)
+        goals = GoalGenerator(tmp_storage)
+        engine = ConsciousnessEngine("glm-5.1", storage_path=tmp_storage)
+
+        # Set up blind spots
+        meta._data["blind_spots"] = ["weak_area", "another_weak_area"]
+        meta._save()
+
+        # Feed meta to goals
+        engine.feed_meta_to_goals(meta, goals)
+
+        # Check that evolution goals were created
+        active = goals.active_goals()
+        assert any(g.drive == Drive.EVOLUTION for g in active)
+        assert any(g.description == "Evolve: weak_area — low confidence area" for g in active)
+
+    def test_frequent_error_generates_maintenance_goal(self, tmp_storage):
+        meta = MetaCognition(tmp_storage)
+        goals = GoalGenerator(tmp_storage)
+        engine = ConsciousnessEngine("glm-5.1", storage_path=tmp_storage)
+
+        # Set up error patterns (at least 2 to meet min_count)
+        meta.record_error("API timeout")
+        meta.record_error("API timeout")  # count过着100
+
+        # Feed meta to goals
+        engine.feed_meta_to_goals(meta, goals)
+
+        # Check that a maintenance goal was created
+        active = goals.active_goals()
+        assert any(g.drive == Drive.MAINTENANCE for g in active)
+        assert any("API timeout" in g.description for g in active)
+
+    def test_drive_strength_adjustment(self, tmp_storage):
+        meta = MetaCognition(tmp_storage)
+        goals = GoalGenerator(tmp_storage)
+        engine = ConsciousnessEngine("glm-5.1", storage_path=tmp_storage)
+
+        # Set low average confidence (< 0.5)
+        meta.record_confidence("general", 0.3, "failure")
+        meta.record_confidence("general", 0.3, "failure")
+        assert meta.average_confidence() < 0.5
+
+        initial_evolution = goals.drives[Drive.EVOLUTION]
+
+        # Feed meta to goals
+        engine.feed_meta_to_goals(meta, goals)
+
+        # Evolution drive should be boosted by 0.2
+        assert goals.drives[Drive.EVOLUTION] == initial_evolution + 0.2
+
+    def test_no_duplicate_goals(self, tmp_storage):
+        meta = MetaCognition(tmp_storage)
+        goals = GoalGenerator(tmp_storage)
+        engine = ConsciousnessEngine("glm-5.1", storage_path=tmp_storage)
+
+        # Set up blind spots
+        meta._data["blind_spots"] = ["blind_spot_1"]
+        meta._save()
+
+        # Feed meta to goals twice
+        engine.feed_meta_to_goals(meta, goals)
+        engine.feed_meta_to_goals(meta, goals)
+
+        # Count how many evolution goals exist for the blind spot
+        blind_spot_goals = [
+            g for g in goals.active_goals() 
+            if "Evolve: blind_spot_1" in g.description
+        ]
+        assert len(blind_spot_goals) == 1
 
 class TestConsciousnessEngine:
     def test_initialization(self, engine):
@@ -341,3 +696,53 @@ class TestConsciousnessEngine:
         entity = engine.world.get_entity("BTC")
         assert entity is not None
         assert entity["state"] == "price 67000"
+
+
+# ─── v0.2 Regression Tests ──────────────────────────────────────────────
+
+class TestV02Regressions:
+    """Regression tests for bugs found during audit."""
+
+    def test_output_filter_pipeline_config_keys(self):
+        """engine.py must use correct config keys for build_pipeline_from_dict.
+        Bug: 'max' and 'max_chars' were used instead of 'max_lines' and 'max_width'.
+        """
+        from conscio.output_filter import build_pipeline_from_dict
+
+        pipeline = build_pipeline_from_dict({
+            "stages": [
+                {"strip_ansi": None},
+                {"max_lines": {"max_lines": 200}},
+                {"truncate_lines": {"max_width": 8000}},
+            ]
+        })
+        stages = pipeline.list_stages()
+        assert "strip_ansi" in stages
+        assert "max_lines" in stages
+        assert "truncate_lines" in stages
+
+    def test_engine_close_and_context_manager(self, tmp_path):
+        """ConsciousnessEngine must properly close SQLite-backed modules.
+        Bug: no close()/__exit__ — WAL would never checkpoint.
+        """
+        engine = ConsciousnessEngine(
+            model_name="glm-5.1",
+            storage_path=tmp_path / "consciousness",
+        )
+        engine.reflect(world_state="Test cleanup", confidence=0.5)
+
+        # close() should not raise
+        engine.close()
+        # close() should be idempotent
+        engine.close()
+
+    def test_engine_context_manager(self, tmp_path):
+        """ConsciousnessEngine as context manager closes resources."""
+        with ConsciousnessEngine(
+            model_name="glm-5.1",
+            storage_path=tmp_path / "consciousness2",
+        ) as engine:
+            engine.reflect(world_state="Test ctx", confidence=0.6)
+            assert engine.content_store is not None
+            assert engine.event_bus is not None
+            assert engine.token_tracker is not None

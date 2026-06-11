@@ -45,7 +45,7 @@ class EvolutionProposal:
         changes: dict,
         risk_level: str = "low",  # low | medium | high
     ):
-        self.id = f"evo_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        self.id = f"evo_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
         self.evolution_type = evolution_type
         self.description = description
         self.rationale = rationale
@@ -202,6 +202,51 @@ class AutoEvolution:
         self._proposals.append(proposal)
         self._save()
         return proposal
+
+    # --- Auto-observation from MetaCognition ---
+
+    def observe_errors(self, meta_cognition: "MetaCognition") -> list[EvolutionProposal]:
+        """
+        Observe error patterns from MetaCognition and auto-propose fixes.
+
+        For each frequent error (count >= 2), generates a PATTERN_LEARN proposal
+        with the pattern and a suggested lesson. Deduplicates against existing
+        pending proposals to avoid spam.
+
+        Returns list of newly created proposals (empty if nothing new).
+        """
+        from .meta_cognition import MetaCognition
+
+        frequent = meta_cognition.frequent_errors(min_count=2)
+        if not frequent:
+            return []
+
+        # Dedup: existing pending proposal descriptions
+        existing_descs = {p.description for p in self.pending_proposals()}
+
+        new_proposals = []
+        for error in frequent:
+            pattern = error.get("pattern", "unknown")
+            count = error.get("count", 0)
+            # This must match what propose_pattern_learn generates as description
+            expected_desc = f"Learn pattern: Recurring error: {pattern}"
+
+            if expected_desc in existing_descs:
+                continue
+
+            # Infer a lesson from the error pattern
+            lesson = f"Add guard/check for '{pattern}' — occurred {count}x without resolution"
+
+            proposal = self.propose_pattern_learn(
+                pattern=f"Recurring error: {pattern}",
+                lesson=lesson,
+                rationale=f"Auto-observed: error '{pattern}' occurred {count} times. "
+                          f"Suggesting pattern capture to prevent recurrence.",
+            )
+            new_proposals.append(proposal)
+            existing_descs.add(proposal.description)
+
+        return new_proposals
 
     # --- Review & Approval ---
 

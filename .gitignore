@@ -30,3 +30,19 @@ htmlcov/
 
 # Consciousness state data (user-specific)
 .consciousness/
+# MemPalace diary archives — local only
+mempalace/
+# Hermes plans — session-specific
+.hermes/
+
+# SQLite database artifacts
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Ruff cache
+.ruff_cache/
+
+# MyPy cache
+.mypy_cache/
