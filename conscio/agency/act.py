@@ -147,6 +147,9 @@ class ActPipeline:
             reason="" if result.ok else result.error)
 
     def reject(self, ledger_id: int, reason: str = "") -> None:
+        row = self.ledger.get(ledger_id)
+        if row is None or row["status"] != "proposed":
+            return                              # audit rows are immutable (R8)
         self.ledger.update_execution(ledger_id, ok=False, output="",
                                      error=reason or "rejected",
                                      duration_ms=0, status="rejected")

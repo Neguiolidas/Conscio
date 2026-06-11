@@ -74,6 +74,14 @@ class TestProposeFlow:
         pipeline.reject(report.ledger_id, reason="not now")
         assert ledger.get(report.ledger_id)["status"] == "rejected"
 
+    def test_reject_only_touches_pending_proposals(self, tmp_path):
+        pipeline, ledger, _ = _pipeline(
+            tmp_path, MockAdapter(script=[_proposal_json()]))
+        report = pipeline.act(_state())
+        pipeline.approve(report.ledger_id)
+        pipeline.reject(report.ledger_id, reason="too late")  # must be a no-op
+        assert ledger.get(report.ledger_id)["status"] == "executed"
+
     def test_unknown_tool_fails_cycle(self, tmp_path):
         pipeline, ledger, _ = _pipeline(
             tmp_path, MockAdapter(script=[_proposal_json(tool="ghost")]))
