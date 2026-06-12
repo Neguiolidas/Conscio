@@ -24,6 +24,11 @@ class TestMockAdapter:
         assert mock.calls[0]["prompt"] == "hello"
         assert mock.calls[0]["max_tokens"] == 99
 
+    def test_script_accepts_callables_reacting_to_prompt(self):
+        mock = MockAdapter(script=[lambda p: f"saw:{p}", "static"])
+        assert mock.generate("ab").text == "saw:ab"
+        assert mock.generate("cd").text == "static"
+
     def test_exhausted_script_raises_adapter_error(self):
         mock = MockAdapter(script=[])
         with pytest.raises(AdapterError):

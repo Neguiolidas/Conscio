@@ -13,6 +13,26 @@ from conscio.agency.gateway import (
 )
 
 
+class TestEffectiveTier:
+    def test_explicit_tier_wins(self):
+        gw = OutputGateway(MockAdapter(script=[]), tier="T3")
+        assert gw.effective_tier() == "T3"
+
+    def test_caps_fallback_json_mode(self):
+        gw = OutputGateway(MockAdapter(script=[]))   # caps default json_mode
+        assert gw.effective_tier() == "T2"
+
+    def test_caps_fallback_kv_only(self):
+        caps = AdapterCaps(json_mode=False, grammar=False)
+        gw = OutputGateway(MockAdapter(script=[], caps=caps))
+        assert gw.effective_tier() == "T3"
+
+    def test_caps_fallback_grammar(self):
+        caps = AdapterCaps(json_mode=False, grammar=True)
+        gw = OutputGateway(MockAdapter(script=[], caps=caps))
+        assert gw.effective_tier() == "T1"
+
+
 class TestRepairJson:
     def test_strips_markdown_fences_and_prose(self):
         raw = 'Sure! Here you go:\n```json\n{"tool": "x"}\n```\nDone.'
