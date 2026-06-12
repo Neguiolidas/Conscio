@@ -26,11 +26,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run tests
-        run: python -m pytest tests/ -q --tb=short
-
-      - name: Run tests with coverage
-        run: python -m pytest tests/ --cov=conscio --cov-report=term-missing -q
+      # House rule: one test file per pytest process (mirrors the local
+      # RAM constraint and keeps per-file isolation honest).
+      - name: Run tests (one file at a time)
+        run: |
+          set -euo pipefail
+          for f in tests/test_*.py; do
+            echo "── $f"
+            python -m pytest "$f" -q --tb=short --cov=conscio --cov-append -p no:cacheprovider
+          done
+          python -m coverage report --skip-covered
 
   lint:
     runs-on: ubuntu-latest
@@ -51,5 +56,4 @@ jobs:
         run: ruff check conscio/ tests/
 
       - name: MyPy type check
-        run: mypy conscio/ --ignore-missing-imports --no-error-summary || true
-        continue-on-error: true
+        run: mypy conscio/ --ignore-missing-imports

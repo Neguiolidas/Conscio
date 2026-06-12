@@ -14,7 +14,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from .timeutil import naive_utcnow
 
@@ -27,7 +27,7 @@ from .auto_evolution import AutoEvolution
 from .content_store import ContentStore
 from .event_bus import EventBus
 from .shard_engine import ShardEngine
-from .coherence import CoherenceEngine, COHERENCE_EVENT_THRESHOLD
+from .coherence import CoherenceEngine, CoherenceReport, COHERENCE_EVENT_THRESHOLD
 from .voice_preset import resolve_voice_preset
 from .self_prompt import generate_self_prompts
 from .dreaming import DreamRecommendation
@@ -106,9 +106,9 @@ class ConsciousnessEngine:
         # Built once; reused by dream Reconcile and the opt-in output stage.
         self._semantic = SemanticEngine()
         self._contradiction_detector = ContradictionDetector(self._semantic)
-        self.last_coherence = None
+        self.last_coherence: Optional[CoherenceReport] = None
         self.dream_recommended = DreamRecommendation(False, None, None)
-        self.last_self_prompts = []
+        self.last_self_prompts: list = []
 
         # Voice preset (v0.6) — static marker. Precedence: param > env > default.
         effective_voice = (
@@ -490,7 +490,7 @@ class ConsciousnessEngine:
         All proposals are PENDING until a human approves them.
         Returns the proposal dict for review.
         """
-        type_map = {
+        type_map: dict[str, Callable[..., Any]] = {
             "skill_patch": self.evolution.propose_skill_patch,
             "skill_create": self.evolution.propose_skill_create,
             "memory_update": self.evolution.propose_memory_update,

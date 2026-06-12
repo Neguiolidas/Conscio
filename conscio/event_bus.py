@@ -188,7 +188,7 @@ class EventBus:
         )
         self.db.commit()
 
-        return cursor.lastrowid
+        return int(cursor.lastrowid or 0)
 
     def emit_batch(self, events: list[dict]) -> list[int]:
         """
@@ -244,7 +244,7 @@ class EventBus:
             List of Event objects, newest first
         """
         conditions = []
-        params = []
+        params: list = []
 
         if type:
             conditions.append("type = ?")
@@ -482,7 +482,7 @@ class EventBus:
 
     def _row_to_event(self, row: sqlite3.Row) -> Event:
         """Convert a database row to an Event object."""
-        data = {}
+        data: dict = {}
         try:
             data = json.loads(row["data"]) if row["data"] else {}
         except (json.JSONDecodeError, TypeError):
