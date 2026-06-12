@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS actions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts REAL NOT NULL,
     goal_fp TEXT NOT NULL,
+    goal_text TEXT NOT NULL DEFAULT '',
     tool TEXT NOT NULL,
     args_json TEXT NOT NULL,
     rationale TEXT NOT NULL DEFAULT '',
@@ -48,18 +49,25 @@ class ActionLedger:
             self._conn.commit()
         except sqlite3.OperationalError:
             pass                               # already present
+        try:                                   # F1-F3 databases lack goal_text
+            self._conn.execute("ALTER TABLE actions ADD COLUMN"
+                               " goal_text TEXT NOT NULL DEFAULT ''")
+            self._conn.commit()
+        except sqlite3.OperationalError:
+            pass                               # already present
 
     def record(self, *, goal_fp: str, tool: str, args_json: str,
                rationale: str, tier: str, status: str, ok: bool | None = None,
                tokens_in: int = 0, tokens_out: int = 0,
-               adapter: str = "", model: str = "") -> int:
+               adapter: str = "", model: str = "",
+               goal_text: str = "") -> int:
         cur = self._conn.execute(
-            "INSERT INTO actions (ts, goal_fp, tool, args_json, rationale,"
-            " tier, status, ok, tokens_in, tokens_out, adapter, model)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (time.time(), goal_fp, tool, args_json, rationale, tier, status,
-             None if ok is None else int(ok), tokens_in, tokens_out,
-             adapter, model))
+            "INSERT INTO actions (ts, goal_fp, goal_text, tool, args_json,"
+            " rationale, tier, status, ok, tokens_in, tokens_out, adapter,"
+            " model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (time.time(), goal_fp, goal_text, tool, args_json, rationale,
+             tier, status, None if ok is None else int(ok), tokens_in,
+             tokens_out, adapter, model))
         self._conn.commit()
         return int(cur.lastrowid or 0)
 
@@ -103,6 +111,15 @@ class ActionLedger:
         else:
             row = self._conn.execute("SELECT COUNT(*) FROM actions").fetchone()
         return int(row[0])
+
+    def executed_since(self, after_id: int) -> list[dict]:
+        """Successful executions newer than `after_id`, oldest first
+        (the Distill sub-phase's feed — spec v1.1 section 4)."""
+        rows = self._conn.execute(
+            "SELECT id, goal_fp, goal_text, tool, args_json, rationale"
+            " FROM actions WHERE id > ? AND status='executed' AND ok=1"
+            " ORDER BY id ASC", (after_id,)).fetchall()
+        return [dict(r) for r in rows]
 
     def nth_recent_ts(self, n: int) -> float:
         """ts of the nth most recent row; 0.0 when fewer rows exist."""
