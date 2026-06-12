@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS actions (
     tier TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL,              -- proposed|executed|rejected|failed|locked
     verdict TEXT NOT NULL DEFAULT '',  -- skeptic verdict (F2)
+    verdict_reasons TEXT NOT NULL DEFAULT '',
     ok INTEGER,                        -- NULL until executed
     output TEXT NOT NULL DEFAULT '',
     error TEXT NOT NULL DEFAULT '',
@@ -41,6 +42,12 @@ class ActionLedger:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
+        try:                                   # F1 databases lack the column
+            self._conn.execute("ALTER TABLE actions ADD COLUMN"
+                               " verdict_reasons TEXT NOT NULL DEFAULT ''")
+            self._conn.commit()
+        except sqlite3.OperationalError:
+            pass                               # already present
 
     def record(self, *, goal_fp: str, tool: str, args_json: str,
                rationale: str, tier: str, status: str, ok: bool | None = None,
@@ -63,6 +70,20 @@ class ActionLedger:
             " status=? WHERE id=?",
             (int(ok), output, error, duration_ms, status, row_id))
         self._conn.commit()
+
+    def update_verdict(self, row_id: int, verdict: str,
+                       reasons: list[str]) -> None:
+        self._conn.execute(
+            "UPDATE actions SET verdict=?, verdict_reasons=? WHERE id=?",
+            (verdict, "; ".join(reasons), row_id))
+        self._conn.commit()
+
+    def pending(self, limit: int = 20) -> list[dict]:
+        """Approval queue (R6): proposals awaiting approve()/reject()."""
+        rows = self._conn.execute(
+            "SELECT * FROM actions WHERE status='proposed'"
+            " ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
 
     def get(self, row_id: int) -> dict | None:
         row = self._conn.execute(
