@@ -56,10 +56,21 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return sorted(self._tools)
 
-    def catalog_text(self) -> str:
-        """Compact tool catalog for the actor prompt."""
+    _RISK_ORDER = {Risk.LOW: 0, Risk.MEDIUM: 1, Risk.HIGH: 2}
+
+    def catalog_text(self, max_tools: int | None = None) -> str:
+        """Compact tool catalog for the actor prompt.
+
+        max_tools (from the ModelProfile, F3) caps what a small model
+        sees: safest risks first, then alphabetical. None = full catalog
+        in registration order (F1 behavior).
+        """
+        specs = list(self._tools.values())
+        if max_tools is not None and len(specs) > max_tools:
+            specs = sorted(specs, key=lambda s: (self._RISK_ORDER[s.risk],
+                                                 s.name))[:max_tools]
         lines = []
-        for spec in self._tools.values():
+        for spec in specs:
             args = ", ".join(f"{k}:{v.get('type', 'str')}"
                              for k, v in spec.params.items())
             lines.append(f"- {spec.name}({args}) [{spec.risk.value}] "
