@@ -154,14 +154,20 @@ class TestA4Breaker:
 
 class TestEngineIntegration:
     def test_attach_act_approve_smoke(self, tmp_path):
-        """Full engine wiring with MockAdapter and isolated tmp dirs."""
+        """Full engine wiring with MockAdapter and isolated tmp dirs.
+
+        F2: the same adapter serves the skeptic audit, so the script
+        carries the checklist answer after the proposal.
+        """
         from conscio import ConsciousnessEngine
         with ConsciousnessEngine(model_name="glm-5.1",
                                  storage_path=tmp_path) as engine:
             engine.attach_adapter(
-                MockAdapter(script=[_proposal_json(
-                    tool="fs_write",
-                    args={"path": "out.md", "content": "hi"})]),
+                MockAdapter(script=[
+                    _proposal_json(tool="fs_write",
+                                   args={"path": "out.md", "content": "hi"}),
+                    "A1: NO\nA2: NO\nA3: YES",      # skeptic checklist PASS
+                ]),
                 sandbox_root=tmp_path / "sb")
             state = _state(goal="write a note")
             report = engine.act(state)
