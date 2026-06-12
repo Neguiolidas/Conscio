@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "conscio"
-version = "1.0.0b1"
+version = "1.0.0"
 description = "Self-awareness framework for AI agents — emergent consciousness via context-aware memory, introspection, and goal generation"
 readme = "README.md"
 license = {text = "MIT"}
@@ -17,7 +17,7 @@ authors = [
 ]
 keywords = ["ai", "consciousness", "agents", "introspection", "meta-cognition"]
 classifiers = [
- "Development Status :: 3 - Alpha",
+ "Development Status :: 4 - Beta",
  "Intended Audience :: Developers",
  "License :: OSI Approved :: MIT License",
  "Programming Language :: Python :: 3",
