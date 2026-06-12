@@ -8,6 +8,9 @@ risk gating → Skeptic audit (clean call) → PROPOSED (L1 / HIGH risk) or
 immediate supervised execution (L2, earned via TrustMatrix). Skeptic
 FAIL is recorded as a failed row (feeds the breaker); a human reject()
 stays 'rejected' and never counts against the agent.
+
+F3: GoalArbiter selection, real decode tier in the ledger,
+profile-driven tool visibility (max_visible_tools).
 """
 from __future__ import annotations
 
@@ -64,7 +67,10 @@ class ActPipeline:
                  autonomy_cap: int = 1,
                  recall_fn: Callable[[str], list[str]] | None = None,
                  emit_fn: Callable[..., Any] | None = None,
-                 few_shot_provider: Callable[[str], list[str]] | None = None):
+                 few_shot_provider: Callable[[str], list[str]] | None = None,
+                 arbiter: Any = None):
+        from .loop import GoalArbiter      # runtime: loop imports this module
+
         self.adapter = adapter
         self.registry = registry
         self.ledger = ledger
@@ -77,6 +83,8 @@ class ActPipeline:
         self.recall_fn = recall_fn
         self.emit_fn = emit_fn or (lambda **kw: None)
         self.few_shot_provider = few_shot_provider
+        self.arbiter = arbiter or GoalArbiter(breaker)
+        self.max_visible_tools: int | None = None    # set by engine.probe()
 
     # ── act cycle (spec §6) ──
 
@@ -88,11 +96,8 @@ class ActPipeline:
             return ActReport(status=ActStatus.FAILED,
                              reason="no active goals")
 
-        self.breaker.review_quarantine()
-        goal_text = next(
-            (g for g in state.active_goals
-             if not self.breaker.is_quarantined(goal_fingerprint(g))), None)
-        if goal_text is None:                  # GoalArbiter arrives in F3
+        goal_text = self.arbiter.choose(state)
+        if goal_text is None:
             return ActReport(status=ActStatus.FAILED,
                              reason="all active goals quarantined")
         goal_fp = goal_fingerprint(goal_text)
@@ -102,14 +107,15 @@ class ActPipeline:
                     if self.few_shot_provider else [])
         prompt = build_actor_prompt(
             state=state, goal_text=goal_text,
-            catalog_text=self.registry.catalog_text(),
+            catalog_text=self.registry.catalog_text(self.max_visible_tools),
             recall_snippets=recall, few_shot=few_shot)
         self.emit_fn(type="tool_call", category="external",
                      data={"action": "cycle_start", "goal_fp": goal_fp})
 
         try:
             proposal = self.gateway.request_action(
-                prompt, PROPOSAL_SCHEMA, goal_id=goal_fp)
+                prompt, PROPOSAL_SCHEMA, goal_id=goal_fp,
+                tool_names=self.registry.names())
         except GatewayError as exc:
             return self._fail(goal_fp, tool="", args={},
                               reason=f"decode failed: {exc}",
@@ -151,8 +157,10 @@ class ActPipeline:
         row_id = self.ledger.record(
             goal_fp=goal_fp, tool=proposal.tool,
             args_json=json.dumps(proposal.args),
-            rationale=proposal.rationale, tier="T2", status="proposed",
-            adapter=type(self.adapter).__name__,
+            rationale=proposal.rationale,
+            tier=self.gateway.last_tier or "T2", status="proposed",
+            adapter=getattr(self.adapter, "wrapped_name",
+                            type(self.adapter).__name__),
             model=self.adapter.capabilities().model_name)
         self.ledger.update_verdict(
             row_id, "PASS" if verdict.audited else "unaudited",
@@ -272,7 +280,8 @@ class ActPipeline:
               proposal: ActionProposal | None = None) -> ActReport:
         row_id = self.ledger.record(goal_fp=goal_fp, tool=tool or "(none)",
                                     args_json=json.dumps(args), rationale="",
-                                    tier="T2", status="failed")
+                                    tier=self.gateway.last_tier or "T2",
+                                    status="failed")
         if verdict is not None:
             self.ledger.update_verdict(row_id, verdict.verdict,
                                        verdict.reasons)
