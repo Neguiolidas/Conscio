@@ -73,3 +73,35 @@ def proposal_from_dict(data: dict, *, goal_id: str = "") -> ActionProposal:
     return ActionProposal(
         tool=data["tool"], args=data["args"], rationale=data["rationale"],
         expected_outcome=data["expected_outcome"], goal_id=goal_id)
+
+
+VERDICT_SCHEMA: dict[str, dict] = {
+    "verdict": {"type": "str", "required": True, "enum": ["PASS", "FAIL"]},
+    "reasons": {"type": "list"},
+    "risk_flags": {"type": "list"},
+}
+
+
+@dataclass
+class AuditVerdict:
+    verdict: str                                # "PASS" | "FAIL"
+    reasons: list[str] = field(default_factory=list)
+    risk_flags: list[str] = field(default_factory=list)
+    confidence: float = 0.5     # checklist: agreement ratio; open: model-reported
+    audited: bool = True        # False = LOW-risk fast path skipped the LLM
+
+    @property
+    def passed(self) -> bool:
+        return self.verdict == "PASS"
+
+
+def verdict_from_dict(data: dict) -> AuditVerdict:
+    """Build an AuditVerdict from an already-validated dict (fail-safe)."""
+    conf = data.get("confidence", 0.5)
+    if isinstance(conf, bool) or not isinstance(conf, (int, float)):
+        conf = 0.5
+    return AuditVerdict(
+        verdict=data["verdict"],
+        reasons=[str(r) for r in data.get("reasons", [])],
+        risk_flags=[str(f) for f in data.get("risk_flags", [])],
+        confidence=max(0.0, min(1.0, float(conf))))

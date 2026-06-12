@@ -121,3 +121,47 @@ class TestMemoryAndEvents:
         assert "memory_note" not in reg.names()
         assert "emit_event" not in reg.names()
         assert {"fs_read", "fs_write"} <= set(reg.names())
+
+
+# ── F2: precheck + goal_update ──────────────────────────────────────────
+
+def test_fs_precheck_blocks_traversal_without_executing(tmp_path):
+    reg = make_default_registry(sandbox_root=tmp_path / "sb")
+    spec = reg.get("fs_write")
+    assert spec.precheck is not None
+    err = spec.precheck({"path": "../outside.txt", "content": "x"})
+    assert err is not None and "sandbox" in err
+    assert spec.precheck({"path": "inside.txt", "content": "x"}) is None
+
+
+def test_fs_read_precheck_absolute_path(tmp_path):
+    reg = make_default_registry(sandbox_root=tmp_path / "sb")
+    err = reg.get("fs_read").precheck({"path": "/etc/passwd"})
+    assert err is not None
+
+
+def test_goal_update_complete_and_cancel(tmp_path):
+    from conscio.goal_generator import GoalGenerator, GoalPriority
+    gg = GoalGenerator(tmp_path, [])
+    goal = gg.add_user_goal("tidy the sandbox", GoalPriority.HIGH)
+    reg = make_default_registry(sandbox_root=tmp_path / "sb",
+                                goal_generator=gg)
+    result = reg.dispatch("goal_update",
+                          {"action": "complete", "goal_id": goal.id})
+    assert result.ok
+    assert all(g.id != goal.id for g in gg.active_goals())
+
+
+def test_goal_update_unknown_goal_fails_cleanly(tmp_path):
+    from conscio.goal_generator import GoalGenerator
+    gg = GoalGenerator(tmp_path, [])
+    reg = make_default_registry(sandbox_root=tmp_path / "sb",
+                                goal_generator=gg)
+    result = reg.dispatch("goal_update",
+                          {"action": "cancel", "goal_id": "nope"})
+    assert not result.ok
+
+
+def test_goal_update_absent_without_generator(tmp_path):
+    reg = make_default_registry(sandbox_root=tmp_path / "sb")
+    assert reg.get("goal_update") is None

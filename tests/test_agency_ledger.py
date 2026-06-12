@@ -54,3 +54,50 @@ class TestLedger:
 
     def test_get_unknown_id_returns_none(self, ledger):
         assert ledger.get(999) is None
+
+
+# ── F2: verdict + approval queue ────────────────────────────────────────
+
+def test_update_verdict_persists(tmp_path):
+    led = ActionLedger(tmp_path / "conscio.db")
+    rid = led.record(goal_fp="g1", tool="fs_read", args_json="{}",
+                     rationale="", tier="T2", status="proposed")
+    led.update_verdict(rid, "FAIL", ["destroys data", "contradicts facts"])
+    row = led.get(rid)
+    assert row["verdict"] == "FAIL"
+    assert "destroys data" in row["verdict_reasons"]
+    led.close()
+
+
+def test_verdict_reasons_column_migrates_old_db(tmp_path):
+    import sqlite3
+    db = tmp_path / "conscio.db"
+    conn = sqlite3.connect(db)        # simulate an F1 database (no column)
+    conn.execute("CREATE TABLE actions (id INTEGER PRIMARY KEY, ts REAL,"
+                 " goal_fp TEXT, tool TEXT, args_json TEXT, rationale TEXT,"
+                 " tier TEXT, status TEXT, verdict TEXT DEFAULT '',"
+                 " ok INTEGER, output TEXT DEFAULT '', error TEXT DEFAULT '',"
+                 " tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0,"
+                 " duration_ms INTEGER DEFAULT 0, adapter TEXT DEFAULT '',"
+                 " model TEXT DEFAULT '')")
+    conn.commit()
+    conn.close()
+    led = ActionLedger(db)            # init must ALTER TABLE without crashing
+    rid = led.record(goal_fp="g", tool="t", args_json="{}", rationale="",
+                     tier="T2", status="proposed")
+    led.update_verdict(rid, "PASS", [])
+    assert led.get(rid)["verdict"] == "PASS"
+    led.close()
+
+
+def test_pending_lists_only_proposed(tmp_path):
+    led = ActionLedger(tmp_path / "conscio.db")
+    a = led.record(goal_fp="g", tool="t", args_json="{}", rationale="",
+                   tier="T2", status="proposed")
+    led.record(goal_fp="g", tool="t", args_json="{}", rationale="",
+               tier="T2", status="failed")
+    b = led.record(goal_fp="g", tool="t", args_json="{}", rationale="",
+                   tier="T2", status="proposed")
+    ids = [r["id"] for r in led.pending()]
+    assert ids == [b, a]              # newest first, only proposed
+    led.close()
