@@ -1,6 +1,6 @@
 """
 Conscio Agency — the volition layer (v1.0.0 "Spine" + "Immunity" +
-"Volition").
+"Volition", v1.1 "Procedural").
 
 Stateless LLM orchestration downstream of engine.reflect():
 contracts -> adapter -> gateway (T1 GBNF/T2 JSON/T3 KV) -> tools ->
@@ -22,6 +22,7 @@ from .loop import (DISSONANCE_HINTS, ActBudget, AutonomyLoop, GoalArbiter,
 from .profiles import (ModelProfile, ProbeSuite, choose_tier,
                        max_visible_tools, skeptic_mode)
 from .skeptic import Skeptic
+from .skills import SkillLibrary
 from .tools import Risk, ToolRegistry, make_default_registry
 from .trust import TrustMatrix
 
@@ -34,6 +35,6 @@ __all__ = [
     "compile_proposal_grammar", "compile_schema_grammar", "ActionLedger",
     "DISSONANCE_HINTS", "ActBudget", "AutonomyLoop", "GoalArbiter",
     "RunReport", "ModelProfile", "ProbeSuite", "choose_tier",
-    "max_visible_tools", "skeptic_mode", "Skeptic", "Risk", "ToolRegistry",
-    "TrustMatrix", "make_default_registry",
+    "max_visible_tools", "skeptic_mode", "Skeptic", "SkillLibrary", "Risk",
+    "ToolRegistry", "TrustMatrix", "make_default_registry",
 ]

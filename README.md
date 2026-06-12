@@ -263,6 +263,26 @@ Every N minutes (configurable):
   → syntactic validity, skeptic catch-rate, latency p50, calibration. The instrument
   that proves "any model" by measurement.
 
+### v1.1 Modules (Agency — F4 "Procedural")
+
+- **SkillLibrary** (`conscio/agency/skills.py`) — procedural memory as DATA
+  (plan templates, never code: safety rule R1 untouched). Successful audited
+  plans in the ActionLedger are distilled into skills keyed by
+  `(goal_fp, tool_seq)`; the actor receives the best matches as few-shot
+  exemplars rendered for the active decode tier (KV lines for T3, JSON steps
+  for T1/T2); each cycle's outcome settles back into the served skills, and
+  skills under a 50% success rate are never taught again.
+- **Distill** — fifth dream sub-phase (Release → Prune → Reconcile →
+  Crystallize → **Distill**). Runs last: it reads only the ActionLedger and
+  writes only the skills table, so it can't perturb the declarative phases or
+  the coherence delta. Declarative consolidation precedes procedural, like
+  the sleep cycle that inspires the protocol. Watermarked: a ledger row is
+  never distilled twice.
+- **Skill curve in the bench** (`python -m conscio.bench --skills 40`) —
+  measures skill acquisition: per-bucket syntactic validity, execution
+  success, exemplars served and skill count. A small model inheriting
+  competence from its own history is a measured claim, not a slogan.
+
 ### Category/Source/Type Reference
 
 **ContentStore categories:** reflection, perception, trading, system, error, consciousness, external, **session**
@@ -310,11 +330,9 @@ pip install -e .
 ## Testing
 
 ```bash
-# Full suite (600 tests)
-pytest tests/ -v
-
-# Quick run
-pytest tests/ -q
+# Full suite (963 tests) — house rule: one file per pytest process
+# (low-RAM machines OOM on the full run; CI does the same)
+for f in tests/test_*.py; do pytest "$f" -q; done
 
 # Specific module
 pytest tests/test_consciousness.py -v
@@ -333,10 +351,16 @@ python -m conscio.bench --adapter mock
 python -m conscio.bench --adapter ollama:hermes3 --cycles 20
 python -m conscio.bench --adapter llamacpp --cycles 20 --json report.json
 python -m conscio.bench --adapter openai:qwen2.5@http://localhost:8000/v1
+
+# v1.1: skill acquisition curve (offline machinery proof with mock;
+# the real curve needs a real backend)
+python -m conscio.bench --adapter mock --skills 20
+python -m conscio.bench --adapter ollama:hermes3 --skills 40 --dream-every 10
 ```
 
 Reports: probe profile, decode tier, syntactic validity, skeptic catch-rate
-(deterministic vs semantic), latency p50, calibration. See `docs/bench/`.
+(deterministic vs semantic), latency p50, calibration. `--skills N` reports
+the per-bucket validity/success/skill-count curve instead. See `docs/bench/`.
 
 ## Database
 
@@ -344,7 +368,7 @@ All SQLite databases use WAL mode for concurrent read/write. Default location:
 
 ```
 ~/.conscio/data/
-├── conscio.db          # ContentStore + EventBus
+├── conscio.db          # ContentStore + EventBus + ActionLedger + skills
 ├── conscio.db-wal      # Write-ahead log
 ├── conscio.db-shm      # Shared memory
 ├── token_tracker.db    # TokenTracker
@@ -366,6 +390,16 @@ All SQLite databases use WAL mode for concurrent read/write. Default location:
 
 ## Audit History
 
+- **v1.1.0 — F4 "Procedural"** — procedural memory closes the competence loop:
+  SkillLibrary (skills distilled from successful ledger plans; data, not code — R1
+  intact), Distill as the dream's fifth sub-phase (watermarked, last on purpose),
+  tier-aware few-shot exemplars in the actor prompt with outcome settling and a 50%
+  success-rate teaching gate, skill acquisition curve in the bench (`--skills N`),
+  reactive MockAdapter (callable script entries). Debt paid: deprecated
+  `datetime.utcnow()` removed repo-wide (`timeutil.naive_utcnow()` keeps the stored
+  ISO format), CI runs tests one file at a time, mypy is a real gate (14 errors fixed,
+  including a latent `SessionLifecycle.record_session` AttributeError), public
+  `engine.state` property. reflect() untouched. +48 new tests. 963 total tests.
 - **v1.0.0 — F3 "Volition"** — the loop closes: ProbeSuite/ModelProfile (5 empirical
   micro-probes, SQLite-cached, no hardcoded model table), embedded schema→GBNF compiler
   (tier-1 constrained decoding), GoalArbiter (priority × dissonance × quarantine),
