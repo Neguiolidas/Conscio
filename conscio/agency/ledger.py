@@ -104,6 +104,13 @@ class ActionLedger:
             row = self._conn.execute("SELECT COUNT(*) FROM actions").fetchone()
         return int(row[0])
 
+    def nth_recent_ts(self, n: int) -> float:
+        """ts of the nth most recent row; 0.0 when fewer rows exist."""
+        row = self._conn.execute(
+            "SELECT ts FROM actions ORDER BY id DESC LIMIT 1 OFFSET ?",
+            (max(0, n - 1),)).fetchone()
+        return float(row["ts"]) if row else 0.0
+
     def consecutive_failures(self, goal_fp: str) -> int:
         """Trailing run of status='failed' rows for this goal."""
         rows = self._conn.execute(

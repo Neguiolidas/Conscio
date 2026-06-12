@@ -101,3 +101,17 @@ def test_pending_lists_only_proposed(tmp_path):
     ids = [r["id"] for r in led.pending()]
     assert ids == [b, a]              # newest first, only proposed
     led.close()
+
+
+class TestNthRecentTs:
+    def test_returns_ts_of_nth_most_recent(self, tmp_path):
+        ledger = ActionLedger(tmp_path / "c.db")
+        ids = [ledger.record(goal_fp="g", tool="t", args_json="{}",
+                             rationale="", tier="T2", status="proposed")
+               for _ in range(3)]
+        nth = ledger.nth_recent_ts(3)           # oldest of the three
+        assert nth == ledger.get(ids[0])["ts"]
+
+    def test_zero_when_fewer_rows(self, tmp_path):
+        ledger = ActionLedger(tmp_path / "c.db")
+        assert ledger.nth_recent_ts(50) == 0.0

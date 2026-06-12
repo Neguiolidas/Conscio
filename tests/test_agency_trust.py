@@ -118,6 +118,63 @@ def test_autonomy_levels(tmp_path):
     led.close()
 
 
+def test_l3_when_elite_and_no_recent_trips(tmp_path):
+    meta = MetaCognition(tmp_path)
+    _seed_meta(meta, task="fs_read", n=12, outcome="success", confidence=0.9)
+    led = ActionLedger(tmp_path / "conscio.db")
+    for _ in range(10):
+        led.record(goal_fp="g", tool="fs_read", args_json="{}",
+                   rationale="", tier="T2", status="executed")
+    trust = TrustMatrix(meta, led, tmp_path / "conscio.db",
+                        trips_since_fn=lambda ts: 0)
+    assert trust.autonomy_level("fs_read") == 3
+    trust.close()
+    led.close()
+
+
+def test_recent_trip_caps_at_l2(tmp_path):
+    meta = MetaCognition(tmp_path)
+    _seed_meta(meta, task="fs_read", n=12, outcome="success", confidence=0.9)
+    led = ActionLedger(tmp_path / "conscio.db")
+    for _ in range(10):
+        led.record(goal_fp="g", tool="fs_read", args_json="{}",
+                   rationale="", tier="T2", status="executed")
+    trust = TrustMatrix(meta, led, tmp_path / "conscio.db",
+                        trips_since_fn=lambda ts: 1)
+    assert trust.autonomy_level("fs_read") == 2
+    trust.close()
+    led.close()
+
+
+def test_l3_needs_elite_calibration(tmp_path):
+    meta = MetaCognition(tmp_path)
+    # avg_conf 0.7 vs accuracy 1.0 -> calibration 0.7: L2 yes, L3 no
+    _seed_meta(meta, task="fs_read", n=12, outcome="success", confidence=0.7)
+    led = ActionLedger(tmp_path / "conscio.db")
+    for _ in range(10):
+        led.record(goal_fp="g", tool="fs_read", args_json="{}",
+                   rationale="", tier="T2", status="executed")
+    trust = TrustMatrix(meta, led, tmp_path / "conscio.db",
+                        trips_since_fn=lambda ts: 0)
+    assert trust.autonomy_level("fs_read") == 2
+    trust.close()
+    led.close()
+
+
+def test_no_trip_evidence_caps_at_l2(tmp_path):
+    """Without trips_since_fn wiring L3 is unreachable (fail-safe)."""
+    meta = MetaCognition(tmp_path)
+    _seed_meta(meta, task="fs_read", n=12, outcome="success", confidence=0.9)
+    led = ActionLedger(tmp_path / "conscio.db")
+    for _ in range(10):
+        led.record(goal_fp="g", tool="fs_read", args_json="{}",
+                   rationale="", tier="T2", status="executed")
+    trust = TrustMatrix(meta, led, tmp_path / "conscio.db")
+    assert trust.autonomy_level("fs_read") == 2
+    trust.close()
+    led.close()
+
+
 def test_fast_path_requires_high_calibration(tmp_path):
     meta = MetaCognition(tmp_path)
     trust, led = _trust(tmp_path, meta)

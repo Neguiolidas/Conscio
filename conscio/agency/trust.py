@@ -17,6 +17,7 @@ from typing import Any, Callable
 PROBATION_EPOCH = 25      # reflect() cycles between probation probes
 WARMUP_MIN_ROWS = 10      # below this many ledger rows the floor of 1 applies
 RETRY_CEILING = 4
+AUTONOMY_WINDOW = 50      # recent actions; zero trips inside it for L3
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS trust_probation (
@@ -28,10 +29,12 @@ CREATE TABLE IF NOT EXISTS trust_probation (
 
 class TrustMatrix:
     def __init__(self, meta: Any, ledger: Any, db_path: Path | str,
-                 reflect_count_fn: Callable[[], int] | None = None):
+                 reflect_count_fn: Callable[[], int] | None = None,
+                 trips_since_fn: Callable[[float], int] | None = None):
         self.meta = meta
         self.ledger = ledger
         self.reflect_count_fn = reflect_count_fn or (lambda: 0)
+        self.trips_since_fn = trips_since_fn
         self._conn = sqlite3.connect(str(db_path))
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
@@ -78,14 +81,28 @@ class TrustMatrix:
         """A success forgives the oldest matching error pattern."""
         self.meta.expire_error(f"act:{task_type}")
 
-    # ── earned autonomy (L1/L2 in F2; L3 arrives in F3) ──
+    # ── earned autonomy L1/L2/L3 (spec 5.7) ──
 
     def autonomy_level(self, task_type: str) -> int:
-        if (self.meta.calibration_score() >= 0.6
-                and self.meta.accuracy(task_type) >= 0.7
+        calibration = self.meta.calibration_score()
+        accuracy = self.meta.accuracy(task_type)
+        if not (calibration >= 0.6 and accuracy >= 0.7
                 and self.ledger.count(task_type) >= 10):
-            return 2
-        return 1
+            return 1
+        if (calibration >= 0.75 and accuracy >= 0.85
+                and self._recent_trips() == 0):
+            return 3
+        return 2
+
+    def _recent_trips(self) -> int:
+        """Breaker trips inside the last AUTONOMY_WINDOW actions.
+
+        Fail-safe: without trips_since_fn wiring there is no evidence of
+        a trip-free window, so L3 is unreachable (returns a sentinel 1).
+        """
+        if self.trips_since_fn is None:
+            return 1
+        return self.trips_since_fn(self.ledger.nth_recent_ts(AUTONOMY_WINDOW))
 
     def fast_path_ok(self) -> bool:
         """LOW-risk audit bypass gate (spec §5.6 risk gating)."""
