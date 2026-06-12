@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, Callable
 
 
 class AdapterError(Exception):
@@ -69,9 +70,15 @@ class InferenceAdapter(ABC):
 
 
 class MockAdapter(InferenceAdapter):
-    """Scriptable adapter: returns queued responses, records every call."""
+    """Scriptable adapter: returns queued responses, records every call.
 
-    def __init__(self, script: list[str] | None = None,
+    Script entries may be callables (prompt -> str) so a mock can react
+    to prompt content — e.g. answer differently when few-shot exemplars
+    are present (the bench skill curve relies on this).
+    """
+
+    def __init__(self,
+                 script: Sequence[str | Callable[[str], str]] | None = None,
                  caps: AdapterCaps | None = None):
         self._script = list(script or [])
         self._caps = caps or AdapterCaps()
@@ -86,7 +93,8 @@ class MockAdapter(InferenceAdapter):
                            "temperature": temperature, "stop": stop})
         if not self._script:
             raise AdapterError("MockAdapter script exhausted")
-        text = self._script.pop(0)
+        entry = self._script.pop(0)
+        text = entry(prompt) if callable(entry) else entry
         return InferenceResult(text=text, tokens_in=len(prompt) // 4,
                                tokens_out=len(text) // 4)
 

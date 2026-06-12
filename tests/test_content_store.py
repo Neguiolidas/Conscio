@@ -6,9 +6,11 @@ deletion, compaction, stats, edge cases.
 """
 
 import os
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
+
+from conscio.timeutil import naive_utcnow
 
 from conscio.content_store import ContentStore, SearchResult, SourceInfo, VALID_CATEGORIES, VALID_CONTENT_TYPES
 
@@ -223,7 +225,7 @@ class TestSearch:
 
     def test_since_filter(self, populated_store):
         """Since filter excludes old results."""
-        future = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+        future = (naive_utcnow() + timedelta(hours=1)).isoformat()
         results = populated_store.search("trading", since=future)
         assert len(results) == 0
 
@@ -347,7 +349,7 @@ class TestCompaction:
         # Insert with old timestamp
         sid = store.index("old", "Old content to remove", "reflection")
         # Manually update the indexed_at to be 100 days ago
-        old_time = (datetime.utcnow() - timedelta(days=100)).isoformat()
+        old_time = (naive_utcnow() - timedelta(days=100)).isoformat()
         store.db.execute("UPDATE sources SET indexed_at = ? WHERE id = ?", (old_time, sid))
         store.db.commit()
 

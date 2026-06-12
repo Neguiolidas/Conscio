@@ -96,14 +96,18 @@ class OutputGateway:
         self.tier = tier         # explicit "T1"/"T2"/"T3"; None = caps auto
         self.last_tier = ""      # tier that produced (or last tried) decode
 
+    def effective_tier(self) -> str:
+        """Tier request_action will use: explicit, else adapter caps."""
+        if self.tier is not None:
+            return self.tier
+        caps = self.adapter.capabilities()
+        return "T1" if caps.grammar else "T2" if caps.json_mode else "T3"
+
     def request_action(self, base_prompt: str, schema: dict,
                        *, goal_id: str = "",
                        tool_names: list[str] | None = None) -> ActionProposal:
         caps = self.adapter.capabilities()
-        tier = self.tier
-        if tier is None:
-            tier = ("T1" if caps.grammar
-                    else "T2" if caps.json_mode else "T3")
+        tier = self.effective_tier()
         if tier == "T1":
             self.last_tier = "T1"
             data = self._try_grammar(base_prompt, schema, tool_names)

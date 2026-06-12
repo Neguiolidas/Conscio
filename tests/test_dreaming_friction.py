@@ -1,6 +1,7 @@
 # tests/test_dreaming_friction.py
 from datetime import datetime, timedelta
 
+from conscio.timeutil import naive_utcnow
 from conscio.engine import ConsciousnessEngine
 from conscio.dreaming import DreamCycle
 
@@ -13,7 +14,7 @@ def _engine(tmp_path):
 
 def _index_old_reflection(e, content, days_old=10):
     sid = e.content_store.index(label="r", content=content, category="reflection")
-    old_ts = (datetime.utcnow() - timedelta(days=days_old)).isoformat()
+    old_ts = (naive_utcnow() - timedelta(days=days_old)).isoformat()
     e.content_store.db.execute(
         "UPDATE sources SET indexed_at=? WHERE id=?", (old_ts, sid)
     )

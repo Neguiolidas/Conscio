@@ -17,9 +17,10 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+from .timeutil import naive_utcnow
 
 
 # ─── Data Classes ───────────────────────────────────────────────────────
@@ -172,7 +173,7 @@ class ContentStore:
             raise ValueError(f"Invalid content_type '{content_type}'. Must be one of: {VALID_CONTENT_TYPES}")
 
         content_hash = hashlib.sha256(content.encode()).hexdigest()
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = naive_utcnow().isoformat()
 
         # Check for duplicate content (same hash = already indexed)
         existing = self.db.execute(
@@ -187,7 +188,7 @@ class ContentStore:
             "INSERT INTO sources (label, source_category, content_hash) VALUES (?, ?, ?)",
             (label, category, content_hash),
         )
-        source_id = cursor.lastrowid
+        source_id = int(cursor.lastrowid or 0)
 
         # Split into chunks at paragraph boundaries
         chunks = self._chunk_content(content, chunk_size)
@@ -506,7 +507,7 @@ class ContentStore:
         Returns the number of sources removed.
         """
         from datetime import timedelta
-        cutoff = (datetime.utcnow() - timedelta(days=before_days)).isoformat()
+        cutoff = (naive_utcnow() - timedelta(days=before_days)).isoformat()
 
         old_sources = self.db.execute(
             "SELECT id FROM sources WHERE indexed_at < ?",

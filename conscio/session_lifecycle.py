@@ -17,6 +17,8 @@ import re
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+
+from .timeutil import naive_utcnow
 from dataclasses import dataclass, field
 from typing import Optional, Any
 
@@ -798,7 +800,7 @@ def record_session_lifecycle(
         # Index heartbeat — graceful if content_store missing
         if hasattr(engine, "content_store"):
             engine.content_store.index(
-                label=f"heartbeat_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
+                label=f"heartbeat_{naive_utcnow().strftime('%Y%m%d_%H%M')}",
                 content=heartbeat,
                 category="session",
                 session_id=summary.session_id,
@@ -810,7 +812,7 @@ def record_session_lifecycle(
 
         if hasattr(engine, "content_store"):
             engine.content_store.index(
-                label=f"handoff_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
+                label=f"handoff_{naive_utcnow().strftime('%Y%m%d_%H%M')}",
                 content=handoff,
                 category="session",
                 session_id=summary.session_id,
@@ -857,8 +859,12 @@ def record_session_lifecycle(
 
 
 class SessionLifecycle:
-    def __init__(self, engine=None):
+    def __init__(self, engine=None, session_db: Path | None = None,
+                 handoff_dir: Path | None = None):
         self.engine = engine
+        # None -> record_session_lifecycle falls back to module defaults
+        self.session_db = session_db
+        self.handoff_dir = handoff_dir
         self.on_session_start = None
         self.on_session_end = None
         self.on_session_reset = None

@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] — 2026-06-12
+
+### Added
+
+- **F4 "Procedural"** — procedural memory closes the competence loop
+  (`success → distill → few-shot → better success`):
+  - `SkillLibrary` (`conscio/agency/skills.py`) — successful audited plans
+    from the ActionLedger become skills keyed by `(goal_fp, tool_seq)`,
+    stored in the shared `conscio.db`. Skills are plan TEMPLATES — data,
+    never code — so safety rule R1 (no autonomous self-modification) is
+    untouched.
+  - **Distill** — fifth dream sub-phase, after Crystallize (declarative
+    consolidation precedes procedural; reads only the ledger, writes only
+    skills, cannot perturb the coherence delta). Watermarked: a ledger row
+    never distills twice; `dry_run` counts without writing.
+    `DreamReport.skills_distilled` reports it.
+  - **Few-shot in the actor** — `attach_adapter()` plugs the SkillLibrary
+    into the existing `ActPipeline.few_shot_provider` hook; exemplars are
+    rendered for the gateway's effective tier (KV lines for T3, JSON steps
+    for T1/T2), capped at 2, gated at ≥ 50% success rate. `engine.act()`
+    settles each cycle's outcome back into the served skills
+    (EXECUTED rewards, FAILED penalizes, human gates never score).
+  - **Skill curve in the bench** — `python -m conscio.bench --skills N
+    [--dream-every K]`: per-bucket syntactic validity, execution success,
+    exemplars served, cumulative skill count. Offline machinery proof via
+    the new reactive MockAdapter (script entries may be callables).
+- `ActionLedger`: `goal_text` column (ALTER-migrated) and
+  `executed_since(after_id)`; the act pipeline now records the goal text
+  on success and failure paths.
+- `OutputGateway.effective_tier()`; public read-only `engine.state`
+  property (the loop no longer touches `_state`).
+
+### Fixed
+
+- Deprecated `datetime.utcnow()` removed repo-wide — new
+  `conscio/timeutil.py` `naive_utcnow()` keeps the naive ISO string format
+  already stored in SQLite (the aware form would interleave `+00:00` rows).
+- 14 mypy errors, including a latent `AttributeError` in
+  `SessionLifecycle.record_session` (referenced `session_db`/`handoff_dir`
+  that `__init__` never set).
+
+### Changed
+
+- CI runs pytest one file per process (house rule) with accumulated
+  coverage; mypy is now a real gate (`|| true` and `continue-on-error`
+  removed).
+
 ## [1.0.0] — 2026-06-12
 
 ### Added

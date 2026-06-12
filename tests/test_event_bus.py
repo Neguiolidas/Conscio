@@ -5,9 +5,11 @@ Covers: emit, dedup, query, filters, summary, compact, stats, edge cases.
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
+
+from conscio.timeutil import naive_utcnow
 
 from conscio.event_bus import (
     EventBus,
@@ -179,7 +181,7 @@ class TestDedup:
         eid1 = bus.emit("error", "system", {"msg": "delayed dup"})
 
         # Manually backdate the existing event beyond the window
-        old_ts = (datetime.utcnow() - timedelta(seconds=DEDUP_WINDOW_SECONDS + 10)).isoformat()
+        old_ts = (naive_utcnow() - timedelta(seconds=DEDUP_WINDOW_SECONDS + 10)).isoformat()
         bus.db.execute("UPDATE events SET timestamp = ? WHERE id = ?", (old_ts, eid1))
         bus.db.commit()
 
@@ -254,13 +256,13 @@ class TestQuery:
 
     def test_query_by_since(self, populated_bus):
         """Filter by since timestamp works."""
-        future = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+        future = (naive_utcnow() + timedelta(hours=1)).isoformat()
         events = populated_bus.query(since=future)
         assert len(events) == 0
 
     def test_query_by_until(self, populated_bus):
         """Filter by until timestamp works."""
-        past = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+        past = (naive_utcnow() - timedelta(hours=1)).isoformat()
         events = populated_bus.query(until=past)
         assert len(events) == 0
 
@@ -399,7 +401,7 @@ class TestCompact:
         eid = bus.emit("perception", "system", {"cpu": 50}, priority=PRIORITY_TRIVIAL)
 
         # Backdate it
-        old_ts = (datetime.utcnow() - timedelta(days=31)).isoformat()
+        old_ts = (naive_utcnow() - timedelta(days=31)).isoformat()
         bus.db.execute("UPDATE events SET timestamp = ? WHERE id = ?", (old_ts, eid))
         bus.db.commit()
 
@@ -412,7 +414,7 @@ class TestCompact:
         eid = bus.emit("error", "trading", {"msg": "critical"}, priority=PRIORITY_CRITICAL)
 
         # Backdate it
-        old_ts = (datetime.utcnow() - timedelta(days=31)).isoformat()
+        old_ts = (naive_utcnow() - timedelta(days=31)).isoformat()
         bus.db.execute("UPDATE events SET timestamp = ? WHERE id = ?", (old_ts, eid))
         bus.db.commit()
 
@@ -426,7 +428,7 @@ class TestCompact:
         bus.mark_duplicate(eid)
 
         # Backdate
-        old_ts = (datetime.utcnow() - timedelta(days=31)).isoformat()
+        old_ts = (naive_utcnow() - timedelta(days=31)).isoformat()
         bus.db.execute("UPDATE events SET timestamp = ? WHERE id = ?", (old_ts, eid))
         bus.db.commit()
 

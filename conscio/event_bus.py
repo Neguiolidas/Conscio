@@ -16,9 +16,11 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional
+
+from .timeutil import naive_utcnow
 
 
 # ─── Data Classes ───────────────────────────────────────────────────────
@@ -160,10 +162,10 @@ class EventBus:
 
         data_json = json.dumps(data, sort_keys=True, default=str)
         data_hash = hashlib.sha256(data_json.encode()).hexdigest()
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = naive_utcnow().isoformat()
 
         # Check for recent duplicate (same type + hash within dedup window)
-        cutoff = (datetime.utcnow() - timedelta(seconds=DEDUP_WINDOW_SECONDS)).isoformat()
+        cutoff = (naive_utcnow() - timedelta(seconds=DEDUP_WINDOW_SECONDS)).isoformat()
         existing = self.db.execute(
             """
             SELECT id FROM events
@@ -186,7 +188,7 @@ class EventBus:
         )
         self.db.commit()
 
-        return cursor.lastrowid
+        return int(cursor.lastrowid or 0)
 
     def emit_batch(self, events: list[dict]) -> list[int]:
         """
@@ -242,7 +244,7 @@ class EventBus:
             List of Event objects, newest first
         """
         conditions = []
-        params = []
+        params: list = []
 
         if type:
             conditions.append("type = ?")
@@ -311,7 +313,7 @@ class EventBus:
         Returns counts by type, category, priority distribution,
         and error/anomaly highlights.
         """
-        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        cutoff = (naive_utcnow() - timedelta(hours=hours)).isoformat()
 
         # Total count
         total = self.db.execute(
@@ -384,7 +386,7 @@ class EventBus:
 
         Returns number of events removed.
         """
-        cutoff = (datetime.utcnow() - timedelta(days=before_days)).isoformat()
+        cutoff = (naive_utcnow() - timedelta(days=before_days)).isoformat()
 
         # Count before
         before_count = self.db.execute("SELECT COUNT(*) as c FROM events").fetchone()["c"]
@@ -480,7 +482,7 @@ class EventBus:
 
     def _row_to_event(self, row: sqlite3.Row) -> Event:
         """Convert a database row to an Event object."""
-        data = {}
+        data: dict = {}
         try:
             data = json.loads(row["data"]) if row["data"] else {}
         except (json.JSONDecodeError, TypeError):

@@ -102,7 +102,7 @@ class AutonomyLoop:
                     report.stopped = stopped
                     break
                 self.engine.reflect(world_state=world_state)
-                state = self.engine._state
+                state = self.engine.state
                 tier = MetabolicContext.assess(
                     state.total_tokens_approx(),
                     self.engine.model_info.context_window)

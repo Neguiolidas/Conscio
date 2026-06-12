@@ -4,9 +4,11 @@ Tests for TokenTracker — Token estimation and savings tracking.
 Covers: record, estimate_tokens, gain, budget_status, stats, compact, edge cases.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
+
+from conscio.timeutil import naive_utcnow
 
 from conscio.token_tracker import (
     TokenTracker,
@@ -226,7 +228,7 @@ class TestCompact:
         tracker.record("reflection", "A" * 400, "B" * 100)
 
         # Backdate the record
-        old_ts = (datetime.utcnow() - timedelta(days=31)).isoformat()
+        old_ts = (naive_utcnow() - timedelta(days=31)).isoformat()
         tracker.db.execute("UPDATE token_usage SET timestamp = ?", (old_ts,))
         tracker.db.commit()
 

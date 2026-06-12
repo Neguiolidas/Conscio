@@ -97,8 +97,10 @@ def infer_shard(events: list[dict], window: int = DEFAULT_WINDOW) -> Optional[Sh
             best = shard
         elif scores[shard] > scores[best]:
             best = shard
-        elif scores[shard] == scores[best] and recency[shard] < recency[best]:
-            best = shard                         # tie -> more recent event wins
+        elif scores[shard] == scores[best]:
+            rs, rb = recency[shard], recency[best]
+            if rs is not None and rb is not None and rs < rb:
+                best = shard                     # tie -> more recent event wins
     return best
 
 

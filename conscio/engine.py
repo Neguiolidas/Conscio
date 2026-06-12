@@ -14,7 +14,9 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
+
+from .timeutil import naive_utcnow
 
 from .context_manager import ContextManager
 from .inner_monologue import InnerMonologue
@@ -25,7 +27,7 @@ from .auto_evolution import AutoEvolution
 from .content_store import ContentStore
 from .event_bus import EventBus
 from .shard_engine import ShardEngine
-from .coherence import CoherenceEngine, COHERENCE_EVENT_THRESHOLD
+from .coherence import CoherenceEngine, CoherenceReport, COHERENCE_EVENT_THRESHOLD
 from .voice_preset import resolve_voice_preset
 from .self_prompt import generate_self_prompts
 from .dreaming import DreamRecommendation
@@ -104,9 +106,9 @@ class ConsciousnessEngine:
         # Built once; reused by dream Reconcile and the opt-in output stage.
         self._semantic = SemanticEngine()
         self._contradiction_detector = ContradictionDetector(self._semantic)
-        self.last_coherence = None
+        self.last_coherence: Optional[CoherenceReport] = None
         self.dream_recommended = DreamRecommendation(False, None, None)
-        self.last_self_prompts = []
+        self.last_self_prompts: list = []
 
         # Voice preset (v0.6) — static marker. Precedence: param > env > default.
         effective_voice = (
@@ -317,7 +319,7 @@ class ConsciousnessEngine:
 
         # Index reflection into ContentStore for future search
         self.content_store.index(
-            label=f"reflection_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
+            label=f"reflection_{naive_utcnow().strftime('%Y%m%d_%H%M')}",
             content=filtered_summary,
             category="reflection",
         )
@@ -414,6 +416,12 @@ class ConsciousnessEngine:
                 return g
         return goal
 
+    @property
+    def state(self):
+        """Public read-only view of the current ConsciousnessState
+        (the volition layer reads this; reflect() owns the writes)."""
+        return self._state
+
     def get_state_for_injection(self) -> str:
         """
         Get the consciousness state formatted for LLM context injection.
@@ -488,7 +496,7 @@ class ConsciousnessEngine:
         All proposals are PENDING until a human approves them.
         Returns the proposal dict for review.
         """
-        type_map = {
+        type_map: dict[str, Callable[..., Any]] = {
             "skill_patch": self.evolution.propose_skill_patch,
             "skill_create": self.evolution.propose_skill_create,
             "memory_update": self.evolution.propose_memory_update,
@@ -584,6 +592,12 @@ class ConsciousnessEngine:
                         closer.close()
                 except Exception:
                     pass
+        skills = getattr(self, "_skills", None)
+        if skills is not None:
+            try:
+                skills.close()
+            except Exception:
+                pass
 
     def __enter__(self):
         return self
@@ -612,6 +626,7 @@ class ConsciousnessEngine:
         from .agency.breaker import CircuitBreaker
         from .agency.ledger import ActionLedger
         from .agency.skeptic import Skeptic
+        from .agency.skills import SkillLibrary
         from .agency.tools import make_default_registry
         from .agency.trust import TrustMatrix
 
@@ -643,6 +658,13 @@ class ConsciousnessEngine:
             autonomy_cap=autonomy_cap,
             recall_fn=lambda q: self.recall(q, k=3),
             emit_fn=self.event_bus.emit)
+        # v1.1: procedural memory — distilled by the dream, served to the
+        # actor as few-shot rendered for the gateway's effective tier.
+        skills = SkillLibrary(db)
+        self._skills = skills
+        pipeline = self._act_pipeline
+        pipeline.few_shot_provider = lambda goal: skills.few_shot(
+            goal, tier=pipeline.gateway.effective_tier())
         return self._act_pipeline
 
     def _trips_since(self, ts: float) -> int:
@@ -663,6 +685,9 @@ class ConsciousnessEngine:
                              reason="no adapter attached")
         state = state or self._state          # current state held by engine
         report = self._act_pipeline.act(state)
+        skills = getattr(self, "_skills", None)
+        if skills is not None:                # v1.1: outcome -> skill score
+            skills.settle(report)
         if report.lockdown:
             state.action_lockdown = True
             self.ctx.save_state(state)

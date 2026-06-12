@@ -16,7 +16,7 @@ class _FakePipeline:
 
 class _FakeEngine:
     def __init__(self, *, lockdown_after=None, recommend_dream=False):
-        self._state = ConsciousnessState(active_goals=["g"])
+        self.state = ConsciousnessState(active_goals=["g"])
         self.model_info = ModelInfo("m", 131_000, ContextMode.COMPACT)
         self.dream_recommended = DreamRecommendation(recommend_dream,
                                                      None, None)
@@ -126,10 +126,18 @@ class TestMetabolicGate:
         engine = _FakeEngine()
         # ~550 injected tokens vs a 1000-token window => ~55% = FATIGUE
         engine.model_info = ModelInfo("m", 1000, ContextMode.MINIMAL)
-        engine._state.state_summary = "x" * 2200   # ~550 tokens injected
+        engine.state.state_summary = "x" * 2200   # ~550 tokens injected
         report = _run(engine, ActBudget(max_cycles=8))
         assert report.cycles == 4                  # 8 // 2
         assert report.stopped == "max_cycles"
+
+
+class TestPublicStateContract:
+    def test_loop_uses_public_state_not_private(self):
+        engine = _FakeEngine()
+        assert not hasattr(engine, "_state")
+        report = _run(engine, ActBudget(max_cycles=1))
+        assert report.cycles == 1
 
 
 class TestReportShape:

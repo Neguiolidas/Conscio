@@ -15,7 +15,9 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from .timeutil import naive_utcnow
 
 
 MIN_ENTITY_MATCH_LEN = 3   # friction ignores 1-2 char entity names (would over-defer)
@@ -53,6 +55,7 @@ class DreamReport:
     coherence_after: float | None = None
     contradictions_pruned: list[str] = field(default_factory=list)
     reconciled_entities: list[str] = field(default_factory=list)
+    skills_distilled: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -67,6 +70,7 @@ class DreamReport:
             "coherence_after": self.coherence_after,
             "contradictions_pruned": self.contradictions_pruned,
             "reconciled_entities": self.reconciled_entities,
+            "skills_distilled": self.skills_distilled,
         }
 
 
@@ -145,6 +149,14 @@ class DreamCycle:
         report.reflections_consolidated = consolidated
         report.reflections_deferred = deferred
 
+        # ── Distill (v1.1): procedural consolidation. Last on purpose:
+        # it reads only the ActionLedger (untouched by the phases above)
+        # and writes only the skills table, so it cannot perturb the
+        # declarative phases nor the coherence delta measured next.
+        # Declarative consolidation (Crystallize) precedes procedural
+        # (Distill), mirroring the dream protocol's biological framing. ──
+        report.skills_distilled = self._distill(engine, dry_run=dry_run)
+
         # Coherence after — same window; reflects this cycle's mutations.
         report.coherence_after = engine.coherence.assess(recent).score
 
@@ -154,6 +166,16 @@ class DreamCycle:
 
         report.duration_ms = (time.perf_counter() - start) * 1000.0
         return report
+
+    def _distill(self, engine, dry_run: bool) -> int:
+        """Distill successful ledger plans into the SkillLibrary.
+        A passive engine (no attached volition) dreams exactly as in
+        v1.0 — both attributes only exist after attach_adapter()."""
+        skills = getattr(engine, "_skills", None)
+        pipeline = getattr(engine, "_act_pipeline", None)
+        if skills is None or pipeline is None:
+            return 0
+        return skills.distill(pipeline.ledger, dry_run=dry_run)
 
     def _friction(self, engine, candidates, pruned) -> set:
         """
@@ -192,7 +214,7 @@ class DreamCycle:
         never delete that id.
         """
         store = engine.content_store
-        cutoff = (datetime.utcnow() - timedelta(days=self.crystallize_after_days)).isoformat()
+        cutoff = (naive_utcnow() - timedelta(days=self.crystallize_after_days)).isoformat()
 
         old = store.db.execute(
             "SELECT id, label FROM sources "
@@ -221,7 +243,7 @@ class DreamCycle:
         )
 
         summary_id = store.index(
-            label=f"dream_crystal_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
+            label=f"dream_crystal_{naive_utcnow().strftime('%Y%m%d_%H%M%S')}",
             content=summary_body,
             category="consciousness",
         )
