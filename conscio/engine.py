@@ -576,10 +576,14 @@ class ConsciousnessEngine:
                 pass
         pipeline = getattr(self, "_act_pipeline", None)
         if pipeline is not None:
-            try:
-                pipeline.ledger.close()
-            except Exception:
-                pass
+            for closer in (pipeline.ledger,
+                           getattr(pipeline, "trust", None),
+                           getattr(pipeline, "breaker", None)):
+                try:
+                    if closer is not None:
+                        closer.close()
+                except Exception:
+                    pass
 
     def __enter__(self):
         return self
@@ -589,23 +593,43 @@ class ConsciousnessEngine:
 
     # ── v1.0 volition layer (spec section 6) ────────────────────────────
 
-    def attach_adapter(self, adapter, *, sandbox_root=None, registry=None):
-        """Wire the agentic pipeline. reflect() is unaffected."""
+    def attach_adapter(self, adapter, *, sandbox_root=None, registry=None,
+                       skeptic_adapter=None, skeptic_mode="checklist",
+                       autonomy_cap=1):
+        """Wire the agentic pipeline. reflect() is unaffected.
+
+        skeptic_adapter: optional second cortex for the audit
+        (mixed-cortex); defaults to the actor adapter.
+        autonomy_cap: operator ceiling for earned autonomy (1=PROPOSE,
+        2=SUPERVISED). Effective level = min(cap, earned).
+        """
         from pathlib import Path
 
         from .agency.act import ActPipeline
         from .agency.breaker import CircuitBreaker
         from .agency.ledger import ActionLedger
+        from .agency.skeptic import Skeptic
         from .agency.tools import make_default_registry
+        from .agency.trust import TrustMatrix
 
         sandbox = Path(sandbox_root or Path.home() / ".conscio" / "sandbox")
         registry = registry or make_default_registry(
             sandbox_root=sandbox, content_store=self.content_store,
-            event_bus=self.event_bus)
-        ledger = ActionLedger(self.storage / "conscio.db")  # shared DB
+            event_bus=self.event_bus, goal_generator=self.goals)
+        db = self.storage / "conscio.db"                    # shared DB
+        ledger = ActionLedger(db)
+        trust = TrustMatrix(
+            self.meta, ledger, db,
+            reflect_count_fn=lambda: len(self.event_bus.query(
+                type="reflection", limit=100000)))
+        skeptic = Skeptic(skeptic_adapter or adapter, mode=skeptic_mode,
+                          facts_fn=self.world.query)
         self._act_pipeline = ActPipeline(
             adapter=adapter, registry=registry, ledger=ledger,
-            breaker=CircuitBreaker(ledger, self.event_bus),
+            breaker=CircuitBreaker(ledger, self.event_bus,
+                                   trust=trust, db_path=db),
+            skeptic=skeptic, trust=trust, meta=self.meta,
+            autonomy_cap=autonomy_cap,
             recall_fn=lambda q: self.recall(q, k=3),
             emit_fn=self.event_bus.emit)
         return self._act_pipeline
@@ -629,6 +653,12 @@ class ConsciousnessEngine:
 
     def reject(self, ledger_id: int, reason: str = "") -> None:
         self._act_pipeline.reject(ledger_id, reason)
+
+    def pending(self, limit: int = 20):
+        """Approval queue (R6): proposals awaiting approve()/reject()."""
+        if getattr(self, "_act_pipeline", None) is None:
+            return []
+        return self._act_pipeline.ledger.pending(limit)
 
 
 # --- CLI Entry Point ---
