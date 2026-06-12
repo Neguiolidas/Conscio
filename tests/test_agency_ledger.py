@@ -103,6 +103,70 @@ def test_pending_lists_only_proposed(tmp_path):
     led.close()
 
 
+# ── F4: goal_text + executed_since (Distill feed) ───────────────────────
+
+class TestGoalText:
+    def test_record_persists_goal_text(self, ledger):
+        rid = ledger.record(goal_fp="fp", goal_text="Investigate: X",
+                            tool="t", args_json="{}", rationale="",
+                            tier="T2", status="executed", ok=True)
+        assert ledger.get(rid)["goal_text"] == "Investigate: X"
+
+    def test_goal_text_defaults_empty(self, ledger):
+        rid = ledger.record(goal_fp="fp", tool="t", args_json="{}",
+                            rationale="", tier="T2", status="proposed")
+        assert ledger.get(rid)["goal_text"] == ""
+
+    def test_goal_text_column_migrates_old_db(self, tmp_path):
+        import sqlite3
+        db = tmp_path / "old.db"
+        conn = sqlite3.connect(db)    # simulate an F1-F3 database (no column)
+        conn.execute("CREATE TABLE actions (id INTEGER PRIMARY KEY, ts REAL,"
+                     " goal_fp TEXT, tool TEXT, args_json TEXT,"
+                     " rationale TEXT, tier TEXT, status TEXT,"
+                     " verdict TEXT DEFAULT '',"
+                     " verdict_reasons TEXT DEFAULT '', ok INTEGER,"
+                     " output TEXT DEFAULT '', error TEXT DEFAULT '',"
+                     " tokens_in INTEGER DEFAULT 0,"
+                     " tokens_out INTEGER DEFAULT 0,"
+                     " duration_ms INTEGER DEFAULT 0, adapter TEXT DEFAULT '',"
+                     " model TEXT DEFAULT '')")
+        conn.commit()
+        conn.close()
+        led = ActionLedger(db)        # init must ALTER TABLE without crashing
+        rid = led.record(goal_fp="g", goal_text="G", tool="t", args_json="{}",
+                         rationale="", tier="T2", status="proposed")
+        assert led.get(rid)["goal_text"] == "G"
+        led.close()
+
+
+class TestExecutedSince:
+    def test_filters_ok_executions_in_id_order(self, ledger):
+        a = ledger.record(goal_fp="g", goal_text="G", tool="t1",
+                          args_json="{}", rationale="r1", tier="T2",
+                          status="executed", ok=True)
+        ledger.record(goal_fp="g", goal_text="G", tool="t2", args_json="{}",
+                      rationale="", tier="T2", status="failed", ok=False)
+        ledger.record(goal_fp="g", goal_text="G", tool="t3", args_json="{}",
+                      rationale="", tier="T2", status="proposed")
+        b = ledger.record(goal_fp="g", goal_text="G", tool="t4",
+                          args_json="{}", rationale="r4", tier="T2",
+                          status="executed", ok=True)
+        rows = ledger.executed_since(0)
+        assert [r["id"] for r in rows] == [a, b]
+        assert rows[0]["rationale"] == "r1" and rows[1]["tool"] == "t4"
+
+    def test_respects_watermark(self, ledger):
+        a = ledger.record(goal_fp="g", goal_text="G", tool="t1",
+                          args_json="{}", rationale="", tier="T2",
+                          status="executed", ok=True)
+        b = ledger.record(goal_fp="g", goal_text="G", tool="t2",
+                          args_json="{}", rationale="", tier="T2",
+                          status="executed", ok=True)
+        assert [r["id"] for r in ledger.executed_since(a)] == [b]
+        assert ledger.executed_since(b) == []
+
+
 class TestNthRecentTs:
     def test_returns_ts_of_nth_most_recent(self, tmp_path):
         ledger = ActionLedger(tmp_path / "c.db")

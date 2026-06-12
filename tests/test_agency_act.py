@@ -85,6 +85,18 @@ class TestProposeFlow:
         pipeline.reject(report.ledger_id, reason="too late")  # must be a no-op
         assert ledger.get(report.ledger_id)["status"] == "executed"
 
+    def test_act_records_goal_text_in_ledger(self, tmp_path):
+        pipeline, ledger, _ = _pipeline(
+            tmp_path, MockAdapter(script=[_proposal_json()]))
+        report = pipeline.act(_state(goal="organize notes"))
+        assert ledger.get(report.ledger_id)["goal_text"] == "organize notes"
+
+    def test_fail_path_records_goal_text(self, tmp_path):
+        pipeline, ledger, _ = _pipeline(
+            tmp_path, MockAdapter(script=[_proposal_json(tool="ghost")]))
+        report = pipeline.act(_state(goal="organize notes"))
+        assert ledger.get(report.ledger_id)["goal_text"] == "organize notes"
+
     def test_unknown_tool_fails_cycle(self, tmp_path):
         pipeline, ledger, _ = _pipeline(
             tmp_path, MockAdapter(script=[_proposal_json(tool="ghost")]))

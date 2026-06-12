@@ -155,7 +155,7 @@ class ActPipeline:
                               proposal=proposal)
 
         row_id = self.ledger.record(
-            goal_fp=goal_fp, tool=proposal.tool,
+            goal_fp=goal_fp, goal_text=goal_text, tool=proposal.tool,
             args_json=json.dumps(proposal.args),
             rationale=proposal.rationale,
             tier=self.gateway.last_tier or "T2", status="proposed",
@@ -278,7 +278,8 @@ class ActPipeline:
               verdict: AuditVerdict | None = None, goal_text: str = "",
               report_status: ActStatus = ActStatus.FAILED,
               proposal: ActionProposal | None = None) -> ActReport:
-        row_id = self.ledger.record(goal_fp=goal_fp, tool=tool or "(none)",
+        row_id = self.ledger.record(goal_fp=goal_fp, goal_text=goal_text,
+                                    tool=tool or "(none)",
                                     args_json=json.dumps(args), rationale="",
                                     tier=self.gateway.last_tier or "T2",
                                     status="failed")
