@@ -16,6 +16,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+from .timeutil import naive_utcnow
+
 from .context_manager import ContextManager
 from .inner_monologue import InnerMonologue
 from .world_model import WorldModel
@@ -317,7 +319,7 @@ class ConsciousnessEngine:
 
         # Index reflection into ContentStore for future search
         self.content_store.index(
-            label=f"reflection_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
+            label=f"reflection_{naive_utcnow().strftime('%Y%m%d_%H%M')}",
             content=filtered_summary,
             category="reflection",
         )

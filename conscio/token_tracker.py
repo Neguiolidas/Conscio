@@ -15,8 +15,10 @@ Inspired by rtk/src/core/tracking.rs — reimplemented in Python.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
+
+from .timeutil import naive_utcnow
 
 
 # ─── Constants ──────────────────────────────────────────────────────────
@@ -106,7 +108,7 @@ class TokenTracker:
             2,
         )
 
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = naive_utcnow().isoformat()
 
         self.db.execute(
             """
@@ -146,7 +148,7 @@ class TokenTracker:
 
         Returns total tokens saved, savings percentage, and breakdown by source.
         """
-        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        cutoff = (naive_utcnow() - timedelta(hours=hours)).isoformat()
 
         rows = self.db.execute(
             """
@@ -204,7 +206,7 @@ class TokenTracker:
         Returns:
             Dict with used, remaining, and percentage of budget
         """
-        cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+        cutoff = (naive_utcnow() - timedelta(hours=24)).isoformat()
 
         row = self.db.execute(
             """
@@ -258,7 +260,7 @@ class TokenTracker:
 
     def compact(self, before_days: int = 30) -> int:
         """Remove old token usage records."""
-        cutoff = (datetime.utcnow() - timedelta(days=before_days)).isoformat()
+        cutoff = (naive_utcnow() - timedelta(days=before_days)).isoformat()
         before = self.db.execute("SELECT COUNT(*) as c FROM token_usage").fetchone()["c"]
         self.db.execute("DELETE FROM token_usage WHERE timestamp < ?", (cutoff,))
         self.db.commit()
