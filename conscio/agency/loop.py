@@ -51,3 +51,91 @@ class GoalArbiter:
             return base + (ALIGNMENT_BONUS if aligned else 0.0)
 
         return max(enumerate(goals), key=score)[1]
+
+
+@dataclass
+class ActBudget:
+    """Binding metabolic budget for engine.run() (P3)."""
+    max_cycles: int = 10
+    max_llm_calls: int = 100
+    max_tokens: int = 200_000
+    max_wall_s: float = 600.0
+
+
+@dataclass
+class RunReport:
+    cycles: int = 0
+    reports: list[ActReport] = field(default_factory=list)
+    llm_calls: int = 0
+    tokens: int = 0
+    wall_s: float = 0.0
+    stopped: str = ""
+
+
+class AutonomyLoop:
+    """engine.run(budget) heartbeat: reflect -> arbiter/act -> dream.
+
+    MetabolicContext stops being advisory here: FATIGUE halves the cycle
+    budget, CRITICAL forces the cap down to L1 PROPOSE for the cycle.
+    LLM calls and tokens are measured as deltas on the shared Meter, so
+    run() budgets only its own consumption.
+    """
+
+    def __init__(self, engine: Any, pipeline: Any, meter: Any):
+        self.engine = engine
+        self.pipeline = pipeline
+        self.meter = meter
+
+    def run(self, budget: ActBudget, *, world_state: str = "") -> RunReport:
+        report = RunReport()
+        start = time.monotonic()
+        calls0, tokens0 = self.meter.calls, self.meter.tokens
+        max_cycles = budget.max_cycles
+        cap0 = self.pipeline.autonomy_cap
+        try:
+            while True:
+                report.wall_s = time.monotonic() - start
+                report.llm_calls = self.meter.calls - calls0
+                report.tokens = self.meter.tokens - tokens0
+                stopped = self._budget_stop(report, budget, max_cycles)
+                if stopped:
+                    report.stopped = stopped
+                    break
+                self.engine.reflect(world_state=world_state)
+                state = self.engine._state
+                tier = MetabolicContext.assess(
+                    state.total_tokens_approx(),
+                    self.engine.model_info.context_window)
+                if tier is MetabolicState.FATIGUE:
+                    max_cycles = min(max_cycles,
+                                     max(1, budget.max_cycles // 2))
+                self.pipeline.autonomy_cap = (
+                    1 if tier is MetabolicState.CRITICAL else cap0)
+                act_report = self.engine.act()
+                report.reports.append(act_report)
+                report.cycles += 1
+                if (act_report.lockdown or state.action_lockdown
+                        or act_report.status is ActStatus.LOCKED):
+                    report.stopped = "lockdown"
+                    break
+                if self.engine.dream_recommended.recommended:
+                    self.engine.dream()
+        finally:
+            self.pipeline.autonomy_cap = cap0
+        report.wall_s = time.monotonic() - start
+        report.llm_calls = self.meter.calls - calls0
+        report.tokens = self.meter.tokens - tokens0
+        return report
+
+    @staticmethod
+    def _budget_stop(report: RunReport, budget: ActBudget,
+                     max_cycles: int) -> str:
+        if report.cycles >= max_cycles:
+            return "max_cycles"
+        if report.llm_calls >= budget.max_llm_calls:
+            return "max_llm_calls"
+        if report.tokens >= budget.max_tokens:
+            return "max_tokens"
+        if report.wall_s >= budget.max_wall_s:
+            return "max_wall_s"
+        return ""
