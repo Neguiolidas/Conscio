@@ -416,6 +416,12 @@ class ConsciousnessEngine:
                 return g
         return goal
 
+    @property
+    def state(self):
+        """Public read-only view of the current ConsciousnessState
+        (the volition layer reads this; reflect() owns the writes)."""
+        return self._state
+
     def get_state_for_injection(self) -> str:
         """
         Get the consciousness state formatted for LLM context injection.
