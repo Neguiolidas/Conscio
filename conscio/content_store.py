@@ -188,7 +188,7 @@ class ContentStore:
             "INSERT INTO sources (label, source_category, content_hash) VALUES (?, ?, ?)",
             (label, category, content_hash),
         )
-        source_id = cursor.lastrowid
+        source_id = int(cursor.lastrowid or 0)
 
         # Split into chunks at paragraph boundaries
         chunks = self._chunk_content(content, chunk_size)

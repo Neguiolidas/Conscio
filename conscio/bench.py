@@ -101,10 +101,9 @@ def build_adapter(spec: str, *, cycles: int = 10):
         return LlamaCppAdapter(model_name=arg or "llama.cpp")
     if kind == "openai":
         model, _, base = arg.partition("@")
-        kwargs = {"model": model or "local"}
         if base:
-            kwargs["base_url"] = base
-        return OpenAICompatAdapter(**kwargs)
+            return OpenAICompatAdapter(model=model or "local", base_url=base)
+        return OpenAICompatAdapter(model=model or "local")
     raise SystemExit(f"unknown adapter spec '{spec}' "
                      "(use mock | ollama:<model> | llamacpp[:<name>] | "
                      "openai:<model>[@<base_url>])")

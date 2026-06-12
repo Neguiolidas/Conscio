@@ -859,8 +859,12 @@ def record_session_lifecycle(
 
 
 class SessionLifecycle:
-    def __init__(self, engine=None):
+    def __init__(self, engine=None, session_db: Path | None = None,
+                 handoff_dir: Path | None = None):
         self.engine = engine
+        # None -> record_session_lifecycle falls back to module defaults
+        self.session_db = session_db
+        self.handoff_dir = handoff_dir
         self.on_session_start = None
         self.on_session_end = None
         self.on_session_reset = None

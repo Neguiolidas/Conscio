@@ -61,7 +61,7 @@ class ActionLedger:
              None if ok is None else int(ok), tokens_in, tokens_out,
              adapter, model))
         self._conn.commit()
-        return int(cur.lastrowid)
+        return int(cur.lastrowid or 0)
 
     def update_execution(self, row_id: int, *, ok: bool, output: str,
                          error: str, duration_ms: int, status: str) -> None:
