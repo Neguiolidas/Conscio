@@ -23,6 +23,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from types import SimpleNamespace
+from typing import Callable
 
 from .agency.act import goal_fingerprint
 from .agency.actor import build_actor_prompt
@@ -95,7 +96,7 @@ def mock_script(cycles: int) -> list[str]:
     return probes + [proposal] * cycles + [audit_fail] * semantic_count
 
 
-def reactive_mock_script(cycles: int) -> list:
+def reactive_mock_script(cycles: int) -> list[str | Callable[[str], str]]:
     """Callable entries reacting to prompt content: invalid most of the
     time WITHOUT few-shot exemplars (every 3rd call decodes), always
     valid WITH them. Proves the curve MACHINERY offline — a real model's
