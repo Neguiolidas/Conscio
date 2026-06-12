@@ -3,10 +3,13 @@
 
 from conscio.agency.contracts import (
     PROPOSAL_SCHEMA,
+    VERDICT_SCHEMA,
     ActionProposal,
+    AuditVerdict,
     ToolResult,
     proposal_from_dict,
     validate,
+    verdict_from_dict,
 )
 
 
@@ -56,9 +59,6 @@ class TestProposalFromDict:
 
 
 # ── F2: AuditVerdict ────────────────────────────────────────────────────
-
-from conscio.agency.contracts import (VERDICT_SCHEMA, AuditVerdict,
-                                      verdict_from_dict)
 
 
 def test_audit_verdict_pass_property():
