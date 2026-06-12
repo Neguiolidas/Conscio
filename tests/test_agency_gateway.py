@@ -95,3 +95,53 @@ class TestGatewayT3:
         gw = OutputGateway(mock, max_retries=2)
         p = gw.request_action("BASE", PROPOSAL_SCHEMA)
         assert p.tool == "t" and p.args == {}
+
+
+def _valid_json():
+    return ('{"tool": "echo", "args": {"text": "hi"}, '
+            '"rationale": "r", "expected_outcome": "e"}')
+
+
+def _valid_kv():
+    return "TOOL: echo\nARG text = hi\nWHY: r\nEXPECT: e"
+
+
+class TestTier1Grammar:
+    def _gbnf_caps(self):
+        return AdapterCaps(model_name="llamacpp", json_mode=False,
+                           grammar=True)
+
+    def test_grammar_caps_auto_select_t1(self):
+        adapter = MockAdapter(script=[_valid_json()], caps=self._gbnf_caps())
+        gw = OutputGateway(adapter)
+        proposal = gw.request_action("BASE", PROPOSAL_SCHEMA,
+                                     tool_names=["echo"])
+        assert proposal.tool == "echo"
+        assert gw.last_tier == "T1"
+        call = adapter.calls[0]
+        assert call["grammar"] is not None
+        assert '"\\"echo\\""' in call["grammar"]
+
+    def test_t1_downgrades_to_t3_without_json_mode(self):
+        adapter = MockAdapter(script=["garbage"] * 3 + [_valid_kv()],
+                              caps=self._gbnf_caps())
+        gw = OutputGateway(adapter)
+        proposal = gw.request_action("BASE", PROPOSAL_SCHEMA,
+                                     tool_names=["echo"])
+        assert proposal.tool == "echo"
+        assert gw.last_tier == "T3"
+
+    def test_explicit_tier_overrides_caps(self):
+        adapter = MockAdapter(script=[_valid_kv()],
+                              caps=AdapterCaps(json_mode=True))
+        gw = OutputGateway(adapter, tier="T3")
+        proposal = gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert proposal.tool == "echo"
+        assert gw.last_tier == "T3"
+        assert adapter.calls[0]["schema"] is None    # KV path, no json mode
+
+    def test_last_tier_records_t2(self):
+        adapter = MockAdapter(script=[_valid_json()])
+        gw = OutputGateway(adapter)
+        gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert gw.last_tier == "T2"

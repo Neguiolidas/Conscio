@@ -2,7 +2,10 @@
 """
 OutputGateway — turns raw cortex text into a valid ActionProposal
 (spec section 5.3). F1 ships tier 2 (JSON mode + lenient repair + retry)
-and tier 3 (KV-line for small models). Tier 1 (GBNF) arrives in F3.
+and tier 3 (KV-line for small models). F3 adds tier 1: GBNF constrained
+decoding via the embedded grammar compiler, with `tool` locked to the
+registry alternation. Tier comes from the measured ModelProfile when one
+exists (explicit `tier`); otherwise from the adapter caps.
 """
 from __future__ import annotations
 
@@ -86,18 +89,39 @@ _KV_INSTRUCTIONS = (
 class OutputGateway:
     """Decode tier selection + retry loop. One gateway per adapter."""
 
-    def __init__(self, adapter: InferenceAdapter, *, max_retries: int = 2):
+    def __init__(self, adapter: InferenceAdapter, *, max_retries: int = 2,
+                 tier: str | None = None):
         self.adapter = adapter
         self.max_retries = max_retries
+        self.tier = tier         # explicit "T1"/"T2"/"T3"; None = caps auto
+        self.last_tier = ""      # tier that produced (or last tried) decode
 
     def request_action(self, base_prompt: str, schema: dict,
-                       *, goal_id: str = "") -> ActionProposal:
+                       *, goal_id: str = "",
+                       tool_names: list[str] | None = None) -> ActionProposal:
         caps = self.adapter.capabilities()
-        if caps.json_mode:
+        tier = self.tier
+        if tier is None:
+            tier = ("T1" if caps.grammar
+                    else "T2" if caps.json_mode else "T3")
+        if tier == "T1":
+            self.last_tier = "T1"
+            data = self._try_grammar(base_prompt, schema, tool_names)
+            if data is None:                   # single downgrade per cycle
+                if caps.json_mode:
+                    self.last_tier = "T2"
+                    data = self._try_json(base_prompt, schema)
+                else:
+                    self.last_tier = "T3"
+                    data = self._try_kv(base_prompt, schema, attempts=1)
+        elif tier == "T2":
+            self.last_tier = "T2"
             data = self._try_json(base_prompt, schema)
-            if data is None:                       # single downgrade T2 -> T3
+            if data is None:                   # single downgrade T2 -> T3
+                self.last_tier = "T3"
                 data = self._try_kv(base_prompt, schema, attempts=1)
         else:
+            self.last_tier = "T3"
             data = self._try_kv(base_prompt, schema,
                                 attempts=1 + self.max_retries)
         if data is None:
@@ -105,6 +129,31 @@ class OutputGateway:
         return proposal_from_dict(data, goal_id=goal_id)
 
     # ── tiers ──
+
+    def _try_grammar(self, base_prompt: str, schema: dict,
+                     tool_names: list[str] | None) -> dict | None:
+        from .grammar import compile_schema_grammar
+        enums = {"tool": sorted(tool_names)} if tool_names else {}
+        grammar = compile_schema_grammar(schema, enums=enums)
+        prompt = base_prompt + _JSON_INSTRUCTIONS
+        feedback = ""
+        for _ in range(1 + self.max_retries):
+            try:
+                raw = self.adapter.generate(prompt + feedback, schema=schema,
+                                            grammar=grammar).text
+            except AdapterError:
+                return None
+            try:
+                data = json.loads(repair_json(raw))
+            except (json.JSONDecodeError, ValueError):
+                feedback = "\n\nPrevious answer was invalid JSON. JSON only."
+                continue
+            errors = validate(data, schema)
+            if not errors:
+                return data
+            feedback = ("\n\nPrevious answer was invalid: "
+                        + "; ".join(errors) + ". Fix and resend JSON only.")
+        return None
 
     def _try_json(self, base_prompt: str, schema: dict) -> dict | None:
         prompt = base_prompt + _JSON_INSTRUCTIONS
