@@ -24,7 +24,8 @@ def test_attach_wires_skeptic_trust_and_quarantine(tmp_path):
             sandbox_root=tmp_path / "sb",
             skeptic_adapter=skeptic_adapter)
         assert pipe.skeptic is not None
-        assert pipe.skeptic.adapter is skeptic_adapter      # mixed-cortex
+        # mixed-cortex: the dedicated auditor sits inside the F3 meter wrap
+        assert pipe.skeptic.adapter.inner is skeptic_adapter
         assert pipe.trust is not None
         assert pipe.breaker._conn is not None               # quarantine on
         (tmp_path / "sb").mkdir(exist_ok=True)
