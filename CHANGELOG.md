@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.0] — 2026-06-12
+
+### Added
+
+- **F3 "Volition"** — the homeostatic loop closes
+  (`sense → want → act → learn → re-sense`):
+  - `ProbeSuite` / `ModelProfile` (`conscio/agency/profiles.py`) — five
+    empirical micro-probes (~2k tokens: flat JSON echo, nested schema,
+    enum respect, negative instruction, KV-line) measure the attached
+    cortex; results cached in SQLite by model name. The profile picks
+    the decode tier, the skeptic mode and the actor's tool visibility.
+    No hardcoded model table. Profiles with no signal (backend down)
+    are never cached and change nothing.
+  - Embedded **schema→GBNF compiler** (`conscio/agency/grammar.py`) and
+    **tier-1 constrained decoding** in the OutputGateway (llama.cpp
+    grammar support): `tool` is locked to the registry alternation;
+    one-step downgrade T1→T2/T3 per cycle.
+  - **GoalArbiter** (`conscio/agency/loop.py`) — deterministic goal
+    selection: generator priority × dominant-dissonance alignment (P4)
+    × out of quarantine.
+  - **`engine.run(budget)` (L3 heartbeat)** — reflect → arbiter/act →
+    (dream when recommended) under a binding `ActBudget` (max_cycles,
+    max_llm_calls, max_tokens, max_wall_s). MetabolicContext becomes a
+    gate here (P3): FATIGUE halves the cycle budget, CRITICAL forces
+    L1 PROPOSE. Lockdown stops the loop.
+  - **`engine.probe(force=False)`** — lazy capability probing (first
+    `run()` or manual; never in `reflect()`, never at attach).
+  - **L3 AUTONOMOUS earned autonomy** in the TrustMatrix: calibration
+    ≥ 0.75, accuracy ≥ 0.85 and zero breaker trips across the last 50
+    ledger actions (`ledger.nth_recent_ts` + event-bus trip count;
+    fail-safe: without trip evidence L3 is unreachable).
+  - **`Meter` / `MeteredAdapter`** — inference odometer (calls, tokens,
+    latency) shared by actor and skeptic adapters; makes the ActBudget
+    binding and feeds the bench.
+  - **Bench CLI** — `python -m conscio.bench --adapter
+    mock|ollama:<m>|llamacpp[:<n>]|openai:<m>[@url]` reporting probe
+    profile, syntactic validity per tier, skeptic catch-rate
+    (deterministic vs semantic sabotage), latency p50 and calibration.
+    Deterministic baseline published in `docs/bench/`.
+
+### Changed
+
+- `OutputGateway` auto-tier now selects T1 for grammar-capable adapters
+  (llama.cpp); explicit `tier=` (from the measured profile) overrides.
+- The ActionLedger records the real decode tier (`gateway.last_tier`)
+  and the unwrapped adapter class name.
+- `engine.attach_adapter` wraps the actor and skeptic adapters in a
+  shared `MeteredAdapter`; `skeptic_mode` defaults to `None` (= start
+  as checklist, let `probe()` pick from the measured profile);
+  `autonomy_cap` now accepts 3.
+- `ToolRegistry.catalog_text(max_tools)` caps the catalog for weak
+  profiles (safest risks first); default remains the full catalog.
+- README Safety Rule 3 final wording (Skeptic + TrustMatrix + per-goal
+  quarantine made explicit).
+
+### Notes
+
+- `reflect()` remains untouched (P6); zero new dependencies (stdlib +
+  sqlite3 + numpy). +70 new tests.
+
 ## [1.0.0b1] — 2026-06-12
 
 ### Added
