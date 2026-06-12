@@ -592,6 +592,12 @@ class ConsciousnessEngine:
                         closer.close()
                 except Exception:
                     pass
+        skills = getattr(self, "_skills", None)
+        if skills is not None:
+            try:
+                skills.close()
+            except Exception:
+                pass
 
     def __enter__(self):
         return self
@@ -620,6 +626,7 @@ class ConsciousnessEngine:
         from .agency.breaker import CircuitBreaker
         from .agency.ledger import ActionLedger
         from .agency.skeptic import Skeptic
+        from .agency.skills import SkillLibrary
         from .agency.tools import make_default_registry
         from .agency.trust import TrustMatrix
 
@@ -651,6 +658,13 @@ class ConsciousnessEngine:
             autonomy_cap=autonomy_cap,
             recall_fn=lambda q: self.recall(q, k=3),
             emit_fn=self.event_bus.emit)
+        # v1.1: procedural memory — distilled by the dream, served to the
+        # actor as few-shot rendered for the gateway's effective tier.
+        skills = SkillLibrary(db)
+        self._skills = skills
+        pipeline = self._act_pipeline
+        pipeline.few_shot_provider = lambda goal: skills.few_shot(
+            goal, tier=pipeline.gateway.effective_tier())
         return self._act_pipeline
 
     def _trips_since(self, ts: float) -> int:
@@ -671,6 +685,9 @@ class ConsciousnessEngine:
                              reason="no adapter attached")
         state = state or self._state          # current state held by engine
         report = self._act_pipeline.act(state)
+        skills = getattr(self, "_skills", None)
+        if skills is not None:                # v1.1: outcome -> skill score
+            skills.settle(report)
         if report.lockdown:
             state.action_lockdown = True
             self.ctx.save_state(state)
