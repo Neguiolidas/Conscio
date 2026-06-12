@@ -180,6 +180,26 @@ class MetaCognition:
             if ep["count"] >= min_count
         ]
 
+    def expire_error(self, prefix: str, max_remove: int = 1) -> int:
+        """
+        Remove up to max_remove oldest error patterns starting with prefix.
+
+        Used by the TrustMatrix probation cycle (v1.0): a successful probe
+        forgives the oldest matching pattern so retries=0 is never an
+        absorbing state.
+        """
+        matching = sorted(
+            (ep for ep in self._data["error_patterns"]
+             if ep["pattern"].startswith(prefix)),
+            key=lambda ep: ep["last_seen"])
+        removed = 0
+        for ep in matching[:max_remove]:
+            self._data["error_patterns"].remove(ep)
+            removed += 1
+        if removed:
+            self._save()
+        return removed
+
     # --- Self-Critique ---
 
     def add_critique(self, task: str, what_i_did: str, what_i_should_do: str) -> None:
