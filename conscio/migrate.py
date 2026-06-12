@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
 from pathlib import Path
+
+from .timeutil import naive_utcnow
 
 
 # ─── Constants ──────────────────────────────────────────────────────────
@@ -178,7 +179,7 @@ class Migrator:
                     goal.get("status", "active"),
                     goal.get("source", "internal"),
                     json.dumps(metadata, default=str),
-                    goal.get("created_at", datetime.utcnow().isoformat()),
+                    goal.get("created_at", naive_utcnow().isoformat()),
                 ),
             )
             count += 1
@@ -216,7 +217,7 @@ class Migrator:
                     entry.get("task_type", "general"),
                     float(entry.get("confidence", 0.5)),
                     entry.get("outcome", "pending"),
-                    entry.get("timestamp", datetime.utcnow().isoformat()),
+                    entry.get("timestamp", naive_utcnow().isoformat()),
                 ),
             )
             count += 1
@@ -226,11 +227,11 @@ class Migrator:
             if isinstance(entry, dict):
                 pattern = entry.get("pattern", str(entry))
                 count_val = entry.get("count", 1)
-                first_seen = entry.get("first_seen", datetime.utcnow().isoformat())
+                first_seen = entry.get("first_seen", naive_utcnow().isoformat())
             else:
                 pattern = str(entry)
                 count_val = 1
-                first_seen = datetime.utcnow().isoformat()
+                first_seen = naive_utcnow().isoformat()
 
             self.db.execute(
                 """
@@ -283,8 +284,8 @@ class Migrator:
                     entity.get("type", "unknown"),
                     json.dumps(entity.get("state", {}), default=str),
                     float(entity.get("relevance", 1.0)),
-                    entity.get("updated_at", datetime.utcnow().isoformat()),
-                    entity.get("created_at", datetime.utcnow().isoformat()),
+                    entity.get("updated_at", naive_utcnow().isoformat()),
+                    entity.get("created_at", naive_utcnow().isoformat()),
                 ),
             )
             count += 1
@@ -300,7 +301,7 @@ class Migrator:
                     rel.get("source", ""),
                     rel.get("target", ""),
                     rel.get("relation_type", "related_to"),
-                    datetime.utcnow().isoformat(),
+                    naive_utcnow().isoformat(),
                 ),
             )
             count += 1
@@ -350,7 +351,7 @@ class Migrator:
                     proposal.get("rationale", ""),
                     proposal.get("status", "PENDING"),
                     proposal.get("risk_level", "low"),
-                    proposal.get("created_at", datetime.utcnow().isoformat()),
+                    proposal.get("created_at", naive_utcnow().isoformat()),
                 ),
             )
             count += 1

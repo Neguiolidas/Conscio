@@ -15,7 +15,9 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from .timeutil import naive_utcnow
 
 
 MIN_ENTITY_MATCH_LEN = 3   # friction ignores 1-2 char entity names (would over-defer)
@@ -192,7 +194,7 @@ class DreamCycle:
         never delete that id.
         """
         store = engine.content_store
-        cutoff = (datetime.utcnow() - timedelta(days=self.crystallize_after_days)).isoformat()
+        cutoff = (naive_utcnow() - timedelta(days=self.crystallize_after_days)).isoformat()
 
         old = store.db.execute(
             "SELECT id, label FROM sources "
@@ -221,7 +223,7 @@ class DreamCycle:
         )
 
         summary_id = store.index(
-            label=f"dream_crystal_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
+            label=f"dream_crystal_{naive_utcnow().strftime('%Y%m%d_%H%M%S')}",
             content=summary_body,
             category="consciousness",
         )

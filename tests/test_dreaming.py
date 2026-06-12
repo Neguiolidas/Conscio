@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from conscio.timeutil import naive_utcnow
 from conscio.engine import ConsciousnessEngine
 from conscio.dreaming import DreamCycle, DreamReport
 
@@ -73,7 +74,7 @@ def test_dream_dry_run_mutates_nothing(engine):
 
 def test_dream_crystallize_consolidates_old_reflections(engine):
     # Seed 5 old reflections (older than crystallize_after_days)
-    old_ts = (datetime.utcnow() - timedelta(days=30)).isoformat()
+    old_ts = (naive_utcnow() - timedelta(days=30)).isoformat()
     for i in range(5):
         sid = engine.content_store.index(
             label=f"reflection_old_{i}", content=f"old reflection {i}", category="reflection"
@@ -104,7 +105,7 @@ def test_dream_crystallize_consolidates_old_reflections(engine):
 
 
 def test_dream_crystallize_skips_when_below_threshold(engine):
-    old_ts = (datetime.utcnow() - timedelta(days=30)).isoformat()
+    old_ts = (naive_utcnow() - timedelta(days=30)).isoformat()
     sid = engine.content_store.index(label="reflection_one", content="only one", category="reflection")
     engine.content_store.db.execute("UPDATE sources SET indexed_at=? WHERE id=?", (old_ts, sid))
     engine.content_store.db.commit()

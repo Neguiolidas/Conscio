@@ -416,10 +416,12 @@ class TestGoalGenerator:
         goal = goal_generator.generate_from_curiosity("Fresh anomaly")
         assert goal is not None
         # Manually age it by updating the internal goals list
-        from datetime import datetime, timedelta
+        from datetime import timedelta
+
+        from conscio.timeutil import naive_utcnow
         for g in goal_generator._goals:
             if g.id == goal.id:
-                old_time = (datetime.utcnow() - timedelta(hours=48)).isoformat()
+                old_time = (naive_utcnow() - timedelta(hours=48)).isoformat()
                 g.created_at = old_time
         goal_generator._save()
         # Expire stale goals (max_age_hours=24)
