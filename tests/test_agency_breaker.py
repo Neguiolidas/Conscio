@@ -1,8 +1,11 @@
 # tests/test_agency_breaker.py
 """Tests for the minimal F1 CircuitBreaker (blueprint section 5)."""
+import time as _time
+
 import pytest
 
-from conscio.agency.breaker import DEFAULT_MAX_RETRIES, CircuitBreaker
+from conscio.agency.breaker import (DEFAULT_MAX_RETRIES,
+                                    GLOBAL_LOCKDOWN_QUORUM, CircuitBreaker)
 from conscio.agency.ledger import ActionLedger
 
 
@@ -65,10 +68,6 @@ class TestBreaker:
 
 # ── F2: quarantine + dynamic threshold ──────────────────────────────────
 
-import time as _time
-
-from conscio.agency.breaker import GLOBAL_LOCKDOWN_QUORUM
-
 
 class _Bus:
     def __init__(self):
@@ -102,7 +101,8 @@ def test_dynamic_threshold_from_trust(tmp_path):
     _failed_rows(led, "g1", 2)
     assert brk.should_trip("g1", task_type="t") is True
     assert brk.should_trip("g1") is False        # no task_type -> F1 fallback 3
-    brk.close(); led.close()
+    brk.close()
+    led.close()
 
 
 def test_trip_quarantines_goal_not_whole_agent(tmp_path):
@@ -112,7 +112,8 @@ def test_trip_quarantines_goal_not_whole_agent(tmp_path):
     brk.trip("g1", detail="boom", goal_text="organize sandbox files")
     assert brk.is_quarantined("g1") is True
     assert brk.global_lockdown_due() is False    # 1 < quorum
-    brk.close(); led.close()
+    brk.close()
+    led.close()
 
 
 def test_global_lockdown_at_quorum(tmp_path):
@@ -123,7 +124,8 @@ def test_global_lockdown_at_quorum(tmp_path):
         _failed_rows(led, fp, 3)
         brk.trip(fp, goal_text=f"goal number {i}")
     assert brk.global_lockdown_due() is True
-    brk.close(); led.close()
+    brk.close()
+    led.close()
 
 
 def test_no_db_falls_back_to_f1_global_lockdown(tmp_path):
@@ -145,7 +147,8 @@ def test_cooldown_release(tmp_path):
     released = brk.review_quarantine()
     assert released == ["g1"]
     assert brk.is_quarantined("g1") is False
-    brk.close(); led.close()
+    brk.close()
+    led.close()
 
 
 def test_relevant_event_releases_quarantine(tmp_path):
@@ -160,4 +163,5 @@ def test_relevant_event_releases_quarantine(tmp_path):
                        "data": {"summary": "new inventory facts learned"}})
     released = brk.review_quarantine()
     assert released == ["g1"]
-    brk.close(); led.close()
+    brk.close()
+    led.close()

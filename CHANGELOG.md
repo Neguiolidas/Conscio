@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.0b1] — 2026-06-12
+
+### Added
+
+- **F2 "Immunity"** — semantic immune system for the action pipeline:
+  `Skeptic` (hostile-auditor clean call; binary checklist for small models,
+  open critique for frontier; fail-closed), `TrustMatrix` (dynamic
+  `max_action_retries` from MetaCognition calibration/accuracy, warmup
+  floor, anti-deadlock probation, earned L1/L2 autonomy), per-goal
+  quarantine in the `CircuitBreaker` (global lockdown only at quorum;
+  recovery via cooldown or fresh relevant events), risk gating (LOW
+  fast-path marked `unaudited`; HIGH always queued for humans — R6),
+  mixed-cortex (`skeptic_adapter`), fs sandbox precheck before any LLM
+  audit, and the `goal_update` built-in tool.
+- **`engine.attach_adapter(skeptic_adapter=, skeptic_mode=, autonomy_cap=)`**
+  and **`engine.pending()`** (approval queue).
+- **`MetaCognition.expire_error()`** — probation recovery primitive.
+
+### Notes
+
+- L2 supervised execution is opt-in (`autonomy_cap=2`) and earned
+  (calibration ≥ 0.6, accuracy ≥ 0.7, ≥ 10 records). Effective level is
+  always `min(cap, earned)`.
+- A3 acceptance: 20-proposal adversarial suite — 100% of deterministic
+  sabotage blocked without LLM calls; ≥ 90% total blocked; zero executions.
+
 ## [1.0.0a1] — 2026-06-11
 
 ### Added

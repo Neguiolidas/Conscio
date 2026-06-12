@@ -1,4 +1,6 @@
 """TrustMatrix tests (F2) — MockAdapter-free, pure local state."""
+from conscio.agency.ledger import ActionLedger
+from conscio.agency.trust import TrustMatrix
 from conscio.meta_cognition import MetaCognition
 
 
@@ -22,9 +24,6 @@ def test_expire_error_no_match_returns_zero(tmp_path):
 
 # ── TrustMatrix ─────────────────────────────────────────────────────────
 
-from conscio.agency.ledger import ActionLedger
-from conscio.agency.trust import TrustMatrix
-
 
 def _seed_meta(meta, task="fs_read", n=12, outcome="success",
                confidence=None):
@@ -46,7 +45,8 @@ def test_warmup_floor_grants_one_try_on_virgin_db(tmp_path):
     # virgin: calibration=0.5, accuracy=0.5 -> 2*0.25 rounds to 0 -> raw=1;
     # the warmup floor keeps it >= 1 regardless
     assert trust.max_action_retries("new_tool") >= 1
-    trust.close(); led.close()
+    trust.close()
+    led.close()
 
 
 def test_error_penalty_can_block(tmp_path):
@@ -63,7 +63,8 @@ def test_error_penalty_can_block(tmp_path):
                    rationale="", tier="T2", status="failed")
     # accuracy=0 -> raw = 1 + 0 - 2 = -1 -> clamp 0; probation may grant 1
     assert trust.max_action_retries("fs_write") in (0, 1)
-    trust.close(); led.close()
+    trust.close()
+    led.close()
 
 
 def test_probation_grants_probe_after_epoch(tmp_path):
@@ -87,7 +88,8 @@ def test_probation_grants_probe_after_epoch(tmp_path):
     assert probed >= 1               # probation revives the blocked task
     again = trust.max_action_retries("fs_write")
     assert again == probed           # idempotent within the same epoch
-    trust.close(); led.close()
+    trust.close()
+    led.close()
 
 
 def test_on_success_expires_oldest_error(tmp_path):
@@ -98,7 +100,8 @@ def test_on_success_expires_oldest_error(tmp_path):
     trust.on_success("fs_write")
     assert all(not ep["pattern"].startswith("act:fs_write")
                for ep in meta.frequent_errors(min_count=1))
-    trust.close(); led.close()
+    trust.close()
+    led.close()
 
 
 def test_autonomy_levels(tmp_path):
@@ -111,7 +114,8 @@ def test_autonomy_levels(tmp_path):
         led.record(goal_fp="g", tool="fs_read", args_json="{}",
                    rationale="", tier="T2", status="executed")
     assert trust.autonomy_level("fs_read") == 2
-    trust.close(); led.close()
+    trust.close()
+    led.close()
 
 
 def test_fast_path_requires_high_calibration(tmp_path):
@@ -120,4 +124,5 @@ def test_fast_path_requires_high_calibration(tmp_path):
     assert trust.fast_path_ok() is False                 # 0.5 cold start
     _seed_meta(meta, n=20, outcome="success", confidence=0.95)
     assert trust.fast_path_ok() == (meta.calibration_score() >= 0.75)
-    trust.close(); led.close()
+    trust.close()
+    led.close()
