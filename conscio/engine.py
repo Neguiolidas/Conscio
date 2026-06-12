@@ -594,18 +594,21 @@ class ConsciousnessEngine:
     # ── v1.0 volition layer (spec section 6) ────────────────────────────
 
     def attach_adapter(self, adapter, *, sandbox_root=None, registry=None,
-                       skeptic_adapter=None, skeptic_mode="checklist",
+                       skeptic_adapter=None, skeptic_mode=None,
                        autonomy_cap=1):
         """Wire the agentic pipeline. reflect() is unaffected.
 
         skeptic_adapter: optional second cortex for the audit
         (mixed-cortex); defaults to the actor adapter.
+        skeptic_mode: "checklist"/"open"; None (default) starts as
+        checklist and lets probe() pick it from the measured profile.
         autonomy_cap: operator ceiling for earned autonomy (1=PROPOSE,
-        2=SUPERVISED). Effective level = min(cap, earned).
+        2=SUPERVISED, 3=AUTONOMOUS). Effective = min(cap, earned).
         """
         from pathlib import Path
 
         from .agency.act import ActPipeline
+        from .agency.adapter import Meter, MeteredAdapter
         from .agency.breaker import CircuitBreaker
         from .agency.ledger import ActionLedger
         from .agency.skeptic import Skeptic
@@ -617,15 +620,23 @@ class ConsciousnessEngine:
             sandbox_root=sandbox, content_store=self.content_store,
             event_bus=self.event_bus, goal_generator=self.goals)
         db = self.storage / "conscio.db"                    # shared DB
+        meter = Meter()
+        metered = MeteredAdapter(adapter, meter)
+        metered_skeptic = (MeteredAdapter(skeptic_adapter, meter)
+                           if skeptic_adapter is not None else metered)
         ledger = ActionLedger(db)
         trust = TrustMatrix(
             self.meta, ledger, db,
             reflect_count_fn=lambda: len(self.event_bus.query(
-                type="reflection", limit=100000)))
-        skeptic = Skeptic(skeptic_adapter or adapter, mode=skeptic_mode,
+                type="reflection", limit=100000)),
+            trips_since_fn=self._trips_since)
+        skeptic = Skeptic(metered_skeptic, mode=skeptic_mode or "checklist",
                           facts_fn=self.world.query)
+        self._skeptic_mode_explicit = skeptic_mode is not None
+        self._act_meter = meter
+        self._model_profile = None
         self._act_pipeline = ActPipeline(
-            adapter=adapter, registry=registry, ledger=ledger,
+            adapter=metered, registry=registry, ledger=ledger,
             breaker=CircuitBreaker(ledger, self.event_bus,
                                    trust=trust, db_path=db),
             skeptic=skeptic, trust=trust, meta=self.meta,
@@ -633,6 +644,15 @@ class ConsciousnessEngine:
             recall_fn=lambda q: self.recall(q, k=3),
             emit_fn=self.event_bus.emit)
         return self._act_pipeline
+
+    def _trips_since(self, ts: float) -> int:
+        """Breaker trips since `ts` — feeds L3 earned autonomy (5.7)."""
+        since = datetime.fromtimestamp(ts).isoformat() if ts else None
+        events = self.event_bus.query(type="error", category="system",
+                                      since=since, limit=1000)
+        return sum(1 for e in (events or [])
+                   if "Intractable dissonance" in str(
+                       e.to_dict() if hasattr(e, "to_dict") else e))
 
     def act(self, state=None):
         """Run one L1 PROPOSE cycle downstream of reflect()."""
@@ -659,6 +679,47 @@ class ConsciousnessEngine:
         if getattr(self, "_act_pipeline", None) is None:
             return []
         return self._act_pipeline.ledger.pending(limit)
+
+    def probe(self, *, force: bool = False):
+        """Run/refresh the ProbeSuite for the attached adapter (spec 5.10).
+
+        Lazy: called by run() before the first cycle, or manually. Never
+        called by reflect() (P6) nor by act(). A valid profile re-tiers
+        the gateway, picks the skeptic mode (unless one was set
+        explicitly at attach) and caps the actor's tool catalog. An
+        invalid profile (backend gave no signal) changes nothing.
+        """
+        if getattr(self, "_act_pipeline", None) is None:
+            return None
+        if self._model_profile is not None and not force:
+            return self._model_profile
+        from .agency.profiles import (ProbeSuite, choose_tier,
+                                      max_visible_tools, skeptic_mode)
+        suite = ProbeSuite(self._act_pipeline.adapter,
+                           self.storage / "conscio.db")
+        try:
+            profile = suite.get(force=force)
+        finally:
+            suite.close()
+        self._model_profile = profile
+        if profile.valid:
+            self._act_pipeline.gateway.tier = choose_tier(profile)
+            self._act_pipeline.max_visible_tools = max_visible_tools(profile)
+            if (not getattr(self, "_skeptic_mode_explicit", False)
+                    and self._act_pipeline.skeptic is not None):
+                self._act_pipeline.skeptic.mode = skeptic_mode(profile)
+        return profile
+
+    def run(self, budget=None, *, world_state=""):
+        """L3 heartbeat: reflect -> arbiter/act -> (dream), repeated
+        under a binding ActBudget (P3). Probes the cortex once, lazily."""
+        from .agency.loop import ActBudget, AutonomyLoop, RunReport
+
+        if getattr(self, "_act_pipeline", None) is None:
+            return RunReport(stopped="no adapter attached")
+        self.probe()
+        loop = AutonomyLoop(self, self._act_pipeline, self._act_meter)
+        return loop.run(budget or ActBudget(), world_state=world_state)
 
 
 # --- CLI Entry Point ---

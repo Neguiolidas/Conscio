@@ -229,6 +229,40 @@ Every N minutes (configurable):
   active_goals + dominant dissonance; approve()/reject() human gate; ActionLedger audit;
   circuit breaker with persistent `action_lockdown` (reflect() keeps running).
 
+### v1.0 Modules (Agency — F2 "Immunity")
+
+- **Skeptic** (`conscio/agency/skeptic.py`) — hostile-auditor semantic audit in a clean
+  LLM call (zero history leak); binary checklist for small models, open critique for
+  frontier; mixed-cortex (a second adapter can audit). Fail-closed.
+- **TrustMatrix** (`conscio/agency/trust.py`) — earned autonomy computed from
+  MetaCognition primitives + ActionLedger history; warmup floor, anti-deadlock
+  probation, dynamic retry ceiling. Nothing hardcoded.
+- **CircuitBreaker quarantine** (`conscio/agency/breaker.py`) — per-goal quarantine with
+  cooldown/event-driven release; global lockdown only on quorum.
+
+### v1.0 Modules (Agency — F3 "Volition")
+
+- **ProbeSuite / ModelProfile** (`conscio/agency/profiles.py`) — five empirical
+  micro-probes (~2k tokens) measure JSON fidelity, schema depth, instruction depth and
+  KV-line reliability; results cached in SQLite by model name. The profile picks the
+  decode tier, the skeptic mode and how many tools the actor sees. No hardcoded model
+  table: plug an unknown model and the framework measures and adapts.
+- **GBNF compiler** (`conscio/agency/grammar.py`) — embedded schema→GBNF compiler;
+  tier-1 constrained decoding on llama.cpp locks `tool` to the registry alternation.
+- **GoalArbiter + AutonomyLoop** (`conscio/agency/loop.py`) — deterministic goal choice
+  (priority × dominant-dissonance alignment × quarantine) and the `engine.run(budget)`
+  L3 heartbeat: reflect → act → dream under a binding ActBudget (cycles, LLM calls,
+  tokens, wall-clock). MetabolicContext gates execution here: FATIGUE halves the cycle
+  budget, CRITICAL forces L1 PROPOSE.
+- **engine.probe()** — lazy capability probing (first `run()` or manual; never in
+  `reflect()`, never at attach). **L3 AUTONOMOUS** is earned: calibration ≥ 0.75,
+  accuracy ≥ 0.85 and zero breaker trips across the last 50 actions.
+- **Meter / MeteredAdapter** (`conscio/agency/adapter.py`) — inference odometer
+  (calls/tokens/latency) that makes the ActBudget a binding gate.
+- **Bench CLI** (`conscio/bench.py`) — `python -m conscio.bench --adapter ollama:hermes3`
+  → syntactic validity, skeptic catch-rate, latency p50, calibration. The instrument
+  that proves "any model" by measurement.
+
 ### Category/Source/Type Reference
 
 **ContentStore categories:** reflection, perception, trading, system, error, consciousness, external, **session**
@@ -244,8 +278,9 @@ coherence:dissonance
 1. **No autonomous self-modification** — all evolution proposals require human approval
 2. **Context injection has hard limits** — never exceeds mode budget
 3. **Goals never execute directly** — execution happens exclusively through the audited
-   `act()` pipeline: validated output contract + deterministic checks + risk gating +
-   persistent circuit-breaker lockdown (semantic audit arrives with the Skeptic phase)
+   `act()` pipeline: validated output contract + semantic audit (Skeptic, hostile auditor
+   in a clean call) + risk gating + earned autonomy (TrustMatrix) + circuit breaker with
+   per-goal quarantine and persistent lockdown
 4. **Reflections are append-only** — never edited once written
 5. **Cannot modify its own safety rules** — no self-referential gate bypass
 6. **HIGH-risk actions always require human approval** — never auto-executed
@@ -288,6 +323,21 @@ pytest tests/test_event_bus.py -v
 pytest tests/test_session_lifecycle.py -v
 ```
 
+## Bench
+
+```bash
+# offline, deterministic (MockAdapter)
+python -m conscio.bench --adapter mock
+
+# real backends (local by default)
+python -m conscio.bench --adapter ollama:hermes3 --cycles 20
+python -m conscio.bench --adapter llamacpp --cycles 20 --json report.json
+python -m conscio.bench --adapter openai:qwen2.5@http://localhost:8000/v1
+```
+
+Reports: probe profile, decode tier, syntactic validity, skeptic catch-rate
+(deterministic vs semantic), latency p50, calibration. See `docs/bench/`.
+
 ## Database
 
 All SQLite databases use WAL mode for concurrent read/write. Default location:
@@ -316,6 +366,20 @@ All SQLite databases use WAL mode for concurrent read/write. Default location:
 
 ## Audit History
 
+- **v1.0.0 — F3 "Volition"** — the loop closes: ProbeSuite/ModelProfile (5 empirical
+  micro-probes, SQLite-cached, no hardcoded model table), embedded schema→GBNF compiler
+  (tier-1 constrained decoding), GoalArbiter (priority × dissonance × quarantine),
+  `engine.run(budget)` L3 heartbeat with binding ActBudget + metabolic gating,
+  `engine.probe()`, L3 earned autonomy (calibration ≥ 0.75, accuracy ≥ 0.85, zero recent
+  trips), Meter/MeteredAdapter inference odometer, bench CLI (`python -m conscio.bench`,
+  baseline published in `docs/bench/`). reflect() untouched. +70 new tests.
+- **v1.0.0b1 — F2 "Immunity"** — semantic immune system: Skeptic (hostile-auditor clean
+  call; checklist for small models, open critique for frontier; fail-closed), TrustMatrix
+  (dynamic retries from calibration/accuracy, warmup floor, anti-deadlock probation,
+  earned L1/L2), per-goal quarantine in the CircuitBreaker (global lockdown only at
+  quorum; recovery via cooldown or fresh events), risk gating (LOW fast-path `unaudited`;
+  HIGH always human-queued — R6), mixed-cortex audits, `engine.pending()` approval queue.
+  A3: 20-proposal adversarial suite, 100% deterministic sabotage blocked, zero executions.
 - **v1.0.0a1 — F1 "Spine"** — The volition layer lands: `conscio/agency/` subpackage
   (contracts + zero-dep validator, InferenceAdapter with Mock/Ollama/llama.cpp/OpenAI-compat,
   OutputGateway T2/T3, sandboxed ToolRegistry, append-only ActionLedger in the shared
