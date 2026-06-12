@@ -45,3 +45,43 @@ class TestMockAdapter:
     def test_result_carries_token_counts(self):
         r = InferenceResult(text="t", tokens_in=10, tokens_out=5, latency_ms=3)
         assert (r.tokens_in, r.tokens_out) == (10, 5)
+
+
+class TestMeteredAdapter:
+    def test_counts_calls_and_tokens(self):
+        from conscio.agency.adapter import Meter, MeteredAdapter
+        meter = Meter()
+        inner = MockAdapter(script=["hello world!"])
+        metered = MeteredAdapter(inner, meter)
+        result = metered.generate("a prompt of words")
+        assert result.text == "hello world!"
+        assert meter.calls == 1
+        assert meter.tokens == result.tokens_in + result.tokens_out
+        assert len(meter.latencies_ms) == 1
+
+    def test_failed_call_still_debits_budget(self):
+        from conscio.agency.adapter import Meter, MeteredAdapter
+        meter = Meter()
+        metered = MeteredAdapter(MockAdapter(script=[]), meter)
+        with pytest.raises(AdapterError):
+            metered.generate("p")
+        assert meter.calls == 1 and meter.tokens == 0
+
+    def test_capabilities_and_name_pass_through(self):
+        from conscio.agency.adapter import Meter, MeteredAdapter
+        inner = MockAdapter(script=[], caps=AdapterCaps(model_name="tiny"))
+        metered = MeteredAdapter(inner, Meter())
+        assert metered.capabilities().model_name == "tiny"
+        assert metered.wrapped_name == "MockAdapter"
+        assert isinstance(metered, InferenceAdapter)
+
+    def test_kwargs_forwarded_to_inner(self):
+        from conscio.agency.adapter import Meter, MeteredAdapter
+        inner = MockAdapter(script=["x"])
+        MeteredAdapter(inner, Meter()).generate(
+            "p", grammar="root ::= ws", max_tokens=9, temperature=0.0,
+            stop=["\n"])
+        call = inner.calls[0]
+        assert call["grammar"] == "root ::= ws"
+        assert call["max_tokens"] == 9
+        assert call["stop"] == ["\n"]
