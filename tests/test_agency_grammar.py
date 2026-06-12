@@ -8,7 +8,8 @@ from conscio.agency.grammar import (compile_proposal_grammar,
 class TestCompileSchema:
     def test_root_rule_lists_fields_in_order(self):
         g = compile_schema_grammar(PROPOSAL_SCHEMA)
-        root = next(l for l in g.splitlines() if l.startswith("root ::="))
+        root = next(line for line in g.splitlines()
+                    if line.startswith("root ::="))
         assert root.index('tool') < root.index('args')
         assert root.index('args') < root.index('rationale')
         assert root.index('rationale') < root.index('expected_outcome')
