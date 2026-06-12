@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from collections.abc import Sequence
 from typing import Any, Callable
 
 
@@ -77,7 +78,7 @@ class MockAdapter(InferenceAdapter):
     """
 
     def __init__(self,
-                 script: list[str | Callable[[str], str]] | None = None,
+                 script: Sequence[str | Callable[[str], str]] | None = None,
                  caps: AdapterCaps | None = None):
         self._script = list(script or [])
         self._caps = caps or AdapterCaps()
