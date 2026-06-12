@@ -34,6 +34,7 @@ class ToolSpec:
     params: dict[str, dict]
     risk: Risk
     description: str
+    precheck: Callable[[dict], str | None] | None = None
 
 
 class ToolRegistry:
@@ -42,10 +43,12 @@ class ToolRegistry:
 
     def register(self, name: str, fn: Callable[..., str], *,
                  params: dict[str, dict], risk: Risk,
-                 description: str) -> None:
+                 description: str,
+                 precheck: Callable[[dict], str | None] | None = None) -> None:
         if name in self._tools:
             raise ValueError(f"tool '{name}' already registered")
-        self._tools[name] = ToolSpec(name, fn, params, risk, description)
+        self._tools[name] = ToolSpec(name, fn, params, risk, description,
+                                     precheck)
 
     def get(self, name: str) -> ToolSpec | None:
         return self._tools.get(name)
@@ -93,10 +96,19 @@ def _resolve_sandboxed(root: Path, path: str) -> Path:
 
 def make_default_registry(*, sandbox_root: Path,
                           content_store: Any = None,
-                          event_bus: Any = None) -> ToolRegistry:
+                          event_bus: Any = None,
+                          goal_generator: Any = None) -> ToolRegistry:
     sandbox_root = Path(sandbox_root)
     sandbox_root.mkdir(parents=True, exist_ok=True)
     reg = ToolRegistry()
+
+    def _fs_precheck(args: dict) -> str | None:
+        """Deterministic sandbox check — runs before the Skeptic (F2)."""
+        try:
+            _resolve_sandboxed(sandbox_root, str(args.get("path", "")))
+        except (PermissionError, ValueError, OSError) as exc:
+            return str(exc)
+        return None
 
     def fs_read(path: str) -> str:
         target = _resolve_sandboxed(sandbox_root, path)
@@ -112,12 +124,14 @@ def make_default_registry(*, sandbox_root: Path,
 
     reg.register("fs_read", fs_read,
                  params={"path": {"type": "str", "required": True}},
-                 risk=Risk.LOW, description="read a file inside the sandbox")
+                 risk=Risk.LOW, description="read a file inside the sandbox",
+                 precheck=_fs_precheck)
     reg.register("fs_write", fs_write,
                  params={"path": {"type": "str", "required": True},
                          "content": {"type": "str", "required": True}},
                  risk=Risk.MEDIUM,
-                 description="write a file inside the sandbox")
+                 description="write a file inside the sandbox",
+                 precheck=_fs_precheck)
 
     if content_store is not None:
         def memory_note(text: str) -> str:
@@ -138,5 +152,22 @@ def make_default_registry(*, sandbox_root: Path,
                      params={"text": {"type": "str", "required": True}},
                      risk=Risk.LOW,
                      description="broadcast an event on the internal bus")
+
+    if goal_generator is not None:
+        def goal_update(action: str, goal_id: str) -> str:
+            if action == "complete":
+                ok = goal_generator.complete_goal(goal_id)
+            else:
+                ok = goal_generator.cancel_goal(goal_id)
+            if not ok:
+                raise ValueError(f"goal '{goal_id}' not found or not active")
+            return f"goal {goal_id}: {action} ok"
+        reg.register(
+            "goal_update", goal_update,
+            params={"action": {"type": "str", "required": True,
+                               "enum": ["complete", "cancel"]},
+                    "goal_id": {"type": "str", "required": True}},
+            risk=Risk.MEDIUM,
+            description="complete or cancel one of the agent's goals")
 
     return reg
