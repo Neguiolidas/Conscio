@@ -182,3 +182,18 @@ def test_fs_read_allows_small_file(tmp_path):
     (tmp_path / "ok.txt").write_text("hello")
     result = reg.dispatch("fs_read", {"path": "ok.txt"})
     assert result.ok and result.output == "hello"
+
+
+# ── v1.2: tool errors carry no traceback / path leak ────────────────────
+
+def test_tool_error_has_no_traceback():
+    def boom() -> str:
+        raise RuntimeError("kaboom")
+
+    reg = ToolRegistry()
+    reg.register("boom", boom, params={}, risk=Risk.LOW, description="x")
+    result = reg.dispatch("boom", {})
+    assert not result.ok
+    assert "RuntimeError: kaboom" in result.error
+    assert "Traceback" not in result.error
+    assert 'File "' not in result.error
