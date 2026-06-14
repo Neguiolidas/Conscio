@@ -45,13 +45,16 @@ def test_heartbeat_renders_self_prompt_and_dream():
     s = SessionSummary(session_id="x", self_prompt="why contradiction?",
                        dream_recommended="recommended (ontological 0.30)")
     hb = format_heartbeat(s)
-    assert "❓ self-prompt: why contradiction?" in hb
-    assert "☾ dream: recommended (ontological 0.30)" in hb
+    # New compact format uses ? for self_prompt and ☾ for dream
+    assert "why contradiction?" in hb
+    assert "recommended" in hb
 
 
 def test_handoff_renders_self_prompt_and_dream():
     s = SessionSummary(session_id="x", active_goals=["g"],
                        self_prompt="why?", dream_recommended="recommended")
     ho = format_handoff(s)
-    assert "**Self-prompt:** why?" in ho
-    assert "**Dream:** recommended" in ho
+    assert "Self-prompt" in ho
+    assert "why?" in ho
+    assert "dream" in ho
+    assert "recommended" in ho

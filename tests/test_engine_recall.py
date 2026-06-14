@@ -7,7 +7,7 @@ from conscio.engine import ConsciousnessEngine
 @pytest.fixture
 def engine(tmp_path):
     e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
-    e._session_rag = None  # pin RAG off → hermetic (no Ollama probe in tests)
+    e._session_rag = ConsciousnessEngine._RAG_DISABLED  # pin RAG off → hermetic (no Ollama probe in tests)
     yield e
     e.close()
 

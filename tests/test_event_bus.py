@@ -125,9 +125,9 @@ class TestEmit:
 
     def test_project_dir(self, bus):
         """Project directory is stored."""
-        eid = bus.emit("error", "system", {"msg": "test"}, project_dir="/home/ubuntu/orion")
+        eid = bus.emit("error", "system", {"msg": "test"}, project_dir="/tmp/test-conscio")
         event = bus.get(eid)
-        assert event.project_dir == "/home/ubuntu/orion"
+        assert event.project_dir == "/tmp/test-conscio"
 
     def test_attribution_confidence(self, bus):
         """Attribution confidence is stored."""
@@ -268,11 +268,11 @@ class TestQuery:
 
     def test_query_by_project_dir(self, bus):
         """Filter by project_dir works."""
-        bus.emit("error", "system", {"msg": "test"}, project_dir="/home/ubuntu/orion")
+        bus.emit("error", "system", {"msg": "test"}, project_dir="/tmp/test-conscio")
         bus.emit("error", "system", {"msg": "test2"}, project_dir="/home/ubuntu/other")
-        events = populated_bus.query(project_dir="/home/ubuntu/orion") if False else bus.query(project_dir="/home/ubuntu/orion")
+        events = populated_bus.query(project_dir="/tmp/test-conscio") if False else bus.query(project_dir="/tmp/test-conscio")
         for e in events:
-            assert e.project_dir == "/home/ubuntu/orion"
+            assert e.project_dir == "/tmp/test-conscio"
 
     def test_query_limit(self, populated_bus):
         """Limit parameter caps result count."""

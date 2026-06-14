@@ -148,7 +148,7 @@ def test_rag_search_empty_store(rag):
 
 
 def test_index_recent_sessions_returns_stats(tmp_path):
-    # Create a session DB with some messages matching Hermes schema
+    # Create a session DB with some messages matching session schema
     import sqlite3
     conn = sqlite3.connect(tmp_path / "state.db")
     conn.execute("""

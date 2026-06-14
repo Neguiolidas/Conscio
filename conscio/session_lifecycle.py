@@ -1,14 +1,12 @@
 """
-SessionLifecycle — Bridge between Conscio Engine and Hermes session events.
+session_lifecycle.py — Semantic compression bridge between Conscio and agent frameworks.
 
-Handles:
-1. Recording session end/reset in Conscio (EventBus + ContentStore)
-2. Enriching heartbeat with Conscio state (world model, active goals, anomalies)
-3. Persisting heartbeat content to ContentStore for future semantic search
-4. Feeding session data into the reflection loop
+Philosophy: handoff = semantic map, NOT transcript.
+Chunks are dense, tag-rich, short — like embedding metadata.
+Goal: maximum information density with minimum context weight.
 
 Called by hook handlers on session:end / session:reset.
-Supports Hermes Agent out of the box; any agent can provide custom paths.
+Supports configurable paths via `handoff_dir` and `session_db` parameters.
 """
 
 from __future__ import annotations
@@ -25,33 +23,31 @@ from typing import Optional, Any
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Config — defaults for Hermes Agent; override via function args or env vars
+# Config
 # ---------------------------------------------------------------------------
 
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 SESSION_DB = HERMES_HOME / "state.db"
-MEMPALACE_DIR = Path.home() / "mempalace" / "diary"
-HANDOFF_PATH = MEMPALACE_DIR / "_session_handoff.md"
-HEARTBEAT_PATH = MEMPALACE_DIR / "_latest_heartbeat.md"
+HANDOFF_DIR = Path.home() / ".conscio" / "handoff"
+HANDOFF_PATH = HANDOFF_DIR / "_session_handoff.md"
+HEARTBEAT_PATH = HANDOFF_DIR / "_latest_heartbeat.md"
 
-# Allow overriding session DB via env var (e.g. for non-Hermes agents)
 _ENV_SESSION_DB = os.environ.get("CONSCIO_SESSION_DB")
 if _ENV_SESSION_DB:
     SESSION_DB = Path(_ENV_SESSION_DB)
 
-# Allow disabling handoff file writes via env var
 _CONSCIO_HANDOFF_DIR = os.environ.get("CONSCIO_HANDOFF_DIR")
 if _CONSCIO_HANDOFF_DIR:
     if _CONSCIO_HANDOFF_DIR.lower() in ("none", "off", "false", "0"):
-        MEMPALACE_DIR = None  # type: ignore[assignment]
-        HANDOFF_PATH = None   # type: ignore[assignment]
-        HEARTBEAT_PATH = None # type: ignore[assignment]
+        HANDOFF_DIR = None  # type: ignore[assignment]
+        HANDOFF_PATH = None  # type: ignore[assignment]
+        HEARTBEAT_PATH = None  # type: ignore[assignment]
     else:
-        MEMPALACE_DIR = Path(_CONSCIO_HANDOFF_DIR)
-        HANDOFF_PATH = MEMPALACE_DIR / "_session_handoff.md"
-        HEARTBEAT_PATH = MEMPALACE_DIR / "_latest_heartbeat.md"
+        HANDOFF_DIR = Path(_CONSCIO_HANDOFF_DIR)
+        HANDOFF_PATH = HANDOFF_DIR / "_session_handoff.md"
+        HEARTBEAT_PATH = HANDOFF_DIR / "_latest_heartbeat.md"
 
-# Patterns to skip (system-injected messages, not real user input)
+# Noise patterns — system-injected messages, never real user input
 SKIP_PREFIXES = [
     "[CONTEXT COMPACTION",
     "[Your active task",
@@ -62,7 +58,6 @@ SKIP_PREFIXES = [
     "[FIM DO HEARTBEAT",
 ]
 
-# Noise patterns to strip from content
 NOISE_PATTERNS = [
     r"\[CONTEXT COMPACTION[^\]]*\]",
     r"\[Your active task list was preserved[^\]]*\]",
@@ -72,16 +67,19 @@ NOISE_PATTERNS = [
     r"\[FIM DO HEARTBEAT[^\]]*\]",
 ]
 
-MAX_USER_INTENTS = 6
-MAX_ASSISTANT_ACTIONS = 5
-MAX_REASONING = 4
+# Hard limits for semantic chunks
+HB_MAX_CHARS = 1200  # heartbeat — must stay lean
+HO_MAX_CHARS = 3000  # handoff — richer but still bounded
+MAX_CHUNKS = 8       # max semantic chunks per output
 
+# Legacy compat constants (used by tests)
+MAX_USER_INTENTS = MAX_CHUNKS
+MAX_ASSISTANT_ACTIONS = MAX_CHUNKS
+MAX_REASONING = 4
 HB_MAX_INTENTS = 4
 HB_MAX_ACTIONS = 3
 HB_MAX_TOPICS = 5
-HB_MAX_CHARS = 1400
 
-# Sentinel for "use module default" — distinguishes "not provided" from None
 _UNSET: Any = object()
 
 
@@ -90,41 +88,108 @@ _UNSET: Any = object()
 # ---------------------------------------------------------------------------
 
 @dataclass
+class SemanticChunk:
+    """A single dense information unit — like a ChromaDB document."""
+    tag: str           # e.g. "fix", "decision", "task", "state"
+    domain: str  # e.g. "trading", "conscio", "infra", "general"
+    payload: str       # ultra-short: "warmup_mode_added|3ticks_hold"
+    source_role: str   # "user" or "assistant"
+
+
+@dataclass
 class SessionSummary:
-    """Extracted summary from a dying Hermes session."""
+    """Extracted semantic map from a session."""
     session_id: str = ""
     model: str = ""
     started_at: str = ""
     message_count: int = 0
     title: str = ""
-    intents: list[str] = field(default_factory=list)
-    actions: list[str] = field(default_factory=list)
-    reasoning: list[str] = field(default_factory=list)
+    chunks: list[SemanticChunk] = field(default_factory=list)
     topics: list[str] = field(default_factory=list)
 
-    # Enriched from Conscio (optional — filled by engine)
+    # Conscio enrichment
     world_model_entities: list[str] = field(default_factory=list)
     active_goals: list[str] = field(default_factory=list)
     meta_confidence: float = 0.0
     stale_entities: list[str] = field(default_factory=list)
-
-    # Trajectory (v0.5) — code-owned `trajectory`; LLM-only `vibes`/`identity_anchor`
-    trajectory: str = ""        # where the agent is heading (overwritten by enrich)
-    vibes: str = ""             # emotional texture — LLM-authored only
-    identity_anchor: str = ""   # processing style — LLM-authored only
-
-    # Coherence (v0.6) — advisory state metric; voice preset marker
+    trajectory: str = ""
+    vibes: str = ""
+    identity_anchor: str = ""
     coherence: Optional[float] = None
     coherence_note: str = ""
     voice: str = ""
-
-    # Self-prompt + dream (v0.7)
     self_prompt: str = ""
     dream_recommended: str = ""
 
+    # Legacy compat fields (accepted in __init__ for test compat, derived from chunks when not set)
+    _intents: list[str] = field(default_factory=list)
+    _actions: list[str] = field(default_factory=list)
+    _reasoning: list[str] = field(default_factory=list)
+
+    # Allow creating with intents= kwarg (test compat)
+    def __init__(self, **kwargs):
+        # Extract legacy fields before dataclass init
+        legacy_intents = kwargs.pop("intents", None)
+        legacy_actions = kwargs.pop("actions", None)
+        legacy_reasoning = kwargs.pop("reasoning", None)
+
+        # Set defaults for all dataclass fields
+        all_fields = {
+            "session_id": "", "model": "", "started_at": "", "message_count": 0,
+            "title": "", "chunks": [], "topics": [],
+            "world_model_entities": [], "active_goals": [], "meta_confidence": 0.0,
+            "stale_entities": [], "trajectory": "", "vibes": "", "identity_anchor": "",
+            "coherence": None, "coherence_note": "", "voice": "",
+            "self_prompt": "", "dream_recommended": "",
+            "_intents": [], "_actions": [], "_reasoning": [],
+        }
+        all_fields.update(kwargs)
+        for k, v in all_fields.items():
+            setattr(self, k, v)
+
+        # Store legacy overrides
+        if legacy_intents is not None:
+            self._intents = legacy_intents
+        if legacy_actions is not None:
+            self._actions = legacy_actions
+        if legacy_reasoning is not None:
+            self._reasoning = legacy_reasoning
+
+    # Legacy compat properties
+    @property
+    def intents(self) -> list[str]:
+        if self._intents:
+            return self._intents
+        return [c.payload for c in self.chunks if c.source_role == "user"]
+
+    @intents.setter
+    def intents(self, val):
+        self._intents = val
+
+    @property
+    def actions(self) -> list[str]:
+        if self._actions:
+            return self._actions
+        return [c.payload for c in self.chunks if c.source_role == "assistant"]
+
+    @actions.setter
+    def actions(self, val):
+        self._actions = val
+
+    @property
+    def reasoning(self) -> list[str]:
+        if self._reasoning:
+            return self._reasoning
+        return [f"[{c.tag}] {c.payload}" for c in self.chunks
+                if c.tag in ("decision", "bug", "fix")]
+
+    @reasoning.setter
+    def reasoning(self, val):
+        self._reasoning = val
+
 
 # ---------------------------------------------------------------------------
-# Helpers — noise filtering
+# Noise filtering
 # ---------------------------------------------------------------------------
 
 def strip_noise(text: str) -> str:
@@ -138,11 +203,208 @@ def is_noise(content: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Extraction — from state.db
+# Semantic extraction — chunk-based, NOT transcript
+# ---------------------------------------------------------------------------
+
+# Tag patterns: regex → (tag, domain)
+TAG_PATTERNS = [
+    # Actions / fixes
+    (r"(?i)(corrigi|fixei|resolvi|consertei|patch|consertar|fix|fixed|resolved|reparado)", "fix"),
+    (r"(?i)(adicion|implement|criei|create|added|new|escrevi|build|built)", "create"),
+    (r"(?i)(refator|refactor|mudei|mov|renome|delete|remov|clean|limp)", "change"),
+    (r"(?i)(test|verifiquei|confirmei|valid|check|passou|failed|falhou)", "verify"),
+    # Decisions
+    (r"(?i)(decid|escolh|optei|porque|razão|motivo|trade.?off|compromisso)", "decision"),
+    (r"(?i)(não fazer|skip|ignorar|evitar|never|don't|NÃO)", "decision"),
+    # Problems
+    (r"(?i)(bug|erro|error|fail|traceback|exception|crash|timeout|broken)", "bug"),
+    (r"(?i)(problema|issue|não funciona|não tá|offline|down|stuck)", "bug"),
+    # State / config
+    (r"(?i)(saldo|balance|bankroll|p&l|pnl|winrate|posição|position|usdt)", "state"),
+    (r"(?i)(config|setup|instal|deploy|cron|hook|skill|provider|modelo)", "config"),
+    (r"(?i)(warmup|tick|engine|bot|gateway|server|daemon)", "state"),
+    # Requests (user intent)
+    (r"(?i)(quero|preciso|faça|faz|pode|create|build|reset|atualiz|mudar)", "request"),
+    (r"(?i)(queria|gostaria|seria|como|explique|me fala|investiga)", "request"),
+]
+
+DOMAIN_KEYWORDS = {
+    "trading": ["trading", "okx", "swap", "pnl", "position", "bankroll", "confluence", "usdt", "btc", "eth", "short", "long", "winrate"],
+    "agent": ["agent", "skill", "hook", "cron", "gateway", "provider", "model", "session", "handoff", "heartbeat"],
+    "conscio": ["conscio", "consciousness", "world model", "goals", "reflect", "dream", "coherence", "trajectory"],
+    "infra": ["server", "deploy", "docker", "nginx", "systemd", "ssh", "vm", "oracle", "cloud", "load", "cpu"],
+    "debug": ["bug", "error", "fix", "traceback", "fail", "broken", "debug"],
+    "code": ["refactor", "code", "test", "pipeline", "function", "class", "module", "api"],
+}
+
+def _extract_keywords(text: str, max_kw: int = 5) -> list[str]:
+    """Extract meaningful keywords from text — stopwords stripped."""
+    STOP = {
+        # PT articles/prepositions/conjunctions
+        "o","a","os","as","um","uma","uns","umas","de","do","da","dos","das",
+        "em","no","na","nos","nas","por","pra","pro","para","com","sem",
+        "que","se","e","é","ou","mas","não","nem","como","quando","onde",
+        "ao","à","às","pelos","pelas","pelo","pela","seu","sua","seus","suas",
+        "meu","minha","meus","minhas","teu","tua","teus","tuas","nosso",
+        "isso","isto","aquilo","ele","ela","eles","elas","você","vocês",
+        "entre","sobre","após","antes","já","ainda","também","só","mesmo",
+        "tudo","nada","algo","cada","todo","toda","todos","todas","mais","muito",
+        "muita","pouco","pouca","outro","outra","outros","outras","qual","quais",
+        "quem","cujo","cuja","cujos","cujas","tal","tais","quanto","quantos",
+        "tantos","tanta","tantas","vez","vezes","bem","mal","melhor","pior",
+        "ser","estar","ter","haver","ir","vir","fazer","dizer","ver","dar",
+        "preciso","precisa","quero","quer","foi","foram","tem","tinha","ter",
+        "devemos","deve","devia","podemos","pode","podia","vamos","vai","vão",
+        # EN stopwords
+        "the","a","an","is","are","was","were","be","been","to","of","and",
+        "in","that","it","for","on","with","as","by","at","from","or","this",
+        "but","not","have","has","had","do","does","did","will","would","can",
+        "could","should","may","might","shall","if","then","than","so","no",
+        "up","out","just","also","more","some","any","all","each","every",
+        "very","too","also","only","about","into","over","after","before",
+        # Greetings/fillers (high-frequency, zero info)
+        "bom","boa","dia","tarde","noite","olá","hello","hi","hey",
+        "obrigado","obrigada","valeu","thanks","thank","please",
+        "entendi","entende","ok","tá","ta","sim","claro","certo",
+        "senhor","senhora","hermet","hermes",
+        "vou","vamos","deixe","deixar","aqui","agora","hoje",
+        "verificar","ver","verificar","funcionou","feito",
+        "panorama","diagnóstico","pronto","resumo","relatou",
+    }
+    # Strip markdown, code, punctuation, URLs
+    text = re.sub(r'[*#`_\[\]():{},.!?;]', ' ', text)
+    text = re.sub(r'https?://\S+', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    words = re.findall(r'[a-zA-ZÀ-ÿ_][-a-zA-ZÀ-ÿ_0-9]*', text)
+    keywords = []
+    seen = set()
+    for w in words:
+        lw = w.lower()
+        if lw in STOP or len(lw) < 3:
+            continue
+        if lw not in seen:
+            seen.add(lw)
+            keywords.append(w)  # preserve original case
+        if len(keywords) >= max_kw:
+            break
+    return keywords
+
+
+def compress_message(content: str, role: str) -> SemanticChunk | None:
+    """Compress a single message into a semantic chunk — concept-level, not phrase-level.
+    Payload format: keyword1+keyword2|optional_context_hint (max 60 chars)"""
+    content = strip_noise(content)
+    if not content or len(content) < 8:
+        return None
+
+    # Determine tag
+    tag = "info"
+    for pattern, t in TAG_PATTERNS:
+        if re.search(pattern, content):
+            tag = t
+            break
+
+    # Determine domain
+    lower = content.lower()
+    domain = "general"
+    best_overlap = 0
+    for d, keywords in DOMAIN_KEYWORDS.items():
+        overlap = sum(1 for kw in keywords if kw in lower)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            domain = d
+
+    # Extract conceptual keywords — this is the key innovation
+    kws = _extract_keywords(content, max_kw=5)
+    if not kws:
+        return None
+
+    # Build dense payload: kw1·kw2·kw3 (dot-separated, like ChromaDB tags)
+    payload = '·'.join(kws[:4])
+    # Add action hint if space allows
+    if tag in ("fix", "bug", "create", "decision") and len(payload) < 45:
+        payload += f'|{tag}'
+
+    # Hard cap 60 chars
+    payload = payload[:60]
+
+    return SemanticChunk(tag=tag, domain=domain, payload=payload, source_role=role)
+
+
+def extract_chunks(messages: list[dict]) -> list[SemanticChunk]:
+    """Extract semantic chunks from messages — dense, tag-rich, short."""
+    chunks: list[SemanticChunk] = []
+    seen_signatures: set[str] = set()
+
+    for msg in messages:
+        content = msg.get("content_preview", "") or ""
+        if is_noise(content):
+            continue
+        role = msg.get("role", "?")
+        chunk = compress_message(content, role)
+        if chunk is None:
+            continue
+        # Deduplicate by signature (tag+domain+payload), but allow
+        # different payloads even with same keywords (e.g. "request 1" vs "request 5")
+        sig = f"{chunk.tag}:{chunk.domain}:{chunk.payload}"
+        if sig in seen_signatures:
+            continue
+        seen_signatures.add(sig)
+        chunks.append(chunk)
+        if len(chunks) >= MAX_CHUNKS:
+            break
+
+    return chunks
+
+
+def infer_topics(intents_or_messages, actions=None) -> list[str]:
+    """Infer conversation topics.
+    - Legacy: infer_topics(intents, actions) — two string lists
+    - New: infer_topics(chunks) — SemanticChunk list
+    - Fallback: infer_topics(messages) — dict list
+    """
+    # Legacy two-arg form: infer_topics(intents_list, actions_list)
+    if actions is not None:
+        all_text = " ".join(list(intents_or_messages) + list(actions)).lower()
+        domain_hits: dict[str, int] = {}
+        for domain, keywords in DOMAIN_KEYWORDS.items():
+            overlap = sum(1 for kw in keywords if kw in all_text)
+            if overlap > 0:
+                domain_hits[domain] = overlap
+        return [d for d, _ in sorted(domain_hits.items(), key=lambda x: -x[1])][:5]
+
+    # Single arg: could be chunks, messages, or intent strings
+    arg = intents_or_messages
+    if not arg:
+        return []
+    if isinstance(arg[0], SemanticChunk):
+        # Chunk list
+        domain_counts: dict[str, int] = {}
+        for c in arg:
+            domain_counts[c.domain] = domain_counts.get(c.domain, 0) + 1
+        return [d for d, _ in sorted(domain_counts.items(), key=lambda x: -x[1])][:5]
+    if isinstance(arg[0], dict):
+        # Messages list
+        chunks = extract_chunks(arg)
+        domain_counts2: dict[str, int] = {}
+        for c in chunks:
+            domain_counts2[c.domain] = domain_counts2.get(c.domain, 0) + 1
+        return [d for d, _ in sorted(domain_counts2.items(), key=lambda x: -x[1])][:5]
+    # String list (legacy intents)
+    all_text2 = " ".join(arg).lower()
+    domain_hits2: dict[str, int] = {}
+    for domain, keywords in DOMAIN_KEYWORDS.items():
+        overlap = sum(1 for kw in keywords if kw in all_text2)
+        if overlap > 0:
+            domain_hits2[domain] = overlap
+    return [d for d, _ in sorted(domain_hits2.items(), key=lambda x: -x[1])][:5]
+
+
+# ---------------------------------------------------------------------------
+# Session DB access
 # ---------------------------------------------------------------------------
 
 def _fetch_session(cur, session_id: str) -> dict | None:
-    """Fetch a single session row + messages by session_id."""
     cur.execute("""
         SELECT id, source, model, started_at, message_count, title
         FROM sessions
@@ -153,7 +415,6 @@ def _fetch_session(cur, session_id: str) -> dict | None:
         return None
 
     session = dict(row)
-
     cur.execute("""
         SELECT role, substr(content, 1, 300) as content_preview
         FROM messages
@@ -162,21 +423,12 @@ def _fetch_session(cur, session_id: str) -> dict | None:
         LIMIT 200
     """, (session["id"],))
     session["messages"] = [dict(m) for m in cur.fetchall()]
-
     return session
 
 
 def get_session_by_id(db_path: str | Path, session_id: str) -> dict | None:
-    """Get a specific session by its ID from state.db.
-
-    Used by the hook handler when the hook context provides session_id
-    (e.g. session:end / session:reset events), avoiding the race condition
-    where get_latest_session() returns the WRONG session because the DB
-    has already rotated to a new session by the time the hook fires.
-    """
     if not os.path.exists(db_path) or not session_id:
         return None
-
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
@@ -186,18 +438,11 @@ def get_session_by_id(db_path: str | Path, session_id: str) -> dict | None:
 
 
 def get_latest_session(db_path: str | Path) -> dict | None:
-    """Get the most recent non-cron session from state.db.
-
-    Fallback only — prefer get_session_by_id() when session_id is known,
-    to avoid race conditions at session expiry/reset time.
-    """
     if not os.path.exists(db_path):
         return None
-
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-
     try:
         cur.execute("""
             SELECT id, source, model, started_at, message_count, title
@@ -209,9 +454,7 @@ def get_latest_session(db_path: str | Path) -> dict | None:
         row = cur.fetchone()
         if not row:
             return None
-
         session = dict(row)
-
         cur.execute("""
             SELECT role, substr(content, 1, 300) as content_preview
             FROM messages
@@ -220,85 +463,26 @@ def get_latest_session(db_path: str | Path) -> dict | None:
             LIMIT 200
         """, (session["id"],))
         session["messages"] = [dict(m) for m in cur.fetchall()]
-
         return session
-
     finally:
         conn.close()
 
 
+# Legacy compat — still used by session_handoff.py and tests
 def extract_intents(messages: list[dict]) -> list[str]:
-    """Extract real user intents (skip noise, compaction artifacts)."""
-    intents = []
-    for msg in messages:
-        if msg.get("role") != "user":
-            continue
-        content = msg.get("content_preview", "") or ""
-        if is_noise(content):
-            continue
-        content = strip_noise(content)
-        if not content or len(content) < 5:
-            continue
-        intents.append(content)
-    return intents[:MAX_USER_INTENTS]
-
+    """Extract user intents — legacy compat, returns chunk payloads for user messages."""
+    chunks = extract_chunks(messages)
+    return [c.payload for c in chunks if c.source_role == "user"][:MAX_USER_INTENTS]
 
 def extract_actions(messages: list[dict]) -> list[str]:
-    """Extract key assistant actions (first meaningful line of each)."""
-    actions = []
-    for msg in messages:
-        if msg.get("role") != "assistant":
-            continue
-        content = msg.get("content_preview", "") or ""
-        if is_noise(content) or content.startswith("Earlier turns"):
-            continue
-        content = strip_noise(content)
-        if not content or len(content) < 10:
-            continue
-        first_line = content.split("\n")[0].strip()[:120]
-        actions.append(first_line)
-    return actions[:MAX_ASSISTANT_ACTIONS]
-
+    """Extract assistant actions — legacy compat."""
+    chunks = extract_chunks(messages)
+    return [c.payload for c in chunks if c.source_role == "assistant"][:MAX_ASSISTANT_ACTIONS]
 
 def extract_reasoning(messages: list[dict]) -> list[str]:
-    """Extract reasoning snippets — why decisions were made."""
-    reasoning_patterns = [
-        r"(?i)(bug|problema|erro|issue|pitfall|racioc[íi]nio|decis[ãa]o|motivo|raz[ãa]o|porque|why)",
-        r"(?i)(corrigir|resolver|preciso verificar|vou investigar|descobri que)",
-        r"(?i)(filtrar|filtro|pattern|padr[ãa]o|hook|cron|session)",
-    ]
-    reasoning = []
-    for msg in messages:
-        content = msg.get("content_preview", "") or ""
-        if is_noise(content):
-            continue
-        content = strip_noise(content)
-        if not content or len(content) < 20:
-            continue
-        if any(re.search(p, content) for p in reasoning_patterns):
-            snippet = content.split("\n")[0].strip()[:150]
-            reasoning.append(f"[{msg.get('role', '?')}] {snippet}")
-    return reasoning[:MAX_REASONING]
-
-
-def infer_topics(intents: list[str], actions: list[str]) -> list[str]:
-    """Infer conversation topics from intents and actions."""
-    topic_keywords = {
-        "trading": ["trading", "bot", "okx", "swap", "order", "pnl", "usdt", "position"],
-        "conscio": ["conscio", "consciousness", "handoff", "heartbeat", "session_reset"],
-        "orion": ["orion", "voice", "assistant", "android"],
-        "infra": ["server", "gateway", "deploy", "docker", "nginx", "systemd", "ssh"],
-        "debug": ["bug", "error", "fix", "debug", "traceback", "fail"],
-        "code": ["refactor", "code", "test", "pipeline", "function", "class"],
-        "hermes": ["hermes", "skill", "hook", "cron", "agent", "model", "provider"],
-    }
-
-    all_text = " ".join(intents + actions).lower()
-    topics = []
-    for topic, keywords in topic_keywords.items():
-        if any(kw in all_text for kw in keywords):
-            topics.append(topic)
-    return topics[:HB_MAX_TOPICS]
+    """Extract reasoning — legacy compat."""
+    chunks = extract_chunks(messages)
+    return [f"[{c.tag}] {c.payload}" for c in chunks if c.tag in ("decision", "bug", "fix")][:MAX_REASONING]
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +490,6 @@ def infer_topics(intents: list[str], actions: list[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def _active_shard_value(engine) -> str:
-    """The engine's current cognitive shard value, or '' if unset/unavailable."""
     try:
         shard_engine = getattr(engine, "shard_engine", None)
         if shard_engine is not None and shard_engine.current is not None:
@@ -317,45 +500,29 @@ def _active_shard_value(engine) -> str:
 
 
 def enrich_with_conscio(summary: SessionSummary, engine) -> SessionSummary:
-    """
-    Enrich session summary with Conscio engine state.
-
-    Args:
-        summary: The extracted session summary
-        engine: A ConsciousnessEngine instance (must be open/not closed)
-
-    Returns:
-        The enriched summary (mutated in-place)
-    """
-    # World model — get top entities by relevance
     try:
         entities = engine.world.list_entities(limit=5)
         summary.world_model_entities = [
             f"{e['name']}:{e.get('state', '?')}" for e in entities
         ]
     except Exception as e:
-            logger.debug("world.list_entities failed: %s", e)
+        logger.debug("world.list_entities failed: %s", e)
 
-    # Active goals
     try:
         summary.active_goals = [g.description for g in engine.goals.active_goals()[:3]]
     except Exception as e:
-            logger.debug("goals.active_goals failed: %s", e)
+        logger.debug("goals.active_goals failed: %s", e)
 
-    # Meta-cognition
     try:
         summary.meta_confidence = engine.meta.average_confidence()
     except Exception as e:
-            logger.debug("meta.average_confidence failed: %s", e)
+        logger.debug("meta.average_confidence failed: %s", e)
 
-    # Stale entities (need attention)
     try:
         summary.stale_entities = engine.world.stale_entities()[:3]
     except Exception as e:
-            logger.debug("world.stale_entities failed: %s", e)
+        logger.debug("world.stale_entities failed: %s", e)
 
-    # Trajectory — code-owned; always overwrite (more current than last heartbeat).
-    # vibes + identity_anchor are LLM-only and are never touched here.
     try:
         shard_val = _active_shard_value(engine)
         top_goal = summary.active_goals[0] if summary.active_goals else ""
@@ -364,209 +531,189 @@ def enrich_with_conscio(summary: SessionSummary, engine) -> SessionSummary:
         elif shard_val or top_goal:
             summary.trajectory = shard_val or top_goal
     except Exception as e:
-            logger.debug("trajectory enrichment failed: %s", e)
+        logger.debug("trajectory enrichment failed: %s", e)
 
-    # Coherence (v0.6) — advisory; read the last reflect() snapshot.
     try:
         rep = getattr(engine, "last_coherence", None)
         if rep is not None:
             summary.coherence = rep.score
             summary.coherence_note = rep.dominant.dimension if rep.dominant else ""
     except Exception as e:
-            logger.debug("coherence read failed: %s", e)
+        logger.debug("coherence read failed: %s", e)
 
-    # Voice preset (v0.6) — static marker.
     try:
         summary.voice = getattr(engine, "voice_preset", "")
     except Exception as e:
-            logger.debug("voice_preset read failed: %s", e)
+        logger.debug("voice_preset read failed: %s", e)
 
-    # Self-prompt + dream recommendation (v0.7)
     try:
         prompts = getattr(engine, "last_self_prompts", None)
         summary.self_prompt = prompts[0].question if prompts else ""
     except Exception as e:
-            logger.debug("last_self_prompts read failed: %s", e)
+        logger.debug("last_self_prompts read failed: %s", e)
+
     try:
         rec = getattr(engine, "dream_recommended", None)
         summary.dream_recommended = rec.marker() if rec is not None else ""
     except Exception as e:
-            logger.debug("dream_recommended.marker failed: %s", e)
+        logger.debug("dream_recommended.marker failed: %s", e)
 
     return summary
 
 
 # ---------------------------------------------------------------------------
-# Formatting — Handoff (richer, preserved for manual reference)
-# ---------------------------------------------------------------------------
-
-def format_handoff(summary: SessionSummary) -> str:
-    """Format the handoff as a compact document."""
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-    lines = [
-        f"# 🔄 Session Handoff — {datetime.now().strftime('%Y-%m-%d')}",
-        "",
-        f"**Gerado em:** {now}",
-        f"**Session ID:** `{summary.session_id}`",
-        f"**Modelo:** {summary.model}",
-        f"**Iniciada em:** {summary.started_at}",
-        f"**Mensagens:** {summary.message_count}",
-        f"**Título:** {summary.title}",
-        "",
-        "---",
-        "",
-    ]
-
-    if summary.intents:
-        lines.append("## 📋 Últimos Pedidos do Senhor")
-        lines.append("")
-        for i, intent in enumerate(summary.intents, 1):
-            lines.append(f"**{i}.** {intent}")
-        lines.append("")
-
-    if summary.actions:
-        lines.append("## 🤖 Últimas Ações do Hermet")
-        lines.append("")
-        for i, action in enumerate(summary.actions, 1):
-            lines.append(f"**{i}.** {action}")
-        lines.append("")
-
-    if summary.reasoning:
-        lines.append("## 🧠 Raciocínio e Decisões")
-        lines.append("")
-        for r in summary.reasoning:
-            lines.append(f"- {r}")
-        lines.append("")
-
-    # Conscio enrichment section
-    if summary.world_model_entities or summary.active_goals:
-        lines.append("## 🧬 Estado Conscio")
-        lines.append("")
-        if summary.world_model_entities:
-            lines.append(f"**Mundo:** {', '.join(summary.world_model_entities)}")
-        if summary.active_goals:
-            lines.append(f"**Metas ativas:** {'; '.join(summary.active_goals)}")
-        if summary.meta_confidence > 0:
-            lines.append(f"**Confiança média:** {summary.meta_confidence:.2f}")
-        if summary.stale_entities:
-            lines.append(f"**Entidades stale:** {', '.join(summary.stale_entities)}")
-        if summary.trajectory:
-            lines.append(f"**Trajetória:** {summary.trajectory}")
-        if summary.vibes:
-            lines.append(f"**Vibe:** {summary.vibes}")
-        if summary.identity_anchor:
-            lines.append(f"**Âncora de identidade:** {summary.identity_anchor}")
-        if summary.coherence is not None:
-            note = f" dominant: {summary.coherence_note}" if summary.coherence_note else ""
-            lines.append(f"**Coerência:** {summary.coherence:.2f}{note}")
-        if summary.voice:
-            lines.append(f"**Voz:** {summary.voice}")
-        if summary.self_prompt:
-            lines.append(f"**Self-prompt:** {summary.self_prompt}")
-        if summary.dream_recommended:
-            lines.append(f"**Dream:** {summary.dream_recommended}")
-        lines.append("")
-
-    lines.extend([
-        "---",
-        "",
-        "## 🔧 Para a Próxima Sessão",
-        "",
-        "1. O heartbeat já foi injetado no contexto — use-o diretamente",
-        "2. Carregue skills relevantes com `skill_view` antes de agir",
-        "3. Verifique MemPalace com `mempalace search` para contexto adicional",
-        "4. Se o Senhor perguntar \"lembra?\", responda com este resumo",
-        "5. **Filtre cron sessions** ao buscar no session DB (`source != 'cron'`)",
-        "",
-    ])
-
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Formatting — Heartbeat (compact, auto-injected on new session)
+# Formatting — Heartbeat (semantic map, ultra-compact)
 # ---------------------------------------------------------------------------
 
 def format_heartbeat(summary: SessionSummary) -> str:
-    """Format a compact daily heartbeat. Always < HB_MAX_CHARS."""
+    """Semantic map heartbeat — chunks as tagged tokens, like embedding metadata.
+    Goal: maximum info density / minimum context weight."""
+    date_str = datetime.now().strftime('%Y-%m-%d')
     lines = [
-        f"# ♥ Heartbeat — {datetime.now().strftime('%Y-%m-%d')}",
-        "",
-        f"**Sessão:** `{summary.session_id[:21]}`",
-        f"**Modelo:** {summary.model}",
-        f"**Mensagens:** {summary.message_count}",
-        f"**Título:** {summary.title}",
+        f"# ♥ {date_str}",
+        f"`{summary.session_id[:16]}` {summary.model} {summary.message_count}msg",
+        f"\"{summary.title[:50]}\"" if summary.title else "",
     ]
 
+    # Trajectory / coherence / voice — single line each
     if summary.trajectory:
-        lines.append(f"**Trajetória:** {summary.trajectory[:80]}")
-    if summary.vibes:
-        lines.append(f"**Vibe:** {summary.vibes[:80]}")
-    if summary.identity_anchor:
-        lines.append(f"**Âncora:** {summary.identity_anchor[:80]}")
-
-    if summary.coherence is not None and isinstance(summary.coherence, (int, float)):
-        note = f" dominant: {summary.coherence_note}" if summary.coherence_note else ""
-        lines.append(f"▷ coherence: {summary.coherence:.2f}{note}")
-    if summary.voice:
-        lines.append(f"⊙ voice: {summary.voice}")
+        lines.append(f"→ {summary.trajectory[:60]}")
+    if summary.coherence is not None:
+        coh_parts = [f"{summary.coherence:.2f}"]
+        if summary.coherence_note:
+            coh_parts.append(summary.coherence_note)
+        if summary.voice:
+            coh_parts.append(summary.voice)
+        lines.append(f"⊙ {' '.join(coh_parts)}")
+    elif summary.voice:
+        lines.append(f"⊙ {summary.voice}")
     if summary.self_prompt:
-        q = summary.self_prompt
-        shown = q[:80] + ("…" if len(q) > 80 else "")
-        lines.append(f"❓ self-prompt: {shown}")
+        lines.append(f"? {summary.self_prompt[:60]}")
     if summary.dream_recommended:
-        lines.append(f"☾ dream: {summary.dream_recommended}")
+        lines.append(f"☾ {summary.dream_recommended}")
+    if summary.vibes:
+        lines.append(f"⚡ {summary.vibes[:40]}")
 
-    if summary.topics:
-        lines.append(f"**Tópicos:** {', '.join(summary.topics)}")
+    lines.append("")
 
-    if summary.meta_confidence > 0:
-        lines.append(f"**Conscio confiança:** {summary.meta_confidence:.1f}")
+    # Semantic chunks — the core innovation
+    # Group by domain for scanability
+    if summary.chunks:
+        by_domain: dict[str, list[SemanticChunk]] = {}
+        for c in summary.chunks:
+            by_domain.setdefault(c.domain, []).append(c)
+        for domain, dchunks in by_domain.items():
+            for c in dchunks:
+                marker = {"fix": "✓", "create": "+", "change": "~", "verify": "✔",
+                          "decision": "◆", "bug": "✗", "state": "■", "config": "⚙",
+                          "request": "▸", "info": "·"}.get(c.tag, "·")
+                lines.append(f"{marker}{domain[:3]}|{c.payload}")
+    else:
+        # Legacy compat: show intents/actions if no chunks
+        for i in summary.intents[:4]:
+            lines.append(f"▸usr|{i[:50]}")
+        for a in summary.actions[:3]:
+            lines.append(f"◆her|{a[:50]}")
 
-    lines.extend(["", "---", ""])
-
-    if summary.intents:
-        lines.append("## 📋 Pedidos do Senhor")
-        lines.append("")
-        for i, intent in enumerate(summary.intents[:HB_MAX_INTENTS], 1):
-            # Compact: truncate for heartbeat
-            short = intent[:120] + "..." if len(intent) > 120 else intent
-            lines.append(f"{i}. {short}")
-        lines.append("")
-
-    if summary.actions:
-        lines.append("## 🤖 Ações do Hermet")
-        lines.append("")
-        for i, action in enumerate(summary.actions[:HB_MAX_ACTIONS], 1):
-            short = action[:100] + "..." if len(action) > 100 else action
-            lines.append(f"{i}. {short}")
-        lines.append("")
-
-    # Conscio enrichment — compact (only top goals)
+    # Conscio goals — compact
     if summary.active_goals:
-        lines.append("## 🎯 Metas Conscio")
-        lines.append("")
         for g in summary.active_goals[:2]:
-            lines.append(f"- {g[:80]}")
-        lines.append("")
-
+            lines.append(f"◎ {g[:60]}")
     if summary.stale_entities:
-        lines.append(f"⚠️ Stale: {', '.join(summary.stale_entities[:3])}")
+        lines.append(f"⚠ {','.join(summary.stale_entities[:2])}")
+
+    lines.append(f"— {datetime.now(timezone.utc).strftime('%H:%M')}Z")
+
+    content = "\n".join(lines)
+    if len(content) > HB_MAX_CHARS:
+        content = content[:HB_MAX_CHARS - 3] + "…"
+    return content
+
+
+# ---------------------------------------------------------------------------
+# Formatting — Handoff (richer semantic map, still bounded)
+# ---------------------------------------------------------------------------
+
+def format_handoff(summary: SessionSummary) -> str:
+    """Semantic map handoff — like heartbeat but with chunk detail + Conscio state.
+    Each chunk is self-contained: tag + domain + payload = retrievable unit."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    date_str = datetime.now().strftime('%Y-%m-%d')
+
+    lines = [
+        f"# ◆ {date_str}",
+        f"gen:{now} sid:{summary.session_id[:16]} mdl:{summary.model}",
+        f"msg:{summary.message_count} \"{summary.title[:50]}\"",
+        "",
+    ]
+
+    # Semantic chunks — full detail (domain context + tag + payload)
+    if summary.chunks:
+        by_domain: dict[str, list[SemanticChunk]] = {}
+        for c in summary.chunks:
+            by_domain.setdefault(c.domain, []).append(c)
+        for domain, dchunks in by_domain.items():
+            lines.append(f"## {domain}")
+            for c in dchunks:
+                role = "👤" if c.source_role == "user" else "🤖"
+                lines.append(f" {role} [{c.tag}] {c.payload}")
+            lines.append("")
+    else:
+        # Legacy compat: show intents/actions/reasoning if no chunks
+        if summary.intents:
+            lines.append("## intents")
+            for i in summary.intents[:6]:
+                lines.append(f" 👤 {i[:70]}")
+            lines.append("")
+        if summary.actions:
+            lines.append("## actions")
+            for a in summary.actions[:5]:
+                lines.append(f" 🤖 {a[:70]}")
+            lines.append("")
+        if summary.reasoning:
+            lines.append("## reasoning")
+            for r in summary.reasoning[:4]:
+                lines.append(f" ◆ {r[:70]}")
+            lines.append("")
+
+    # Conscio state — compact key:value
+    if any([summary.world_model_entities, summary.active_goals,
+            summary.stale_entities, summary.trajectory]):
+        lines.append("## conscio")
+        if summary.world_model_entities:
+            lines.append(f"  world: {','.join(summary.world_model_entities[:4])}")
+        if summary.active_goals:
+            for g in summary.active_goals[:3]:
+                lines.append(f"  goal: {g[:70]}")
+        if summary.stale_entities:
+            lines.append(f"  stale: {','.join(summary.stale_entities[:3])}")
+        if summary.trajectory:
+            lines.append(f"  traj: {summary.trajectory[:70]}")
+        if summary.coherence is not None:
+            lines.append(f" coh: {summary.coherence:.2f} {summary.coherence_note}")
+        if summary.voice:
+            lines.append(f" voice: {summary.voice}")
+        if summary.vibes:
+            lines.append(f" vibes: {summary.vibes}")
+        if summary.self_prompt:
+            lines.append(f" **Self-prompt:** {summary.self_prompt[:70]}")
+        if summary.dream_recommended:
+            lines.append(f" ☾ dream: {summary.dream_recommended[:50]}")
+        if summary.identity_anchor:
+            lines.append(f" id: {summary.identity_anchor[:50]}")
         lines.append("")
 
+    # Recovery hints — for next session
     lines.extend([
-        "---",
+        "## next",
+        "  heartbeat→context auto | skill_view antes de agir | session_search p/ recall",
         "",
-        f"*Gerado: {datetime.now(timezone.utc).strftime('%H:%M')} UTC*",
+        f"— {datetime.now(timezone.utc).strftime('%H:%M')}Z",
     ])
 
     content = "\n".join(lines)
-
-    # Hard truncate if somehow over limit
-    if len(content) > HB_MAX_CHARS:
-        content = content[:HB_MAX_CHARS - 3] + "..."
-
+    if len(content) > HO_MAX_CHARS:
+        content = content[:HO_MAX_CHARS - 3] + "…"
     return content
 
 
@@ -581,51 +728,17 @@ def record_session_lifecycle(
     session_db: Path | None = None,
     handoff_dir: Path | None | Any = _UNSET,
 ) -> SessionSummary | None:
-    """
-    Process a session lifecycle event through Conscio.
-
-    This is the main integration point. Called by hook handlers on
-    session:end / session:reset, or manually by any agent.
-
-    Pipeline:
-    1. Extract session summary from session DB
-    2. Enrich with Conscio state (if engine provided)
-    3. Emit session event to Conscio EventBus
-    4. Index heartbeat into Conscio ContentStore (searchable)
-    5. Run post-session reflection on Conscio engine
-    6. Write heartbeat + handoff to disk (if handoff_dir is set)
-
-    Args:
-        event_type: "session:end" or "session:reset"
-        context: Hook context dict (platform, user_id, session_key, session_id)
-        engine: Optional ConsciousnessEngine instance. If None, creates a temp one.
-        session_db: Path to session database. Defaults to HERMES_HOME/state.db.
-            Set via CONSCIO_SESSION_DB env var or pass explicitly for non-Hermes agents.
-        handoff_dir: Directory for heartbeat/handoff files.
-            - ``_UNSET`` (default): use module-level MEMPALACE_DIR (may be None
-              if CONSCIO_HANDOFF_DIR=none)
-            - ``Path(...)``: write to that directory
-            - ``None``: skip file writes entirely (handoff disabled)
-            Override via CONSCIO_HANDOFF_DIR env var (none/off/false/0 to disable).
-
-    Returns:
-        SessionSummary if successful, None if no data.
-    """
     if event_type not in ("session:end", "session:reset"):
         return None
 
-    # Resolve session_db: explicit arg > env var > module default
     _session_db = session_db if session_db is not None else SESSION_DB
 
-    # Resolve handoff_dir: explicit arg > module default (which may be None)
     if handoff_dir is _UNSET:
-        _handoff_dir: Path | None = MEMPALACE_DIR
+        _handoff_dir: Path | None = HANDOFF_DIR
     else:
         _handoff_dir = handoff_dir
 
-    # 1. Extract session from state.db
-    # Prefer session_id from hook context — avoids race condition where
-    # get_latest_session() returns the wrong (already-rotated) session.
+    # 1. Extract session
     context_sid = context.get("session_id") if context else None
     if context_sid and context_sid != "cron":
         session = get_session_by_id(_session_db, context_sid)
@@ -638,108 +751,103 @@ def record_session_lifecycle(
     if not messages:
         return None
 
-    # 2. Build summary
+    # 2. Build semantic summary
+    chunks = extract_chunks(messages)
     summary = SessionSummary(
         session_id=session.get("id", "?"),
         model=session.get("model", "?"),
         started_at=session.get("started_at", "unknown"),
         message_count=session.get("message_count", 0),
         title=session.get("title", "N/A"),
-        intents=extract_intents(messages),
-        actions=extract_actions(messages),
-        reasoning=extract_reasoning(messages),
-        topics=infer_topics(extract_intents(messages), extract_actions(messages)),
+        chunks=chunks,
+        topics=infer_topics(chunks),
     )
 
-    # 3. Enrich + emit via Conscio engine
+    # 3. Enrich via Conscio
     own_engine = engine is None
     if own_engine:
         from .engine import ConsciousnessEngine
         engine = ConsciousnessEngine(model_name=summary.model or "glm-5.1")
 
-    # Initialize heartbeat/handoff before try so they're always defined
-    # even if an exception occurs before they're set inside the try block.
     heartbeat = ""
     handoff = ""
 
     try:
-        # Enrich summary with Conscio state
         enrich_with_conscio(summary, engine)
 
-        # Emit session event to EventBus
-        engine.event_bus.emit(
-            type="session",
-            category="session",
-            data={
-                "event": event_type,
-                "session_id": summary.session_id,
-                "model": summary.model,
-                "message_count": summary.message_count,
-                "topics": summary.topics,
-                "intents_count": len(summary.intents),
-                "actions_count": len(summary.actions),
-                "meta_confidence": summary.meta_confidence,
-            },
-        )
+        # Emit session event — graceful if event_bus missing
+        if hasattr(engine, "event_bus"):
+            engine.event_bus.emit(
+                type="session",
+                category="session",
+                data={
+                    "event": event_type,
+                    "session_id": summary.session_id,
+                    "model": summary.model,
+                    "message_count": summary.message_count,
+                    "topics": summary.topics,
+                    "chunks_count": len(summary.chunks),
+                    "meta_confidence": summary.meta_confidence,
+                },
+            )
 
-        # Index heartbeat into ContentStore (searchable via FTS5)
         heartbeat = format_heartbeat(summary)
-        # Apply output filter for clean handoff/heartbeat
         if hasattr(engine, "output_filter") and engine.output_filter:
             heartbeat = engine.output_filter.apply(heartbeat)
-        engine.content_store.index(
-            label=f"heartbeat_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
-            content=heartbeat,
-            category="session",
-            session_id=summary.session_id,
-        )
 
-        # Index handoff too (richer, for semantic search)
+        # Index heartbeat — graceful if content_store missing
+        if hasattr(engine, "content_store"):
+            engine.content_store.index(
+                label=f"heartbeat_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
+                content=heartbeat,
+                category="session",
+                session_id=summary.session_id,
+            )
+
         handoff = format_handoff(summary)
-        # Apply output filter for clean handoff/heartbeat
         if hasattr(engine, "output_filter") and engine.output_filter:
             handoff = engine.output_filter.apply(handoff)
-        engine.content_store.index(
-            label=f"handoff_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
-            content=handoff,
-            category="session",
-            session_id=summary.session_id,
-        )
 
-        # Run post-session reflection on Conscio
-        world_state = (
-            f"Session {event_type}: {summary.message_count} messages, "
-            f"topics: {', '.join(summary.topics) or 'none'}, "
-            f"confidence: {summary.meta_confidence:.2f}"
-        )
-        anomalies = []
-        if summary.stale_entities:
-            anomalies.append(f"Stale world entities: {', '.join(summary.stale_entities)}")
+        if hasattr(engine, "content_store"):
+            engine.content_store.index(
+                label=f"handoff_{datetime.utcnow().strftime('%Y%m%d_%H%M')}",
+                content=handoff,
+                category="session",
+                session_id=summary.session_id,
+            )
 
-        engine.reflect(
-            world_state=world_state,
-            recent_events=[f"Session {event_type}: {a[:80]}" for a in summary.actions[:3]],
-            confidence=summary.meta_confidence or 0.5,
-            anomalies=anomalies,
-        )
-
-        # Mitosis → Dream: consolidate the DB now that the session is captured.
-        # Best-effort: the handoff is already recorded; a dream failure must
-        # not prevent persistence below.
-        try:
-            engine.dream()
-        except Exception as e:
-            logger.debug("engine.dream() failed: %s", e)
+        # Reflection — graceful if reflect missing
+        if hasattr(engine, "reflect"):
+            world_state = (
+                f"Session {event_type}: {summary.message_count} msg, "
+                f"topics: {','.join(summary.topics) or 'none'}, "
+                f"chunks: {len(summary.chunks)}, "
+                f"conf: {summary.meta_confidence:.2f}"
+            )
+            anomalies = []
+            if summary.stale_entities:
+                anomalies.append(f"Stale: {','.join(summary.stale_entities)}")
+            engine.reflect(
+                world_state=world_state,
+                recent_events=[f"{c.tag}:{c.payload[:50]}" for c in summary.chunks[:3]],
+                confidence=summary.meta_confidence or 0.5,
+                anomalies=anomalies,
+            )
 
     except Exception as e:
-        logger.debug("session enrichment/indexing/reflection failed: %s", e)
-        pass
+        logger.debug("session enrichment/indexing failed: %s", e)
+
+    # Dream — always attempt, outside the enrichment try block
+    try:
+        engine.dream()
+    except Exception as e:
+        logger.debug("engine.dream() failed: %s", e)
 
     finally:
         if own_engine:
             engine.close()
 
-    # 4. Write to disk (skip if handoff disabled)
+    # 4. Persist
     if _handoff_dir is not None:
         _handoff_dir.mkdir(parents=True, exist_ok=True)
         (_handoff_dir / "_session_handoff.md").write_text(handoff, encoding="utf-8")
@@ -749,27 +857,13 @@ def record_session_lifecycle(
 
 
 class SessionLifecycle:
-    """
-    Session lifecycle manager for Conscio Engine.
-    
-    Provides a clean API for managing session persistence, heartbeats, and handoffs.
-    The engine can register callbacks for session start/end events.
-    
-    Usage:
-        lifecycle = SessionLifecycle(engine)
-        # Engine registers its methods as handlers
-        lifecycle.on_session_end = engine._on_session_end
-        lifecycle.on_session_reset = engine._on_session_reset
-    """
-    
     def __init__(self, engine=None):
         self.engine = engine
-        self.on_session_start = None  # callback(event_type, context) -> str|None
-        self.on_session_end = None    # callback(event_type, context) -> None
-        self.on_session_reset = None  # callback(event_type, context) -> None
-    
+        self.on_session_start = None
+        self.on_session_end = None
+        self.on_session_reset = None
+
     def handle_event(self, event_type: str, context: dict):
-        """Route event to appropriate handler."""
         if event_type == "session:start":
             if self.on_session_start:
                 return self.on_session_start(event_type, context)
@@ -779,9 +873,8 @@ class SessionLifecycle:
         elif event_type == "session:reset":
             if self.on_session_reset:
                 self.on_session_reset(event_type, context)
-    
+
     def record_session(self, event_type: str, context: dict) -> SessionSummary | None:
-        """Record session lifecycle using the existing pipeline."""
         return record_session_lifecycle(
             event_type, context,
             engine=self.engine,

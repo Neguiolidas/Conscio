@@ -421,15 +421,24 @@ class ConsciousnessEngine:
         """
         return self._state.to_injection()
 
+    # Sentinel object: setting _session_rag to this disables RAG permanently
+    # (distinguishable from None which triggers lazy init).
+    _RAG_DISABLED = object()
+
     @property
     def session_rag(self):
         """
         Lazily construct SessionRAG via the shared factory, gated by
-        Ollama availability.  The probe runs at most once per engine;
+        Ollama availability. The probe runs at most once per engine;
         failures degrade gracefully to None.
+
+        Set ``engine._session_rag = ConsciousnessEngine._RAG_DISABLED``
+        to permanently disable RAG (useful in tests to avoid Ollama probes).
         """
         if self._session_rag is None:
             self._session_rag = create_session_rag()
+        if self._session_rag is ConsciousnessEngine._RAG_DISABLED:
+            return None
         return self._session_rag
 
     def recall(
@@ -573,35 +582,4 @@ class ConsciousnessEngine:
 
 # --- CLI Entry Point ---
 
-def main():
-    """Quick CLI for testing the consciousness engine."""
-    import sys
 
-    model = sys.argv[1] if len(sys.argv) > 1 else "glm-5.1"
-    engine = ConsciousnessEngine(model_name=model)
-
-    print(f"🧠 ConsciousnessEngine initialized")
-    print(f"   Model: {engine.model_info.name}")
-    print(f"   Context: {engine.model_info.context_window//1000}k")
-    print(f"   Mode: {engine.mode.value}")
-    print(f"   Budget: {engine.ctx.budget['total_max']} tokens")
-    print()
-
-    # Run a test reflection
-    result = engine.reflect(
-        world_state="Test initialization — all systems nominal",
-        confidence=0.8,
-    )
-
-    print("📝 Reflection result:")
-    print(result["summary"])
-    print()
-    print("💉 State injection preview:")
-    print(engine.get_state_for_injection())
-    print()
-    print("📊 Full status:")
-    print(json.dumps(engine.status(), indent=2))
-
-
-if __name__ == "__main__":
-    main()

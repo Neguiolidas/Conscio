@@ -1,14 +1,14 @@
 """
-session_rag.py — RAG layer over Hermes session DB.
+session_rag.py — RAG layer over session DB.
 
 Chunking + embedding + semantic search over conversation history.
 Uses local Ollama nomic-embed-text (768d) — zero external deps.
 SQLite-backed vector store (numpy for cosine similarity, no FAISS needed).
 
 Architecture:
-  SessionDB → chunker → embedder → SessionVectorStore → semantic_search()
+    SessionDB → chunker → embedder → SessionVectorStore → semantic_search()
 
-Coexists with Hermes native session_search (FTS5) — this adds semantic
+Coexists with native session_search (FTS5) — this adds semantic
 retrieval on top. Conscio auto-improves chunking/embedding params.
 
 Usage:
@@ -244,7 +244,7 @@ class SessionVectorStore:
     - Zero external deps beyond numpy (already installed)
     - WAL mode for concurrent reads
     - Full control over schema and queries
-    - Coexistence with Hermes session DB
+    - Coexistence with native session DB
     """
 
     def __init__(self, db_path: Path = RAG_DB, dim: int = EMBEDDING_DIM):
@@ -426,7 +426,7 @@ class SessionVectorStore:
 # ---------------------------------------------------------------------------
 
 class SessionRAG:
-    """High-level RAG interface over Hermes session DB.
+    """High-level RAG interface over session DB.
 
     Usage:
         rag = SessionRAG()
@@ -458,7 +458,7 @@ class SessionRAG:
 
     def _get_sessions(self, n: int = 5, source_filter: str = "telegram",
                       min_messages: int = 2) -> list[dict]:
-        """Get recent sessions from Hermes session DB."""
+        """Get recent sessions from session DB."""
         if not self.session_db.exists():
             return []
 

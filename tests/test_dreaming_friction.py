@@ -7,7 +7,7 @@ from conscio.dreaming import DreamCycle
 
 def _engine(tmp_path):
     e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
-    e._session_rag = None
+    e._session_rag = ConsciousnessEngine._RAG_DISABLED
     return e
 
 
