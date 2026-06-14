@@ -85,3 +85,23 @@ def test_verdict_from_dict_defaults_and_clamp():
 def test_verdict_from_dict_non_numeric_confidence():
     v = verdict_from_dict({"verdict": "PASS", "confidence": "high"})
     assert v.confidence == 0.5
+
+
+# ── v1.2: empty required-string rejection (non_empty rule) ──────────────
+
+
+def test_empty_required_string_is_invalid():
+    bad = {"tool": "", "args": {}, "rationale": "x", "expected_outcome": "y"}
+    errors = validate(bad, PROPOSAL_SCHEMA)
+    assert any("tool" in e and "empty" in e for e in errors)
+
+
+def test_whitespace_required_string_is_invalid():
+    bad = {"tool": "   ", "args": {}, "rationale": "x", "expected_outcome": "y"}
+    assert validate(bad, PROPOSAL_SCHEMA)
+
+
+def test_nonempty_tool_still_valid():
+    ok = {"tool": "fs_read", "args": {}, "rationale": "x",
+          "expected_outcome": "y"}
+    assert validate(ok, PROPOSAL_SCHEMA) == []
