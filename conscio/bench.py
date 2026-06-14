@@ -27,7 +27,8 @@ from typing import Callable
 
 from .agency.act import goal_fingerprint
 from .agency.actor import build_actor_prompt
-from .agency.adapter import AdapterCaps, Meter, MeteredAdapter, MockAdapter
+from .agency.adapter import (AdapterCaps, AdapterError, Meter, MeteredAdapter,
+                             MockAdapter)
 from .agency.adapters import (LlamaCppAdapter, OllamaAdapter,
                               OpenAICompatAdapter)
 from .agency.contracts import PROPOSAL_SCHEMA, ActionProposal, validate
@@ -166,6 +167,12 @@ def run_bench(adapter, *, cycles: int = 10, workdir=None) -> dict:
         profile = suite.get(force=True)
     finally:
         suite.close()
+    if not profile.valid:
+        # Every probe hit an AdapterError -> the backend gave no signal at
+        # all (down / unreachable / model absent). Fail clean, not with a
+        # report full of misleading zeros.
+        raise AdapterError(
+            "backend returned no signal on any probe — is it reachable?")
     tier = choose_tier(profile)
     gateway = OutputGateway(metered, tier=tier)
     state = ConsciousnessState(state_summary="bench: synthetic state",
@@ -392,15 +399,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     adapter = build_adapter(args.adapter, cycles=args.cycles,
                             skill_cycles=args.skills)
-    if args.skills:
-        report = run_skill_curve(adapter, cycles=args.skills,
-                                 dream_every=args.dream_every,
-                                 workdir=args.workdir or None)
-        print(format_curve_report(report))
-    else:
-        report = run_bench(adapter, cycles=args.cycles,
-                           workdir=args.workdir or None)
-        print(format_report(report))
+    try:
+        if args.skills:
+            report = run_skill_curve(adapter, cycles=args.skills,
+                                     dream_every=args.dream_every,
+                                     workdir=args.workdir or None)
+            print(format_curve_report(report))
+        else:
+            report = run_bench(adapter, cycles=args.cycles,
+                               workdir=args.workdir or None)
+            print(format_report(report))
+    except AdapterError as exc:
+        print(f"bench aborted: backend error ({type(exc).__name__}: {exc})")
+        return 2
     if args.json_path:
         Path(args.json_path).write_text(json.dumps(report, indent=2))
     return 0
