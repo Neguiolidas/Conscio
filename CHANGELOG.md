@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] — 2026-06-14
+
+### Added
+
+- **F2-deferred hardening closed** (debt-zero before the organism):
+  - `validate` rejects empty/whitespace required strings (`non_empty` rule on
+    `PROPOSAL_SCHEMA.tool`).
+  - `fs_read` enforces `MAX_READ_BYTES` (1 MB), matching `fs_write`.
+  - Tool errors carry `Type: message` only — no traceback, no path leak.
+  - `HTTPError` maps to `AdapterBadResponse` (a 4xx/5xx is a bad response,
+    not a connection failure).
+  - `ActionLedger` sets `busy_timeout=5000` for concurrent writers.
+  - `approve()` claims the row atomically (`proposed → executing`) as the sole
+    gate — a concurrent or repeated approve can never double-execute.
+  - e2e test: global breaker lockdown persists across an engine restart.
+- **Bench real-backend hardening:**
+  - Clean non-zero exit when the backend is unreachable (no traceback, no
+    report of misleading zeros).
+  - Crash-safe incremental skill-curve output (atomic write after every
+    bucket) tagged `complete` | `aborted`; backend death detected via the new
+    `OutputGateway.last_adapter_error` signal (without changing the act
+    path's `GatewayError` flow).
+- **LM Studio backend** — `LMStudioAdapter` (OpenAI-compatible, default
+  `:1234`) and the `lmstudio:<model>` bench spec. LM Studio rejects
+  `response_format=json_object`, so the adapter omits it and lets the gateway
+  drive JSON decoding (an `OpenAICompatAdapter._response_format()` hook).
+- **Measured proof (v1.2 "Prove"):**
+  - `docs/bench/v1.2-campaign.md` — reproducible campaign protocol.
+  - `docs/bench/v1.2-skill-curve.md` + JSON artifacts — first real-backend
+    measurement: on `qwen3.5-0.8b` (LM Studio, CPU) execution success rose
+    0.2 → 1.0 once Distill served past successes as few-shot, and the
+    Skeptic's semantic catch-rate was 1.0.
+  - `docs/CLAIMS.md` — honesty ledger mapping every claim to its evidence.
+
+### Notes
+
+- `reflect()` untouched; zero-deps core (numpy + sqlite3) intact.
+- +21 tests (**984 total**); mypy a real gate; ruff clean; per-file test loop.
+
+---
+
 ## [1.1.0] — 2026-06-12
 
 ### Added

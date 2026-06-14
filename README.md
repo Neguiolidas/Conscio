@@ -11,7 +11,7 @@ nothing else). It is designed to make small, local models punch far above their
 size by giving them memory, self-judgment, and procedural skill — and to prove
 that claim by measurement, not assertion.
 
-- **Current release:** `v1.1.0` — F4 "Procedural" (963 tests, CI green, mypy a real gate)
+- **Current release:** `v1.2.0` — "Prove" (real-backend measured skill curve, F2-deferred hardening closed; 984 tests, CI green, mypy a real gate)
 
 ---
 
@@ -191,9 +191,9 @@ presets.
 
 **Agency — `conscio/agency/` (v1.0–1.1)**
 
-- *F1 "Spine"* — `InferenceAdapter` (Mock/Ollama/llama.cpp/OpenAI-compat, stdlib
-  urllib), `OutputGateway` (tiered decoding), `ToolRegistry` (sandboxed, risk
-  levels, no network), `ActPipeline`/`act()` (L1 PROPOSE), `ActionLedger`.
+- *F1 "Spine"* — `InferenceAdapter` (Mock/Ollama/LM Studio/llama.cpp/OpenAI-compat,
+  stdlib urllib), `OutputGateway` (tiered decoding), `ToolRegistry` (sandboxed,
+  risk levels, no network), `ActPipeline`/`act()` (L1 PROPOSE), `ActionLedger`.
 - *F2 "Immunity"* — `Skeptic` (hostile-auditor clean call; fail-closed),
   `TrustMatrix` (earned autonomy), `CircuitBreaker` (per-goal quarantine).
 - *F3 "Volition"* — `ProbeSuite`/`ModelProfile` (5 empirical micro-probes,
@@ -215,6 +215,7 @@ python -m conscio.bench --adapter mock
 
 # real backends (local by default)
 python -m conscio.bench --adapter ollama:qwen3.5:0.8b --cycles 20
+python -m conscio.bench --adapter lmstudio:qwen3.5-0.8b --cycles 20
 python -m conscio.bench --adapter llamacpp --cycles 20 --json report.json
 python -m conscio.bench --adapter openai:qwen3@http://localhost:8000/v1
 
@@ -308,6 +309,15 @@ session DB/RAG → git). Configure your agent's hook to fire on `session:end` /
 
 ## Audit history
 
+- **v1.2.0 — "Prove"** — the central claim turns from machinery (Mock) into
+  measurement: on `qwen3.5-0.8b` (LM Studio, CPU) execution success rose
+  0.2 → 1.0 once Distill served past successes as few-shot, and the Skeptic's
+  semantic catch-rate was 1.0 (`docs/bench/v1.2-skill-curve.md`,
+  `docs/CLAIMS.md`). F2-deferred debt closed (empty-value validation, `fs_read`
+  cap, error sanitization, `HTTPError` mapping, ledger `busy_timeout`, atomic
+  `approve()` claim, lockdown-persistence e2e). Bench hardened for real backends
+  (clean backend-down exit, crash-safe incremental curve). LM Studio backend
+  added. reflect() untouched, zero-deps intact. +21 tests. **984 total.**
 - **v1.1.0 — F4 "Procedural"** — procedural memory closes the competence loop:
   `SkillLibrary` (skills distilled from successful ledger plans; data, not code —
   R1 intact), Distill as the dream's fifth sub-phase (watermarked, last on
