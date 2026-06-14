@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.3] — 2026-06-14
+
+### Added
+
+- **Universal model context autodiscovery** — `ModelRegistry.autodiscover()` probes local
+  inference endpoints and cloud API keys at startup to automatically register model context
+  windows. Zero configuration required.
+  - **LM Studio** — queries `/v1/models` + `/v1/state` for loaded models and active context.
+  - **Ollama** — queries `/api/tags` + `/api/show` for available models and `context_length`.
+  - **Anthropic** — registers all known Claude models (200k ctx) when `ANTHROPIC_API_KEY` is set.
+  - **Google Gemini** — registers all known Gemini models (1M–2M ctx) when `GOOGLE_API_KEY`
+    or `GEMINI_API_KEY` is set.
+  - **OpenAI-compatible endpoints** — probes any `/v1/models` endpoint via `CONSCIO_ENDPOINTS`
+    env var (comma-separated URLs).
+- **World registry** (`_world_registry`) — runtime-populated cache of autodiscovered models.
+  Used by `detect()` as fallback before heuristic name extraction.
+- **`CONSCIO_CONTEXT_WINDOW` env var** — override context window without code changes.
+- **`ConsciousnessEngine` integration** — `autodiscover()` runs automatically on first engine
+  init, cached per process. Failures are silent (never blocks engine creation).
+- **21 new tests** for autodiscovery, cloud provider probes, and endpoint parsing.
+- **Version bump** to 1.3.3 (aligns with Conscio roadmap: Ship phase).
+
+### Changed
+
+- `ModelRegistry.detect()` priority chain expanded:
+  explicit arg → env var → known registry → world registry → heuristic → 128k default.
+
+---
+
 ## [0.9.1] — 2026-06-10
 
 ### Fixed
