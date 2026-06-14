@@ -179,6 +179,64 @@ class ModelRegistry:
     ]
 
     @classmethod
+    def query_context_from_lmstudio(cls, model_name: str) -> Optional[int]:
+        """Read active context_length from LM Studio conversation state.
+
+        LM Studio stores the loaded model's contextLength in its conversation
+        JSON files under lastUsedModel.instanceLoadTimeConfig. This returns
+        the ACTIVE context window (what the user configured), not the GGUF max.
+
+        Returns None if LM Studio state is not found or doesn't match.
+        """
+        lmstudio_dir = Path.home() / ".lmstudio" / "conversations"
+        if not lmstudio_dir.exists():
+            return None
+
+        model_norm = cls._normalize_model_name(model_name)
+        best_ctx = None
+        best_ts = 0
+
+        try:
+            for conv_file in sorted(lmstudio_dir.glob("*.conversation.json"),
+                                    reverse=True):
+                with open(conv_file) as f:
+                    data = json.load(f)
+
+                # Check if this conversation's model matches
+                lum = data.get("lastUsedModel", {})
+                identifier = lum.get("identifier", "")
+                if model_norm not in cls._normalize_model_name(identifier):
+                    continue
+
+                # Extract contextLength from instanceLoadTimeConfig
+                ilc = lum.get("instanceLoadTimeConfig", {})
+                for field in ilc.get("fields", []):
+                    if field.get("key") == "llm.load.contextLength":
+                        ctx = field.get("value")
+                        if isinstance(ctx, (int, float)) and ctx > 0:
+                            # Use the most recent conversation's value
+                            ts_str = conv_file.stem.split(".")[0]
+                            try:
+                                ts = int(ts_str)
+                            except ValueError:
+                                ts = 0
+                            if ts > best_ts:
+                                best_ts = ts
+                                best_ctx = int(ctx)
+                        break
+
+                if best_ctx:
+                    break  # Found in most recent file
+
+        except Exception as e:
+            logger.debug(f"LM Studio state read failed: {e}")
+            return None
+
+        if best_ctx:
+            logger.debug(f"LM Studio active context for {model_name}: {best_ctx}")
+        return best_ctx
+
+    @classmethod
     def _read_gguf_context_length(cls, gguf_path: str) -> Optional[int]:
         """Read context_length from GGUF file metadata."""
         try:
@@ -347,6 +405,22 @@ class ModelRegistry:
                     strengths=strengths,
                     notes=notes,
                 )
+
+        # Try LM Studio active state (conversation config)
+        lmstudio_ctx = cls.query_context_from_lmstudio(model_name)
+        if lmstudio_ctx is not None:
+            mode = cls.detect_mode(lmstudio_ctx)
+            strengths = info.strengths if info else []
+            notes = f"Context window auto-detected from LM Studio state: {lmstudio_ctx}."
+            if info:
+                notes += f" Original registry: {info.context_window}."
+            return ModelInfo(
+                name=model_name,
+                context_window=lmstudio_ctx,
+                mode=mode,
+                strengths=strengths,
+                notes=notes,
+            )
 
         # Try GGUF metadata scan (local model files)
         gguf_ctx = cls.query_context_from_gguf(model_name)
