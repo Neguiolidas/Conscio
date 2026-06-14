@@ -32,6 +32,7 @@ exclude_docs: |
   *-prompt*.md
   *-analysis*.md
   fable*.md
+  RELEASING.md
 
 nav:
   - Home: index.md
