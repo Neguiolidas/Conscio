@@ -140,3 +140,20 @@ class OpenAICompatAdapter(InferenceAdapter):
     def capabilities(self) -> AdapterCaps:
         return AdapterCaps(model_name=self.model, json_mode=True,
                            grammar=False)
+
+
+class LMStudioAdapter(OpenAICompatAdapter):
+    """LM Studio's local OpenAI-compatible server (default port 1234).
+
+    LM Studio speaks the OpenAI Chat Completions API, so this reuses
+    OpenAICompatAdapter wholesale and only pins the default endpoint. The
+    local server needs no API key. JSON mode is advertised (recent LM
+    Studio honours ``response_format: json_object``); GBNF is not exposed
+    over the OpenAI-compatible surface, so grammar stays off.
+    """
+
+    def __init__(self, *, model: str = "local",
+                 base_url: str = "http://localhost:1234/v1",
+                 api_key: str = "", timeout: float = 120.0):
+        super().__init__(model=model, base_url=base_url, api_key=api_key,
+                         timeout=timeout)
