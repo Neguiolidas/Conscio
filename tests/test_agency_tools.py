@@ -4,6 +4,7 @@ import pytest
 
 from conscio.agency.contracts import ToolResult
 from conscio.agency.tools import (
+    MAX_READ_BYTES,
     MAX_WRITE_BYTES,
     Risk,
     ToolRegistry,
@@ -165,3 +166,19 @@ def test_goal_update_unknown_goal_fails_cleanly(tmp_path):
 def test_goal_update_absent_without_generator(tmp_path):
     reg = make_default_registry(sandbox_root=tmp_path / "sb")
     assert reg.get("goal_update") is None
+
+
+# ── v1.2: fs_read size cap (MAX_READ_BYTES) ─────────────────────────────
+
+def test_fs_read_rejects_oversized_file(tmp_path):
+    reg = make_default_registry(sandbox_root=tmp_path)
+    (tmp_path / "big.txt").write_text("x" * (MAX_READ_BYTES + 1))
+    result = reg.dispatch("fs_read", {"path": "big.txt"})
+    assert not result.ok and "size cap" in result.error
+
+
+def test_fs_read_allows_small_file(tmp_path):
+    reg = make_default_registry(sandbox_root=tmp_path)
+    (tmp_path / "ok.txt").write_text("hello")
+    result = reg.dispatch("fs_read", {"path": "ok.txt"})
+    assert result.ok and result.output == "hello"
