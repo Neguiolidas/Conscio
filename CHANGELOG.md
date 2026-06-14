@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Graphify Bridge** (`conscio/graphify_bridge.py`) — optional bridge that indexes
+  [Graphify](https://github.com/safishamsi/graphify) knowledge graphs into ContentStore
+  for FTS5/BM25 searchable codebase structure. Recommended companion project for
+  significantly improved RAG quality on code-related queries.
 - **Universal model context autodiscovery** — `ModelRegistry.autodiscover()` probes local
   inference endpoints and cloud API keys at startup to automatically register model context
   windows. Zero configuration required.

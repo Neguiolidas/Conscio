@@ -282,6 +282,37 @@ All SQLite databases use WAL mode for concurrent read/write. Default location:
 - `<handoff_dir>/_session_handoff.md` — richer version for manual reference
 - `<handoff_dir>/heartbeat_YYYYMMDD_HHMM.md` — dated archive
 
+## Recommended Companion: Graphify
+
+[Graphify](https://github.com/safishamsi/graphify) generates static knowledge graphs from
+codebases — entities, relationships, communities, architectural patterns. Conscio's
+`graphify_bridge.py` indexes that graph into ContentStore, making codebase structure
+queryable via FTS5/BM25.
+
+```bash
+# 1. Generate the graph (one-time, per codebase)
+pip install graphify
+graphify /path/to/your/project
+
+# 2. Index into Conscio RAG
+python -c "
+from conscio.content_store import ContentStore
+from conscio.graphify_bridge import auto_index_graphify
+
+with ContentStore() as store:
+    stats = auto_index_graphify(store, '/path/to/graphify-out')
+    print(f'Indexed: {stats}')
+"
+```
+
+**Why it matters:** Without Graphify, Conscio's RAG can search reflections, events, and
+session history. *With* Graphify, it can also answer "what does ClassX depend on?", "which
+modules participate in the dream cycle?", "where is the circuit breaker pattern?" — queries
+that require structural knowledge of the codebase.
+
+Graphify is **optional** — Conscio works fully without it. But for agentic workflows that
+involve code understanding, it's a significant RAG quality multiplier.
+
 ## Audit History
 
 - **v0.8.0 — Semantic Reconciliation** — Contradiction detection is now semantic: embedding **antonym axes** (`conscio/semantic.py`, packs in `conscio/presets/axes/*.json`) give polarity that plain similarity can't, so `crashed`/`unreachable` read as opposites of `operational` without any lexicon. It runs **off the hot path** in the dream Reconcile sub-phase (`world.mark_contradictions(detector)`, between Prune and Crystallize), which caches `contradicted` flags into the world model; `ontological_score` reads only those cached flags (a cold, never-dreamed world reports ontological 1.0). Lexical-negation-first with full offline fallback to the v0.6 rule. Retired the v0.6 `world._data` tech debt via public `WorldModel.list_relations()` / `entity_count()` / `contradicted_entities()`. Adds the opt-in, **non-destructive** `SemanticDedup` output stage (`CONSCIO_SEMANTIC_DEDUP=1`) — it flags a near-duplicate adjacent block and keeps both verbatim, never merging. Theory from Claude_Sentience (Dave Shapiro). 56 new tests. 600 total tests.
