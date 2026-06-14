@@ -4,7 +4,25 @@ import json
 
 import pytest
 
+from conscio import bench as bench_mod
+from conscio.agency.adapter import (
+    AdapterCaps,
+    AdapterConnectionError,
+    AdapterError,
+    InferenceAdapter,
+)
 from conscio.bench import build_adapter, main, run_bench
+
+
+class _DeadAdapter(InferenceAdapter):
+    """Every generate() raises — simulates an unreachable backend."""
+
+    def generate(self, prompt, *, schema=None, grammar=None, max_tokens=512,
+                 temperature=0.2, stop=None):
+        raise AdapterConnectionError("connection refused")
+
+    def capabilities(self):
+        return AdapterCaps(model_name="dead", json_mode=False, grammar=False)
 
 
 class TestRunBench:
@@ -75,6 +93,20 @@ class TestSkillCurve:
                      "--workdir", str(tmp_path / "wd")])
         assert code == 0
         assert "skill" in capsys.readouterr().out.lower()
+
+
+class TestBackendDown:
+    def test_run_bench_raises_when_backend_unreachable(self, tmp_path):
+        with pytest.raises(AdapterError):
+            run_bench(_DeadAdapter(), cycles=1, workdir=tmp_path)
+
+    def test_main_handles_backend_down(self, monkeypatch, capsys):
+        monkeypatch.setattr(bench_mod, "build_adapter",
+                            lambda *a, **k: _DeadAdapter())
+        rc = bench_mod.main(["--adapter", "ollama:whatever", "--cycles", "1"])
+        out = capsys.readouterr().out
+        assert rc == 2
+        assert "backend" in out.lower()
 
 
 class TestMain:
