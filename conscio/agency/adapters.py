@@ -112,13 +112,23 @@ class OpenAICompatAdapter(InferenceAdapter):
         self.api_key = api_key
         self.timeout = timeout
 
+    def _response_format(self, schema) -> dict | None:
+        """response_format payload for a schema (None = omit it).
+
+        Vanilla OpenAI-compatible servers (vLLM, etc.) accept the simple
+        json_object mode; LMStudioAdapter overrides this — its API wants
+        json_schema or text and 400s on json_object.
+        """
+        return {"type": "json_object"} if schema is not None else None
+
     def generate(self, prompt, *, schema=None, grammar=None, max_tokens=512,
                  temperature=0.2, stop=None) -> InferenceResult:
         payload = {"model": self.model,
                    "messages": [{"role": "user", "content": prompt}],
                    "max_tokens": max_tokens, "temperature": temperature}
-        if schema is not None:
-            payload["response_format"] = {"type": "json_object"}
+        response_format = self._response_format(schema)
+        if response_format is not None:
+            payload["response_format"] = response_format
         if stop:
             payload["stop"] = stop
         headers = ({"Authorization": f"Bearer {self.api_key}"}
@@ -157,3 +167,10 @@ class LMStudioAdapter(OpenAICompatAdapter):
                  api_key: str = "", timeout: float = 120.0):
         super().__init__(model=model, base_url=base_url, api_key=api_key,
                          timeout=timeout)
+
+    def _response_format(self, schema) -> dict | None:
+        # LM Studio's API rejects {"type": "json_object"} (it wants
+        # "json_schema" or "text"). The gateway already instructs the model
+        # to emit one JSON object and repairs minor deviations, so we leave
+        # the format unconstrained — robust across LM Studio versions.
+        return None

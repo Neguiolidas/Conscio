@@ -125,7 +125,16 @@ class TestLMStudio:
         assert result.text == "ok"
         payload = handler.captured[0][1]
         assert payload["messages"][0]["content"] == "hi"
-        assert payload["response_format"] == {"type": "json_object"}
+
+    def test_omits_unsupported_json_object_format(self, server):
+        # LM Studio 400s on response_format=json_object, so we never send it
+        # (the gateway elicits JSON via prompt instructions instead).
+        url, handler = server
+        handler.responses["/v1/chat/completions"] = {
+            "choices": [{"message": {"content": "{}"}}], "usage": {}}
+        LMStudioAdapter(model="local",
+                        base_url=url + "/v1").generate("hi", schema={"x": {}})
+        assert "response_format" not in handler.captured[0][1]
 
 
 class TestErrors:
