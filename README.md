@@ -11,7 +11,7 @@ nothing else). It is designed to make small, local models punch far above their
 size by giving them memory, self-judgment, and procedural skill — and to prove
 that claim by measurement, not assertion.
 
-- **Current release:** `v1.3.0` — "Ship" (`pip install conscio`; public plugin surface — adapters, sensors, tools; docs site; tag→PyPI release automation; 1015 tests, CI green, mypy a real gate)
+- **Current release:** `v1.3.1` — "Ship" (`pip install conscio`; public plugin surface — adapters, sensors, tools; docs site; tag→PyPI release automation; 1019 tests, CI green, mypy a real gate)
 
 ---
 
@@ -306,7 +306,7 @@ Docs site: guides, public-API reference, the claims ledger, and the bench report
 ## Testing
 
 ```bash
-# Full suite (1015 tests) — house rule: one file per pytest process
+# Full suite (1019 tests) — house rule: one file per pytest process
 # (low-RAM machines OOM on the full run; CI does the same)
 for f in tests/test_*.py; do pytest "$f" -q; done
 
@@ -346,6 +346,12 @@ session DB/RAG → git). Configure your agent's hook to fire on `session:end` /
 
 ## Audit history
 
+- **v1.3.1 — "Ship" (patch)** — CLI polish: an unrecognized model now prints a
+  clear note (heuristic context window + how to register) instead of falling back
+  silently; `DEFAULT_MODEL` constant. `PerceptionFrame.ts` documented as epoch
+  seconds (ledger convention), excluded from `to_world_state()`. Added a
+  subprocess end-to-end CLI test (`python -m conscio`) and `Risk` JSON
+  serialization tests. +4 tests. **1019 total.**
 - **v1.3.0 — "Ship"** — Conscio becomes installable and extensible: `pip install
   conscio` (single-source version, console scripts `conscio`/`conscio-bench`, PEP
   561 typed, wheel+sdist pass `twine check`, core pulls only numpy). A public
