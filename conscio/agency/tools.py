@@ -11,20 +11,14 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
+from ..risk import Risk  # re-exported for backward compatibility (see conscio.risk)
 from .contracts import ToolResult
 
 MAX_WRITE_BYTES = 1_000_000
 MAX_READ_BYTES = 1_000_000
-
-
-class Risk(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
 
 
 @dataclass
