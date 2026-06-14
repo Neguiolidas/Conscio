@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "conscio"
-version = "1.2.0"
+dynamic = ["version"]
 description = "Self-awareness framework for AI agents — emergent consciousness via context-aware memory, introspection, and goal generation"
 readme = "README.md"
 license = {text = "MIT"}
@@ -24,7 +24,9 @@ classifiers = [
  "Programming Language :: Python :: 3.10",
  "Programming Language :: Python :: 3.11",
  "Programming Language :: Python :: 3.12",
+ "Programming Language :: Python :: 3.13",
  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+ "Typing :: Typed",
 ]
 
 [project.urls]
@@ -41,6 +43,13 @@ dev = [
  "mypy>=1.0",
  "pyyaml>=6.0",
 ]
+docs = [
+ "mkdocs-material>=9.5",
+]
+
+[project.scripts]
+conscio = "conscio.cli:main"
+conscio-bench = "conscio.bench:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -48,3 +57,9 @@ addopts = "-v --tb=short"
 
 [tool.setuptools.packages.find]
 include = ["conscio*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "conscio.__version__"}
+
+[tool.setuptools.package-data]
+conscio = ["py.typed"]
