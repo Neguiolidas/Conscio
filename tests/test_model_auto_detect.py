@@ -1,5 +1,6 @@
 """Tests for ModelRegistry auto-detect context from endpoint."""
 import json
+import pytest
 from unittest.mock import patch, MagicMock
 
 from conscio.models import ModelRegistry, ContextMode
@@ -7,6 +8,11 @@ from conscio.models import ModelRegistry, ContextMode
 
 class TestAutoDetectContext:
     """Test querying /v1/models for context_length."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_config(self, monkeypatch, tmp_path):
+        """Isolate tests from real config file."""
+        monkeypatch.setattr(ModelRegistry, '_CONFIG_PATHS', [tmp_path / 'nope.yaml'])
 
     def test_detect_with_explicit_context_window(self):
         """Baseline: explicit override still works."""
