@@ -126,6 +126,48 @@ class ModelRegistry:
     MINIMAL_THRESHOLD = 128_000
     COMPACT_THRESHOLD = 256_000
 
+    # Config file path for persistent model context overrides
+    _CONFIG_PATHS = [
+        Path.home() / ".config" / "conscio" / "config.yaml",
+        Path.home() / ".conscio" / "config.yaml",
+    ]
+
+    @classmethod
+    def _read_config_context(cls, model_name: str) -> Optional[int]:
+        """Read context_window from conscio config file.
+
+        Config format (YAML):
+            models:
+              mimo-v2.5-pro:
+                context_window: 1048576
+              qwen3.5-0.8b:
+                context_window: 32000
+        """
+        for config_path in cls._CONFIG_PATHS:
+            if not config_path.exists():
+                continue
+            try:
+                import yaml
+                with open(config_path) as f:
+                    config = yaml.safe_load(f) or {}
+                models = config.get("models", {})
+                if not isinstance(models, dict):
+                    continue
+                model_cfg = models.get(model_name)
+                if isinstance(model_cfg, dict):
+                    ctx = model_cfg.get("context_window")
+                    if isinstance(ctx, (int, float)) and ctx > 0:
+                        return int(ctx)
+                # Also try flat format: context_window: {model: ctx}
+                ctx_map = config.get("context_window")
+                if isinstance(ctx_map, dict):
+                    ctx = ctx_map.get(model_name)
+                    if isinstance(ctx, (int, float)) and ctx > 0:
+                        return int(ctx)
+            except Exception:
+                continue
+        return None
+
     @classmethod
     def detect_mode(cls, context_window: int) -> ContextMode:
         """Determine operating mode from context window size."""
@@ -360,18 +402,20 @@ class ModelRegistry:
 
         Resolution order:
         1. Known model in registry (world recognition: strengths, notes)
-        2. Explicit context_window override
-        3. Endpoint probe (GET /v1/models → context_length)
-        4. Heuristic from model name
-        5. Default 128k fallback
-
-        The _known_models table is world recognition only — it describes
-        capabilities (strengths, notes) but context_window is always
-        overridden by endpoint data when available.
+        # Resolution order:
+        # 1. Explicit context_window override (programmatic)
+        # 2. Environment variable CONSCIO_CONTEXT_WINDOW (any environment)
+        # 3. Config file ~/.config/conscio/config.yaml (persistent)
+        # 4. Endpoint probe (GET /v1/models → context_length)
+        # 5. LM Studio state (conversation JSON → llm.load.contextLength)
+        # 6. GGUF metadata scan (model file → context_length)
+        # 7. Known model registry (world recognition: strengths, notes)
+        # 8. Heuristic from model name
+        # 9. Default 128k fallback
         """
         info = cls.lookup(model_name)
 
-        # Explicit override takes priority
+        # 1. Explicit override takes priority
         if context_window is not None:
             mode = cls.detect_mode(context_window)
             if info is not None:
@@ -387,6 +431,39 @@ class ModelRegistry:
                 context_window=context_window,
                 mode=mode,
                 notes="Context window provided by user.",
+            )
+
+        # 2. Environment variable CONSCIO_CONTEXT_WINDOW
+        env_ctx = os.environ.get("CONSCIO_CONTEXT_WINDOW")
+        if env_ctx:
+            try:
+                ctx = int(env_ctx)
+                if ctx > 0:
+                    mode = cls.detect_mode(ctx)
+                    strengths = info.strengths if info else []
+                    notes = f"Context window from env CONSCIO_CONTEXT_WINDOW: {ctx}."
+                    return ModelInfo(
+                        name=model_name,
+                        context_window=ctx,
+                        mode=mode,
+                        strengths=strengths,
+                        notes=notes,
+                    )
+            except ValueError:
+                pass
+
+        # 3. Config file ~/.config/conscio/config.yaml
+        config_ctx = cls._read_config_context(model_name)
+        if config_ctx is not None:
+            mode = cls.detect_mode(config_ctx)
+            strengths = info.strengths if info else []
+            notes = f"Context window from config file: {config_ctx}."
+            return ModelInfo(
+                name=model_name,
+                context_window=config_ctx,
+                mode=mode,
+                strengths=strengths,
+                notes=notes,
             )
 
         # Try endpoint probe if base_url provided

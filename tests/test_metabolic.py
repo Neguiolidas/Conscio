@@ -48,7 +48,9 @@ def test_tier_action_is_nonempty_advisory_text():
         assert MetabolicContext.tier_action(st)
 
 
-def test_context_manager_metabolic_state(tmp_path):
+def test_context_manager_metabolic_state(monkeypatch, tmp_path):
+    from conscio.models import ModelRegistry
+    monkeypatch.setattr(ModelRegistry, "_CONFIG_PATHS", [tmp_path / "nope.yaml"])
     from conscio.context_manager import ContextManager
     cm = ContextManager("glm-5.1", storage_path=tmp_path)  # 131k window
     # 80k of 131k ≈ 61% → FATIGUE
