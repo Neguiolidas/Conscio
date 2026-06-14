@@ -233,9 +233,16 @@ class ActPipeline:
 
     def approve(self, ledger_id: int) -> ActReport:
         row = self.ledger.get(ledger_id)
-        if row is None or row["status"] != "proposed":
+        if row is None:
             return ActReport(status=ActStatus.FAILED,
                              reason=f"no pending proposal #{ledger_id}")
+        # The atomic claim (proposed -> executing) is the SOLE gate: only the
+        # winner dispatches, so a concurrent or repeated approve() can never
+        # double-execute. A non-proposed row (already executed/rejected, or
+        # claimed by a racing caller) loses the claim and is reported handled.
+        if not self.ledger.claim(ledger_id):
+            return ActReport(status=ActStatus.FAILED, ledger_id=ledger_id,
+                             reason=f"proposal #{ledger_id} already handled")
         if self.registry.get(row["tool"]) is None:
             # registry changed between act() and approve()
             self.ledger.update_execution(

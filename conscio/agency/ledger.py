@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS actions (
     args_json TEXT NOT NULL,
     rationale TEXT NOT NULL DEFAULT '',
     tier TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL,              -- proposed|executed|rejected|failed|locked
+    status TEXT NOT NULL,              -- proposed|executing|executed|rejected|failed|locked
     verdict TEXT NOT NULL DEFAULT '',  -- skeptic verdict (F2)
     verdict_reasons TEXT NOT NULL DEFAULT '',
     ok INTEGER,                        -- NULL until executed
@@ -79,6 +79,20 @@ class ActionLedger:
             " status=? WHERE id=?",
             (int(ok), output, error, duration_ms, status, row_id))
         self._conn.commit()
+
+    def claim(self, row_id: int) -> bool:
+        """Atomically transition proposed -> executing.
+
+        Returns True iff this call won the claim. Closes the approve()
+        double-execution window: only the winner dispatches the tool. A
+        crash after claim leaves the row 'executing' (not 'proposed'), so
+        it is never re-approved — a visible, safe stuck state.
+        """
+        cur = self._conn.execute(
+            "UPDATE actions SET status='executing'"
+            " WHERE id=? AND status='proposed'", (row_id,))
+        self._conn.commit()
+        return cur.rowcount == 1
 
     def update_verdict(self, row_id: int, verdict: str,
                        reasons: list[str]) -> None:
