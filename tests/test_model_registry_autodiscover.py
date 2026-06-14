@@ -151,3 +151,56 @@ class TestProbeEndpoints:
         call_args = mock_urlopen.call_args
         req = call_args[0][0]  # First positional arg is the Request object
         assert "/v1/models" in req.full_url
+
+
+class TestProbeCloudProviders:
+    """Cloud provider probes should detect via API keys."""
+
+    def test_probe_anthropic_with_key(self):
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-test"}):
+            result = ModelRegistry._probe_anthropic()
+            assert "claude-sonnet-4" in result
+            assert "claude-opus-4" in result
+            assert result["claude-sonnet-4"] == 200_000
+            assert len(result) >= 10
+
+    def test_probe_anthropic_without_key(self):
+        with patch.dict("os.environ", {}, clear=True):
+            result = ModelRegistry._probe_anthropic()
+            assert result == {}
+
+    def test_probe_google_with_google_key(self):
+        with patch.dict("os.environ", {"GOOGLE_API_KEY": "test-key"}):
+            result = ModelRegistry._probe_google()
+            assert "gemini-2.5-pro" in result
+            assert result["gemini-2.5-pro"] == 1_048_576
+
+    def test_probe_google_with_gemini_key(self):
+        with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}):
+            result = ModelRegistry._probe_google()
+            assert "gemini-2.5-flash" in result
+
+    def test_probe_google_without_key(self):
+        with patch.dict("os.environ", {}, clear=True):
+            result = ModelRegistry._probe_google()
+            assert result == {}
+
+    @patch("conscio.models.ModelRegistry._probe_lmstudio")
+    @patch("conscio.models.ModelRegistry._probe_ollama")
+    def test_autodiscover_includes_anthropic(self, mock_ollama, mock_lm):
+        mock_lm.return_value = {}
+        mock_ollama.return_value = {}
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-test"}):
+            count = ModelRegistry.autodiscover()
+            assert count >= 10
+            assert "claude-sonnet-4" in ModelRegistry._world_registry
+
+    @patch("conscio.models.ModelRegistry._probe_lmstudio")
+    @patch("conscio.models.ModelRegistry._probe_ollama")
+    def test_autodiscover_includes_google(self, mock_ollama, mock_lm):
+        mock_lm.return_value = {}
+        mock_ollama.return_value = {}
+        with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}):
+            count = ModelRegistry.autodiscover()
+            assert count >= 5
+            assert "gemini-2.5-pro" in ModelRegistry._world_registry

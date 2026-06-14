@@ -75,6 +75,14 @@ class ConsciousnessEngine:
         self.storage = Path(storage_path) if storage_path else self.DEFAULT_STORAGE
         self.storage.mkdir(parents=True, exist_ok=True)
 
+        # Autodiscover model context windows from local endpoints and API keys.
+        # Runs once per process (cached in _world_registry). Failures are silent.
+        if not ModelRegistry._world_registry:
+            try:
+                ModelRegistry.autodiscover()
+            except Exception:
+                logger.debug("autodiscover failed at engine init", exc_info=True)
+
         # Detect model and set up context management
         self.ctx = ContextManager(model_name, context_window, self.storage)
         self.model_info = self.ctx.model_info

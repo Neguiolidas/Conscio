@@ -272,12 +272,14 @@ class ModelRegistry:
     @classmethod
     def autodiscover(cls, timeout: float = 2.0) -> int:
         """
-        Probe local inference endpoints and register models + context windows.
+        Probe inference endpoints and register models + context windows.
 
         Probes in order:
-        1. CONSCIO_ENDPOINTS env var (comma-separated URLs)
+        1. CONSCIO_ENDPOINTS env var (comma-separated URLs, OpenAI-compatible)
         2. LM Studio (http://localhost:1234)
         3. Ollama (http://localhost:11434)
+        4. Anthropic (registers known models if ANTHROPIC_API_KEY is set)
+        5. Google Gemini (registers known models if GOOGLE_API_KEY/GEMINI_API_KEY is set)
 
         Returns the number of models registered.
         Safe to call at startup — failures are silently ignored.
@@ -319,6 +321,26 @@ class ModelRegistry:
                 log.info("autodiscover Ollama: %d models", len(found))
         except Exception:
             log.debug("autodiscover Ollama failed", exc_info=True)
+
+        # 4. Anthropic (static knowledge — API has no model listing endpoint)
+        try:
+            found = cls._probe_anthropic()
+            for name, ctx in found.items():
+                cls._world_registry[name.lower()] = ctx
+            if found:
+                log.info("autodiscover Anthropic: %d models", len(found))
+        except Exception:
+            log.debug("autodiscover Anthropic failed", exc_info=True)
+
+        # 5. Google Gemini (static knowledge — API key detection)
+        try:
+            found = cls._probe_google()
+            for name, ctx in found.items():
+                cls._world_registry[name.lower()] = ctx
+            if found:
+                log.info("autodiscover Google: %d models", len(found))
+        except Exception:
+            log.debug("autodiscover Google failed", exc_info=True)
 
         return len(cls._world_registry)
 
@@ -438,6 +460,59 @@ class ModelRegistry:
         return result
 
     @classmethod
+    def _probe_anthropic(cls) -> dict[str, int]:
+        """Register known Anthropic models if ANTHROPIC_API_KEY is set.
+
+        Anthropic's API has no model listing endpoint, so this uses static
+        knowledge of context windows for all current Claude models.
+        """
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            return {}
+
+        # All current Claude models have 200k context
+        # Source: https://docs.anthropic.com/en/docs/about-claude/models
+        known = {
+            "claude-opus-4-0": 200_000,
+            "claude-opus-4": 200_000,
+            "claude-sonnet-4-0": 200_000,
+            "claude-sonnet-4": 200_000,
+            "claude-3-7-sonnet-latest": 200_000,
+            "claude-3-7-sonnet-20250219": 200_000,
+            "claude-3-5-sonnet-latest": 200_000,
+            "claude-3-5-sonnet-20241022": 200_000,
+            "claude-3-5-haiku-latest": 200_000,
+            "claude-3-5-haiku-20241022": 200_000,
+            "claude-3-opus-latest": 200_000,
+            "claude-3-opus-20240229": 200_000,
+            "claude-3-sonnet-20240229": 200_000,
+            "claude-3-haiku-20240307": 200_000,
+        }
+        return known
+
+    @classmethod
+    def _probe_google(cls) -> dict[str, int]:
+        """Register known Google Gemini models if API key is set.
+
+        Uses static knowledge. Could be extended to probe
+        generativelanguage.googleapis.com/v1beta/models for dynamic discovery.
+        """
+        api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            return {}
+
+        # Source: https://ai.google.dev/gemini-api/docs/models
+        known = {
+            "gemini-2.5-pro": 1_048_576,
+            "gemini-2.5-flash": 1_048_576,
+            "gemini-2.0-flash": 1_048_576,
+            "gemini-2.0-flash-lite": 1_048_576,
+            "gemini-1.5-pro": 2_097_152,
+            "gemini-1.5-flash": 1_048_576,
+            "gemini-1.5-flash-8b": 1_048_576,
+        }
+        return known
+
+    @classmethod
     def write_default_config(cls, config_path: Optional[str | Path] = None) -> Path:
         """
         Write a default conscio config file with all known context windows.
@@ -459,6 +534,6 @@ class ModelRegistry:
             # Use the first discovered model as example
             example_name, example_ctx = next(iter(cls._world_registry.items()))
             lines.append(f"# Example: {example_name} = {example_ctx}")
-        lines.append(f"context_window: 128000  # default fallback")
+        lines.append("context_window: 128000  # default fallback")
         config_path.write_text("\n".join(lines) + "\n")
         return config_path
