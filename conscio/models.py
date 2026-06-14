@@ -8,12 +8,15 @@ what model it's running on and how much context it has available.
 from __future__ import annotations
 
 import json
+import os
 import re
+import struct
 import urllib.request
 import urllib.error
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -168,6 +171,103 @@ class ModelRegistry:
             logger.debug(f"Endpoint probe failed for {models_url}: {e}")
             return None
 
+    # Directories where local GGUF models are commonly stored
+    _GGUF_SEARCH_DIRS = [
+        Path.home() / ".lmstudio" / "models",
+        Path.home() / ".ollama" / "models",
+        Path.home() / "models",
+    ]
+
+    @classmethod
+    def _read_gguf_context_length(cls, gguf_path: str) -> Optional[int]:
+        """Read context_length from GGUF file metadata."""
+        try:
+            with open(gguf_path, "rb") as f:
+                magic = f.read(4)
+                if magic != b'GGUF':
+                    return None
+                _version = struct.unpack('<I', f.read(4))[0]
+                _n_tensors = struct.unpack('<Q', f.read(8))[0]
+                n_kv = struct.unpack('<Q', f.read(8))[0]
+
+                # GGUF value type sizes
+                _type_sizes = {
+                    0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1,
+                    10: 8, 11: 8, 12: 8,
+                }
+
+                for _ in range(min(n_kv, 500)):
+                    key_len = struct.unpack('<Q', f.read(8))[0]
+                    key = f.read(key_len).decode('utf-8', errors='replace')
+                    val_type = struct.unpack('<I', f.read(4))[0]
+
+                    if val_type == 4:  # UINT32
+                        val = struct.unpack('<I', f.read(4))[0]
+                    elif val_type == 10:  # UINT64
+                        val = struct.unpack('<Q', f.read(8))[0]
+                    elif val_type == 6:  # FLOAT32
+                        val = struct.unpack('<f', f.read(4))[0]
+                    elif val_type == 0:  # UINT8
+                        val = struct.unpack('B', f.read(1))[0]
+                    elif val_type == 1:  # INT8
+                        val = struct.unpack('b', f.read(1))[0]
+                    elif val_type == 2:  # UINT16
+                        val = struct.unpack('<H', f.read(2))[0]
+                    elif val_type == 3:  # INT16
+                        val = struct.unpack('<h', f.read(2))[0]
+                    elif val_type == 5:  # INT32
+                        val = struct.unpack('<i', f.read(4))[0]
+                    elif val_type == 7:  # BOOL
+                        val = struct.unpack('?', f.read(1))[0]
+                    elif val_type == 8:  # STRING
+                        slen = struct.unpack('<Q', f.read(8))[0]
+                        f.read(slen)  # skip string value
+                        continue
+                    elif val_type == 11:  # INT64
+                        val = struct.unpack('<q', f.read(8))[0]
+                    elif val_type == 12:  # FLOAT64
+                        val = struct.unpack('<d', f.read(8))[0]
+                    else:
+                        return None  # Unknown type
+
+                    if 'context_length' in key.lower():
+                        return int(val)
+        except Exception:
+            return None
+        return None
+
+    @classmethod
+    def _normalize_model_name(cls, name: str) -> str:
+        """Normalize model name for fuzzy matching (strip non-alnum)."""
+        return re.sub(r'[^a-z0-9]', '', name.lower())
+
+    @classmethod
+    def query_context_from_gguf(cls, model_name: str,
+                                search_dirs: Optional[list] = None) -> Optional[int]:
+        """Search local directories for a GGUF model and read its context_length.
+
+        Works with LM Studio, Ollama, and any local GGUF model store.
+        Returns the model's max context_length from GGUF metadata, or None.
+        """
+        dirs = search_dirs or cls._GGUF_SEARCH_DIRS
+        model_norm = cls._normalize_model_name(model_name)
+
+        for base_dir in dirs:
+            if not base_dir.exists():
+                continue
+            for gguf in base_dir.rglob("*.gguf"):
+                # Skip multimodal projector files
+                if "mmproj" in gguf.name.lower():
+                    continue
+                file_norm = cls._normalize_model_name(gguf.stem)
+                if model_norm in file_norm or file_norm.startswith(model_norm[:15]):
+                    ctx = cls._read_gguf_context_length(str(gguf))
+                    if ctx and ctx > 0:
+                        logger.debug(f"GGUF context_length for {model_name}: {ctx} "
+                                     f"(from {gguf})")
+                        return ctx
+        return None
+
     @classmethod
     def lookup(cls, model_name: str) -> Optional[ModelInfo]:
         """
@@ -247,6 +347,22 @@ class ModelRegistry:
                     strengths=strengths,
                     notes=notes,
                 )
+
+        # Try GGUF metadata scan (local model files)
+        gguf_ctx = cls.query_context_from_gguf(model_name)
+        if gguf_ctx is not None:
+            mode = cls.detect_mode(gguf_ctx)
+            strengths = info.strengths if info else []
+            notes = f"Context window auto-detected from GGUF metadata: {gguf_ctx}."
+            if info:
+                notes += f" Original registry: {info.context_window}."
+            return ModelInfo(
+                name=model_name,
+                context_window=gguf_ctx,
+                mode=mode,
+                strengths=strengths,
+                notes=notes,
+            )
 
         # Known model (world recognition)
         if info is not None:
