@@ -42,6 +42,7 @@ class ActionLedger:
         self._conn = sqlite3.connect(str(db_path))
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.executescript(_SCHEMA)
         try:                                   # F1 databases lack the column
             self._conn.execute("ALTER TABLE actions ADD COLUMN"

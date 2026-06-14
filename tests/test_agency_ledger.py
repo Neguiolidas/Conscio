@@ -167,6 +167,17 @@ class TestExecutedSince:
         assert ledger.executed_since(b) == []
 
 
+# ── v1.2: concurrency hardening ─────────────────────────────────────────
+
+def test_ledger_sets_busy_timeout(tmp_path):
+    led = ActionLedger(tmp_path / "x.db")
+    try:
+        val = led._conn.execute("PRAGMA busy_timeout").fetchone()[0]
+        assert val == 5000
+    finally:
+        led.close()
+
+
 class TestNthRecentTs:
     def test_returns_ts_of_nth_most_recent(self, tmp_path):
         ledger = ActionLedger(tmp_path / "c.db")
