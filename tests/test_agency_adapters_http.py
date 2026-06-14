@@ -8,6 +8,7 @@ import pytest
 from conscio.agency.adapter import AdapterBadResponse, AdapterConnectionError
 from conscio.agency.adapters import (
     LlamaCppAdapter,
+    LMStudioAdapter,
     OllamaAdapter,
     OpenAICompatAdapter,
 )
@@ -101,6 +102,30 @@ class TestOpenAICompat:
     def test_default_base_url_is_localhost(self):
         adapter = OpenAICompatAdapter(model="m")
         assert "localhost" in adapter.base_url
+
+
+class TestLMStudio:
+    def test_default_base_url_is_localhost_1234(self):
+        adapter = LMStudioAdapter(model="m")
+        assert adapter.base_url == "http://localhost:1234/v1"
+
+    def test_caps_json_mode_no_grammar(self):
+        caps = LMStudioAdapter(model="qwen3.5-0.8b").capabilities()
+        assert caps.json_mode is True and caps.grammar is False
+        assert caps.model_name == "qwen3.5-0.8b"
+
+    def test_speaks_openai_chat_shape(self, server):
+        # LM Studio is OpenAI-compatible: same chat/completions surface.
+        url, handler = server
+        handler.responses["/v1/chat/completions"] = {
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 2}}
+        adapter = LMStudioAdapter(model="local", base_url=url + "/v1")
+        result = adapter.generate("hi", schema={"x": {}})
+        assert result.text == "ok"
+        payload = handler.captured[0][1]
+        assert payload["messages"][0]["content"] == "hi"
+        assert payload["response_format"] == {"type": "json_object"}
 
 
 class TestErrors:

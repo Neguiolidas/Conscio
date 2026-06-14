@@ -5,6 +5,7 @@ measurement, not marketing.
 
     python -m conscio.bench --adapter mock
     python -m conscio.bench --adapter ollama:hermes3 --cycles 20
+    python -m conscio.bench --adapter lmstudio:qwen3.5-0.8b --cycles 20
     python -m conscio.bench --adapter llamacpp --json report.json
     python -m conscio.bench --adapter openai:qwen@http://localhost:8000/v1
 
@@ -29,7 +30,7 @@ from .agency.act import goal_fingerprint
 from .agency.actor import build_actor_prompt
 from .agency.adapter import (AdapterCaps, AdapterError, Meter, MeteredAdapter,
                              MockAdapter)
-from .agency.adapters import (LlamaCppAdapter, OllamaAdapter,
+from .agency.adapters import (LlamaCppAdapter, LMStudioAdapter, OllamaAdapter,
                               OpenAICompatAdapter)
 from .agency.contracts import PROPOSAL_SCHEMA, ActionProposal, validate
 from .agency.gateway import GatewayError, OutputGateway
@@ -127,6 +128,11 @@ def build_adapter(spec: str, *, cycles: int = 10, skill_cycles: int = 0):
         return OllamaAdapter(model=arg or "hermes3")
     if kind == "llamacpp":
         return LlamaCppAdapter(model_name=arg or "llama.cpp")
+    if kind == "lmstudio":
+        model, _, base = arg.partition("@")
+        if base:
+            return LMStudioAdapter(model=model or "local", base_url=base)
+        return LMStudioAdapter(model=model or "local")
     if kind == "openai":
         model, _, base = arg.partition("@")
         if base:
@@ -134,6 +140,7 @@ def build_adapter(spec: str, *, cycles: int = 10, skill_cycles: int = 0):
         return OpenAICompatAdapter(model=model or "local")
     raise SystemExit(f"unknown adapter spec '{spec}' "
                      "(use mock | ollama:<model> | llamacpp[:<name>] | "
+                     "lmstudio:<model>[@<base_url>] | "
                      "openai:<model>[@<base_url>])")
 
 
@@ -410,6 +417,7 @@ def main(argv: list[str] | None = None) -> int:
                     "agency pipeline (design spec section 10).")
     parser.add_argument("--adapter", default="mock",
                         help="mock | ollama:<model> | llamacpp[:<name>] | "
+                             "lmstudio:<model>[@<base_url>] | "
                              "openai:<model>[@<base_url>]")
     parser.add_argument("--cycles", type=int, default=10)
     parser.add_argument("--skills", type=int, default=0, metavar="N",

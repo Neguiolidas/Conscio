@@ -76,6 +76,15 @@ class TestRunBench:
         assert openai.base_url == "http://localhost:9999/v1"
         assert openai.model == "qwen"
 
+    def test_lmstudio_spec_parses(self):
+        from conscio.agency.adapters import LMStudioAdapter
+        a = build_adapter("lmstudio:qwen3.5-0.8b")
+        assert isinstance(a, LMStudioAdapter)
+        assert a.base_url == "http://localhost:1234/v1"
+        assert a.model == "qwen3.5-0.8b"
+        a2 = build_adapter("lmstudio:m@http://127.0.0.1:4321/v1")
+        assert a2.base_url == "http://127.0.0.1:4321/v1"
+
 
 class TestSkillCurve:
     """A9: the curve must rise once Distill kicks in (machinery proof —
