@@ -19,6 +19,7 @@ from typing import Any, Callable
 from .contracts import ToolResult
 
 MAX_WRITE_BYTES = 1_000_000
+MAX_READ_BYTES = 1_000_000
 
 
 class Risk(str, Enum):
@@ -123,6 +124,8 @@ def make_default_registry(*, sandbox_root: Path,
 
     def fs_read(path: str) -> str:
         target = _resolve_sandboxed(sandbox_root, path)
+        if target.stat().st_size > MAX_READ_BYTES:
+            raise ValueError(f"file exceeds read size cap ({MAX_READ_BYTES}B)")
         return target.read_text(encoding="utf-8")
 
     def fs_write(path: str, content: str) -> str:
