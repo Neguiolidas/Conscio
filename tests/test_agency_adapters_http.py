@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from conscio.agency.adapter import AdapterConnectionError
+from conscio.agency.adapter import AdapterBadResponse, AdapterConnectionError
 from conscio.agency.adapters import (
     LlamaCppAdapter,
     OllamaAdapter,
@@ -109,3 +109,20 @@ class TestErrors:
                                 timeout=0.3)
         with pytest.raises(AdapterConnectionError):
             adapter.generate("hi")
+
+    def test_http_error_maps_to_bad_response(self, monkeypatch):
+        # HTTPError subclasses URLError: a 4xx/5xx (server responded badly,
+        # e.g. Ollama "model not found") must NOT be a connection error.
+        import io
+        import urllib.error
+        import urllib.request
+
+        from conscio.agency import adapters
+
+        def fake_urlopen(*args, **kwargs):
+            raise urllib.error.HTTPError(
+                "http://x", 500, "Server Error", {}, io.BytesIO(b"boom"))
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        with pytest.raises(AdapterBadResponse):
+            adapters._post_json("http://x", {}, 1.0)

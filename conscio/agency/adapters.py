@@ -32,6 +32,8 @@ def _post_json(url: str, payload: dict, timeout: float,
             return json.loads(response.read().decode("utf-8"))
     except TimeoutError as exc:
         raise AdapterTimeout(str(exc)) from exc
+    except urllib.error.HTTPError as exc:        # server responded 4xx/5xx
+        raise AdapterBadResponse(f"HTTP {exc.code}: {exc.reason}") from exc
     except urllib.error.URLError as exc:
         if isinstance(getattr(exc, "reason", None), TimeoutError):
             raise AdapterTimeout(str(exc)) from exc
