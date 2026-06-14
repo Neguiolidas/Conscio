@@ -95,6 +95,12 @@ class OutputGateway:
         self.max_retries = max_retries
         self.tier = tier         # explicit "T1"/"T2"/"T3"; None = caps auto
         self.last_tier = ""      # tier that produced (or last tried) decode
+        # Set when a tier bailed because the adapter raised (vs invalid
+        # output). Lets a caller distinguish "backend down" from "model
+        # produced junk" after a GatewayError — without changing control
+        # flow: a GatewayError is still raised in both cases (the act path
+        # relies on that). Reset at the start of every request_action().
+        self.last_adapter_error: AdapterError | None = None
 
     def effective_tier(self) -> str:
         """Tier request_action will use: explicit, else adapter caps."""
@@ -106,6 +112,7 @@ class OutputGateway:
     def request_action(self, base_prompt: str, schema: dict,
                        *, goal_id: str = "",
                        tool_names: list[str] | None = None) -> ActionProposal:
+        self.last_adapter_error = None
         caps = self.adapter.capabilities()
         tier = self.effective_tier()
         if tier == "T1":
@@ -145,7 +152,8 @@ class OutputGateway:
             try:
                 raw = self.adapter.generate(prompt + feedback, schema=schema,
                                             grammar=grammar).text
-            except AdapterError:
+            except AdapterError as exc:
+                self.last_adapter_error = exc
                 return None
             try:
                 data = json.loads(repair_json(raw))
@@ -166,7 +174,8 @@ class OutputGateway:
             try:
                 raw = self.adapter.generate(prompt + feedback,
                                             schema=schema).text
-            except AdapterError:
+            except AdapterError as exc:
+                self.last_adapter_error = exc
                 return None
             try:
                 data = json.loads(repair_json(raw))
@@ -187,7 +196,8 @@ class OutputGateway:
         for _ in range(attempts):
             try:
                 raw = self.adapter.generate(prompt + feedback).text
-            except AdapterError:
+            except AdapterError as exc:
+                self.last_adapter_error = exc
                 return None
             data = parse_kv(raw)
             errors = validate(data, schema)

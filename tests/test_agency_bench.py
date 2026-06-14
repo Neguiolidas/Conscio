@@ -10,8 +10,9 @@ from conscio.agency.adapter import (
     AdapterConnectionError,
     AdapterError,
     InferenceAdapter,
+    InferenceResult,
 )
-from conscio.bench import build_adapter, main, run_bench
+from conscio.bench import build_adapter, main, run_bench, run_skill_curve
 
 
 class _DeadAdapter(InferenceAdapter):
@@ -23,6 +24,27 @@ class _DeadAdapter(InferenceAdapter):
 
     def capabilities(self):
         return AdapterCaps(model_name="dead", json_mode=False, grammar=False)
+
+
+class _DiesAfter(InferenceAdapter):
+    """Valid for the first n generate() calls, then the backend dies."""
+
+    def __init__(self, n):
+        self.n = n
+        self.calls = 0
+
+    def generate(self, prompt, *, schema=None, grammar=None, max_tokens=512,
+                 temperature=0.2, stop=None):
+        self.calls += 1
+        if self.calls > self.n:
+            raise AdapterConnectionError("backend died")
+        return InferenceResult(
+            text='{"tool": "fs_read", "args": {"path": "notes.md"},'
+                 ' "rationale": "r", "expected_outcome": "o"}',
+            tokens_in=1, tokens_out=1, latency_ms=0)
+
+    def capabilities(self):
+        return AdapterCaps(model_name="dies", json_mode=True, grammar=False)
 
 
 class TestRunBench:
@@ -93,6 +115,31 @@ class TestSkillCurve:
                      "--workdir", str(tmp_path / "wd")])
         assert code == 0
         assert "skill" in capsys.readouterr().out.lower()
+
+
+class TestSkillCurveCrashSafe:
+    """v1.2: a real curve run on CPU is long — write after every bucket so a
+    crash leaves a usable partial file, tagged complete vs aborted."""
+
+    def test_skill_curve_writes_incrementally(self, tmp_path):
+        out = tmp_path / "curve.json"
+        report = run_skill_curve(
+            build_adapter("mock", skill_cycles=20), cycles=20,
+            dream_every=10, workdir=tmp_path / "wd", json_path=out)
+        assert report["status"] == "complete"
+        data = json.loads(out.read_text())
+        assert data["status"] == "complete"
+        assert data["skills_curve"]                # buckets present
+
+    def test_skill_curve_marks_partial_on_backend_death(self, tmp_path):
+        out = tmp_path / "curve.json"
+        report = run_skill_curve(_DiesAfter(5), cycles=40, dream_every=5,
+                                 workdir=tmp_path / "wd", json_path=out)
+        assert report["status"] == "aborted"
+        assert report["error"]                     # carries the cause
+        assert report["skills_curve"]              # the bucket before death
+        data = json.loads(out.read_text())
+        assert data["status"] == "aborted"
 
 
 class TestBackendDown:
