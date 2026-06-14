@@ -243,8 +243,15 @@ def run_bench(adapter, *, cycles: int = 10, workdir=None) -> dict:
     }
 
 
+def _write_report(path, report: dict) -> None:
+    """Atomic-ish write so a crash never leaves half a JSON file."""
+    tmp = Path(f"{path}.tmp")
+    tmp.write_text(json.dumps(report, indent=2))
+    tmp.replace(path)
+
+
 def run_skill_curve(adapter, *, cycles: int = 40, dream_every: int = 10,
-                    workdir=None) -> dict:
+                    workdir=None, json_path=None) -> dict:
     """Skill acquisition curve (spec v1.1 section 6): full act-like
     cycles against the bench registry with a live SkillLibrary; Distill
     runs every `dream_every` cycles and closes each bucket."""
@@ -269,6 +276,21 @@ def run_skill_curve(adapter, *, cycles: int = 40, dream_every: int = 10,
 
     buckets: list[dict] = []
     bucket = {"cycles": 0, "valid": 0, "executed": 0, "exemplars": 0}
+    status = "complete"
+    error = ""
+
+    def _report() -> dict:
+        return {
+            "adapter": metered.wrapped_name,
+            "model": metered.capabilities().model_name,
+            "cycles": cycles,
+            "dream_every": dream_every,
+            "status": status,
+            "error": error,
+            "skills_curve": buckets,
+            "llm_calls": meter.calls,
+            "tokens": meter.tokens,
+        }
 
     def flush(distilled: int) -> None:
         if not bucket["cycles"]:
@@ -283,6 +305,8 @@ def run_skill_curve(adapter, *, cycles: int = 40, dream_every: int = 10,
             "distilled_now": distilled,
         })
         bucket.update(cycles=0, valid=0, executed=0, exemplars=0)
+        if json_path:                             # crash-safe partial output
+            _write_report(json_path, _report())
 
     try:
         for index in range(1, cycles + 1):
@@ -298,6 +322,8 @@ def run_skill_curve(adapter, *, cycles: int = 40, dream_every: int = 10,
                     prompt, PROPOSAL_SCHEMA, goal_id=goal_fp,
                     tool_names=registry.names())
             except GatewayError:
+                if gateway.last_adapter_error is not None:
+                    raise gateway.last_adapter_error   # backend down -> abort
                 ledger.record(goal_fp=goal_fp, goal_text=goal_text,
                               tool="(none)", args_json="{}", rationale="",
                               tier=gateway.last_tier, status="failed")
@@ -321,18 +347,17 @@ def run_skill_curve(adapter, *, cycles: int = 40, dream_every: int = 10,
             if index % dream_every == 0:
                 flush(skills.distill(ledger))
         flush(0)                                  # partial tail bucket
-        return {
-            "adapter": metered.wrapped_name,
-            "model": metered.capabilities().model_name,
-            "cycles": cycles,
-            "dream_every": dream_every,
-            "skills_curve": buckets,
-            "llm_calls": meter.calls,
-            "tokens": meter.tokens,
-        }
+    except AdapterError as exc:
+        status = "aborted"
+        error = f"{type(exc).__name__}: {exc}"
+        flush(0)                                  # save whatever completed
     finally:
         ledger.close()
         skills.close()
+    report = _report()
+    if json_path:
+        _write_report(json_path, report)
+    return report
 
 
 def format_curve_report(report: dict) -> str:
@@ -403,17 +428,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.skills:
             report = run_skill_curve(adapter, cycles=args.skills,
                                      dream_every=args.dream_every,
-                                     workdir=args.workdir or None)
+                                     workdir=args.workdir or None,
+                                     json_path=args.json_path or None)
             print(format_curve_report(report))
         else:
             report = run_bench(adapter, cycles=args.cycles,
                                workdir=args.workdir or None)
             print(format_report(report))
+            if args.json_path:
+                Path(args.json_path).write_text(json.dumps(report, indent=2))
     except AdapterError as exc:
         print(f"bench aborted: backend error ({type(exc).__name__}: {exc})")
         return 2
-    if args.json_path:
-        Path(args.json_path).write_text(json.dumps(report, indent=2))
     return 0
 
 
