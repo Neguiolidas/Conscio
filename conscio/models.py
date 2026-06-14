@@ -7,10 +7,16 @@ what model it's running on and how much context it has available.
 
 from __future__ import annotations
 
+import json
 import re
+import urllib.request
+import urllib.error
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class ContextMode(Enum):
@@ -128,6 +134,41 @@ class ModelRegistry:
             return ContextMode.STANDARD
 
     @classmethod
+    def query_context_from_endpoint(cls, base_url: str,
+                                    model_name: str) -> Optional[int]:
+        """Query an OpenAI-compatible /v1/models endpoint for context_length.
+
+        Returns the context_length if found, None otherwise.
+        Works with LM Studio, vLLM, llama.cpp server, and any endpoint
+        that returns context_length in the model metadata.
+        """
+        url = base_url.rstrip("/")
+        # Try /v1/models first (OpenAI format)
+        models_url = f"{url}/models"
+        if not models_url.startswith("http"):
+            models_url = f"http://{models_url}"
+
+        try:
+            req = urllib.request.Request(
+                models_url,
+                headers={"Content-Type": "application/json"},
+                method="GET",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+
+            # Search for the model in the response
+            for model in data.get("data", []):
+                if model.get("id") == model_name:
+                    ctx = model.get("context_length")
+                    if ctx is not None and isinstance(ctx, (int, float)) and ctx > 0:
+                        return int(ctx)
+            return None
+        except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError) as e:
+            logger.debug(f"Endpoint probe failed for {models_url}: {e}")
+            return None
+
+    @classmethod
     def lookup(cls, model_name: str) -> Optional[ModelInfo]:
         """
         Look up a model by name or alias.
@@ -154,19 +195,28 @@ class ModelRegistry:
         return None
 
     @classmethod
-    def detect(cls, model_name: str, context_window: Optional[int] = None) -> ModelInfo:
+    def detect(cls, model_name: str, context_window: Optional[int] = None,
+               base_url: Optional[str] = None) -> ModelInfo:
         """
-        Detect model info, falling back to heuristic if unknown.
-        
-        If the model is in the registry, use that info.
-        If not but context_window is provided, create a ModelInfo with auto-detected mode.
-        If neither, try to extract context window from the model name (heuristic).
+        Detect model info with auto-detection from endpoint.
+
+        Resolution order:
+        1. Known model in registry (world recognition: strengths, notes)
+        2. Explicit context_window override
+        3. Endpoint probe (GET /v1/models → context_length)
+        4. Heuristic from model name
+        5. Default 128k fallback
+
+        The _known_models table is world recognition only — it describes
+        capabilities (strengths, notes) but context_window is always
+        overridden by endpoint data when available.
         """
         info = cls.lookup(model_name)
-        if info is not None:
-            if context_window is not None and context_window != info.context_window:
-                # User override — trust the user
-                mode = cls.detect_mode(context_window)
+
+        # Explicit override takes priority
+        if context_window is not None:
+            mode = cls.detect_mode(context_window)
+            if info is not None:
                 return ModelInfo(
                     name=model_name,
                     context_window=context_window,
@@ -174,19 +224,35 @@ class ModelRegistry:
                     strengths=info.strengths,
                     notes=f"Context window overridden to {context_window}. Original: {info.context_window}.",
                 )
-            return info
-
-        # Unknown model — try to infer context window
-        if context_window is not None:
-            mode = cls.detect_mode(context_window)
             return ModelInfo(
                 name=model_name,
                 context_window=context_window,
                 mode=mode,
-                notes="Unknown model — context window provided by user.",
+                notes="Context window provided by user.",
             )
 
-        # Last resort: try to extract from name (e.g., "model-128k")
+        # Try endpoint probe if base_url provided
+        if base_url:
+            endpoint_ctx = cls.query_context_from_endpoint(base_url, model_name)
+            if endpoint_ctx is not None:
+                mode = cls.detect_mode(endpoint_ctx)
+                strengths = info.strengths if info else []
+                notes = f"Context window auto-detected from endpoint: {endpoint_ctx}."
+                if info:
+                    notes += f" Original registry: {info.context_window}."
+                return ModelInfo(
+                    name=model_name,
+                    context_window=endpoint_ctx,
+                    mode=mode,
+                    strengths=strengths,
+                    notes=notes,
+                )
+
+        # Known model (world recognition)
+        if info is not None:
+            return info
+
+        # Heuristic from name
         ctx = cls._extract_context_from_name(model_name)
         mode = cls.detect_mode(ctx)
         return ModelInfo(

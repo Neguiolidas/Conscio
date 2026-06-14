@@ -2,8 +2,9 @@
 session_rag.py — RAG layer over session DB.
 
 Chunking + embedding + semantic search over conversation history.
-Uses local Ollama nomic-embed-text (768d) — zero external deps.
-SQLite-backed vector store (numpy for cosine similarity, no FAISS needed).
+Supports any OpenAI-compatible embedding endpoint (LM Studio, vLLM,
+llama.cpp server, Ollama with OpenAI mode, etc.) plus native Ollama API.
+Zero external deps beyond numpy + sqlite3.
 
 Architecture:
     SessionDB → chunker → embedder → SessionVectorStore → semantic_search()
@@ -40,6 +41,12 @@ logger = logging.getLogger(__name__)
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 SESSION_DB = HERMES_HOME / "state.db"
 RAG_DB = HERMES_HOME / "consciousness" / "session_rag.db"
+
+# Default endpoints — auto-detected by session_rag_factory.py
+# OpenAI-compatible (LM Studio, vLLM, llama.cpp server, etc.)
+DEFAULT_EMBED_URL = "http://127.0.0.1:1234/v1/embeddings"
+DEFAULT_EMBED_MODEL = "text-embedding-nomic-embed-text-v1.5"
+# Native Ollama API (legacy fallback)
 OLLAMA_EMBED_URL = "http://127.0.0.1:11434/api/embeddings"
 OLLAMA_EMBED_MODEL = "nomic-embed-text"
 EMBEDDING_DIM = 768
@@ -183,11 +190,69 @@ class SessionChunker:
 
 
 # ---------------------------------------------------------------------------
-# Embedder — generates embeddings via local Ollama
+# Embedder — generates embeddings via OpenAI-compatible or Ollama API
 # ---------------------------------------------------------------------------
 
+class OpenAICompatibleEmbedder:
+    """Generate embeddings using any OpenAI-compatible endpoint.
+
+    Works with LM Studio, vLLM, llama.cpp server, Ollama (OpenAI mode),
+    and any server that implements POST /v1/embeddings with the OpenAI schema.
+    """
+
+    def __init__(self, model: str = DEFAULT_EMBED_MODEL,
+                 url: str = DEFAULT_EMBED_URL,
+                 api_key: str = "",
+                 dim: int = EMBEDDING_DIM,
+                 batch_size: int = 8):
+        self.model = model
+        self.url = url
+        self.api_key = api_key
+        self.dim = dim
+        self.batch_size = batch_size
+
+    def embed(self, text: str) -> list[float]:
+        """Get embedding for a single text (OpenAI format)."""
+        import urllib.request
+        import urllib.error
+
+        payload = json.dumps({
+            "model": self.model,
+            "input": text[:4000],  # Truncate long texts
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            self.url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        if self.api_key:
+            req.add_header("Authorization", f"Bearer {self.api_key}")
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                # OpenAI format: {"data": [{"embedding": [...]}]}
+                embeddings = data.get("data", [])
+                if embeddings and isinstance(embeddings[0], dict):
+                    return embeddings[0].get("embedding", [])
+                return []
+        except (urllib.error.URLError, OSError) as e:
+            logger.warning(f"Embedding failed: {e}")
+            return []
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Embed multiple texts (sequential — most local servers don't batch)."""
+        return [self.embed(t) for t in texts]
+
+
 class OllamaEmbedder:
-    """Generate embeddings using local Ollama nomic-embed-text."""
+    """Generate embeddings using native Ollama API (legacy).
+
+    Uses the Ollama-specific format: {"model": ..., "prompt": ...}.
+    For Ollama's OpenAI-compatible mode, use OpenAICompatibleEmbedder instead.
+    """
 
     def __init__(self, model: str = OLLAMA_EMBED_MODEL,
                  url: str = OLLAMA_EMBED_URL,
@@ -199,7 +264,7 @@ class OllamaEmbedder:
         self.batch_size = batch_size
 
     def embed(self, text: str) -> list[float]:
-        """Get embedding for a single text."""
+        """Get embedding for a single text (Ollama format)."""
         import urllib.request
         import urllib.error
 
@@ -225,11 +290,7 @@ class OllamaEmbedder:
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts (sequential — Ollama doesn't batch)."""
-        results = []
-        for text in texts:
-            emb = self.embed(text)
-            results.append(emb)
-        return results
+        return [self.embed(t) for t in texts]
 
 
 # ---------------------------------------------------------------------------
@@ -435,11 +496,11 @@ class SessionRAG:
 
     def __init__(self, session_db: Path = SESSION_DB,
                  rag_db: Path = RAG_DB,
-                 embedder: Optional["OllamaEmbedder"] = None,
+                 embedder=None,
                  chunker: Optional["SessionChunker"] = None):
         self.session_db = session_db
         self.chunker = chunker or SessionChunker()
-        self.embedder = embedder or OllamaEmbedder()
+        self.embedder = embedder or OpenAICompatibleEmbedder()
         self.store = SessionVectorStore(rag_db)
 
     def available(self) -> bool:
