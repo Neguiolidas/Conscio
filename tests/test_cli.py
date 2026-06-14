@@ -1,11 +1,31 @@
 # tests/test_cli.py
 """The `conscio` CLI — version/info/reflect/plugins/bench. Offline; bench delegates."""
+import pathlib
+import subprocess
+import sys
+
+from conscio import __version__
 from conscio.cli import main
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def test_version(capsys):
     assert main(["version"]) == 0
-    assert "1.3.0" in capsys.readouterr().out
+    assert __version__ in capsys.readouterr().out          # bump-proof
+
+
+def test_module_entrypoint_subprocess():
+    """End-to-end: the real `python -m conscio` process (covers __main__.py)."""
+    proc = subprocess.run([sys.executable, "-m", "conscio", "version"],
+                          capture_output=True, text=True, cwd=ROOT)
+    assert proc.returncode == 0
+    assert __version__ in proc.stdout
+
+
+def test_info_warns_on_unknown_model(capsys, tmp_path):
+    assert main(["info", "no-such-model-xyz", "--storage", str(tmp_path)]) == 0
+    assert "not a known model" in capsys.readouterr().err
 
 
 def test_info_prints_model_facts(capsys, tmp_path):

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.1] — 2026-06-14
+
+### Changed
+
+- **CLI** — the `info`/`reflect` model now flows from a named `DEFAULT_MODEL`
+  constant, and an unrecognized model name prints a clear note (to stderr)
+  explaining the heuristic context window used and how to register the model,
+  instead of silently falling back.
+- **`PerceptionFrame.ts`** documented as **epoch seconds** (`time.time()`,
+  matching the `ActionLedger` `ts REAL` convention; `0.0` = unset) and explicitly
+  excluded from `to_world_state()` so determinism holds.
+
+### Tests
+
+- CLI: added a subprocess end-to-end test of `python -m conscio` (covers
+  `__main__.py`) and a test for the unknown-model note; version assertion is now
+  bump-proof.
+- `Risk`: added JSON serialization / wire-value-stability and round-trip tests.
+
+---
+
 ## [1.3.0] — 2026-06-14
 
 ### Added

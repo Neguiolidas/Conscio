@@ -17,6 +17,8 @@ import tempfile
 
 from . import __version__
 
+DEFAULT_MODEL = "glm-5.1"
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -27,12 +29,12 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("version", help="print the Conscio version")
 
     p_info = sub.add_parser("info", help="show model context window / mode / budget")
-    p_info.add_argument("model", nargs="?", default="glm-5.1")
+    p_info.add_argument("model", nargs="?", default=DEFAULT_MODEL)
     p_info.add_argument("--storage", default="", help="storage dir (default: temp)")
 
     p_reflect = sub.add_parser("reflect", help="run one offline reflection cycle")
     p_reflect.add_argument("world_state", help="the world-state string to reflect on")
-    p_reflect.add_argument("--model", default="glm-5.1")
+    p_reflect.add_argument("--model", default=DEFAULT_MODEL)
     p_reflect.add_argument("--confidence", type=float, default=0.8)
     p_reflect.add_argument("--storage", default="", help="storage dir (default: temp)")
 
@@ -48,6 +50,18 @@ def _storage(arg: str) -> str:
     return arg or tempfile.mkdtemp(prefix="conscio-cli-")
 
 
+def _note_if_unknown(model: str, model_info) -> None:
+    """Make a heuristic fallback visible — a typo'd model otherwise silently
+    gets a default context window with no signal."""
+    from .models import ModelRegistry
+    if ModelRegistry.lookup(model) is None:
+        ctx_k = model_info.context_window // 1000
+        print(f"note: '{model}' is not a known model — using a heuristic "
+              f"context window ({ctx_k}k, {model_info.mode.value}). "
+              f"Register it with ModelRegistry.register(name, context_window=...) "
+              f"or pass a known model.", file=sys.stderr)
+
+
 def _cmd_version() -> int:
     print(__version__)
     return 0
@@ -57,6 +71,7 @@ def _cmd_info(model: str, storage: str) -> int:
     from .engine import ConsciousnessEngine
     eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage))
     try:
+        _note_if_unknown(model, eng.model_info)
         print(f"Model:   {eng.model_info.name}")
         print(f"Context: {eng.model_info.context_window // 1000}k "
               f"({eng.model_info.context_window} tokens)")
@@ -72,6 +87,7 @@ def _cmd_reflect(world_state: str, model: str, confidence: float,
     from .engine import ConsciousnessEngine
     eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage))
     try:
+        _note_if_unknown(model, eng.model_info)
         result = eng.reflect(world_state=world_state, confidence=confidence)
         print(result.get("summary", ""))
         print()

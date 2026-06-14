@@ -28,13 +28,17 @@ class PerceptionFrame:
 
     `to_world_state()` assembles the frame into the plain-string `world_state`
     that `engine.reflect()` consumes — deterministically (no clock, no rng), so
-    the same frame always yields the same string.
+    the same frame always yields the same string. `ts` is deliberately excluded
+    from that string so determinism holds regardless of when it was stamped.
+
+    `ts` is **epoch seconds** (`time.time()`), matching the `ActionLedger`'s
+    `ts REAL` convention; `0.0` means unset. The caller stamps it.
     """
 
     source: str
     observations: list[str]
     signals: dict[str, float] = field(default_factory=dict)
-    ts: float = 0.0          # caller stamps wall-clock if it wants; 0.0 = unset
+    ts: float = 0.0          # epoch seconds (time.time()); 0.0 = unset
 
     def to_world_state(self) -> str:
         lines = [f"[{self.source}]"]

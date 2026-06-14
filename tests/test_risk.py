@@ -20,3 +20,20 @@ def test_agency_package_reexports_same_object():
     from conscio.agency import Risk as ViaPackage
     from conscio.risk import Risk as Canonical
     assert ViaPackage is Canonical
+
+
+def test_risk_json_serializes_to_stable_wire_value():
+    import json
+
+    from conscio.risk import Risk
+    # str-Enum: the wire value is the lowercase string, stable across versions.
+    assert json.dumps({"risk": Risk.HIGH}) == '{"risk": "high"}'
+    assert Risk.LOW == "low"                       # equality with the raw value
+
+
+def test_risk_round_trips_from_wire_value():
+    import json
+
+    from conscio.risk import Risk
+    restored = Risk(json.loads('"medium"'))
+    assert restored is Risk.MEDIUM
