@@ -10,7 +10,6 @@ sandbox root.
 from __future__ import annotations
 
 import time
-import traceback
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -90,7 +89,7 @@ class ToolRegistry:
         except Exception as exc:  # tool failures must never crash the engine
             output = ""
             ok = False
-            error = f"{type(exc).__name__}: {exc}\n{traceback.format_exc(limit=2)}"
+            error = f"{type(exc).__name__}: {exc}"
         duration = int((time.monotonic() - start) * 1000)
         return ToolResult(ok=ok, output=str(output), error=error,
                           duration_ms=duration)
