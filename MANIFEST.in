@@ -1,0 +1,8 @@
+include LICENSE
+include CHANGELOG.md
+include README.md
+recursive-include conscio py.typed
+prune docs/superpowers
+prune mempalace
+prune config
+prune .hermes

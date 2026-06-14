@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] — 2026-06-14
+
+### Added
+
+- **PyPI packaging** — `pip install conscio`. Single-source version (read
+  dynamically from `conscio.__version__`), console scripts (`conscio`,
+  `conscio-bench`), PEP 561 `py.typed` marker, `MANIFEST.in`, and 3.13 +
+  `Typing :: Typed` classifiers. Wheel + sdist build clean and pass
+  `twine check`; the published artifact pulls only `numpy`.
+- **`conscio` CLI** — `version` / `info` / `reflect` / `plugins` / `bench`
+  (the last delegates verbatim to `conscio.bench`). Offline-safe;
+  `python -m conscio` works too.
+- **Public plugin surface** — three stable, documented extension points
+  discoverable via `importlib.metadata` entry points:
+  - `conscio.adapters` — custom `InferenceAdapter` backends.
+  - `conscio.sensors` — the new **`SensorAdapter`** perception interface
+    (`conscio.perception`: `SensorAdapter`, `PerceptionFrame`, `MockSensor`);
+    a sensor's `PerceptionFrame.to_world_state()` feeds `reflect()`, which is
+    untouched.
+  - `conscio.tools` — custom tool factories.
+  `conscio.plugins` discovers them resiliently — a broken or mistyped
+  third-party plugin is skipped with a warning, never crashing the host.
+- **Docs site** — MkDocs Material (dev-only extra): guides, a curated public-API
+  reference, the claims ledger, and the bench reports. `mkdocs build --strict`
+  is green; the core stays zero-dependency.
+- **Release automation** — `release.yml` (tag `v*` → gated build → PyPI via OIDC
+  trusted publishing), `docs.yml` (push to `main` → GitHub Pages), and a CI
+  build-smoke job. `docs/RELEASING.md` runbook.
+- **Examples gallery** — `custom_adapter.py`, `host_guardian.py`,
+  `agent_companion.py`: runnable, offline, each exercising one extension point
+  (smoke-tested in CI).
+
+### Changed
+
+- **`Risk` enum** moved to `conscio.risk` as the single safety-tier vocabulary
+  shared by the action and perception surfaces. `conscio.agency.tools` re-exports
+  it — every historical import path resolves to the same object (no behavior
+  change).
+
+---
+
 ## [1.2.0] — 2026-06-14
 
 ### Added
