@@ -36,11 +36,14 @@ def validate(data: Any, schema: dict[str, dict]) -> list[str]:
                 f"got {type(value).__name__}")
         elif "enum" in rules and value not in rules["enum"]:
             errors.append(f"field '{key}' must be one of {rules['enum']}")
+        elif (rules.get("non_empty") and isinstance(value, str)
+              and not value.strip()):
+            errors.append(f"field '{key}' must not be empty")
     return errors
 
 
 PROPOSAL_SCHEMA: dict[str, dict] = {
-    "tool": {"type": "str", "required": True},
+    "tool": {"type": "str", "required": True, "non_empty": True},
     "args": {"type": "dict", "required": True},
     "rationale": {"type": "str", "required": True},
     "expected_outcome": {"type": "str", "required": True},
