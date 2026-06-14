@@ -373,6 +373,10 @@ class ModelRegistry:
                 ctx = m.get("context_length") or m.get("max_context_length")
             if ctx is not None:
                 result[name] = int(ctx)
+            else:
+                # LM Studio doesn't expose context_length in API.
+                # Register with heuristic so detect() can find the model.
+                result[name] = cls._extract_context_from_name(name)
 
         return result
 

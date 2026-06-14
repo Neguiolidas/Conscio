@@ -116,6 +116,22 @@ class TestProbeEndpoints:
             assert result == {"qwen3.5-0.8b": 32_768}
 
     @patch("conscio.models.urlopen")
+    def test_probe_lmstudio_no_context_fallback(self, mock_urlopen):
+        """LM Studio doesn't expose context_length — fallback to heuristic."""
+        mock_urlopen.return_value = _mock_response({
+            "data": [
+                {"id": "qwen3.5-0.8b", "object": "model"},
+                {"id": "model-256k", "object": "model"},
+            ]
+        })
+        with patch("conscio.models.ModelRegistry._query_lmstudio_state", return_value=None):
+            result = ModelRegistry._probe_lmstudio()
+            # qwen3.5-0.8b has no context pattern → defaults to 128k
+            assert result["qwen3.5-0.8b"] == 128_000
+            # model-256k has "256k" in name → heuristic extracts 256k
+            assert result["model-256k"] == 256_000
+
+    @patch("conscio.models.urlopen")
     def test_probe_ollama_show(self, mock_urlopen):
         # First call: /api/tags → list models
         # Second call: /api/show → model details
