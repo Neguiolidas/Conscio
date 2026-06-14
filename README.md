@@ -11,7 +11,7 @@ nothing else). It is designed to make small, local models punch far above their
 size by giving them memory, self-judgment, and procedural skill — and to prove
 that claim by measurement, not assertion.
 
-- **Current release:** `v1.2.0` — "Prove" (real-backend measured skill curve, F2-deferred hardening closed; 984 tests, CI green, mypy a real gate)
+- **Current release:** `v1.3.0` — "Ship" (`pip install conscio`; public plugin surface — adapters, sensors, tools; docs site; tag→PyPI release automation; 1015 tests, CI green, mypy a real gate)
 
 ---
 
@@ -205,6 +205,34 @@ presets.
   exemplars with outcome settling and a ≥50% teaching gate, skill curve in the
   bench (`--skills N`).
 
+**Perception & plugins (v1.3)** — `conscio.perception` (`SensorAdapter`,
+`PerceptionFrame`, `MockSensor`): write a sensor, and
+`PerceptionFrame.to_world_state()` feeds `reflect()` unchanged. `conscio.plugins`
+discovers third-party `InferenceAdapter`/`SensorAdapter`/tool plugins via entry
+points (`conscio.adapters` / `conscio.sensors` / `conscio.tools`), resilient to a
+broken plugin. `conscio.risk.Risk` is the shared safety-tier vocabulary.
+
+---
+
+## Extending Conscio
+
+Three stable extension points, usable directly or published by a third party and
+auto-discovered via entry points:
+
+```python
+from conscio.plugins import discover_adapters, discover_sensors, discover_tools
+# or from the CLI:  conscio plugins
+```
+
+```toml
+# in your own package's pyproject.toml
+[project.entry-points."conscio.sensors"]
+my-sensor = "my_pkg:MySensor"        # a conscio.perception.SensorAdapter
+```
+
+Runnable examples: `examples/custom_adapter.py`, `examples/host_guardian.py`,
+`examples/agent_companion.py`. Full guide: the **docs site** (see below).
+
 ---
 
 ## Bench
@@ -259,17 +287,26 @@ ModelRegistry.register("my-model", context_window=200_000)
 ## Installation
 
 ```bash
-pip install -e .            # from source
+pip install conscio          # from PyPI
+
+pip install -e ".[dev]"      # from source, with the dev toolchain
+pip install "conscio[docs]"  # to build the docs site (mkdocs-material)
 ```
 
-Requires Python ≥ 3.10. Core depends only on `numpy`; `sqlite3` is stdlib.
+Requires Python ≥ 3.10. Core depends only on `numpy`; `sqlite3` is stdlib. The
+wheel ships two console scripts — `conscio` (version/info/reflect/plugins/bench)
+and `conscio-bench` — and is typed (PEP 561). `dev`/`docs` extras never enter the
+runtime import graph.
+
+Docs site: guides, public-API reference, the claims ledger, and the bench reports
+(built with `mkdocs build --strict`; see `docs/`).
 
 ---
 
 ## Testing
 
 ```bash
-# Full suite (963 tests) — house rule: one file per pytest process
+# Full suite (1015 tests) — house rule: one file per pytest process
 # (low-RAM machines OOM on the full run; CI does the same)
 for f in tests/test_*.py; do pytest "$f" -q; done
 
@@ -309,6 +346,17 @@ session DB/RAG → git). Configure your agent's hook to fire on `session:end` /
 
 ## Audit history
 
+- **v1.3.0 — "Ship"** — Conscio becomes installable and extensible: `pip install
+  conscio` (single-source version, console scripts `conscio`/`conscio-bench`, PEP
+  561 typed, wheel+sdist pass `twine check`, core pulls only numpy). A public
+  plugin surface — `InferenceAdapter`, the new `SensorAdapter` perception
+  interface (`conscio.perception`; feeds `reflect()` untouched), and tools —
+  discoverable via entry points and resilient to a broken plugin
+  (`conscio.plugins`). MkDocs Material docs site (`mkdocs build --strict`).
+  Release automation: tag→PyPI via OIDC trusted publishing, docs→Pages, CI build
+  smoke. Examples gallery (custom-adapter, host-guardian, agent-companion). `Risk`
+  unified into `conscio.risk` (re-exported; no behavior change). reflect()
+  untouched, zero-deps core intact. +31 tests. **1015 total.**
 - **v1.2.0 — "Prove"** — the central claim turns from machinery (Mock) into
   measurement: on `qwen3.5-0.8b` (LM Studio, CPU) execution success rose
   0.2 → 1.0 once Distill served past successes as few-shot, and the Skeptic's
