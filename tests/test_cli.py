@@ -5,7 +5,7 @@ from conscio.cli import main
 
 def test_version(capsys):
     assert main(["version"]) == 0
-    assert "1.2.0" in capsys.readouterr().out      # bumped to 1.3.0 at release
+    assert "1.3.0" in capsys.readouterr().out
 
 
 def test_info_prints_model_facts(capsys, tmp_path):
