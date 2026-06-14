@@ -32,6 +32,8 @@ def _post_json(url: str, payload: dict, timeout: float,
             return json.loads(response.read().decode("utf-8"))
     except TimeoutError as exc:
         raise AdapterTimeout(str(exc)) from exc
+    except urllib.error.HTTPError as exc:        # server responded 4xx/5xx
+        raise AdapterBadResponse(f"HTTP {exc.code}: {exc.reason}") from exc
     except urllib.error.URLError as exc:
         if isinstance(getattr(exc, "reason", None), TimeoutError):
             raise AdapterTimeout(str(exc)) from exc
@@ -110,13 +112,23 @@ class OpenAICompatAdapter(InferenceAdapter):
         self.api_key = api_key
         self.timeout = timeout
 
+    def _response_format(self, schema) -> dict | None:
+        """response_format payload for a schema (None = omit it).
+
+        Vanilla OpenAI-compatible servers (vLLM, etc.) accept the simple
+        json_object mode; LMStudioAdapter overrides this — its API wants
+        json_schema or text and 400s on json_object.
+        """
+        return {"type": "json_object"} if schema is not None else None
+
     def generate(self, prompt, *, schema=None, grammar=None, max_tokens=512,
                  temperature=0.2, stop=None) -> InferenceResult:
         payload = {"model": self.model,
                    "messages": [{"role": "user", "content": prompt}],
                    "max_tokens": max_tokens, "temperature": temperature}
-        if schema is not None:
-            payload["response_format"] = {"type": "json_object"}
+        response_format = self._response_format(schema)
+        if response_format is not None:
+            payload["response_format"] = response_format
         if stop:
             payload["stop"] = stop
         headers = ({"Authorization": f"Bearer {self.api_key}"}
@@ -138,3 +150,27 @@ class OpenAICompatAdapter(InferenceAdapter):
     def capabilities(self) -> AdapterCaps:
         return AdapterCaps(model_name=self.model, json_mode=True,
                            grammar=False)
+
+
+class LMStudioAdapter(OpenAICompatAdapter):
+    """LM Studio's local OpenAI-compatible server (default port 1234).
+
+    LM Studio speaks the OpenAI Chat Completions API, so this reuses
+    OpenAICompatAdapter wholesale and only pins the default endpoint. The
+    local server needs no API key. JSON mode is advertised (recent LM
+    Studio honours ``response_format: json_object``); GBNF is not exposed
+    over the OpenAI-compatible surface, so grammar stays off.
+    """
+
+    def __init__(self, *, model: str = "local",
+                 base_url: str = "http://localhost:1234/v1",
+                 api_key: str = "", timeout: float = 120.0):
+        super().__init__(model=model, base_url=base_url, api_key=api_key,
+                         timeout=timeout)
+
+    def _response_format(self, schema) -> dict | None:
+        # LM Studio's API rejects {"type": "json_object"} (it wants
+        # "json_schema" or "text"). The gateway already instructs the model
+        # to emit one JSON object and repairs minor deviations, so we leave
+        # the format unconstrained — robust across LM Studio versions.
+        return None

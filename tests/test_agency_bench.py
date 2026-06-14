@@ -4,7 +4,47 @@ import json
 
 import pytest
 
-from conscio.bench import build_adapter, main, run_bench
+from conscio import bench as bench_mod
+from conscio.agency.adapter import (
+    AdapterCaps,
+    AdapterConnectionError,
+    AdapterError,
+    InferenceAdapter,
+    InferenceResult,
+)
+from conscio.bench import build_adapter, main, run_bench, run_skill_curve
+
+
+class _DeadAdapter(InferenceAdapter):
+    """Every generate() raises — simulates an unreachable backend."""
+
+    def generate(self, prompt, *, schema=None, grammar=None, max_tokens=512,
+                 temperature=0.2, stop=None):
+        raise AdapterConnectionError("connection refused")
+
+    def capabilities(self):
+        return AdapterCaps(model_name="dead", json_mode=False, grammar=False)
+
+
+class _DiesAfter(InferenceAdapter):
+    """Valid for the first n generate() calls, then the backend dies."""
+
+    def __init__(self, n):
+        self.n = n
+        self.calls = 0
+
+    def generate(self, prompt, *, schema=None, grammar=None, max_tokens=512,
+                 temperature=0.2, stop=None):
+        self.calls += 1
+        if self.calls > self.n:
+            raise AdapterConnectionError("backend died")
+        return InferenceResult(
+            text='{"tool": "fs_read", "args": {"path": "notes.md"},'
+                 ' "rationale": "r", "expected_outcome": "o"}',
+            tokens_in=1, tokens_out=1, latency_ms=0)
+
+    def capabilities(self):
+        return AdapterCaps(model_name="dies", json_mode=True, grammar=False)
 
 
 class TestRunBench:
@@ -35,6 +75,15 @@ class TestRunBench:
         assert isinstance(openai, OpenAICompatAdapter)
         assert openai.base_url == "http://localhost:9999/v1"
         assert openai.model == "qwen"
+
+    def test_lmstudio_spec_parses(self):
+        from conscio.agency.adapters import LMStudioAdapter
+        a = build_adapter("lmstudio:qwen3.5-0.8b")
+        assert isinstance(a, LMStudioAdapter)
+        assert a.base_url == "http://localhost:1234/v1"
+        assert a.model == "qwen3.5-0.8b"
+        a2 = build_adapter("lmstudio:m@http://127.0.0.1:4321/v1")
+        assert a2.base_url == "http://127.0.0.1:4321/v1"
 
 
 class TestSkillCurve:
@@ -75,6 +124,45 @@ class TestSkillCurve:
                      "--workdir", str(tmp_path / "wd")])
         assert code == 0
         assert "skill" in capsys.readouterr().out.lower()
+
+
+class TestSkillCurveCrashSafe:
+    """v1.2: a real curve run on CPU is long — write after every bucket so a
+    crash leaves a usable partial file, tagged complete vs aborted."""
+
+    def test_skill_curve_writes_incrementally(self, tmp_path):
+        out = tmp_path / "curve.json"
+        report = run_skill_curve(
+            build_adapter("mock", skill_cycles=20), cycles=20,
+            dream_every=10, workdir=tmp_path / "wd", json_path=out)
+        assert report["status"] == "complete"
+        data = json.loads(out.read_text())
+        assert data["status"] == "complete"
+        assert data["skills_curve"]                # buckets present
+
+    def test_skill_curve_marks_partial_on_backend_death(self, tmp_path):
+        out = tmp_path / "curve.json"
+        report = run_skill_curve(_DiesAfter(5), cycles=40, dream_every=5,
+                                 workdir=tmp_path / "wd", json_path=out)
+        assert report["status"] == "aborted"
+        assert report["error"]                     # carries the cause
+        assert report["skills_curve"]              # the bucket before death
+        data = json.loads(out.read_text())
+        assert data["status"] == "aborted"
+
+
+class TestBackendDown:
+    def test_run_bench_raises_when_backend_unreachable(self, tmp_path):
+        with pytest.raises(AdapterError):
+            run_bench(_DeadAdapter(), cycles=1, workdir=tmp_path)
+
+    def test_main_handles_backend_down(self, monkeypatch, capsys):
+        monkeypatch.setattr(bench_mod, "build_adapter",
+                            lambda *a, **k: _DeadAdapter())
+        rc = bench_mod.main(["--adapter", "ollama:whatever", "--cycles", "1"])
+        out = capsys.readouterr().out
+        assert rc == 2
+        assert "backend" in out.lower()
 
 
 class TestMain:

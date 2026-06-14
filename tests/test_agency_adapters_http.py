@@ -5,9 +5,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from conscio.agency.adapter import AdapterConnectionError
+from conscio.agency.adapter import AdapterBadResponse, AdapterConnectionError
 from conscio.agency.adapters import (
     LlamaCppAdapter,
+    LMStudioAdapter,
     OllamaAdapter,
     OpenAICompatAdapter,
 )
@@ -103,9 +104,59 @@ class TestOpenAICompat:
         assert "localhost" in adapter.base_url
 
 
+class TestLMStudio:
+    def test_default_base_url_is_localhost_1234(self):
+        adapter = LMStudioAdapter(model="m")
+        assert adapter.base_url == "http://localhost:1234/v1"
+
+    def test_caps_json_mode_no_grammar(self):
+        caps = LMStudioAdapter(model="qwen3.5-0.8b").capabilities()
+        assert caps.json_mode is True and caps.grammar is False
+        assert caps.model_name == "qwen3.5-0.8b"
+
+    def test_speaks_openai_chat_shape(self, server):
+        # LM Studio is OpenAI-compatible: same chat/completions surface.
+        url, handler = server
+        handler.responses["/v1/chat/completions"] = {
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 2}}
+        adapter = LMStudioAdapter(model="local", base_url=url + "/v1")
+        result = adapter.generate("hi", schema={"x": {}})
+        assert result.text == "ok"
+        payload = handler.captured[0][1]
+        assert payload["messages"][0]["content"] == "hi"
+
+    def test_omits_unsupported_json_object_format(self, server):
+        # LM Studio 400s on response_format=json_object, so we never send it
+        # (the gateway elicits JSON via prompt instructions instead).
+        url, handler = server
+        handler.responses["/v1/chat/completions"] = {
+            "choices": [{"message": {"content": "{}"}}], "usage": {}}
+        LMStudioAdapter(model="local",
+                        base_url=url + "/v1").generate("hi", schema={"x": {}})
+        assert "response_format" not in handler.captured[0][1]
+
+
 class TestErrors:
     def test_connection_refused_maps_to_adapter_error(self):
         adapter = OllamaAdapter(base_url="http://127.0.0.1:9", model="m",
                                 timeout=0.3)
         with pytest.raises(AdapterConnectionError):
             adapter.generate("hi")
+
+    def test_http_error_maps_to_bad_response(self, monkeypatch):
+        # HTTPError subclasses URLError: a 4xx/5xx (server responded badly,
+        # e.g. Ollama "model not found") must NOT be a connection error.
+        import io
+        import urllib.error
+        import urllib.request
+
+        from conscio.agency import adapters
+
+        def fake_urlopen(*args, **kwargs):
+            raise urllib.error.HTTPError(
+                "http://x", 500, "Server Error", {}, io.BytesIO(b"boom"))
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        with pytest.raises(AdapterBadResponse):
+            adapters._post_json("http://x", {}, 1.0)

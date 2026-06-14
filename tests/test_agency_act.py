@@ -204,3 +204,29 @@ class TestEngineIntegration:
             report = engine.act(_state())
             assert report.status is ActStatus.FAILED
             assert "no adapter" in report.reason
+
+
+class TestDoubleApprove:
+    """A6: approve() claims the row atomically (proposed -> executing);
+    a repeated or concurrent approve() loses the claim and never
+    re-dispatches the tool."""
+
+    def test_double_approve_executes_once(self, tmp_path):
+        from conscio import ConsciousnessEngine
+        with ConsciousnessEngine(model_name="glm-5.1",
+                                 storage_path=tmp_path) as engine:
+            engine.attach_adapter(
+                MockAdapter(script=[
+                    _proposal_json(tool="fs_write",
+                                   args={"path": "out.md", "content": "hi"}),
+                    "A1: NO\nA2: NO\nA3: YES",      # skeptic checklist PASS
+                ]),
+                sandbox_root=tmp_path / "sb")
+            report = engine.act(_state(goal="write a note"))
+            assert report.status is ActStatus.PROPOSED
+            first = engine.approve(report.ledger_id)
+            second = engine.approve(report.ledger_id)
+            assert first.status is ActStatus.EXECUTED
+            assert second.status is ActStatus.FAILED
+            assert "already handled" in (second.reason or "")
+            assert (tmp_path / "sb" / "out.md").read_text() == "hi"

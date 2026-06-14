@@ -167,6 +167,37 @@ class TestExecutedSince:
         assert ledger.executed_since(b) == []
 
 
+# ── v1.2: concurrency hardening ─────────────────────────────────────────
+
+def test_ledger_sets_busy_timeout(tmp_path):
+    led = ActionLedger(tmp_path / "x.db")
+    try:
+        val = led._conn.execute("PRAGMA busy_timeout").fetchone()[0]
+        assert val == 5000
+    finally:
+        led.close()
+
+
+def test_claim_is_won_exactly_once(tmp_path):
+    led = ActionLedger(tmp_path / "x.db")
+    try:
+        rid = led.record(goal_fp="g", tool="fs_read", args_json="{}",
+                         rationale="r", tier="T2", status="proposed")
+        assert led.claim(rid) is True        # first wins
+        assert led.claim(rid) is False       # second loses (now 'executing')
+        assert led.get(rid)["status"] == "executing"
+    finally:
+        led.close()
+
+
+def test_claim_missing_row_is_false(tmp_path):
+    led = ActionLedger(tmp_path / "x.db")
+    try:
+        assert led.claim(9999) is False
+    finally:
+        led.close()
+
+
 class TestNthRecentTs:
     def test_returns_ts_of_nth_most_recent(self, tmp_path):
         ledger = ActionLedger(tmp_path / "c.db")
