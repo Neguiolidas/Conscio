@@ -1,0 +1,57 @@
+site_name: Conscio
+site_description: Self-awareness framework for AI agents — reflect (passive) + act (audited).
+repo_url: https://github.com/Neguiolidas/Conscio
+repo_name: Neguiolidas/Conscio
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.integrate
+  palette:
+    - scheme: default
+      primary: deep purple
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - scheme: slate
+      primary: deep purple
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+# Keep internal / forward-looking material out of the public site.
+exclude_docs: |
+  superpowers/
+  noosphere/
+  roadmap.md
+  blueprint*.md
+  *-prompt*.md
+  *-analysis*.md
+  fable*.md
+
+nav:
+  - Home: index.md
+  - Guides:
+      - Install: guides/install.md
+      - Quickstart: guides/quickstart.md
+      - Architecture: guides/architecture.md
+      - Plugins & extension points: guides/plugins.md
+      - Safety rules: guides/safety-rules.md
+  - Reference:
+      - Public API: reference/public-api.md
+  - Claims ledger: CLAIMS.md
+  - Bench:
+      - v1.0.0: bench/v1.0.0-bench.md
+      - v1.2 campaign: bench/v1.2-campaign.md
+      - v1.2 skill curve: bench/v1.2-skill-curve.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - toc:
+      permalink: true
