@@ -62,3 +62,46 @@ def test_bench_delegates(monkeypatch):
 def test_no_subcommand_prints_help_nonzero(capsys):
     assert main([]) == 2
     assert capsys.readouterr().out.strip()         # help text on stdout
+
+
+# ── v1.5: awake / sleep / daemon ────────────────────────────────────────────
+
+def test_awake_then_sleep_toggle(capsys, tmp_path):
+    assert main(["awake", "--storage", str(tmp_path)]) == 0
+    assert "ON" in capsys.readouterr().out
+    assert main(["sleep", "--storage", str(tmp_path)]) == 0
+    assert "OFF" in capsys.readouterr().out
+
+
+def test_awake_persists_to_storage(tmp_path):
+    assert main(["awake", "--storage", str(tmp_path)]) == 0
+    from conscio.engine import ConsciousnessEngine
+    eng = ConsciousnessEngine("glm-5.1", storage_path=tmp_path)
+    try:
+        assert eng.awake is True
+    finally:
+        eng.close()
+
+
+def test_daemon_once_runs_a_cycle(tmp_path):
+    assert main(["daemon", "--storage", str(tmp_path),
+                 "--sensors", "host", "--once"]) == 0
+
+
+def test_daemon_delegates(monkeypatch):
+    import conscio.daemon as d
+    called = {}
+
+    def fake_main(argv):
+        called["argv"] = argv
+        return 0
+
+    monkeypatch.setattr(d, "main", fake_main)
+    assert main(["daemon", "--once", "--sensors", "host"]) == 0
+    assert called["argv"] == ["--once", "--sensors", "host"]
+
+
+def test_plugins_lists_reference_sensors(capsys):
+    assert main(["plugins"]) == 0
+    out = capsys.readouterr().out
+    assert "HostSensor" in out and "AgentSensor" in out

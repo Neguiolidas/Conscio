@@ -50,6 +50,11 @@ docs = [
 [project.scripts]
 conscio = "conscio.cli:main"
 conscio-bench = "conscio.bench:main"
+conscio-daemon = "conscio.daemon:main"
+
+[project.entry-points."conscio.sensors"]
+host = "conscio.perception.host_sensor:HostSensor"
+agent = "conscio.perception.agent_sensor:AgentSensor"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
