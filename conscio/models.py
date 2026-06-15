@@ -325,6 +325,18 @@ class ModelRegistry:
                         slen = struct.unpack('<Q', f.read(8))[0]
                         f.read(slen)  # skip string value
                         continue
+                    elif val_type == 9:  # ARRAY — skip it and keep scanning
+                        elem_type = struct.unpack('<I', f.read(4))[0]
+                        count = struct.unpack('<Q', f.read(8))[0]
+                        if elem_type == 8:  # array of strings (variable-length)
+                            for _i in range(count):
+                                slen = struct.unpack('<Q', f.read(8))[0]
+                                f.read(slen)
+                        elif elem_type in _type_sizes:
+                            f.read(_type_sizes[elem_type] * count)
+                        else:
+                            return None  # unknown element type — cannot skip safely
+                        continue
                     elif val_type == 11:  # INT64
                         val = struct.unpack('<q', f.read(8))[0]
                     elif val_type == 12:  # FLOAT64
@@ -334,7 +346,7 @@ class ModelRegistry:
 
                     if 'context_length' in key.lower():
                         return int(val)
-        except Exception:
+        except (struct.error, OSError):
             return None
         return None
 

@@ -1,9 +1,59 @@
 """Tests for ModelRegistry auto-detect context from endpoint."""
 import json
+import struct
 import pytest
 from unittest.mock import patch, MagicMock
 
 from conscio.models import ModelRegistry, ContextMode
+
+
+def _gguf_key(key: str) -> bytes:
+    kb = key.encode("utf-8")
+    return struct.pack("<Q", len(kb)) + kb
+
+
+def _build_gguf(tmp_path, array_elem_type: int = 4):
+    """Synthetic GGUF: an ARRAY KV placed *before* the context_length KV.
+
+    Reproduces the real layout that made the old parser abort (it returned None
+    on the first array-typed key, before ever reaching context_length).
+    """
+    parts = [b"GGUF", struct.pack("<I", 3), struct.pack("<Q", 0), struct.pack("<Q", 2)]
+    # KV1: an array (e.g. tokenizer tokens) — must be skipped, not fatal.
+    parts.append(_gguf_key("tokenizer.ggml.tokens"))
+    parts.append(struct.pack("<I", 9))              # val_type ARRAY
+    parts.append(struct.pack("<I", array_elem_type))
+    if array_elem_type == 8:                         # array of strings
+        elems = ["<s>", "</s>", "tok"]
+        parts.append(struct.pack("<Q", len(elems)))
+        for e in elems:
+            eb = e.encode("utf-8")
+            parts.append(struct.pack("<Q", len(eb)) + eb)
+    else:                                            # array of uint32
+        parts.append(struct.pack("<Q", 3))
+        parts.append(struct.pack("<III", 1, 2, 3))
+    # KV2: the context_length we actually want.
+    parts.append(_gguf_key("llama.context_length"))
+    parts.append(struct.pack("<I", 4))              # val_type UINT32
+    parts.append(struct.pack("<I", 4096))
+    p = tmp_path / "model.gguf"
+    p.write_bytes(b"".join(parts))
+    return p
+
+
+class TestGgufParse:
+    def test_array_uint32_metadata_before_context_length(self, tmp_path):
+        p = _build_gguf(tmp_path, array_elem_type=4)
+        assert ModelRegistry._read_gguf_context_length(str(p)) == 4096
+
+    def test_array_of_strings_before_context_length(self, tmp_path):
+        p = _build_gguf(tmp_path, array_elem_type=8)
+        assert ModelRegistry._read_gguf_context_length(str(p)) == 4096
+
+    def test_non_gguf_file_returns_none(self, tmp_path):
+        p = tmp_path / "x.gguf"
+        p.write_bytes(b"NOPE" + b"\x00" * 32)
+        assert ModelRegistry._read_gguf_context_length(str(p)) is None
 
 
 class TestAutoDetectContext:
