@@ -40,9 +40,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("plugins", help="list discovered adapter/sensor/tool plugins")
 
-    # Listed for discoverability; actually routed to conscio.bench before argparse.
+    p_awake = sub.add_parser("awake",
+                             help="enter Awake Mode (R9; enables autonomous run)")
+    p_awake.add_argument("--model", default=DEFAULT_MODEL)
+    p_awake.add_argument("--storage", default="", help="storage dir (default: temp)")
+
+    p_sleep = sub.add_parser("sleep",
+                             help="leave Awake Mode (R9; back to reflect-only)")
+    p_sleep.add_argument("--model", default=DEFAULT_MODEL)
+    p_sleep.add_argument("--storage", default="", help="storage dir (default: temp)")
+
+    # Listed for discoverability; routed to conscio.{bench,daemon} before argparse.
     sub.add_parser("bench", add_help=False,
                    help="measure an inference backend (see: conscio bench --help)")
+    sub.add_parser("daemon", add_help=False,
+                   help="run the live heartbeat (see: conscio-daemon --help)")
     return parser
 
 
@@ -112,14 +124,29 @@ def _cmd_plugins() -> int:
     return 0
 
 
+def _cmd_set_awake(model: str, storage: str, awake: bool) -> int:
+    from .engine import ConsciousnessEngine
+    eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage))
+    try:
+        eng.wake() if awake else eng.sleep()
+        print(f"Awake Mode: {'ON' if eng.awake else 'OFF'} "
+              f"(storage: {eng.storage})")
+    finally:
+        eng.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
-    # bench: route the tail straight to conscio.bench (its own argparse) so flags
-    # pass through unmangled and stay in sync with the bench surface.
+    # bench/daemon: route the tail straight to the subcommand's own argparse so
+    # flags pass through unmangled and stay in sync with that surface.
     if argv and argv[0] == "bench":
         from . import bench
         return bench.main(argv[1:])
+    if argv and argv[0] == "daemon":
+        from . import daemon
+        return daemon.main(argv[1:])
 
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -133,6 +160,10 @@ def main(argv: list[str] | None = None) -> int:
                             args.storage)
     if args.command == "plugins":
         return _cmd_plugins()
+    if args.command == "awake":
+        return _cmd_set_awake(args.model, args.storage, awake=True)
+    if args.command == "sleep":
+        return _cmd_set_awake(args.model, args.storage, awake=False)
 
     parser.print_help()
     return 2
