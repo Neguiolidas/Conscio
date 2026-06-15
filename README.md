@@ -11,7 +11,7 @@ nothing else). It is designed to make small, local models punch far above their
 size by giving them memory, self-judgment, and procedural skill — and to prove
 that claim by measurement, not assertion.
 
-- **Current release:** `v1.4.0` — "Attune" (offline-by-default, opt-in model-context detection across registry / config / live local backends; backend-agnostic, dimension-safe session-RAG embedder; `pip install conscio`; public plugin surface — adapters, sensors, tools; docs site; tag→PyPI release automation; 1058 tests, CI green, mypy a real gate)
+- **Current release:** `v1.4.0` — "Attune" (offline-by-default, opt-in model-context detection across registry / config / live local backends; **frontier inference adapters — Claude (Anthropic) + Gemini (Google) — alongside the local ones**; backend-agnostic, dimension-safe session-RAG embedder; `pip install conscio`; public plugin surface — adapters, sensors, tools; docs site; tag→PyPI release automation; 1070 tests, CI green, mypy a real gate)
 
 ---
 
@@ -131,6 +131,11 @@ with ConsciousnessEngine(model_name="kimi-k2.6") as engine:
 from conscio.agency import OllamaAdapter
 
 engine.attach_adapter(OllamaAdapter(model="qwen3.5:0.8b"))
+# Local (Ollama/llama.cpp/LM Studio/OpenAI-compatible) or a frontier API —
+# the backends behind Claude Code and Antigravity:
+#   from conscio.agency import AnthropicAdapter, GeminiAdapter
+#   engine.attach_adapter(AnthropicAdapter(model="claude-sonnet-4-6"))  # ANTHROPIC_API_KEY
+#   engine.attach_adapter(GeminiAdapter(model="gemini-2.5-pro"))        # GOOGLE_API_KEY
 
 report = engine.act()                 # downstream of reflect(); proposes only (L1)
 if report.status.value == "proposed":
@@ -308,7 +313,7 @@ Docs site: guides, public-API reference, the claims ledger, and the bench report
 ## Testing
 
 ```bash
-# Full suite (1058 tests) — house rule: one file per pytest process
+# Full suite (1070 tests) — house rule: one file per pytest process
 # (low-RAM machines OOM on the full run; CI does the same)
 for f in tests/test_*.py; do pytest "$f" -q; done
 
@@ -354,8 +359,11 @@ session DB/RAG → git). Configure your agent's hook to fire on `session:end` /
   `CONSCIO_AUTODETECT`), config is stdlib JSON (no PyYAML), GGUF array metadata no
   longer aborts the parse. Session-RAG embedder is backend-agnostic and
   dimension-safe (wrong-dim vectors dropped on write, skipped on search; re-index
-  on embedder change). reflect()/agency untouched, zero-deps core intact.
-  +19 tests. **1058 total.**
+  on embedder change). **Frontier inference adapters** — `AnthropicAdapter`
+  (Claude) + `GeminiAdapter` (Gemini) — join the local backends (the inference
+  behind Claude Code and Antigravity); R7 (no network in the ToolRegistry)
+  unaffected. reflect() untouched, zero-deps core intact (stdlib `urllib`).
+  +31 tests. **1070 total.**
 - **v1.3.1 — "Ship" (patch)** — CLI polish: an unrecognized model now prints a
   clear note (heuristic context window + how to register) instead of falling back
   silently; `DEFAULT_MODEL` constant. `PerceptionFrame.ts` documented as epoch

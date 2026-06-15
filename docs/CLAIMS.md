@@ -29,6 +29,7 @@ Updated each phase. Current as of **v1.4.0** (2026-06-15).
 | 19 | Host-state model-context auto-detection is opt-in (never default) | `tests/test_model_offline_default.py`, `tests/test_model_auto_detect.py::TestJsonConfig` (config consulted only under `autodetect`/`CONSCIO_AUTODETECT`) | PROVEN |
 | 20 | Config path has no optional-dependency footgun | config is stdlib JSON; `tests/test_model_auto_detect.py::TestJsonConfig::test_no_yaml_dependency_in_import_graph` | PROVEN |
 | 21 | The vector store cannot be corrupted by a changed embedding model | `tests/test_embedder.py::TestStoreDimSafety` (wrong-dim dropped on write, skipped on search, re-index on `(model,dim)` change) | PROVEN |
+| 22 | Runs on frontier APIs (Claude, Gemini) as well as local backends | `tests/test_agency_adapters_http.py::TestAnthropic`/`::TestGemini` (request shape + response parsing + auth headers + key handling, against a loopback fake) | PROVEN (wire format; live API is environmental) |
 
 ## Honest limits (what is NOT proven)
 

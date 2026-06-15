@@ -16,6 +16,16 @@ determinism, add a dependency, or corrupt the vector store.
 
 ### Added
 
+- **Frontier inference adapters.** `AnthropicAdapter` (Claude Messages API) and
+  `GeminiAdapter` (Gemini `generateContent`) join the local adapters (Ollama,
+  llama.cpp, OpenAI-compatible, LM Studio) — stdlib `urllib` only, keys from
+  `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY`|`GEMINI_API_KEY`. Conscio now runs on the
+  backends behind **Claude Code** and **Antigravity**, removing the lock to local
+  models. Inference is infrastructure, not a tool an actor can invoke, so **R7 (no
+  network in the ToolRegistry) is unaffected** — this only widens the
+  `InferenceAdapter` carve-out from localhost to a configured frontier API
+  (operator's own key, operator's choice). Gemini context windows added to the
+  registry (`gemini-2.5-pro`/`-flash`, `gemini-1.5-pro`, alias `gemini`).
 - **Opt-in host-state auto-detection.** `ModelRegistry.detect(...)` and
   `ContextManager(...)` gained `autodetect` (default `False`) and `base_url`
   (default `None`). With `autodetect=True` (or env `CONSCIO_AUTODETECT`) Conscio

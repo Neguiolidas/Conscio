@@ -97,6 +97,15 @@ class ModelRegistry:
                                    "Most capable but expensive."),
         "gpt-4o": ModelInfo("gpt-4o", 128_000, ContextMode.COMPACT,
                             ["general", "multimodal"]),
+        "gemini-2.5-pro": ModelInfo("gemini-2.5-pro", 1_048_576,
+                                    ContextMode.STANDARD,
+                                    ["long_context", "multimodal", "reasoning"]),
+        "gemini-2.5-flash": ModelInfo("gemini-2.5-flash", 1_048_576,
+                                      ContextMode.STANDARD,
+                                      ["speed", "long_context", "multimodal"]),
+        "gemini-1.5-pro": ModelInfo("gemini-1.5-pro", 2_097_152,
+                                    ContextMode.STANDARD,
+                                    ["long_context", "multimodal"]),
         # Open Source
         "llama-3.1-70b": ModelInfo("llama-3.1-70b", 128_000, ContextMode.COMPACT,
                                    ["general"]),
@@ -120,6 +129,9 @@ class ModelRegistry:
         "sonnet": "claude-sonnet-4",
         "opus": "claude-opus-4",
         "gpt4": "gpt-4o",
+        "gemini": "gemini-2.5-pro",
+        "gemini-pro": "gemini-2.5-pro",
+        "gemini-flash": "gemini-2.5-flash",
     }
 
     # Context window thresholds

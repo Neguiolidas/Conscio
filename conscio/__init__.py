@@ -21,7 +21,7 @@ from .session_lifecycle import SessionSummary, record_session_lifecycle
 from .metabolic import MetabolicContext, MetabolicState
 from .dreaming import DreamCycle, DreamReport
 from .agency import MockAdapter, OllamaAdapter, LlamaCppAdapter, \
-    OpenAICompatAdapter  # noqa: F401
+    OpenAICompatAdapter, AnthropicAdapter, GeminiAdapter  # noqa: F401
 from .risk import Risk
 from .perception import SensorAdapter, PerceptionFrame, MockSensor
 # Plugin discovery lives under `conscio.plugins` (discover_adapters/sensors/tools)
@@ -53,6 +53,8 @@ __all__ = [
  "OllamaAdapter",
  "LlamaCppAdapter",
  "OpenAICompatAdapter",
+ "AnthropicAdapter",
+ "GeminiAdapter",
  "Risk",
  "SensorAdapter",
  "PerceptionFrame",
