@@ -74,8 +74,12 @@ class TestProbe:
 
 
 class TestRun:
+    # v1.5 R9: run() is the autonomous heartbeat and requires Awake Mode; these
+    # tests wake() first because they exercise autonomous operation. (The asleep
+    # = reflect-only contract is proven in tests/test_awake.py.)
     def test_run_without_adapter_fails_cleanly(self, tmp_path):
         with ConsciousnessEngine("glm-5.1", storage_path=tmp_path) as eng:
+            eng.wake()
             report = eng.run()
             assert report.stopped == "no adapter attached"
             assert report.cycles == 0
@@ -89,6 +93,7 @@ class TestRun:
         with ConsciousnessEngine("glm-5.1", storage_path=tmp_path) as eng:
             eng._session_rag = ConsciousnessEngine._RAG_DISABLED
             eng.attach_adapter(adapter, sandbox_root=tmp_path / "sb")
+            eng.wake()
             eng.goals.add_user_goal("write a memory note")
             report = eng.run(ActBudget(max_cycles=cycles, max_wall_s=120.0))
             assert report.cycles == cycles
@@ -105,6 +110,7 @@ class TestRun:
             eng._session_rag = ConsciousnessEngine._RAG_DISABLED
             pipe = eng.attach_adapter(MockAdapter(script=script),
                                       sandbox_root=tmp_path / "sb")
+            eng.wake()
             eng.goals.add_user_goal("write a memory note")
             eng.run(ActBudget(max_cycles=1, max_wall_s=120.0))
             rows = pipe.ledger.latest(1)

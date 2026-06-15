@@ -764,8 +764,17 @@ class ConsciousnessEngine:
 
     def run(self, budget=None, *, world_state=""):
         """L3 heartbeat: reflect -> arbiter/act -> (dream), repeated
-        under a binding ActBudget (P3). Probes the cortex once, lazily."""
+        under a binding ActBudget (P3). Probes the cortex once, lazily.
+
+        R9 (Awake Mode): self-initiated autonomy is gated here. Asleep (the
+        default) ⇒ perceive + reflect() once and return, with ZERO
+        arbiter/act/dream — observation stays always-on, autonomy does not.
+        A direct human engine.act() call is deliberately NOT gated."""
         from .agency.loop import ActBudget, AutonomyLoop, RunReport
+
+        if not self.awake:
+            self.reflect(world_state=world_state)
+            return RunReport(stopped="asleep")
 
         if getattr(self, "_act_pipeline", None) is None:
             return RunReport(stopped="no adapter attached")
