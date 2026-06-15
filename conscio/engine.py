@@ -422,6 +422,33 @@ class ConsciousnessEngine:
         (the volition layer reads this; reflect() owns the writes)."""
         return self._state
 
+    # ── v1.5 Awake Mode (R9): master gate for autonomous operation ──────
+    @property
+    def awake(self) -> bool:
+        """Awake Mode (R9). True ⇒ self-initiated autonomy (the run()/daemon
+        heartbeat) is allowed; False (default) ⇒ perceive + reflect() only.
+        A direct human act() call is never gated by this — R9 governs the loop."""
+        return bool(self._state.awake)
+
+    def wake(self) -> None:
+        """Enter Awake Mode (R9). Persists + emits awake:changed. Idempotent."""
+        self._set_awake(True)
+
+    def sleep(self) -> None:
+        """Leave Awake Mode (R9). Persists + emits awake:changed. Idempotent."""
+        self._set_awake(False)
+
+    def _set_awake(self, value: bool) -> None:
+        changed = bool(self._state.awake) != value
+        self._state.awake = value
+        self.ctx.save_state(self._state)        # rides the existing state store
+        if changed:                             # auditable, no duplicate events
+            self.event_bus.emit(
+                type="awake:changed",
+                category="consciousness",
+                data={"awake": value},
+            )
+
     def get_state_for_injection(self) -> str:
         """
         Get the consciousness state formatted for LLM context injection.
