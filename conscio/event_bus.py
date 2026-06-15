@@ -64,6 +64,7 @@ VALID_TYPES = {
  "evolution_proposed", "system", "consciousness", "session",
  "coherence:dissonance",  # v0.6: passive low-coherence signal (advisory)
  "awake:changed",         # v1.5: Awake Mode (R9) toggled — auditable autonomy gate
+ "workspace:changed",     # v1.5: active workspace root changed (env awareness)
 }
 
 VALID_CATEGORIES = {"system", "trading", "consciousness", "external", "session"}
