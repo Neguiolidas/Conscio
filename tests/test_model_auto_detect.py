@@ -11,8 +11,10 @@ class TestAutoDetectContext:
 
     @pytest.fixture(autouse=True)
     def _isolate_config(self, monkeypatch, tmp_path):
-        """Isolate tests from real config file."""
-        monkeypatch.setattr(ModelRegistry, '_CONFIG_PATHS', [tmp_path / 'nope.yaml'])
+        """Isolate tests from the real config file + ambient autodetect env."""
+        monkeypatch.setattr(ModelRegistry, '_CONFIG_PATHS', [tmp_path / 'nope.json'])
+        monkeypatch.delenv("CONSCIO_AUTODETECT", raising=False)
+        monkeypatch.delenv("CONSCIO_CONTEXT_WINDOW", raising=False)
 
     def test_detect_with_explicit_context_window(self):
         """Baseline: explicit override still works."""
@@ -163,3 +165,51 @@ class TestAutoDetectContext:
         # Context from endpoint, strengths from registry
         assert info.context_window == 207_872
         assert "complex_reasoning" in info.strengths
+
+
+class TestJsonConfig:
+    """Config is stdlib JSON (no optional PyYAML dependency) and opt-in."""
+
+    def _write_config(self, tmp_path, monkeypatch, payload):
+        import json as _json
+        cfg = tmp_path / "config.json"
+        cfg.write_text(_json.dumps(payload))
+        monkeypatch.setattr(ModelRegistry, "_CONFIG_PATHS", [cfg])
+        monkeypatch.delenv("CONSCIO_AUTODETECT", raising=False)
+        monkeypatch.delenv("CONSCIO_CONTEXT_WINDOW", raising=False)
+
+    def test_nested_json_config_under_autodetect(self, tmp_path, monkeypatch):
+        self._write_config(tmp_path, monkeypatch,
+                           {"models": {"foo-1": {"context_window": 777_000}}})
+        assert ModelRegistry.detect("foo-1", autodetect=True).context_window == 777_000
+
+    def test_flat_json_config_under_autodetect(self, tmp_path, monkeypatch):
+        self._write_config(tmp_path, monkeypatch,
+                           {"context_window": {"bar-2": 333_000}})
+        assert ModelRegistry.detect("bar-2", autodetect=True).context_window == 333_000
+
+    def test_config_ignored_without_autodetect(self, tmp_path, monkeypatch):
+        # Config exists but autodetect is off -> unknown model falls to heuristic.
+        self._write_config(tmp_path, monkeypatch,
+                           {"models": {"baz-3": {"context_window": 999_000}}})
+        assert ModelRegistry.detect("baz-3").context_window == 128_000  # heuristic, not config
+
+    def test_config_enabled_via_env(self, tmp_path, monkeypatch):
+        self._write_config(tmp_path, monkeypatch,
+                           {"models": {"qux-4": {"context_window": 256_000}}})
+        monkeypatch.setenv("CONSCIO_AUTODETECT", "1")
+        assert ModelRegistry.detect("qux-4").context_window == 256_000
+
+    def test_malformed_json_is_ignored(self, tmp_path, monkeypatch):
+        cfg = tmp_path / "config.json"
+        cfg.write_text("{not valid json")
+        monkeypatch.setattr(ModelRegistry, "_CONFIG_PATHS", [cfg])
+        # Must not raise; falls through to heuristic.
+        assert ModelRegistry.detect("whatever-1", autodetect=True).context_window == 128_000
+
+    def test_no_yaml_dependency_in_import_graph(self):
+        import sys
+        import importlib
+        sys.modules.pop("yaml", None)
+        importlib.import_module("conscio.models")
+        assert "yaml" not in sys.modules

@@ -126,46 +126,48 @@ class ModelRegistry:
     MINIMAL_THRESHOLD = 128_000
     COMPACT_THRESHOLD = 256_000
 
-    # Config file path for persistent model context overrides
+    # Config file path for persistent model context overrides (stdlib JSON).
     _CONFIG_PATHS = [
-        Path.home() / ".config" / "conscio" / "config.yaml",
-        Path.home() / ".conscio" / "config.yaml",
+        Path.home() / ".config" / "conscio" / "config.json",
+        Path.home() / ".conscio" / "config.json",
     ]
 
     @classmethod
     def _read_config_context(cls, model_name: str) -> Optional[int]:
-        """Read context_window from conscio config file.
+        """Read context_window from the conscio JSON config file.
 
-        Config format (YAML):
-            models:
-              mimo-v2.5-pro:
-                context_window: 1048576
-              qwen3.5-0.8b:
-                context_window: 32000
+        Config format (JSON), nested or flat:
+            {"models": {"mimo-v2.5-pro": {"context_window": 1048576}}}
+            {"context_window": {"qwen3.5-0.8b": 32000}}
+
+        Stdlib ``json`` only — no optional dependency, so the feature can never
+        silently no-op for lack of a third-party package. Reached only on the
+        opt-in autodetect path (see ``detect``).
         """
         for config_path in cls._CONFIG_PATHS:
             if not config_path.exists():
                 continue
             try:
-                import yaml
                 with open(config_path) as f:
-                    config = yaml.safe_load(f) or {}
-                models = config.get("models", {})
-                if not isinstance(models, dict):
-                    continue
+                    config = json.load(f)
+            except (OSError, ValueError):
+                continue
+            if not isinstance(config, dict):
+                continue
+            # Nested: {"models": {name: {"context_window": ctx}}}
+            models = config.get("models")
+            if isinstance(models, dict):
                 model_cfg = models.get(model_name)
                 if isinstance(model_cfg, dict):
                     ctx = model_cfg.get("context_window")
                     if isinstance(ctx, (int, float)) and ctx > 0:
                         return int(ctx)
-                # Also try flat format: context_window: {model: ctx}
-                ctx_map = config.get("context_window")
-                if isinstance(ctx_map, dict):
-                    ctx = ctx_map.get(model_name)
-                    if isinstance(ctx, (int, float)) and ctx > 0:
-                        return int(ctx)
-            except Exception:
-                continue
+            # Flat: {"context_window": {name: ctx}}
+            ctx_map = config.get("context_window")
+            if isinstance(ctx_map, dict):
+                ctx = ctx_map.get(model_name)
+                if isinstance(ctx, (int, float)) and ctx > 0:
+                    return int(ctx)
         return None
 
     @classmethod
