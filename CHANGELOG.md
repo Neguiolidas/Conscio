@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] — 2026-06-15
+
+"Attune" — Conscio perceives the context window of whatever model/backend it runs
+on, and the session-RAG embedder works against any OpenAI-compatible endpoint —
+without making construction touch the filesystem/network by default, lose
+determinism, add a dependency, or corrupt the vector store.
+
+### Added
+
+- **Opt-in host-state auto-detection.** `ModelRegistry.detect(...)` and
+  `ContextManager(...)` gained `autodetect` (default `False`) and `base_url`
+  (default `None`). With `autodetect=True` (or env `CONSCIO_AUTODETECT`) Conscio
+  consults a config file, LM Studio's active state, and GGUF metadata; an explicit
+  `base_url` enables a targeted OpenAI-compatible endpoint probe.
+- **JSON config** at `~/.config/conscio/config.json` (and `~/.conscio/config.json`),
+  nested (`{"models": {name: {"context_window": N}}}`) or flat
+  (`{"context_window": {name: N}}`).
+- **Embedder identity in the vector store** — the store persists the
+  `(embedding model, dim)` it was built with and triggers a clean re-index when
+  the configured embedder changes.
+
+### Changed
+
+- **Model-context detection is offline & deterministic by default.** A *known*
+  model with no explicit override resolves to the curated registry with **zero**
+  filesystem/network I/O — restoring the behavior the auto-detection commits had
+  broken (engine/context construction no longer scans `$HOME`).
+- **Config is stdlib JSON, not YAML** — the detection path no longer depends on an
+  optional PyYAML package that could silently disable the feature.
+- GGUF-derived context is labelled as the **architectural max** (may exceed the
+  active/loaded context); active sources (endpoint, LM Studio) are preferred.
+
+### Fixed
+
+- **GGUF parser** no longer aborts on array-valued metadata — it previously
+  returned `None` at the first array key (e.g. tokenizer tokens) before reaching
+  `context_length`.
+- **Session-RAG search** can no longer crash on a dimension-mismatched vector
+  (`np.dot` shape error): wrong-dim vectors are dropped on write and skipped on
+  search, preventing store corruption when the embedding model changes.
+- Removed a test monkeypatch that had masked the offline/determinism regression.
+
+---
+
 ## [1.3.1] — 2026-06-14
 
 ### Changed

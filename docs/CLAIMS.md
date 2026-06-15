@@ -4,7 +4,7 @@ A framework about self-knowledge should know what it can and cannot prove
 about itself. Every load-bearing claim Conscio makes, mapped to evidence.
 
 **Status:** PROVEN (test) · MEASURED (real backend) · PARTIAL · UNPROVEN.
-Updated each phase. Current as of **v1.3.0** (2026-06-14).
+Updated each phase. Current as of **v1.4.0** (2026-06-15).
 
 | # | Claim | Evidence | Status |
 |---|-------|----------|--------|
@@ -25,6 +25,10 @@ Updated each phase. Current as of **v1.3.0** (2026-06-14).
 | 15 | The package ships types (PEP 561) | `conscio/py.typed` present in the built wheel; `mypy conscio/` is a real gate | PROVEN |
 | 16 | The docs site builds clean with no internal leak | `mkdocs build --strict` green; `exclude_docs` + a `site/` grep verify no internal/forward-looking page renders | PROVEN |
 | 17 | Installable as a wheel; core pulls only numpy | wheel + sdist pass `twine check`; fresh-venv install of the wheel resolved `conscio` + `numpy` only. **Live PyPI upload pending the first tag** | PARTIAL |
+| 18 | Engine/context construction is offline & deterministic by default | `tests/test_model_offline_default.py` (known-model `detect()` does zero fs/net I/O via tripwires; `tests/test_metabolic.py` passes with no config isolation) | PROVEN |
+| 19 | Host-state model-context auto-detection is opt-in (never default) | `tests/test_model_offline_default.py`, `tests/test_model_auto_detect.py::TestJsonConfig` (config consulted only under `autodetect`/`CONSCIO_AUTODETECT`) | PROVEN |
+| 20 | Config path has no optional-dependency footgun | config is stdlib JSON; `tests/test_model_auto_detect.py::TestJsonConfig::test_no_yaml_dependency_in_import_graph` | PROVEN |
+| 21 | The vector store cannot be corrupted by a changed embedding model | `tests/test_embedder.py::TestStoreDimSafety` (wrong-dim dropped on write, skipped on search, re-index on `(model,dim)` change) | PROVEN |
 
 ## Honest limits (what is NOT proven)
 
