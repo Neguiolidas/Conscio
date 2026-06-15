@@ -11,13 +11,15 @@ nothing else). It is designed to make small, local models punch far above their
 size by giving them memory, self-judgment, and procedural skill — and to prove
 that claim by measurement, not assertion.
 
-- **Current release:** `v1.3.1` — "Ship" (`pip install conscio`; public plugin surface — adapters, sensors, tools; docs site; tag→PyPI release automation; 1019 tests, CI green, mypy a real gate)
+- **Current release:** `v1.4.0` — "Attune" (offline-by-default, opt-in model-context detection across registry / config / live local backends; backend-agnostic, dimension-safe session-RAG embedder; `pip install conscio`; public plugin surface — adapters, sensors, tools; docs site; tag→PyPI release automation; 1058 tests, CI green, mypy a real gate)
 
 ---
 
 ## What Conscio does
 
-- **Knows itself** — detects its model and context window, adapts its footprint.
+- **Knows itself** — detects its model and context window (offline & deterministic
+  by default; opt-in auto-detection from a JSON config, an OpenAI-compatible
+  endpoint, LM Studio, or GGUF), adapts its footprint.
 - **Reflects continuously** — a passive inner-monologue loop that observes,
   assesses confidence, and summarizes (`engine.reflect()` — advisory, never acts).
 - **Generates its own goals** — driven by curiosity, maintenance, and evolution.
@@ -306,7 +308,7 @@ Docs site: guides, public-API reference, the claims ledger, and the bench report
 ## Testing
 
 ```bash
-# Full suite (1019 tests) — house rule: one file per pytest process
+# Full suite (1058 tests) — house rule: one file per pytest process
 # (low-RAM machines OOM on the full run; CI does the same)
 for f in tests/test_*.py; do pytest "$f" -q; done
 
@@ -346,6 +348,14 @@ session DB/RAG → git). Configure your agent's hook to fire on `session:end` /
 
 ## Audit history
 
+- **v1.4.0 — "Attune"** — model-context detection is offline & deterministic by
+  default (known models resolve to the registry with zero filesystem/network I/O);
+  config-file / LM Studio / GGUF auto-detection is opt-in (`autodetect` /
+  `CONSCIO_AUTODETECT`), config is stdlib JSON (no PyYAML), GGUF array metadata no
+  longer aborts the parse. Session-RAG embedder is backend-agnostic and
+  dimension-safe (wrong-dim vectors dropped on write, skipped on search; re-index
+  on embedder change). reflect()/agency untouched, zero-deps core intact.
+  +19 tests. **1058 total.**
 - **v1.3.1 — "Ship" (patch)** — CLI polish: an unrecognized model now prints a
   clear note (heuristic context window + how to register) instead of falling back
   silently; `DEFAULT_MODEL` constant. `PerceptionFrame.ts` documented as epoch
