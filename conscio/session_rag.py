@@ -307,11 +307,17 @@ class SessionVectorStore:
     - Coexistence with native session DB
     """
 
-    def __init__(self, db_path: Path = RAG_DB, dim: int = EMBEDDING_DIM):
+    def __init__(self, db_path: Path = RAG_DB, dim: int = EMBEDDING_DIM,
+                 embed_model: Optional[str] = None):
         self.db_path = db_path
         self.dim = dim
+        self.embed_model = embed_model
+        # True if a backend change cleared embeddings and a re-index is needed.
+        self.reindex_required = False
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+        if embed_model is not None:
+            self._sync_embedder_identity(embed_model, dim)
 
     def _init_db(self):
         """Create tables if they don't exist."""
@@ -331,6 +337,12 @@ class SessionVectorStore:
             )
         """)
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS meta (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_chunks_session
             ON chunks(session_id)
         """)
@@ -341,12 +353,56 @@ class SessionVectorStore:
         conn.commit()
         conn.close()
 
+    def _sync_embedder_identity(self, model: str, dim: int):
+        """Detect a changed embedding backend and force a clean re-index.
+
+        Vectors from different embedding models (or dims) are incomparable; mixing
+        them silently corrupts cosine search. We persist the (model, dim) the store
+        was built with; if the configured embedder differs, we drop the now-stale
+        embeddings (keeping chunk text) so the indexer rebuilds them. First build
+        just records the identity.
+        """
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            rows = dict(conn.execute(
+                "SELECT key, value FROM meta WHERE key IN ('embed_model', 'embed_dim')"
+            ).fetchall())
+            stored_model = rows.get("embed_model")
+            stored_dim = int(rows["embed_dim"]) if rows.get("embed_dim") else None
+            if stored_model is not None and (stored_model != model or stored_dim != dim):
+                logger.warning(
+                    "Embedding backend changed (%s/%s -> %s/%s); clearing embeddings "
+                    "for re-index", stored_model, stored_dim, model, dim,
+                )
+                conn.execute("UPDATE chunks SET embedding = NULL "
+                             "WHERE embedding IS NOT NULL")
+                self.reindex_required = True
+            conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                         ("embed_model", model))
+            conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                         ("embed_dim", str(dim)))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _emb_blob(self, embedding) -> Optional[bytes]:
+        """Pack an embedding to a float32 blob, dropping wrong-dim vectors.
+
+        A vector whose length != the store's dim is incomparable with the rest of
+        the store; storing it would corrupt cosine search. We drop it (store the
+        chunk text with a NULL embedding) and warn, rather than poison the store.
+        """
+        if not embedding:
+            return None
+        if len(embedding) != self.dim:
+            logger.warning("Dropping embedding: dim %d != store dim %d",
+                           len(embedding), self.dim)
+            return None
+        return np.array(embedding, dtype=np.float32).tobytes()
+
     def upsert_chunk(self, chunk: Chunk):
         """Insert or update a chunk with its embedding."""
-        emb_blob = (
-            np.array(chunk.embedding, dtype=np.float32).tobytes()
-            if chunk.embedding else None
-        )
+        emb_blob = self._emb_blob(chunk.embedding)
         conn = sqlite3.connect(str(self.db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("""
@@ -371,10 +427,7 @@ class SessionVectorStore:
         conn = sqlite3.connect(str(self.db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         for chunk in chunks:
-            emb_blob = (
-                np.array(chunk.embedding, dtype=np.float32).tobytes()
-                if chunk.embedding else None
-            )
+            emb_blob = self._emb_blob(chunk.embedding)
             conn.execute("""
                 INSERT OR REPLACE INTO chunks (id, session_id, role, content,
                                                embedding, msg_id, chunk_idx, created_at)
@@ -435,6 +488,10 @@ class SessionVectorStore:
                 chunk_vec = np.frombuffer(emb_blob, dtype=np.float32)
             except ValueError:
                 # Corrupted embedding blob (wrong length) - skip this chunk
+                continue
+            if chunk_vec.shape[0] != query_vec.shape[0]:
+                # Dimension mismatch (e.g. residual vectors from a previous
+                # embedding model) — skip so np.dot can never raise.
                 continue
             chunk_norm = np.linalg.norm(chunk_vec)
             if chunk_norm == 0:
@@ -501,7 +558,13 @@ class SessionRAG:
         self.session_db = session_db
         self.chunker = chunker or SessionChunker()
         self.embedder = embedder or OpenAICompatibleEmbedder()
-        self.store = SessionVectorStore(rag_db)
+        # Bind the store's dimension/identity to the actual embedder so a backend
+        # change triggers a clean re-index instead of silently corrupting search.
+        self.store = SessionVectorStore(
+            rag_db,
+            dim=getattr(self.embedder, "dim", EMBEDDING_DIM),
+            embed_model=getattr(self.embedder, "model", None),
+        )
 
     def available(self) -> bool:
         """
