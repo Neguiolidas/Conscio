@@ -188,6 +188,20 @@ def test_run_awake_without_adapter_fails_cleanly(tmp_path):
         eng.close()
 
 
+def test_run_awake_without_adapter_still_reflects(tmp_path):
+    # Observation is always-on: an awake daemon with no inference backend must
+    # still perceive+reflect every cycle (only autonomy is gated), not idle.
+    eng = _engine(tmp_path)
+    try:
+        eng.wake()
+        before = len(eng.event_bus.query(type="reflection", limit=100000))
+        eng.run(world_state="host is hot")
+        after = len(eng.event_bus.query(type="reflection", limit=100000))
+        assert after == before + 1
+    finally:
+        eng.close()
+
+
 def test_act_lockdown_does_not_clobber_persisted_awake(tmp_path):
     # act() may persist a transient external state on lockdown; awake is
     # engine-scoped and must NOT be downgraded by that transient state's default.

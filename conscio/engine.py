@@ -780,6 +780,9 @@ class ConsciousnessEngine:
             return RunReport(stopped="asleep")
 
         if getattr(self, "_act_pipeline", None) is None:
+            # Awake but no inference backend: autonomy is impossible, yet
+            # observation stays always-on — perceive + reflect, then report.
+            self.reflect(world_state=world_state)
             return RunReport(stopped="no adapter attached")
         self.probe()
         loop = AutonomyLoop(self, self._act_pipeline, self._act_meter)
