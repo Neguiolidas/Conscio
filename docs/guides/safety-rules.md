@@ -17,6 +17,13 @@ just documented.
    `conscio-shell`, outside this repo.
 8. **Every external effect goes through the ActionLedger** — append-only,
    auditable.
+9. **Autonomous operation requires Awake Mode** — the self-initiated heartbeat
+   (`engine.run()` and the daemon) is gated by a persisted `awake` flag,
+   **default OFF**. Asleep, the loop perceives and `reflect()`s only — **zero**
+   arbiter/`act()`/dream-action. Awake is a deliberate, persisted, auditable
+   choice (`engine.wake()`/`sleep()`, `conscio awake|sleep`, an `awake:changed`
+   event). R9 governs *self-initiated* autonomy; a human's direct `engine.act()`
+   call remains available (already gated by R1–R8) and is not newly blocked.
 
 ## How the gates compose
 

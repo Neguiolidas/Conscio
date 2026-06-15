@@ -11,7 +11,7 @@ nothing else). It is designed to make small, local models punch far above their
 size by giving them memory, self-judgment, and procedural skill — and to prove
 that claim by measurement, not assertion.
 
-- **Current release:** `v1.4.0` — "Attune" (offline-by-default, opt-in model-context detection across registry / config / live local backends; **frontier inference adapters — Claude (Anthropic) + Gemini (Google) — alongside the local ones**; backend-agnostic, dimension-safe session-RAG embedder; `pip install conscio`; public plugin surface — adapters, sensors, tools; docs site; tag→PyPI release automation; 1070 tests, CI green, mypy a real gate)
+- **Current release:** `v1.5.0` — "Live" (**Awake Mode (R9)** — autonomy is a gated, persisted, default-OFF state; a **daemon** + `conscio-daemon` that runs Conscio as a living perceive→reflect→act process; reference **sensors** `HostSensor`/`AgentSensor`; **`WorkspaceContext`** environment/workspace awareness; **`OpenAIAdapter`** + any custom OpenAI-compatible cloud endpoint, alongside the v1.4 Claude/Gemini frontier adapters; `pip install conscio`; 1137 tests, CI green, mypy a real gate)
 
 ---
 
@@ -168,6 +168,39 @@ actions are *always* queued for a human (R6).
    the InferenceAdapter (localhost by default); shell lives in the sibling
    `conscio-shell`, outside this repo.
 8. **Every external effect goes through the ActionLedger** — append-only, auditable.
+9. **Autonomous operation requires Awake Mode (R9)** — the self-initiated
+   heartbeat (`engine.run()` and the daemon) only acts when the persisted `awake`
+   flag is on; **default OFF**. Asleep, it perceives and `reflect()`s only — zero
+   arbiter/act/dream. A human's direct `engine.act()` is not gated by R9.
+
+---
+
+## Live mode — daemon, sensors & Awake Mode (v1.5)
+
+Conscio can run as a **living process** that perceives the world each cycle and
+acts **only when explicitly awake** (R9, default OFF):
+
+```python
+from conscio import ConsciousnessEngine, HostSensor
+from conscio.daemon import Daemon
+
+engine = ConsciousnessEngine("glm-5.1", storage_path="~/.conscio/live")
+engine.wake()                              # R9: opt in to autonomy (persisted)
+Daemon(engine, sensors=[HostSensor()], interval=30).run()   # perceive→reflect→act
+```
+
+- **Awake Mode** — `engine.wake()` / `engine.sleep()` (or `conscio awake|sleep`);
+  asleep = advisory reflect-only, awake = full loop. The flag persists and emits
+  an auditable `awake:changed` event.
+- **Reference sensors** — `HostSensor` (read-only host facts) and `AgentSensor`
+  (read another agent's session state), both `Risk.LOW`; ship as `conscio.sensors`
+  entry points (`conscio plugins` lists them). Write your own `SensorAdapter`.
+- **Daemon** — `conscio-daemon --sensors host --interval 30` (add `--awake` to
+  enable autonomy; `--once` for a single cycle). Guarded sensors, graceful
+  `SIGTERM`, pidfile, resume-from-state on restart.
+- **Workspace awareness** — `WorkspaceContext` detects the active workspace root
+  and environment class (IDE/CLI vs workspace-switching agents) and signals
+  `workspace:changed`.
 
 ---
 
@@ -313,7 +346,7 @@ Docs site: guides, public-API reference, the claims ledger, and the bench report
 ## Testing
 
 ```bash
-# Full suite (1070 tests) — house rule: one file per pytest process
+# Full suite (1137 tests) — house rule: one file per pytest process
 # (low-RAM machines OOM on the full run; CI does the same)
 for f in tests/test_*.py; do pytest "$f" -q; done
 
@@ -353,6 +386,22 @@ session DB/RAG → git). Configure your agent's hook to fire on `session:end` /
 
 ## Audit history
 
+- **v1.5.0 — "Live"** — Conscio runs as a living process. **Awake Mode (R9)** —
+  a persisted, default-OFF gate: the self-initiated heartbeat (`engine.run()` /
+  the daemon) perceives + `reflect()`s only while asleep, full loop only when
+  awake; a direct human `act()` is not gated; toggling is auditable
+  (`awake:changed`). **Daemon** (`conscio/daemon.py` + `conscio-daemon`) polls a
+  guarded sensor list → assembles `world_state` → `engine.run()` → `on_cycle`
+  hook → workspace poll, with graceful `SIGTERM`, pidfile, and resume-from-state.
+  Reference **sensors** `HostSensor` (host facts) + `AgentSensor` (peer session
+  state), both read-only `Risk.LOW`, shipped as `conscio.sensors` entry points.
+  **`WorkspaceContext`** detects workspace root + env class (IDE/CLI vs
+  workspace-switching agents) and emits `workspace:changed`. **`OpenAIAdapter`**
+  (GPT, env key) joins the OpenAI-compatible adapter that already reaches any
+  custom cloud endpoint. A skeptical review (not just TDD) hardened three
+  live-only edges: awake survives an `act()` lockdown, the host port probe never
+  raises, an awake heartbeat with no backend still reflects. reflect() untouched,
+  zero new deps, R7 intact. +67 tests. **1137 total.**
 - **v1.4.0 — "Attune"** — model-context detection is offline & deterministic by
   default (known models resolve to the registry with zero filesystem/network I/O);
   config-file / LM Studio / GGUF auto-detection is opt-in (`autodetect` /

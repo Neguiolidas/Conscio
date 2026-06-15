@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.0] — 2026-06-15
+
+"Live" — Conscio stops being a one-shot advisory call and becomes a **living
+process**: it runs continuously as a daemon, **perceives** the world through
+pluggable sensors, and acts autonomously only when **explicitly awake** — a
+gated state, off by default, auditable as a single switch. No new cognition:
+`reflect()`, `act()`, dream, and metabolism are reused verbatim; this is the
+wiring that lets the existing loop run on live input under a hard safety gate.
+
+### Added
+
+- **Awake Mode (R9) — the master gate for autonomous operation.** A persisted
+  `awake` boolean on `ConsciousnessState` (**default OFF**), surfaced as
+  `engine.awake` / `engine.wake()` / `engine.sleep()` and `conscio awake|sleep`.
+  The self-initiated heartbeat (`engine.run()` and the daemon) is gated by it:
+  **asleep ⇒ perceive + `reflect()` only, zero arbiter/act/dream**; awake ⇒ the
+  full existing loop. A direct human `engine.act()` call is *not* gated (R9
+  governs self-initiated autonomy only). Toggling emits an auditable
+  `awake:changed` event; the flag survives `reflect()` rebuilds and restart.
+  **R9 is the first new safety rule since R8.**
+- **Reference sensors** (concrete implementations of the frozen v1.3
+  `SensorAdapter`): `HostSensor` — read-only host facts (load/disk/memory/top
+  processes + opt-in loopback service liveness), every probe guarded, non-Linux
+  safe, `Risk.LOW`; `AgentSensor` — read another Conscio-backed agent's session
+  state (open goals, last reflection, handoff) strictly read-only, `Risk.LOW`.
+  Both registered as `conscio.sensors` entry points (`conscio plugins` lists
+  them).
+- **Daemon** (`conscio/daemon.py` + `conscio-daemon` console script). A
+  persistent heartbeat: per cycle it polls a sensor **list** (each guarded — a
+  failing sensor never kills the loop), assembles `world_state`, calls
+  `engine.run()` (awake- and metabolic-gated), fires an `on_cycle` hook, and
+  polls the workspace. Graceful `SIGTERM`/`SIGINT`, advisory pidfile
+  (single-daemon-per-state-dir, stale-pid reclaim), heartbeat on shutdown, and
+  resume-from-persisted-state on boot. `conscio daemon …` delegates to it.
+- **`WorkspaceContext`** (`conscio/workspace.py`) — environment & workspace
+  awareness: resolves the active workspace root (explicit → `CONSCIO_WORKSPACE`
+  → git-root → cwd), a stable `id`, and an `EnvClass` (`STABLE` for IDE/CLI,
+  `SWITCHING` for workspace-hopping agents like OpenClaw/Hermes, `UNKNOWN`
+  treated as `SWITCHING`); emits `workspace:changed` when the root changes. The
+  seam the v1.6 structural layer keys its per-workspace scope/consent off.
+- **`OpenAIAdapter`** — GPT over the official OpenAI cloud endpoint with
+  `OPENAI_API_KEY` from the env, mirroring the Claude/Gemini convenience. The
+  generic `OpenAICompatAdapter` already reaches **any** OpenAI-compatible cloud
+  provider (Groq, Together, OpenRouter, DeepSeek, Fireworks, cloud vLLM…) via
+  `base_url` + Bearer `api_key`; `OpenAIAdapter` only pins the OpenAI default so
+  the env-key read is safe (the generic adapter defaults to localhost).
+
+### Safety
+
+- **R9 (Awake gate)** added to the non-negotiable safety rules; asleep =
+  advisory reflect-only, awake = full autonomy, default OFF. R1–R8 intact; R7
+  (no network in the ToolRegistry) unaffected — the daemon perceives locally and
+  acts only through the already-audited pipeline.
+
+### Notes
+
+- Zero new runtime dependencies (stdlib + numpy + sqlite3 core preserved).
+  `reflect()` semantics unchanged. No filesystem-watcher — polling only (robust
+  in containers/CI). Skeptical-review hardening folded in: `awake` survives an
+  `act()` lockdown that persists a transient state; the host port probe never
+  raises on a bad port; an awake heartbeat with no inference backend still
+  perceives+reflects (observation is always-on).
+
+---
+
 ## [1.4.0] — 2026-06-15
 
 "Attune" — Conscio perceives the context window of whatever model/backend it runs

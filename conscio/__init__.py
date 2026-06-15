@@ -6,7 +6,7 @@ and goal generation. Adapts behavior based on the underlying model's
 context window size.
 """
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 __author__ = "Neguiolidas / Neguitech"
 
 from .engine import ConsciousnessEngine
