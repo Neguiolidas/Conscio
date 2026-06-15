@@ -6,7 +6,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 from conscio.agency.adapter import AdapterBadResponse, AdapterConnectionError
+from conscio.agency import adapters
 from conscio.agency.adapters import (
+    AnthropicAdapter,
+    GeminiAdapter,
     LlamaCppAdapter,
     LMStudioAdapter,
     OllamaAdapter,
@@ -135,6 +138,120 @@ class TestLMStudio:
         LMStudioAdapter(model="local",
                         base_url=url + "/v1").generate("hi", schema={"x": {}})
         assert "response_format" not in handler.captured[0][1]
+
+
+class TestAnthropic:
+    def test_generate_messages_shape_and_response(self, server):
+        url, handler = server
+        handler.responses["/v1/messages"] = {
+            "content": [{"type": "text", "text": "claude says hi"}],
+            "usage": {"input_tokens": 9, "output_tokens": 4}}
+        adapter = AnthropicAdapter(base_url=url, model="claude-x",
+                                   api_key="sk-ant-test")
+        result = adapter.generate("ask", schema={"x": {}})
+        assert result.text == "claude says hi"
+        assert (result.tokens_in, result.tokens_out) == (9, 4)
+        path, payload = handler.captured[0]
+        assert path == "/v1/messages"
+        assert payload["model"] == "claude-x"
+        assert payload["messages"][0]["content"] == "ask"
+        assert payload["max_tokens"] == 512
+
+    def test_concatenates_text_blocks(self, server):
+        url, handler = server
+        handler.responses["/v1/messages"] = {
+            "content": [{"type": "text", "text": "a"},
+                        {"type": "text", "text": "b"}], "usage": {}}
+        out = AnthropicAdapter(base_url=url, model="m",
+                               api_key="k").generate("hi")
+        assert out.text == "ab"
+
+    def test_missing_key_raises(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        with pytest.raises(AdapterConnectionError):
+            AnthropicAdapter(model="m").generate("hi")
+
+    def test_reads_key_from_env(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "env-key")
+        assert AnthropicAdapter(model="m").api_key == "env-key"
+
+    def test_sends_versioned_auth_headers(self, monkeypatch):
+        captured = {}
+
+        def fake_post(url, payload, timeout, headers=None):
+            captured["url"], captured["headers"] = url, headers
+            return {"content": [{"type": "text", "text": "ok"}], "usage": {}}
+
+        monkeypatch.setattr(adapters, "_post_json", fake_post)
+        AnthropicAdapter(model="m", api_key="sk-ant-xyz").generate("hi")
+        assert captured["headers"]["x-api-key"] == "sk-ant-xyz"
+        assert "anthropic-version" in captured["headers"]
+        assert captured["url"].endswith("/v1/messages")
+
+    def test_caps(self):
+        caps = AnthropicAdapter(model="claude-x", api_key="k").capabilities()
+        assert caps.json_mode is True and caps.grammar is False
+        assert caps.model_name == "claude-x"
+
+
+class TestGemini:
+    def test_generate_parses_candidates(self, server):
+        url, handler = server
+        handler.responses["/v1beta/models/gemini-x:generateContent"] = {
+            "candidates": [{"content": {"parts": [{"text": "gemini hi"}]}}],
+            "usageMetadata": {"promptTokenCount": 11, "candidatesTokenCount": 5}}
+        adapter = GeminiAdapter(base_url=url, model="gemini-x", api_key="g-key")
+        result = adapter.generate("ask")
+        assert result.text == "gemini hi"
+        assert (result.tokens_in, result.tokens_out) == (11, 5)
+        path, payload = handler.captured[0]
+        assert path == "/v1beta/models/gemini-x:generateContent"
+        assert payload["contents"][0]["parts"][0]["text"] == "ask"
+
+    def test_schema_enables_native_json_mime(self, monkeypatch):
+        captured = {}
+
+        def fake_post(url, payload, timeout, headers=None):
+            captured["url"], captured["headers"], captured["payload"] = (
+                url, headers, payload)
+            return {"candidates": [{"content": {"parts": [{"text": "g"}]}}],
+                    "usageMetadata": {}}
+
+        monkeypatch.setattr(adapters, "_post_json", fake_post)
+        GeminiAdapter(model="gemini-x", api_key="g-key").generate(
+            "hi", schema={"x": {}})
+        assert "gemini-x:generateContent" in captured["url"]
+        assert captured["headers"]["x-goog-api-key"] == "g-key"
+        assert (captured["payload"]["generationConfig"]["responseMimeType"]
+                == "application/json")
+
+    def test_no_schema_omits_json_mime(self, monkeypatch):
+        captured = {}
+
+        def fake_post(url, payload, timeout, headers=None):
+            captured["payload"] = payload
+            return {"candidates": [{"content": {"parts": [{"text": "g"}]}}],
+                    "usageMetadata": {}}
+
+        monkeypatch.setattr(adapters, "_post_json", fake_post)
+        GeminiAdapter(model="m", api_key="k").generate("hi")
+        assert "responseMimeType" not in captured["payload"]["generationConfig"]
+
+    def test_missing_key_raises(self, monkeypatch):
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        with pytest.raises(AdapterConnectionError):
+            GeminiAdapter(model="m").generate("hi")
+
+    def test_reads_key_from_either_env(self, monkeypatch):
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.setenv("GEMINI_API_KEY", "gem-env")
+        assert GeminiAdapter(model="m").api_key == "gem-env"
+
+    def test_caps(self):
+        caps = GeminiAdapter(model="gemini-x", api_key="k").capabilities()
+        assert caps.json_mode is True and caps.grammar is False
+        assert caps.model_name == "gemini-x"
 
 
 class TestErrors:

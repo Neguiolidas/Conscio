@@ -11,7 +11,8 @@ Core stays zero-deps (stdlib + sqlite3); HTTP adapters use urllib only.
 from .act import ActPipeline, ActReport, ActStatus
 from .adapter import (AdapterCaps, AdapterError, InferenceAdapter,
                       InferenceResult, Meter, MeteredAdapter, MockAdapter)
-from .adapters import LlamaCppAdapter, OllamaAdapter, OpenAICompatAdapter
+from .adapters import (AnthropicAdapter, GeminiAdapter, LlamaCppAdapter,
+                       OllamaAdapter, OpenAICompatAdapter)
 from .breaker import DEFAULT_MAX_RETRIES, CircuitBreaker
 from .contracts import ActionProposal, AuditVerdict, ToolResult, validate
 from .gateway import GatewayError, OutputGateway
@@ -30,6 +31,7 @@ __all__ = [
     "ActPipeline", "ActReport", "ActStatus", "AdapterCaps", "AdapterError",
     "InferenceAdapter", "InferenceResult", "Meter", "MeteredAdapter",
     "MockAdapter", "LlamaCppAdapter", "OllamaAdapter", "OpenAICompatAdapter",
+    "AnthropicAdapter", "GeminiAdapter",
     "DEFAULT_MAX_RETRIES", "CircuitBreaker", "ActionProposal", "AuditVerdict",
     "ToolResult", "validate", "GatewayError", "OutputGateway",
     "compile_proposal_grammar", "compile_schema_grammar", "ActionLedger",

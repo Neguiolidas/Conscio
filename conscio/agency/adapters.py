@@ -7,6 +7,7 @@ operator's choice, never a requirement.
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -174,3 +175,116 @@ class LMStudioAdapter(OpenAICompatAdapter):
         # to emit one JSON object and repairs minor deviations, so we leave
         # the format unconstrained — robust across LM Studio versions.
         return None
+
+
+# ── Frontier (remote API) adapters ─────────────────────────────────────────
+# These reach a remote provider over the network — the operator's deliberate
+# choice, using their own key. Inference is infrastructure, not a tool an actor
+# can invoke, so R7 (no network in the ToolRegistry) is unaffected: this only
+# widens the InferenceAdapter carve-out from localhost to a configured frontier
+# API. Cognition (the prompt) is sent to that provider; that is the point of
+# integrating with Claude Code (Anthropic) and Antigravity (Gemini).
+
+
+class AnthropicAdapter(InferenceAdapter):
+    """Anthropic Claude — Messages API (``POST /v1/messages``).
+
+    The inference backend behind Claude Code. stdlib urllib only. The API key
+    comes from ``api_key=`` or the ``ANTHROPIC_API_KEY`` env var. Claude has no
+    ``response_format`` flag, so JSON is elicited by the gateway's prompt + repair
+    (same posture as LMStudioAdapter); ``json_mode`` is advertised because Claude
+    honours JSON instructions reliably.
+    """
+
+    def __init__(self, *, model: str = "claude-sonnet-4-6",
+                 base_url: str = "https://api.anthropic.com",
+                 api_key: str = "", timeout: float = 120.0,
+                 anthropic_version: str = "2023-06-01"):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        self.timeout = timeout
+        self.anthropic_version = anthropic_version
+
+    def generate(self, prompt, *, schema=None, grammar=None, max_tokens=512,
+                 temperature=0.2, stop=None) -> InferenceResult:
+        if not self.api_key:
+            raise AdapterConnectionError(
+                "ANTHROPIC_API_KEY not set (pass api_key= or set the env var)")
+        payload = {"model": self.model, "max_tokens": max_tokens,
+                   "temperature": temperature,
+                   "messages": [{"role": "user", "content": prompt}]}
+        if stop:
+            payload["stop_sequences"] = stop
+        headers = {"x-api-key": self.api_key,
+                   "anthropic-version": self.anthropic_version}
+        start = time.monotonic()
+        data = _post_json(f"{self.base_url}/v1/messages", payload,
+                          self.timeout, headers)
+        try:
+            blocks = data["content"]
+            text = "".join(b.get("text", "") for b in blocks
+                           if b.get("type") == "text")
+        except (KeyError, IndexError, TypeError) as exc:
+            raise AdapterBadResponse(f"unexpected payload: {exc}") from exc
+        usage = data.get("usage", {})
+        return InferenceResult(
+            text=str(text),
+            tokens_in=int(usage.get("input_tokens", 0)),
+            tokens_out=int(usage.get("output_tokens", 0)),
+            latency_ms=int((time.monotonic() - start) * 1000))
+
+    def capabilities(self) -> AdapterCaps:
+        return AdapterCaps(model_name=self.model, json_mode=True, grammar=False)
+
+
+class GeminiAdapter(InferenceAdapter):
+    """Google Gemini — generateContent API (``POST .../models/<m>:generateContent``).
+
+    The inference backend behind Antigravity. stdlib urllib only. The API key
+    comes from ``api_key=`` or ``GOOGLE_API_KEY`` / ``GEMINI_API_KEY``. Gemini
+    supports native JSON output via ``responseMimeType``, so JSON mode is
+    enforced when a schema is supplied.
+    """
+
+    def __init__(self, *, model: str = "gemini-2.5-pro",
+                 base_url: str = "https://generativelanguage.googleapis.com",
+                 api_key: str = "", timeout: float = 120.0):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.api_key = (api_key or os.environ.get("GOOGLE_API_KEY")
+                        or os.environ.get("GEMINI_API_KEY") or "")
+        self.timeout = timeout
+
+    def generate(self, prompt, *, schema=None, grammar=None, max_tokens=512,
+                 temperature=0.2, stop=None) -> InferenceResult:
+        if not self.api_key:
+            raise AdapterConnectionError(
+                "GOOGLE_API_KEY / GEMINI_API_KEY not set "
+                "(pass api_key= or set the env var)")
+        gen_config: dict = {"temperature": temperature,
+                            "maxOutputTokens": max_tokens}
+        if stop:
+            gen_config["stopSequences"] = stop
+        if schema is not None:
+            gen_config["responseMimeType"] = "application/json"
+        payload = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                   "generationConfig": gen_config}
+        headers = {"x-goog-api-key": self.api_key}
+        url = f"{self.base_url}/v1beta/models/{self.model}:generateContent"
+        start = time.monotonic()
+        data = _post_json(url, payload, self.timeout, headers)
+        try:
+            parts = data["candidates"][0]["content"]["parts"]
+            text = "".join(p.get("text", "") for p in parts)
+        except (KeyError, IndexError, TypeError) as exc:
+            raise AdapterBadResponse(f"unexpected payload: {exc}") from exc
+        usage = data.get("usageMetadata", {})
+        return InferenceResult(
+            text=str(text),
+            tokens_in=int(usage.get("promptTokenCount", 0)),
+            tokens_out=int(usage.get("candidatesTokenCount", 0)),
+            latency_ms=int((time.monotonic() - start) * 1000))
+
+    def capabilities(self) -> AdapterCaps:
+        return AdapterCaps(model_name=self.model, json_mode=True, grammar=False)
