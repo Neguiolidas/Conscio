@@ -152,8 +152,15 @@ class ContextManager:
         model_name: str,
         context_window: Optional[int] = None,
         storage_path: Optional[str | Path] = None,
+        base_url: Optional[str] = None,
+        autodetect: bool = False,
     ):
-        self.model_info = ModelRegistry.detect(model_name, context_window)
+        # Offline & deterministic by default: host-state auto-detection (config,
+        # LM Studio, GGUF) only runs when explicitly opted in via autodetect /
+        # CONSCIO_AUTODETECT, or when a base_url is given for a targeted probe.
+        self.model_info = ModelRegistry.detect(
+            model_name, context_window, base_url=base_url, autodetect=autodetect
+        )
         self.mode = self.model_info.mode
         self.budget = MODE_BUDGETS[self.mode]
         self.storage_path = Path(storage_path or "~/.hermes/consciousness").expanduser()

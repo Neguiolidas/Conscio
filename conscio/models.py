@@ -394,28 +394,38 @@ class ModelRegistry:
 
         return None
 
+    @staticmethod
+    def _env_truthy(name: str) -> bool:
+        """True if env var `name` is set to a truthy value (1/true/yes/on)."""
+        return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
     @classmethod
     def detect(cls, model_name: str, context_window: Optional[int] = None,
-               base_url: Optional[str] = None) -> ModelInfo:
-        """
-        Detect model info with auto-detection from endpoint.
+               base_url: Optional[str] = None,
+               autodetect: bool = False) -> ModelInfo:
+        """Resolve ModelInfo — offline & deterministic by default.
 
-        Resolution order:
-        1. Known model in registry (world recognition: strengths, notes)
-        # Resolution order:
-        # 1. Explicit context_window override (programmatic)
-        # 2. Environment variable CONSCIO_CONTEXT_WINDOW (any environment)
-        # 3. Config file ~/.config/conscio/config.yaml (persistent)
-        # 4. Endpoint probe (GET /v1/models → context_length)
-        # 5. LM Studio state (conversation JSON → llm.load.contextLength)
-        # 6. GGUF metadata scan (model file → context_length)
-        # 7. Known model registry (world recognition: strengths, notes)
-        # 8. Heuristic from model name
-        # 9. Default 128k fallback
+        The default path (no base_url, no autodetect) reads ONLY ``os.environ`` and
+        the in-process registry — zero filesystem, zero network — so engine and
+        context construction is host-independent and reproducible:
+
+            1. explicit ``context_window`` argument     (programmatic override)
+            2. env ``CONSCIO_CONTEXT_WINDOW``           (explicit, no I/O)
+            3. endpoint probe of ``base_url``, if given (explicit, targeted network)
+            4. [opt-in only] config.json -> LM Studio state -> GGUF scan,
+               reachable via ``autodetect=True`` or env ``CONSCIO_AUTODETECT``
+            5. known-model registry                     (curated truth)
+            6. heuristic from the model name
+            7. 128k fallback
+
+        Ambient host-state reads (config file, LM Studio, GGUF) are gated behind the
+        explicit opt-in. An explicit ``base_url`` enables only the probe of THAT
+        endpoint, never a ``$HOME`` scan. GGUF reports a model's architectural MAX,
+        so it is consulted last and labelled as such.
         """
         info = cls.lookup(model_name)
 
-        # 1. Explicit override takes priority
+        # 1. Explicit override takes priority.
         if context_window is not None:
             mode = cls.detect_mode(context_window)
             if info is not None:
@@ -433,7 +443,7 @@ class ModelRegistry:
                 notes="Context window provided by user.",
             )
 
-        # 2. Environment variable CONSCIO_CONTEXT_WINDOW
+        # 2. Environment variable CONSCIO_CONTEXT_WINDOW (explicit, no I/O).
         env_ctx = os.environ.get("CONSCIO_CONTEXT_WINDOW")
         if env_ctx:
             try:
@@ -452,21 +462,7 @@ class ModelRegistry:
             except ValueError:
                 pass
 
-        # 3. Config file ~/.config/conscio/config.yaml
-        config_ctx = cls._read_config_context(model_name)
-        if config_ctx is not None:
-            mode = cls.detect_mode(config_ctx)
-            strengths = info.strengths if info else []
-            notes = f"Context window from config file: {config_ctx}."
-            return ModelInfo(
-                name=model_name,
-                context_window=config_ctx,
-                mode=mode,
-                strengths=strengths,
-                notes=notes,
-            )
-
-        # Try endpoint probe if base_url provided
+        # 3. Explicit, targeted endpoint probe — only the URL the caller named.
         if base_url:
             endpoint_ctx = cls.query_context_from_endpoint(base_url, model_name)
             if endpoint_ctx is not None:
@@ -483,43 +479,61 @@ class ModelRegistry:
                     notes=notes,
                 )
 
-        # Try LM Studio active state (conversation config)
-        lmstudio_ctx = cls.query_context_from_lmstudio(model_name)
-        if lmstudio_ctx is not None:
-            mode = cls.detect_mode(lmstudio_ctx)
-            strengths = info.strengths if info else []
-            notes = f"Context window auto-detected from LM Studio state: {lmstudio_ctx}."
-            if info:
-                notes += f" Original registry: {info.context_window}."
-            return ModelInfo(
-                name=model_name,
-                context_window=lmstudio_ctx,
-                mode=mode,
-                strengths=strengths,
-                notes=notes,
-            )
+        # 4. OPT-IN ambient host-state path (autodetect=True or CONSCIO_AUTODETECT).
+        #    These reads touch $HOME, so they are NEVER on the default path.
+        if autodetect or cls._env_truthy("CONSCIO_AUTODETECT"):
+            # 4a. Config file (explicit user value).
+            config_ctx = cls._read_config_context(model_name)
+            if config_ctx is not None:
+                mode = cls.detect_mode(config_ctx)
+                strengths = info.strengths if info else []
+                notes = f"Context window from config file: {config_ctx}."
+                return ModelInfo(
+                    name=model_name,
+                    context_window=config_ctx,
+                    mode=mode,
+                    strengths=strengths,
+                    notes=notes,
+                )
 
-        # Try GGUF metadata scan (local model files)
-        gguf_ctx = cls.query_context_from_gguf(model_name)
-        if gguf_ctx is not None:
-            mode = cls.detect_mode(gguf_ctx)
-            strengths = info.strengths if info else []
-            notes = f"Context window auto-detected from GGUF metadata: {gguf_ctx}."
-            if info:
-                notes += f" Original registry: {info.context_window}."
-            return ModelInfo(
-                name=model_name,
-                context_window=gguf_ctx,
-                mode=mode,
-                strengths=strengths,
-                notes=notes,
-            )
+            # 4b. LM Studio active state (the loaded context — preferred over MAX).
+            lmstudio_ctx = cls.query_context_from_lmstudio(model_name)
+            if lmstudio_ctx is not None:
+                mode = cls.detect_mode(lmstudio_ctx)
+                strengths = info.strengths if info else []
+                notes = f"Context window auto-detected from LM Studio state: {lmstudio_ctx}."
+                if info:
+                    notes += f" Original registry: {info.context_window}."
+                return ModelInfo(
+                    name=model_name,
+                    context_window=lmstudio_ctx,
+                    mode=mode,
+                    strengths=strengths,
+                    notes=notes,
+                )
 
-        # Known model (world recognition)
+            # 4c. GGUF metadata scan — architectural MAX (may exceed active ctx).
+            gguf_ctx = cls.query_context_from_gguf(model_name)
+            if gguf_ctx is not None:
+                mode = cls.detect_mode(gguf_ctx)
+                strengths = info.strengths if info else []
+                notes = (f"Context window from GGUF architectural max: {gguf_ctx} "
+                         f"(may exceed the active/loaded context).")
+                if info:
+                    notes += f" Original registry: {info.context_window}."
+                return ModelInfo(
+                    name=model_name,
+                    context_window=gguf_ctx,
+                    mode=mode,
+                    strengths=strengths,
+                    notes=notes,
+                )
+
+        # 5. Known model (curated registry truth) — deterministic.
         if info is not None:
             return info
 
-        # Heuristic from name
+        # 6. Heuristic from name.
         ctx = cls._extract_context_from_name(model_name)
         mode = cls.detect_mode(ctx)
         return ModelInfo(

@@ -48,9 +48,9 @@ def test_tier_action_is_nonempty_advisory_text():
         assert MetabolicContext.tier_action(st)
 
 
-def test_context_manager_metabolic_state(monkeypatch, tmp_path):
-    from conscio.models import ModelRegistry
-    monkeypatch.setattr(ModelRegistry, "_CONFIG_PATHS", [tmp_path / "nope.yaml"])
+def test_context_manager_metabolic_state(tmp_path):
+    # No config/host-state isolation needed: detect() is offline-by-default, so a
+    # known model resolves to the registry (131k) regardless of the dev's machine.
     from conscio.context_manager import ContextManager
     cm = ContextManager("glm-5.1", storage_path=tmp_path)  # 131k window
     # 80k of 131k ≈ 61% → FATIGUE
