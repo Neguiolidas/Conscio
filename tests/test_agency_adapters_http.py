@@ -13,6 +13,7 @@ from conscio.agency.adapters import (
     LlamaCppAdapter,
     LMStudioAdapter,
     OllamaAdapter,
+    OpenAIAdapter,
     OpenAICompatAdapter,
 )
 
@@ -252,6 +253,103 @@ class TestGemini:
         caps = GeminiAdapter(model="gemini-x", api_key="k").capabilities()
         assert caps.json_mode is True and caps.grammar is False
         assert caps.model_name == "gemini-x"
+
+
+class TestOpenAICloudEndpoint:
+    """OpenAICompatAdapter reaches ANY cloud provider: custom base_url + Bearer key.
+
+    This is the 'qualquer endpoint customizado na nuvem' guarantee — the generic
+    adapter already speaks to OpenAI, Groq, Together, OpenRouter, DeepSeek, etc.
+    over HTTPS with a Bearer key, no localhost requirement.
+    """
+
+    def test_custom_cloud_endpoint_sends_bearer_auth(self, monkeypatch):
+        captured = {}
+
+        def fake_post(url, payload, timeout, headers=None):
+            captured["url"], captured["headers"] = url, headers
+            return {"choices": [{"message": {"content": "ok"}}], "usage": {}}
+
+        monkeypatch.setattr(adapters, "_post_json", fake_post)
+        OpenAICompatAdapter(
+            model="llama-3.3-70b",
+            base_url="https://api.groq.com/openai/v1",
+            api_key="gsk-test",
+        ).generate("hi")
+        assert captured["url"] == "https://api.groq.com/openai/v1/chat/completions"
+        assert captured["headers"]["Authorization"] == "Bearer gsk-test"
+
+    def test_no_key_omits_auth_header(self, monkeypatch):
+        captured = {}
+
+        def fake_post(url, payload, timeout, headers=None):
+            captured["headers"] = headers
+            return {"choices": [{"message": {"content": "ok"}}], "usage": {}}
+
+        monkeypatch.setattr(adapters, "_post_json", fake_post)
+        OpenAICompatAdapter(
+            model="m", base_url="http://localhost:8000/v1").generate("hi")
+        assert "Authorization" not in (captured["headers"] or {})
+
+
+class TestOpenAI:
+    """OpenAIAdapter — GPT over the official cloud endpoint (env-key convenience)."""
+
+    def test_default_base_url_is_openai_cloud(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
+        adapter = OpenAIAdapter()
+        assert adapter.base_url == "https://api.openai.com/v1"
+        assert adapter.model == "gpt-4o"
+
+    def test_reads_key_from_env(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+        assert OpenAIAdapter().api_key == "sk-env"
+
+    def test_explicit_key_beats_env(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+        assert OpenAIAdapter(api_key="sk-explicit").api_key == "sk-explicit"
+
+    def test_missing_key_raises(self, monkeypatch):
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        with pytest.raises(AdapterConnectionError):
+            OpenAIAdapter().generate("hi")
+
+    def test_sends_bearer_and_gpt_model_on_chat_completions(self, monkeypatch):
+        captured = {}
+
+        def fake_post(url, payload, timeout, headers=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["payload"] = payload
+            return {"choices": [{"message": {"content": "gpt says hi"}}],
+                    "usage": {"prompt_tokens": 6, "completion_tokens": 2}}
+
+        monkeypatch.setattr(adapters, "_post_json", fake_post)
+        out = OpenAIAdapter(model="gpt-4o", api_key="sk-test").generate("ask")
+        assert out.text == "gpt says hi"
+        assert (out.tokens_in, out.tokens_out) == (6, 2)
+        assert captured["url"] == "https://api.openai.com/v1/chat/completions"
+        assert captured["headers"]["Authorization"] == "Bearer sk-test"
+        assert captured["payload"]["model"] == "gpt-4o"
+
+    def test_keeps_json_object_response_format(self, monkeypatch):
+        # Real OpenAI supports response_format=json_object (unlike LM Studio,
+        # which OpenAIAdapter must NOT inherit the override from).
+        captured = {}
+
+        def fake_post(url, payload, timeout, headers=None):
+            captured["payload"] = payload
+            return {"choices": [{"message": {"content": "{}"}}], "usage": {}}
+
+        monkeypatch.setattr(adapters, "_post_json", fake_post)
+        OpenAIAdapter(api_key="k").generate("hi", schema={"x": {}})
+        assert captured["payload"]["response_format"] == {"type": "json_object"}
+
+    def test_caps(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "k")
+        caps = OpenAIAdapter(model="gpt-4o").capabilities()
+        assert caps.json_mode is True and caps.grammar is False
+        assert caps.model_name == "gpt-4o"
 
 
 class TestErrors:
