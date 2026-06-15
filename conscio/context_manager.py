@@ -75,6 +75,7 @@ class ConsciousnessState:
     self_prompt: str = ""              # Top self-prompt question (v0.7)
     dream_recommended: str = ""        # Dream-recommended marker text (v0.7)
     action_lockdown: bool = False      # Circuit breaker latch (v1.0, blueprint §5)
+    awake: bool = False                # Awake Mode gate (v1.5, R9): autonomous ops only when True
 
     def to_injection(self) -> str:
         """
@@ -186,6 +187,7 @@ class ContextManager:
         self_prompt: str = "",
         dream_recommended: str = "",
         action_lockdown: Optional[bool] = None,
+        awake: Optional[bool] = None,
     ) -> ConsciousnessState:
         """
         Build a ConsciousnessState, trimming each component to fit the budget.
@@ -229,6 +231,11 @@ class ContextManager:
                 if action_lockdown is None
                 else action_lockdown
             ),
+            awake=(
+                self._persisted_awake()
+                if awake is None
+                else awake
+            ),
         )
 
         # Final safety check — if total exceeds budget, truncate summary
@@ -244,6 +251,16 @@ class ContextManager:
         path = self.storage_path / "state_summary.json"
         try:
             return bool(json.loads(path.read_text()).get("action_lockdown", False))
+        except (OSError, ValueError, AttributeError):
+            return False
+
+    def _persisted_awake(self) -> bool:
+        """Read the Awake Mode flag from disk (v1.5, R9). Awake is a deliberate,
+        persisted user choice that must survive reflect() rebuilding the state —
+        same carry-forward pattern as the circuit-breaker latch above."""
+        path = self.storage_path / "state_summary.json"
+        try:
+            return bool(json.loads(path.read_text()).get("awake", False))
         except (OSError, ValueError, AttributeError):
             return False
 
@@ -271,6 +288,7 @@ class ContextManager:
             "self_prompt": state.self_prompt,
             "dream_recommended": state.dream_recommended,
             "action_lockdown": state.action_lockdown,
+            "awake": state.awake,
         }
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
         # Also write the human-readable injection for manual inspection
@@ -301,6 +319,7 @@ class ContextManager:
                 self_prompt=data.get("self_prompt", ""),
                 dream_recommended=data.get("dream_recommended", ""),
                 action_lockdown=data.get("action_lockdown", False),
+                awake=data.get("awake", False),
             )
 
         # Fallback: parse legacy text format (pre-v0.5.1 saves)
