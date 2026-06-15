@@ -132,9 +132,11 @@ class HostSensor(SensorAdapter):
         sig["services_up"] = float(up)
 
     def _port_alive(self, port: int) -> bool:
+        # OSError = refused/timeout; OverflowError/ValueError = bad port number
+        # (raised on some platforms) — all mean "not a live local service".
         try:
             with socket.create_connection(("127.0.0.1", port),
                                           timeout=self.connect_timeout):
                 return True
-        except OSError:
+        except (OSError, OverflowError, ValueError):
             return False
