@@ -282,7 +282,7 @@ class ModelRegistry:
 
     @classmethod
     def _read_gguf_context_length(cls, gguf_path: str) -> Optional[int]:
-        """Read context_length from GGUF file metadata."""
+        """Read context_length (architectural max) from GGUF file metadata."""
         try:
             with open(gguf_path, "rb") as f:
                 magic = f.read(4)
@@ -360,8 +360,11 @@ class ModelRegistry:
                                 search_dirs: Optional[list] = None) -> Optional[int]:
         """Search local directories for a GGUF model and read its context_length.
 
-        Works with LM Studio, Ollama, and any local GGUF model store.
-        Returns the model's max context_length from GGUF metadata, or None.
+        Scans ``*.gguf`` stores (LM Studio, raw downloads). Ollama keeps models as
+        extensionless sha256 blobs, so it is NOT covered here — reach Ollama via its
+        OpenAI-compatible endpoint (``base_url``, e.g. http://localhost:11434/v1).
+        Returns the model's architectural MAX context_length (which may exceed the
+        active/loaded context), or None.
         """
         dirs = search_dirs or cls._GGUF_SEARCH_DIRS
         model_norm = cls._normalize_model_name(model_name)
