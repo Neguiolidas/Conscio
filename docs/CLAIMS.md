@@ -4,7 +4,7 @@ A framework about self-knowledge should know what it can and cannot prove
 about itself. Every load-bearing claim Conscio makes, mapped to evidence.
 
 **Status:** PROVEN (test) · MEASURED (real backend) · PARTIAL · UNPROVEN.
-Updated each phase. Current as of **v1.4.0** (2026-06-15).
+Updated each phase. Current as of **v1.5.0** (2026-06-15).
 
 | # | Claim | Evidence | Status |
 |---|-------|----------|--------|
@@ -30,6 +30,13 @@ Updated each phase. Current as of **v1.4.0** (2026-06-15).
 | 20 | Config path has no optional-dependency footgun | config is stdlib JSON; `tests/test_model_auto_detect.py::TestJsonConfig::test_no_yaml_dependency_in_import_graph` | PROVEN |
 | 21 | The vector store cannot be corrupted by a changed embedding model | `tests/test_embedder.py::TestStoreDimSafety` (wrong-dim dropped on write, skipped on search, re-index on `(model,dim)` change) | PROVEN |
 | 22 | Runs on frontier APIs (Claude, Gemini) as well as local backends | `tests/test_agency_adapters_http.py::TestAnthropic`/`::TestGemini` (request shape + response parsing + auth headers + key handling, against a loopback fake) | PROVEN (wire format; live API is environmental) |
+| 23 | Reaches GPT + any OpenAI-compatible cloud endpoint (not just localhost) | `tests/test_agency_adapters_http.py::TestOpenAICloudEndpoint` (custom cloud `base_url` + Bearer key) / `::TestOpenAI` (`OpenAIAdapter` cloud default + `OPENAI_API_KEY`) | PROVEN (wire format) |
+| 24 | Autonomous operation is gated by Awake Mode (R9); default OFF | `tests/test_awake.py` (default asleep; asleep `run()` = reflect-only with zero act/dream; awake runs the loop; direct `act()` not gated) | PROVEN |
+| 25 | The awake flag persists (survives reflect rebuild, lockdown, and restart) | `tests/test_awake.py::test_wake_persists_across_reopen`/`::test_awake_survives_reflect_cycle`/`::test_act_lockdown_does_not_clobber_persisted_awake`; old states load asleep | PROVEN |
+| 26 | The daemon isolates a failing sensor and survives restart | `tests/test_daemon.py::test_failing_sensor_is_isolated`, `::test_run_once_then_shutdown_writes_heartbeat_and_releases_pid`; state resumes from existing persistence | PROVEN |
+| 27 | Reference sensors are read-only (`Risk.LOW`) and never raise | `tests/test_host_sensor.py` (every probe guarded, non-Linux/bad-port safe), `tests/test_agent_sensor.py::test_read_only_does_not_mutate_peer` (byte-identical peer) | PROVEN |
+| 28 | Workspace root + env class are detected and changes are signalled | `tests/test_workspace.py` (explicit/env/git/cwd resolution, EnvClass, `workspace:changed` on root change) | PROVEN |
+| 29 | A single daemon holds a state dir (advisory pidfile, stale-pid reclaim) | `tests/test_daemon.py::test_pidfile_blocks_second_daemon`/`::test_stale_pidfile_is_reclaimed` | PROVEN |
 
 ## Honest limits (what is NOT proven)
 

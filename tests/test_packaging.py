@@ -25,7 +25,13 @@ def test_console_scripts_declared():
     scripts = _pyproject()["project"]["scripts"]
     assert scripts["conscio"] == "conscio.cli:main"
     assert scripts["conscio-bench"] == "conscio.bench:main"
-    assert "conscio-daemon" not in scripts        # reserved for F5, not shipped
+    assert scripts["conscio-daemon"] == "conscio.daemon:main"   # shipped in F5 (v1.5)
+
+
+def test_reference_sensors_declared_as_entry_points():
+    eps = _pyproject()["project"]["entry-points"]["conscio.sensors"]
+    assert eps["host"] == "conscio.perception.host_sensor:HostSensor"
+    assert eps["agent"] == "conscio.perception.agent_sensor:AgentSensor"
 
 
 def test_py_typed_present_and_packaged():
@@ -52,6 +58,8 @@ def test_core_import_pulls_no_packaging_or_doc_tooling():
 
 def test_top_level_exports_new_surface():
     import conscio
-    for name in ("SensorAdapter", "PerceptionFrame", "MockSensor", "Risk"):
+    for name in ("SensorAdapter", "PerceptionFrame", "MockSensor", "Risk",
+                 "HostSensor", "AgentSensor", "WorkspaceContext", "EnvClass",
+                 "OpenAIAdapter"):
         assert name in conscio.__all__
         assert hasattr(conscio, name)
