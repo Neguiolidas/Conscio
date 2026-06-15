@@ -23,7 +23,8 @@ from .dreaming import DreamCycle, DreamReport
 from .agency import MockAdapter, OllamaAdapter, LlamaCppAdapter, \
     OpenAICompatAdapter, OpenAIAdapter, AnthropicAdapter, GeminiAdapter  # noqa: F401
 from .risk import Risk
-from .perception import SensorAdapter, PerceptionFrame, MockSensor
+from .perception import SensorAdapter, PerceptionFrame, MockSensor, \
+    HostSensor, AgentSensor  # noqa: F401
 # Plugin discovery lives under `conscio.plugins` (discover_adapters/sensors/tools)
 # — kept out of the top-level namespace to keep this import light.
 
@@ -58,6 +59,8 @@ __all__ = [
  "GeminiAdapter",
  "Risk",
  "SensorAdapter",
+ "HostSensor",
+ "AgentSensor",
  "PerceptionFrame",
  "MockSensor",
 ]
