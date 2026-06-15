@@ -70,6 +70,14 @@ def test_service_liveness_default_off_makes_no_socket(monkeypatch):
     assert called["n"] == 0
 
 
+def test_invalid_port_does_not_raise():
+    # An out-of-range port must degrade to "down", never raise (a bad port raises
+    # OverflowError, not OSError — the probe must swallow it too).
+    frame = HostSensor(services=[99999]).perceive()
+    assert isinstance(frame, PerceptionFrame)
+    assert any("99999" in o and "down" in o for o in frame.observations)
+
+
 def test_service_liveness_reports_open_and_closed_ports():
     # Bind a real loopback listener -> "up"; an unbound low port -> "down".
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

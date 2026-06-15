@@ -186,3 +186,26 @@ def test_run_awake_without_adapter_fails_cleanly(tmp_path):
         assert report.cycles == 0
     finally:
         eng.close()
+
+
+def test_act_lockdown_does_not_clobber_persisted_awake(tmp_path):
+    # act() may persist a transient external state on lockdown; awake is
+    # engine-scoped and must NOT be downgraded by that transient state's default.
+    from conscio.agency.act import ActReport, ActStatus
+
+    eng = _engine(tmp_path)
+    _attach(eng, tmp_path, [])
+    eng._skills = None                       # isolate from skill settle
+    try:
+        eng.wake()
+        eng._act_pipeline.act = lambda state: ActReport(
+            status=ActStatus.FAILED, lockdown=True)
+        eng.act(ConsciousnessState(active_goals=["x"]))   # external asleep state
+        assert eng.awake is True
+    finally:
+        eng.close()
+    reopened = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path / "s")
+    try:
+        assert reopened.awake is True        # persisted awake survived lockdown
+    finally:
+        reopened.close()

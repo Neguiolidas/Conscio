@@ -717,6 +717,9 @@ class ConsciousnessEngine:
             skills.settle(report)
         if report.lockdown:
             state.action_lockdown = True
+            # awake (R9) is engine-scoped, not a property of a transient act
+            # state — never let a passed-in state downgrade the persisted flag.
+            state.awake = self._state.awake
             self.ctx.save_state(state)
         return report
 
