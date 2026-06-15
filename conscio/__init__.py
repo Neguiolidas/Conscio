@@ -25,6 +25,7 @@ from .agency import MockAdapter, OllamaAdapter, LlamaCppAdapter, \
 from .risk import Risk
 from .perception import SensorAdapter, PerceptionFrame, MockSensor, \
     HostSensor, AgentSensor  # noqa: F401
+from .workspace import Workspace, WorkspaceContext, EnvClass  # noqa: F401
 # Plugin discovery lives under `conscio.plugins` (discover_adapters/sensors/tools)
 # — kept out of the top-level namespace to keep this import light.
 
@@ -61,6 +62,9 @@ __all__ = [
  "SensorAdapter",
  "HostSensor",
  "AgentSensor",
+ "Workspace",
+ "WorkspaceContext",
+ "EnvClass",
  "PerceptionFrame",
  "MockSensor",
 ]
