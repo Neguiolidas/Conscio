@@ -177,6 +177,40 @@ class LMStudioAdapter(OpenAICompatAdapter):
         return None
 
 
+class OpenAIAdapter(OpenAICompatAdapter):
+    """OpenAI's hosted API — GPT models over the official cloud endpoint.
+
+    A thin convenience over ``OpenAICompatAdapter`` that (1) defaults ``base_url``
+    to OpenAI's cloud endpoint and (2) reads ``OPENAI_API_KEY`` from the env. The
+    generic adapter cannot safely auto-read that key because *its* default
+    endpoint is localhost — reading an ambient OpenAI key there would leak it to a
+    local server. Pinning the cloud default makes the env-key read safe (the key
+    only ever travels to OpenAI). For any *other* OpenAI-compatible cloud provider
+    (Groq, Together, OpenRouter, DeepSeek, Fireworks, a cloud-hosted vLLM…), use
+    ``OpenAICompatAdapter`` directly with an explicit ``base_url`` + ``api_key``.
+
+    Unlike ``LMStudioAdapter`` it keeps the parent's ``response_format`` =
+    ``json_object`` — real OpenAI honours it.
+    """
+
+    def __init__(self, *, model: str = "gpt-4o",
+                 base_url: str = "https://api.openai.com/v1",
+                 api_key: str = "", timeout: float = 120.0):
+        super().__init__(
+            model=model, base_url=base_url,
+            api_key=api_key or os.environ.get("OPENAI_API_KEY", ""),
+            timeout=timeout)
+
+    def generate(self, prompt, *, schema=None, grammar=None, max_tokens=512,
+                 temperature=0.2, stop=None) -> InferenceResult:
+        if not self.api_key:
+            raise AdapterConnectionError(
+                "OPENAI_API_KEY not set (pass api_key= or set the env var)")
+        return super().generate(prompt, schema=schema, grammar=grammar,
+                                max_tokens=max_tokens, temperature=temperature,
+                                stop=stop)
+
+
 # ── Frontier (remote API) adapters ─────────────────────────────────────────
 # These reach a remote provider over the network — the operator's deliberate
 # choice, using their own key. Inference is infrastructure, not a tool an actor

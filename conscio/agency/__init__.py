@@ -12,7 +12,7 @@ from .act import ActPipeline, ActReport, ActStatus
 from .adapter import (AdapterCaps, AdapterError, InferenceAdapter,
                       InferenceResult, Meter, MeteredAdapter, MockAdapter)
 from .adapters import (AnthropicAdapter, GeminiAdapter, LlamaCppAdapter,
-                       OllamaAdapter, OpenAICompatAdapter)
+                       OllamaAdapter, OpenAIAdapter, OpenAICompatAdapter)
 from .breaker import DEFAULT_MAX_RETRIES, CircuitBreaker
 from .contracts import ActionProposal, AuditVerdict, ToolResult, validate
 from .gateway import GatewayError, OutputGateway
@@ -31,7 +31,7 @@ __all__ = [
     "ActPipeline", "ActReport", "ActStatus", "AdapterCaps", "AdapterError",
     "InferenceAdapter", "InferenceResult", "Meter", "MeteredAdapter",
     "MockAdapter", "LlamaCppAdapter", "OllamaAdapter", "OpenAICompatAdapter",
-    "AnthropicAdapter", "GeminiAdapter",
+    "OpenAIAdapter", "AnthropicAdapter", "GeminiAdapter",
     "DEFAULT_MAX_RETRIES", "CircuitBreaker", "ActionProposal", "AuditVerdict",
     "ToolResult", "validate", "GatewayError", "OutputGateway",
     "compile_proposal_grammar", "compile_schema_grammar", "ActionLedger",
