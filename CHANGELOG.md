@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.1] — 2026-06-17
+
+"Awake Hardening" — fixes from the first real-world Awake Mode run (in the
+Hermes-Agent environment). No new cognition; this closes correctness/safety
+holes the green test suite missed and that only a live deployment surfaced.
+
+### Fixed
+
+- **Meta-goal feedback loop → lockdown (#6).** Recurring act errors (e.g.
+  `act:tool:skeptic_fail`) were turned into an actor-executable
+  `Maintenance: fix_recurring_error` goal, which the model then ran *literally*
+  (`fs_read path="skeptic_fail"`) → more errors → more goals → lockdown spiral.
+  Error patterns no longer mint executable goals; they remain visible through
+  the existing diagnostic channels (meta-cognition, reflection, and
+  `AutoEvolution.observe_errors()` — a reviewed `PATTERN_LEARN` proposal queue
+  that never reaches the act pipeline). The general goal-provenance gate lands
+  in v1.6.
+- **Single `_RAG_DISABLED` sentinel.** The engine and content-layer each defined
+  their own `object()` sentinel; tests that imported the engine's and assigned it
+  to the content-layer leaked a bare object into `recall()` (swallowed by a broad
+  `except`), so RAG was never actually disabled — green but wrong. The sentinel is
+  now owned by `content_layer` and re-exported from `engine` (one object).
+- **CLI storage no longer ephemeral.** The default storage dir was a fresh
+  `mkdtemp()` per invocation, so `conscio awake` then `conscio sleep` never shared
+  state. It now persists under `HERMES_HOME` (default `~/.hermes/consciousness`,
+  env-overridable), consistent with `session_lifecycle`/`session_rag`.
+- **CircuitBreaker quarantine-release crash.** The release path emitted an
+  event of type `"status"`, which is not in the event-bus whitelist and raised
+  `ValueError`. Emits a valid `"system"` event now.
+
+### Added
+
+- **Aggregate failure-rate brake (#8).** `ActBudget` gains `max_failure_rate`
+  (default `0.5`) and `min_attempts` (default `4`); the autonomy loop stops the
+  heartbeat (`stopped="failure_rate"`, plus a surfaced event) once the share of
+  failed cycles crosses the threshold. This complements the per-goal
+  `CircuitBreaker` (which only catches a *single* goal's consecutive failures)
+  by catching broad flailing across many distinct goals/tools — the field
+  failure mode. Set `max_failure_rate >= 1.0` to disable.
+- **Daemon adapter wiring.** The daemon can now build its inference adapter from
+  `~/.config/conscio/config.json` (or `--adapter/--base-url/--adapter-model`),
+  closing the v1.5 gap where an awake daemon had no backend; the heartbeat is
+  written every cycle so peers can read it.
+
+---
+
 ## [1.5.0] — 2026-06-15
 
 "Live" — Conscio stops being a one-shot advisory call and becomes a **living
