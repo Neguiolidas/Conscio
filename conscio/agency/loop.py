@@ -53,6 +53,12 @@ class GoalArbiter:
         return max(enumerate(goals), key=score)[1]
 
 
+# Act outcomes that count as a failed cycle for the aggregate brake. REJECTED
+# is included: a repeatedly skeptic-rejected proposal ("skeptic_fail") is the
+# field flailing mode, even though no tool ran. LOCKED stops the loop already.
+_FAILURE_STATUSES = frozenset({ActStatus.FAILED, ActStatus.REJECTED})
+
+
 @dataclass
 class ActBudget:
     """Binding metabolic budget for engine.run() (P3)."""
@@ -60,6 +66,13 @@ class ActBudget:
     max_llm_calls: int = 100
     max_tokens: int = 200_000
     max_wall_s: float = 600.0
+    # v1.5.1 (#8): aggregate failure-rate brake. Once at least `min_attempts`
+    # cycles have run, stop the heartbeat if the share of failed cycles reaches
+    # `max_failure_rate`. Complements (does not replace) the per-goal breaker:
+    # it catches broad flailing across many distinct goals/tools. Set
+    # max_failure_rate >= 1.0 to disable.
+    max_failure_rate: float = 0.5
+    min_attempts: int = 4
 
 
 @dataclass
@@ -69,6 +82,7 @@ class RunReport:
     llm_calls: int = 0
     tokens: int = 0
     wall_s: float = 0.0
+    failures: int = 0
     stopped: str = ""
 
 
@@ -100,6 +114,8 @@ class AutonomyLoop:
                 stopped = self._budget_stop(report, budget, max_cycles)
                 if stopped:
                     report.stopped = stopped
+                    if stopped == "failure_rate":
+                        self._emit_failure_brake(report)
                     break
                 self.engine.reflect(world_state=world_state)
                 state = self.engine.state
@@ -114,6 +130,8 @@ class AutonomyLoop:
                 act_report = self.engine.act()
                 report.reports.append(act_report)
                 report.cycles += 1
+                if act_report.status in _FAILURE_STATUSES:
+                    report.failures += 1
                 if (act_report.lockdown or state.action_lockdown
                         or act_report.status is ActStatus.LOCKED):
                     report.stopped = "lockdown"
@@ -130,6 +148,13 @@ class AutonomyLoop:
     @staticmethod
     def _budget_stop(report: RunReport, budget: ActBudget,
                      max_cycles: int) -> str:
+        # Aggregate failure-rate brake (#8) — checked first so broad flailing is
+        # reported as such, not as a generic budget exhaustion.
+        if (budget.max_failure_rate < 1.0
+                and report.cycles >= budget.min_attempts
+                and report.cycles > 0
+                and report.failures / report.cycles >= budget.max_failure_rate):
+            return "failure_rate"
         if report.cycles >= max_cycles:
             return "max_cycles"
         if report.llm_calls >= budget.max_llm_calls:
@@ -139,3 +164,22 @@ class AutonomyLoop:
         if report.wall_s >= budget.max_wall_s:
             return "max_wall_s"
         return ""
+
+    def _emit_failure_brake(self, report: RunReport) -> None:
+        """Surface the failure-rate trip so an operator/host sees why the
+        awake loop stopped (visible in the event log and heartbeat)."""
+        bus = getattr(self.engine, "event_bus", None)
+        if bus is None:
+            return
+        rate = report.failures / report.cycles if report.cycles else 0.0
+        try:
+            bus.emit(
+                type="system", category="system",
+                data={"message": "failure-rate brake: autonomous loop stopped",
+                      "failures": report.failures,
+                      "cycles": report.cycles,
+                      "failure_rate": round(rate, 3)},
+                priority=8,
+            )
+        except Exception:                       # a strict bus must not crash run()
+            pass
