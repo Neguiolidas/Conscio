@@ -18,6 +18,7 @@ from conscio.agency.adapter import MockAdapter
 from conscio.agency.loop import ActBudget
 from conscio.context_manager import ConsciousnessState
 from conscio.engine import ConsciousnessEngine
+from conscio.content_layer import _RAG_DISABLED
 
 _PROBES = [
     '{"status": "ok", "count": 3}',
@@ -39,7 +40,7 @@ def _engine(tmp_path, name="s"):
 
 
 def _attach(eng, tmp_path, script):
-    eng._session_rag = ConsciousnessEngine._RAG_DISABLED
+    eng.content_layer._session_rag = _RAG_DISABLED
     return eng.attach_adapter(MockAdapter(script=script),
                               sandbox_root=tmp_path / "sb")
 

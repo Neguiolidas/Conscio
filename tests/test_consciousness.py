@@ -600,22 +600,31 @@ class TestMetaGoalConnection:
         assert any(g.drive == Drive.EVOLUTION for g in active)
         assert any(g.description == "Evolve: weak_area — low confidence area" for g in active)
 
-    def test_frequent_error_generates_maintenance_goal(self, tmp_storage):
+    def test_frequent_error_does_not_create_executable_goal(self, tmp_storage):
+        """v1.5.1 #6: error patterns must NOT mint actor-executable maintenance
+        goals. That was the fix_recurring_error → literal-exec → lockdown loop
+        seen in the field. Errors still flow to evolution proposals (diagnostic
+        channel), never to the act pipeline.
+        """
         meta = MetaCognition(tmp_storage)
         goals = GoalGenerator(tmp_storage)
         engine = ConsciousnessEngine("glm-5.1", storage_path=tmp_storage)
 
         # Set up error patterns (at least 2 to meet min_count)
         meta.record_error("API timeout")
-        meta.record_error("API timeout")  # count过着100
+        meta.record_error("API timeout")
 
-        # Feed meta to goals
         engine.feed_meta_to_goals(meta, goals)
 
-        # Check that a maintenance goal was created
+        # No actor-executable goal minted from the error pattern
         active = goals.active_goals()
-        assert any(g.drive == Drive.MAINTENANCE for g in active)
-        assert any("API timeout" in g.description for g in active)
+        assert not any(g.drive == Drive.MAINTENANCE for g in active)
+        assert not any("API timeout" in g.description for g in active)
+
+        # Diagnostic channel intact: evolution still observes the error pattern
+        proposals = engine.evolution.observe_errors(meta)
+        assert proposals  # ≥1 PATTERN_LEARN proposal (reviewed queue, not actor)
+        engine.close()
 
     def test_drive_strength_adjustment(self, tmp_storage):
         meta = MetaCognition(tmp_storage)

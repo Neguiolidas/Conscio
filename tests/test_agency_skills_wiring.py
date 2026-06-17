@@ -8,6 +8,7 @@ import sqlite3
 import pytest
 
 from conscio import ConsciousnessEngine
+from conscio.engine import _RAG_DISABLED
 from conscio.agency.act import ActReport, ActStatus, goal_fingerprint
 from conscio.agency.adapter import MockAdapter
 from conscio.agency.skills import SkillLibrary
@@ -53,7 +54,7 @@ class TestFewShotInActorPrompt:
     def test_seeded_skill_reaches_actor_prompt(self, tmp_path):
         adapter = MockAdapter(script=[_proposal(), CHECKLIST_PASS])
         with ConsciousnessEngine("glm-5.1", storage_path=tmp_path) as eng:
-            eng._session_rag = ConsciousnessEngine._RAG_DISABLED
+            eng.content_layer._session_rag = _RAG_DISABLED
             eng.attach_adapter(adapter, sandbox_root=tmp_path / "sb")
             _seed_skill(eng)
             report = eng.act(_state())
@@ -66,7 +67,7 @@ class TestFewShotInActorPrompt:
     def test_no_skills_means_no_exemplars(self, tmp_path):
         adapter = MockAdapter(script=[_proposal(), CHECKLIST_PASS])
         with ConsciousnessEngine("glm-5.1", storage_path=tmp_path) as eng:
-            eng._session_rag = ConsciousnessEngine._RAG_DISABLED
+            eng.content_layer._session_rag = _RAG_DISABLED
             eng.attach_adapter(adapter, sandbox_root=tmp_path / "sb")
             eng.act(_state())
             prompt = adapter.calls[0]["prompt"]
@@ -76,7 +77,7 @@ class TestFewShotInActorPrompt:
 class TestSettleWiring:
     def test_act_settles_outcome_into_served_skills(self, tmp_path):
         with ConsciousnessEngine("glm-5.1", storage_path=tmp_path) as eng:
-            eng._session_rag = ConsciousnessEngine._RAG_DISABLED
+            eng.content_layer._session_rag = _RAG_DISABLED
             eng.attach_adapter(MockAdapter(script=[]),
                                sandbox_root=tmp_path / "sb")
             _seed_skill(eng)

@@ -3,6 +3,7 @@
 import json
 
 from conscio import ConsciousnessEngine
+from conscio.engine import _RAG_DISABLED
 from conscio.agency.adapter import MockAdapter
 from conscio.agency.loop import ActBudget
 from conscio.context_manager import ConsciousnessState
@@ -66,7 +67,7 @@ class TestProbe:
         """A6 guard: F1/F2-style attach+act consumes zero probe calls."""
         adapter = MockAdapter(script=[_proposal(), CHECKLIST_PASS])
         with ConsciousnessEngine("glm-5.1", storage_path=tmp_path) as eng:
-            eng._session_rag = ConsciousnessEngine._RAG_DISABLED
+            eng.content_layer._session_rag = _RAG_DISABLED
             eng.attach_adapter(adapter, sandbox_root=tmp_path / "sb")
             report = eng.act(ConsciousnessState(active_goals=["note it"]))
             assert report.status.value in ("proposed", "executed")
@@ -91,7 +92,7 @@ class TestRun:
             script += [_proposal(), OPEN_PASS]    # probe sets mode=open
         adapter = MockAdapter(script=script)
         with ConsciousnessEngine("glm-5.1", storage_path=tmp_path) as eng:
-            eng._session_rag = ConsciousnessEngine._RAG_DISABLED
+            eng.content_layer._session_rag = _RAG_DISABLED
             eng.attach_adapter(adapter, sandbox_root=tmp_path / "sb")
             eng.wake()
             eng.goals.add_user_goal("write a memory note")
@@ -107,7 +108,7 @@ class TestRun:
     def test_run_ledger_records_real_tier_and_adapter(self, tmp_path):
         script = list(ALL_PASS_PROBES) + [_proposal(), OPEN_PASS]
         with ConsciousnessEngine("glm-5.1", storage_path=tmp_path) as eng:
-            eng._session_rag = ConsciousnessEngine._RAG_DISABLED
+            eng.content_layer._session_rag = _RAG_DISABLED
             pipe = eng.attach_adapter(MockAdapter(script=script),
                                       sandbox_root=tmp_path / "sb")
             eng.wake()

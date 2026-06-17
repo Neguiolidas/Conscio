@@ -557,3 +557,28 @@ class TestLayerOf:
 
     def test_unrecognized_category_no_type_defaults_processing(self):
         assert layer_of("totally_unknown") == ContentLayer.PROCESSING
+
+
+class TestRagDisabledSentinelShared:
+    """v1.5.1: the RAG-disable sentinel must be ONE object across modules.
+
+    Hermes' refactor left two distinct `_RAG_DISABLED = object()` (engine +
+    content_layer). Tests that imported engine's sentinel and assigned it to
+    content_layer._session_rag did NOT actually disable RAG — the bare object
+    leaked into recall() and threw, swallowed by the except. Green, but wrong.
+    """
+
+    def test_sentinel_identity_is_shared(self):
+        from conscio.engine import _RAG_DISABLED as via_engine
+        from conscio.content_layer import _RAG_DISABLED as via_cl
+        assert via_engine is via_cl
+
+    def test_engine_sentinel_actually_disables_rag(self, tmp_path):
+        from conscio.engine import ConsciousnessEngine, _RAG_DISABLED
+        eng = ConsciousnessEngine("glm-5.1", storage_path=tmp_path)
+        try:
+            eng.content_layer._session_rag = _RAG_DISABLED
+            # disabled → property returns None, not the bare sentinel object
+            assert eng.content_layer.session_rag is None
+        finally:
+            eng.close()

@@ -13,6 +13,9 @@ import logging
 from enum import Enum
 from typing import Optional
 
+# Sentinel: setting _session_rag to this disables RAG permanently
+_RAG_DISABLED = object()
+
 
 class ContentLayer(Enum):
     ROUTINE = "routine"        # N-1: factual/system noise
@@ -101,6 +104,9 @@ class ContentLayerManager:
         """Lazily construct SessionRAG via the shared factory provider."""
         if self._session_rag is None and self._session_rag_provider is not None:
             self._session_rag = self._session_rag_provider()
+        # Return None if RAG is disabled (sentinel), not the sentinel itself
+        if self._session_rag is _RAG_DISABLED:
+            return None
         return self._session_rag
     
     def recall(
@@ -181,3 +187,13 @@ class ContentLayerManager:
                     attributes=info.get("attributes"),
                     state=info.get("state", ""),
                 )
+    
+    def close(self) -> None:
+        """Close SessionRAG resources (HTTP connections, etc.)."""
+        rag = self._session_rag
+        if rag is not None and hasattr(rag, 'close'):
+            try:
+                rag.close()
+            except Exception:
+                logging.warning("ContentLayerManager.close() failed", exc_info=True)
+        self._session_rag = None

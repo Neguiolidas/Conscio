@@ -3,12 +3,13 @@ from datetime import datetime, timedelta
 
 from conscio.timeutil import naive_utcnow
 from conscio.engine import ConsciousnessEngine
+from conscio.content_layer import _RAG_DISABLED
 from conscio.dreaming import DreamCycle
 
 
 def _engine(tmp_path):
     e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
-    e._session_rag = ConsciousnessEngine._RAG_DISABLED
+    e.content_layer._session_rag = _RAG_DISABLED
     return e
 
 
