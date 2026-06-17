@@ -91,6 +91,8 @@ class Daemon:
                 log.warning("workspace poll failed: %s", exc)
         result = self.engine.run(self.budget, world_state=world_state)
         self.cycles += 1
+        # Write heartbeat every cycle (not just on shutdown)
+        self._write_heartbeat()
         try:
             self.on_cycle(frames, result)
         except Exception as exc:            # a misbehaving hook is non-fatal
@@ -205,6 +207,104 @@ def _build_sensors(spec: str, *, agent_source: Optional[str]) -> list[SensorAdap
     return sensors
 
 
+# ── config loader (adapter block from ~/.config/conscio/config.json) ──────────
+
+_CONFIG_PATHS = [
+    Path.home() / ".config" / "conscio" / "config.json",
+    Path.home() / ".conscio" / "config.json",
+]
+
+def _load_config() -> dict:
+    """Load the first existing conscio config file. Returns {} on failure."""
+    for path in _CONFIG_PATHS:
+        if not path.exists():
+            continue
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+        except (OSError, ValueError):
+            continue
+    return {}
+
+
+def _build_adapter_from_config(cfg: dict, *, fallback_model: str):
+    """Build an InferenceAdapter from the config's 'adapter' block.
+
+    Returns (adapter, adapter_type_str) or (None, None) if no config adapter.
+    Config adapter keys: type (required), model, api_key, base_url.
+    CLI args always override config values.
+    """
+    adapter_cfg = cfg.get("adapter")
+    if not isinstance(adapter_cfg, dict):
+        return None, None
+    atype = adapter_cfg.get("type")
+    if not atype:
+        return None, None
+
+    from .agency.adapters import (
+        AnthropicAdapter, GeminiAdapter, LMStudioAdapter,
+        OllamaAdapter, OpenAIAdapter, OpenAICompatAdapter,
+    )
+
+    model = adapter_cfg.get("model") or fallback_model
+    api_key = adapter_cfg.get("api_key", "")
+    base_url = adapter_cfg.get("base_url")
+
+    if atype == "lmstudio":
+        return LMStudioAdapter(model=model,
+                                base_url=base_url or "http://localhost:1234/v1"), atype
+    if atype == "ollama":
+        return OllamaAdapter(model=model,
+                              base_url=base_url or "http://localhost:11434"), atype
+    if atype == "openai":
+        return OpenAIAdapter(model=model,
+                              base_url=base_url or "https://api.openai.com/v1",
+                              api_key=api_key), atype
+    if atype == "anthropic":
+        return AnthropicAdapter(model=model,
+                                 base_url=base_url or "https://api.anthropic.com",
+                                 api_key=api_key), atype
+    if atype == "gemini":
+        return GeminiAdapter(model=model,
+                              base_url=base_url or "https://generativelanguage.googleapis.com",
+                              api_key=api_key), atype
+    if atype == "openai-compat":
+        return OpenAICompatAdapter(model=model,
+                                    base_url=base_url or "http://localhost:8000/v1",
+                                    api_key=api_key), atype
+    log.warning("unknown adapter type %r in config; ignoring", atype)
+    return None, None
+
+
+def _build_adapter_from_cli(args, fallback_model: str):
+    """Build an InferenceAdapter from CLI --adapter flag."""
+    from .agency.adapters import (
+        AnthropicAdapter, GeminiAdapter, LMStudioAdapter,
+        OllamaAdapter, OpenAIAdapter, OpenAICompatAdapter,
+    )
+    adapter_model = args.adapter_model or fallback_model
+    if args.adapter == "lmstudio":
+        return LMStudioAdapter(model=adapter_model,
+                                base_url=args.base_url or "http://localhost:1234/v1")
+    if args.adapter == "ollama":
+        return OllamaAdapter(model=adapter_model,
+                              base_url=args.base_url or "http://localhost:11434")
+    if args.adapter == "openai":
+        return OpenAIAdapter(model=adapter_model,
+                              base_url=args.base_url or "https://api.openai.com/v1")
+    if args.adapter == "anthropic":
+        return AnthropicAdapter(model=adapter_model,
+                                 base_url=args.base_url or "https://api.anthropic.com")
+    if args.adapter == "gemini":
+        return GeminiAdapter(model=adapter_model,
+                              base_url=args.base_url or "https://generativelanguage.googleapis.com")
+    # openai-compat
+    return OpenAICompatAdapter(model=adapter_model,
+                                base_url=args.base_url or "http://localhost:8000/v1")
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     from .engine import ConsciousnessEngine
     from .workspace import WorkspaceContext
@@ -212,29 +312,69 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="conscio-daemon",
         description="Run Conscio as a living perceive→reflect→act heartbeat.")
-    parser.add_argument("--model", default=os.environ.get("CONSCIO_MODEL", "glm-5.1"))
+    parser.add_argument("--model", default=None,
+                        help="model name (default: config or CONSCIO_MODEL env or glm-5.1)")
     parser.add_argument("--storage", default=None)
-    parser.add_argument("--interval", type=float, default=5.0)
-    parser.add_argument("--sensors", default="host",
-                        help="comma list: host,agent")
+    parser.add_argument("--interval", type=float, default=None,
+                        help="seconds between heartbeats (default: config or 5)")
+    parser.add_argument("--sensors", default=None,
+                        help="comma list: host,agent (default: config or host)")
     parser.add_argument("--agent-source", default=None,
                         help="peer state dir for the 'agent' sensor")
     parser.add_argument("--budget-cycles", type=int, default=None,
                         help="max act cycles per heartbeat (awake only)")
     parser.add_argument("--once", action="store_true",
                         help="run a single cycle and exit (for testing)")
-    parser.add_argument("--awake", action="store_true",
+    parser.add_argument("--awake", action="store_true", default=None,
                         help="wake the engine before running (R9; default OFF)")
+    parser.add_argument("--adapter", default=None,
+                        choices=["lmstudio", "ollama", "openai-compat",
+                                 "openai", "anthropic", "gemini"],
+                        help="inference adapter (overrides config)")
+    parser.add_argument("--base-url", default=None,
+                        help="adapter base URL (overrides config)")
+    parser.add_argument("--adapter-model", default=None,
+                        help="model name for the adapter (overrides config)")
     args = parser.parse_args(argv)
 
-    engine = ConsciousnessEngine(args.model, storage_path=args.storage)
-    if args.awake:
+    # ── merge config (config < env < CLI) ──
+    cfg = _load_config()
+    if cfg.get("adapter"):
+        log.info("loaded adapter config from file: type=%s",
+                 cfg["adapter"].get("type", "?"))
+
+    model = (args.model
+             or cfg.get("model")
+             or os.environ.get("CONSCIO_MODEL", "glm-5.1"))
+    interval = (args.interval
+                if args.interval is not None
+                else cfg.get("interval", 5.0))
+    sensors_spec = (args.sensors
+                    or cfg.get("sensors", "host"))
+    awake = args.awake if args.awake is not None else cfg.get("awake", False)
+
+    engine = ConsciousnessEngine(model, storage_path=args.storage)
+
+    # ── attach adapter (CLI overrides config) ──
+    if args.adapter:
+        adapter = _build_adapter_from_cli(args, model)
+        engine.attach_adapter(adapter)
+        log.info("adapter attached from CLI: %s (%s)",
+                 args.adapter, args.adapter_model or model)
+    else:
+        adapter, atype = _build_adapter_from_config(cfg, fallback_model=model)
+        if adapter is not None:
+            engine.attach_adapter(adapter)
+            log.info("adapter attached from config: %s (%s)",
+                     atype, cfg["adapter"].get("model", model))
+
+    if awake:
         engine.wake()
-    sensors = _build_sensors(args.sensors, agent_source=args.agent_source)
+    sensors = _build_sensors(sensors_spec, agent_source=args.agent_source)
     budget = (ActBudget(max_cycles=args.budget_cycles)
               if args.budget_cycles else None)
     workspace = WorkspaceContext(emit=engine.event_bus.emit)
-    daemon = Daemon(engine, sensors=sensors, interval=args.interval,
+    daemon = Daemon(engine, sensors=sensors, interval=interval,
                     budget=budget, workspace=workspace)
     daemon.run(once=args.once)
     return 0

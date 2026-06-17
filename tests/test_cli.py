@@ -5,9 +5,27 @@ import subprocess
 import sys
 
 from conscio import __version__
-from conscio.cli import main
+from conscio.cli import main, _storage
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+class TestStorageDefault:
+    """v1.5.1: default CLI storage routes through HERMES_HOME (env-overridable)
+    rather than a hardcoded ~/.hermes path, matching session_lifecycle/session_rag.
+    """
+
+    def test_explicit_arg_wins(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "ignored"))
+        assert _storage(str(tmp_path / "explicit")) == str(tmp_path / "explicit")
+
+    def test_default_honors_hermes_home_env(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+        assert _storage("") == str(tmp_path / "home" / "consciousness")
+
+    def test_default_without_env_uses_dot_hermes(self, monkeypatch):
+        monkeypatch.delenv("HERMES_HOME", raising=False)
+        assert _storage("") == str(pathlib.Path.home() / ".hermes" / "consciousness")
 
 
 def test_version(capsys):

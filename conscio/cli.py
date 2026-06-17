@@ -6,14 +6,18 @@ verbatim to `conscio.bench` (no logic duplication). `info`/`reflect` build a
 ConsciousnessEngine offline (no LLM, no network) and default to an ephemeral
 storage dir so a quick CLI look never clobbers a real workspace.
 
+NOTE: as of v1.5.1, CLI commands default to the persistent storage dir
+(~/.hermes/consciousness) so that awake/sleep state survives across calls.
+
 Engine construction is deferred into the handlers, so `conscio version`,
 `conscio --help`, and `conscio plugins` never build an engine.
 """
 from __future__ import annotations
 
 import argparse
+import os
 import sys
-import tempfile
+from pathlib import Path
 
 from . import __version__
 
@@ -59,7 +63,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _storage(arg: str) -> str:
-    return arg or tempfile.mkdtemp(prefix="conscio-cli-")
+    if arg:
+        return arg
+    # Persistent default so awake/sleep state survives across CLI calls. Route
+    # through HERMES_HOME (default ~/.hermes) to match session_lifecycle/session_rag.
+    home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+    return str(home / "consciousness")
 
 
 def _note_if_unknown(model: str, model_info) -> None:

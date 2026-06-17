@@ -146,7 +146,7 @@ class CircuitBreaker:
         if released:
             self._conn.commit()
             self.event_bus.emit(
-                type="status", category="system",
+                type="system", category="system",
                 data={"message": "quarantine released",
                       "goal_fps": released})
         return released
