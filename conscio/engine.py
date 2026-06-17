@@ -35,6 +35,7 @@ from .semantic import SemanticEngine, ContradictionDetector
 from .output_filter import build_pipeline_from_dict
 from .token_tracker import TokenTracker
 from .content_layer import ContentLayerManager
+from .content_layer import _RAG_DISABLED as _RAG_DISABLED  # re-export (one sentinel)
 from .session_lifecycle import SessionLifecycle
 from .metabolic import MetabolicContext
 from .session_rag_factory import create_session_rag
@@ -44,6 +45,10 @@ if TYPE_CHECKING:
     from .session_lifecycle import SessionSummary
 
 logger = logging.getLogger(__name__)
+
+# RAG-disable sentinel is OWNED by content_layer and re-exported via the import
+# above, so `from conscio.engine import _RAG_DISABLED` yields the SAME object the
+# ContentLayerManager gate compares against (one sentinel, not two).
 
 
 class ConsciousnessEngine:
@@ -144,7 +149,6 @@ class ConsciousnessEngine:
         # v0.9: SessionLifecycle — unified session persistence hooks
         self.session_lifecycle = SessionLifecycle(engine=self)
 
-        self._session_rag = None
         self._state = self.ctx.load_state()
 
     # --- Meta-Cognition → Goal Generator Feed ---
@@ -165,15 +169,15 @@ class ConsciousnessEngine:
                 goals.generate_from_evolution(blind_spot, target="low confidence area")
                 active_descriptions.add(expected_desc)
 
-        # Generate MAINTENANCE goals from frequent errors
-        # GoalGenerator prefixes with "Maintenance:" — match that for dedup
-        for error in meta.frequent_errors(min_count=2):
-            expected_desc = f"Maintenance: fix_recurring_error \u2014 {error['pattern']} ({error['count']}x recurring)"
-            if expected_desc not in active_descriptions:
-                goals.generate_from_maintenance(
-                    "fix_recurring_error", f"{error['pattern']} ({error['count']}x recurring)"
-                )
-                active_descriptions.add(expected_desc)
+        # v1.5.1 (#6): error patterns do NOT mint actor-executable goals.
+        # Turning a recurring error (e.g. "act:tool:skeptic_fail") into a
+        # "Maintenance: fix_recurring_error" goal made the actor execute it
+        # literally (fs_read path="skeptic_fail") -> more errors -> lockdown loop.
+        # Errors already flow to the diagnostic channels -- meta_cognition
+        # storage, reflection, and AutoEvolution.observe_errors() (a reviewed
+        # PATTERN_LEARN proposal queue, never the act pipeline) -- so the signal
+        # is preserved without an executable goal. The full origin/provenance
+        # gate (self_prompt, evolution, etc.) lands in v1.6.
 
         # Modulate drive strengths based on average confidence (capped at 1.0)
         avg_conf = meta.average_confidence()
@@ -458,26 +462,6 @@ class ConsciousnessEngine:
         """
         return self._state.to_injection()
 
-    # Sentinel object: setting _session_rag to this disables RAG permanently
-    # (distinguishable from None which triggers lazy init).
-    _RAG_DISABLED = object()
-
-    @property
-    def session_rag(self):
-        """
-        Lazily construct SessionRAG via the shared factory, gated by
-        Ollama availability. The probe runs at most once per engine;
-        failures degrade gracefully to None.
-
-        Set ``engine._session_rag = ConsciousnessEngine._RAG_DISABLED``
-        to permanently disable RAG (useful in tests to avoid Ollama probes).
-        """
-        if self._session_rag is None:
-            self._session_rag = create_session_rag()
-        if self._session_rag is ConsciousnessEngine._RAG_DISABLED:
-            return None
-        return self._session_rag
-
     def recall(
         self,
         query: str,
@@ -545,7 +529,7 @@ class ConsciousnessEngine:
         """
         Record a session lifecycle event through Conscio.
 
-        Convenience method that uses this engine instance (no temp engine created).
+        Uses the engine's SessionLifecycle instance (callbacks wired, etc.).
 
         Args:
             event_type: "session:end" or "session:reset"
@@ -554,8 +538,7 @@ class ConsciousnessEngine:
         Returns:
             SessionSummary if successful, None if no data.
         """
-        from .session_lifecycle import record_session_lifecycle as _record
-        return _record(event_type, context, engine=self)
+        return self.session_lifecycle.record_session(event_type, context)
 
     def dream(self, dry_run: bool = False) -> "DreamReport":
         """
@@ -609,6 +592,11 @@ class ConsciousnessEngine:
                 mod.close()
             except Exception:
                 pass
+        # Close ContentLayerManager (SessionRAG HTTP connections)
+        try:
+            self.content_layer.close()
+        except Exception:
+            pass
         pipeline = getattr(self, "_act_pipeline", None)
         if pipeline is not None:
             for closer in (pipeline.ledger,

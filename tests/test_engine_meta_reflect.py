@@ -1,10 +1,12 @@
 # tests/test_engine_meta_reflect.py
 from conscio.engine import ConsciousnessEngine
+from conscio.content_layer import _RAG_DISABLED
 
 
 def _engine(tmp_path):
     e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
-    e._session_rag = ConsciousnessEngine._RAG_DISABLED
+    # Disable RAG to avoid Ollama probes in tests
+    e.content_layer._session_rag = _RAG_DISABLED
     return e
 
 

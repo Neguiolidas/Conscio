@@ -2,12 +2,13 @@
 import pytest
 
 from conscio.engine import ConsciousnessEngine
+from conscio.content_layer import _RAG_DISABLED
 
 
 @pytest.fixture
 def engine(tmp_path):
     e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
-    e._session_rag = ConsciousnessEngine._RAG_DISABLED  # pin RAG off → hermetic (no Ollama probe in tests)
+    e.content_layer._session_rag = _RAG_DISABLED  # pin RAG off → hermetic (no Ollama probe in tests)
     yield e
     e.close()
 
@@ -45,9 +46,9 @@ def test_recall_snippets_are_length_bounded(engine):
 
 
 def test_recall_graceful_when_rag_unavailable(engine):
-    # Fixture pins engine._session_rag = None (RAG unavailable).
+    # Fixture pins engine.content_layer._session_rag = None (RAG unavailable).
     # recall() must still return ContentStore FTS5 hits.
-    assert engine.session_rag is None
+    assert engine.content_layer.session_rag is None
     engine.content_store.index(label="n", content="latency spike happened", category="reflection")
     hits = engine.recall("latency spike", k=2)
     assert any("latency" in h for h in hits)
@@ -73,6 +74,7 @@ def test_reflect_injects_past_context(engine, monkeypatch):
 
 def test_recall_prioritizes_processing_layer_on_near_tie(tmp_path):
     from conscio.engine import ConsciousnessEngine
+    from conscio.content_layer import _RAG_DISABLED
     eng = ConsciousnessEngine(model_name="claude-opus-4-8", storage_path=tmp_path)
 
     # Both docs match the query. The ROUTINE doc is SHORTER (just the query terms),

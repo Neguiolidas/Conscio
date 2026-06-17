@@ -11,6 +11,7 @@ from conscio.agency.act import goal_fingerprint
 from conscio.agency.ledger import ActionLedger
 from conscio.agency.skills import SkillLibrary
 from conscio.engine import ConsciousnessEngine
+from conscio.content_layer import _RAG_DISABLED
 
 GOAL = "Investigate: anomaly in sandbox notes"
 
@@ -18,7 +19,7 @@ GOAL = "Investigate: anomaly in sandbox notes"
 @pytest.fixture
 def engine(tmp_path):
     e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
-    e._session_rag = ConsciousnessEngine._RAG_DISABLED
+    e.content_layer._session_rag = _RAG_DISABLED
     yield e
     e.close()
 

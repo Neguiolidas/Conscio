@@ -13,6 +13,7 @@ from datetime import datetime
 import pytest
 
 from conscio.engine import ConsciousnessEngine
+from conscio.content_layer import _RAG_DISABLED
 
 
 def _seed(engine, n_events=10_000, n_entities=1_000):
@@ -42,7 +43,7 @@ def _seed(engine, n_events=10_000, n_entities=1_000):
 @pytest.fixture
 def big_engine(tmp_path):
     e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
-    e._session_rag = ConsciousnessEngine._RAG_DISABLED  # pin RAG off → reflect()'s recall stays hermetic
+    e.content_layer._session_rag = _RAG_DISABLED  # pin RAG off → reflect()'s recall stays hermetic
     _seed(e)
     yield e
     e.close()
