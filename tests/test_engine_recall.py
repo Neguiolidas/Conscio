@@ -76,6 +76,7 @@ def test_recall_prioritizes_processing_layer_on_near_tie(tmp_path):
     from conscio.engine import ConsciousnessEngine
     from conscio.content_layer import _RAG_DISABLED
     eng = ConsciousnessEngine(model_name="claude-opus-4-8", storage_path=tmp_path)
+    eng.content_layer._session_rag = _RAG_DISABLED  # hermetic: no Ollama probe
 
     # Both docs match the query. The ROUTINE doc is SHORTER (just the query terms),
     # so BM25 ranks it higher pre-reorder — without the layer reorder it sorts first.
