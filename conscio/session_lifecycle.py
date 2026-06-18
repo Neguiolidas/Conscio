@@ -645,7 +645,7 @@ def format_handoff(summary: SessionSummary) -> str:
     lines = [
         f"# ◆ {date_str}",
         f"gen:{now} sid:{summary.session_id[:16]} mdl:{summary.model}",
-        f"msg:{summary.message_count} \"{summary.title[:50]}\"",
+        f"msg:{summary.message_count} \"{(summary.title or '')[:50]}\"",
         "",
     ]
 
