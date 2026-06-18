@@ -7,11 +7,25 @@ read-only, no-LLM, no-mutation structured snapshot the host pulls each turn:
 cognitive state + goals tagged by provenance (executable vs diagnostic, #7) +
 operational status (lockdown / failure-brake, #8).
 """
+import pathlib
+
 import pytest
 
 from conscio.content_layer import _RAG_DISABLED
 from conscio.engine import ConsciousnessEngine
 from conscio.goal_generator import GoalOrigin
+
+_GRAPH = pathlib.Path(__file__).resolve().parent / "fixtures" / "graph_small.json"
+_EXPECTED_KEYS = {"awake", "reflection", "meta", "goals", "coherence",
+                  "status", "structural", "recommendations"}
+
+
+def _assert_advisory_contract(eng):
+    adv = eng.advisory()                          # MUST NOT raise
+    assert isinstance(adv, dict)
+    assert set(adv) >= _EXPECTED_KEYS, _EXPECTED_KEYS - set(adv)
+    assert set(adv["status"]) >= {"action_lockdown", "dream_recommended", "brake"}
+    return adv
 
 
 @pytest.fixture
@@ -94,3 +108,34 @@ class TestAdvisoryIsCheap:
         engine.advisory()
         engine.advisory()
         assert len(engine.goals.active_goals()) == before
+
+
+class TestAdvisoryNeverRaises:
+    """I-C1/I-C2: advisory() returns the documented shape and NEVER raises across
+    degraded states. Offline twin of Hermet's live §9 probe 1 (they converge)."""
+
+    def test_try_keep_fresh_engine(self, engine):
+        adv = _assert_advisory_contract(engine)
+        assert adv["structural"] is None             # no graph loaded
+
+    def test_try_break_awake_on(self, engine):
+        engine.wake()
+        _assert_advisory_contract(engine)
+
+    def test_try_break_with_diagnostic_goal(self, engine):
+        engine.goals.add_user_goal("introspect", origin=GoalOrigin.SELF_PROMPT)
+        adv = _assert_advisory_contract(engine)
+        assert any(not g["executable"] for g in adv["goals"])
+
+    def test_try_break_with_graph_and_workspace(self, engine):
+        engine.load_structure(_GRAPH, workspace_id="wsA", root=engine.storage.parent)
+        adv = _assert_advisory_contract(engine)
+        assert adv["structural"] is not None
+        assert "drift" in adv["structural"] and "freshness" in adv["structural"]
+
+    def test_try_break_corrupt_drift_sidecar(self, engine):
+        # Corrupt the drift store, THEN load with a workspace: load tolerates the
+        # corrupt store and advisory() must still honor the contract, not raise.
+        (engine.storage / "structural_drift.json").write_text("{ not json")
+        engine.load_structure(_GRAPH, workspace_id="wsA", root=engine.storage.parent)
+        _assert_advisory_contract(engine)
