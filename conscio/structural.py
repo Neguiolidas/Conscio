@@ -141,7 +141,7 @@ class StructuralDistiller:
         raw = p.read_bytes()
         try:
             data = json.loads(raw)
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:  # B-013
             raise StructuralError(f"invalid JSON in {p}: {exc}") from exc
         return cls.from_dict(
             data, source_path=str(p), raw_bytes=raw, max_nodes=max_nodes)

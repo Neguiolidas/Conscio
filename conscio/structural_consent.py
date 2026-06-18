@@ -62,7 +62,7 @@ class StructuralConsent:
     def _load(self) -> dict[str, ConsentScope]:
         try:
             raw = json.loads(self._path.read_text())
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):     # B-013: ValueError covers UnicodeDecodeError
             return {}
         if not isinstance(raw, dict):
             return {}
