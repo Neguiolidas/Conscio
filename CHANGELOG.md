@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.0] — 2026-06-18
+
+"Structural Cognition" — slice 1 of 3: the pure distiller core. Turns a
+Graphify-format `graph.json` into a compact, ranked structural signal. No engine
+wiring yet — budget-adaptive injection (v1.7.1) and workspace-aware,
+consent-gated ingestion (v1.7.2) follow. Dependency-free; debt-zero.
+
+### Added
+
+- **`StructuralDistiller` (`conscio.structural`).** Distills a Graphify graph
+  (thousands of nodes) down to its curated hyperedges plus per-community
+  summaries — `distill()` returns the *full ranked* `StructuralSignal` (how much
+  to inject is the consumer's budget call, not the distiller's). A pure
+  `lookup(key)` data layer resolves any node / hyperedge / community id to detail
+  on demand (v1.7.1 will expose it as `engine.structural_lookup()`).
+- **Provenance + staleness.** The signal carries `built_at_commit` and a sha256
+  `content_hash` of the raw bytes, so a host can detect a stale graph versus the
+  working tree. Conscio surfaces staleness; it never runs Graphify itself.
+- **Public types:** `StructuralSignal`, `Hyperedge`, `CommunitySummary`,
+  `GraphNode`, `StructuralError` (a `ValueError` subclass).
+
+### Safety
+
+- **R10 — imported cognition is data, never code.** The graph is parsed with
+  `json` only; every field is inert untrusted data (a code-looking node label is
+  returned verbatim, never executed). No `networkx`, no Graphify runtime
+  dependency, no copied Graphify source — only its MIT *input format*.
+- **OOM guards.** `from_path` checks file size (`max_bytes`, default 64 MB)
+  *before* parsing; `max_nodes` (default 200k) caps the dominant collection;
+  malformed individual items are skipped defensively rather than crashing the
+  distill. Non-graph JSON raises `StructuralError`.
+
+---
+
 ## [1.6.0] — 2026-06-17
 
 "Structural Cognition" (field-driven slice) — turns Awake Mode from overhead
