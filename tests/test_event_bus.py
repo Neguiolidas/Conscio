@@ -279,6 +279,15 @@ class TestQuery:
         events = populated_bus.query(limit=2)
         assert len(events) <= 2
 
+    def test_try_break_negative_limit_is_bounded_not_unbounded(self, populated_bus):
+        """I-E2: SQLite LIMIT -1 means UNBOUNDED — a nonsensical negative limit
+        must not silently return the whole table."""
+        all_events = populated_bus.query(limit=1000, include_duplicates=True)
+        assert len(all_events) > 1                       # fixture has several
+        got = populated_bus.query(limit=-1, include_duplicates=True)
+        assert len(got) < len(all_events)                # not unbounded
+        assert len(got) == 0                             # clamped to empty
+
     def test_query_offset(self, populated_bus):
         """Offset parameter skips results."""
         page1 = populated_bus.query(limit=3, offset=0)

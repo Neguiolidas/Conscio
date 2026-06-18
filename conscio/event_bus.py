@@ -246,6 +246,10 @@ class EventBus:
         Returns:
             List of Event objects, newest first
         """
+        # SQLite treats LIMIT -1 as UNBOUNDED; a negative limit must stay bounded
+        # (I-E2). Clamp to 0 (returns nothing) rather than silently dumping the table.
+        limit = max(0, limit)
+
         conditions = []
         params: list = []
 
