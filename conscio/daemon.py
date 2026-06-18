@@ -31,6 +31,7 @@ from typing import Any, Callable, Optional, Sequence
 
 from .agency.loop import ActBudget, RunReport
 from .perception import PerceptionFrame, SensorAdapter
+from .structural_consent import sync_structure
 
 log = logging.getLogger("conscio.daemon")
 
@@ -56,6 +57,7 @@ class Daemon:
                  interval: float = 5.0, budget: Optional[ActBudget] = None,
                  on_cycle: Optional[Callable[[list, RunReport], Any]] = None,
                  workspace: Any = None,
+                 consent: Any = None,
                  pidfile: Optional[str | Path] = None,
                  heartbeat_path: Optional[str | Path] = None,
                  close_engine_on_shutdown: bool = True) -> None:
@@ -65,6 +67,8 @@ class Daemon:
         self.budget = budget
         self.on_cycle = on_cycle or (lambda frames, result: None)
         self.workspace = workspace
+        self.consent = consent                          # v1.7.2: structural consent
+        self._synced_ws_id: Optional[str] = None        # re-sync only on ws change
         storage = Path(getattr(engine, "storage", "."))
         self.pidfile = Path(pidfile) if pidfile else storage / "daemon.pid"
         self.heartbeat_path = (Path(heartbeat_path) if heartbeat_path
@@ -87,9 +91,16 @@ class Daemon:
         world_state = self.assemble(frames)
         if self.workspace is not None:
             try:
-                self.workspace.poll()
+                ws = self.workspace.poll()
+                # v1.7.2: re-sync structure only when the workspace id changes
+                # (STABLE syncs once; SWITCHING syncs on each switch — cheap).
+                if (self.consent is not None and ws is not None
+                        and ws.id != self._synced_ws_id):
+                    status = sync_structure(self.engine, ws, self.consent)
+                    self._synced_ws_id = ws.id
+                    log.info("structure sync [%s]: %s", ws.id[:8], status)
             except Exception as exc:
-                log.warning("workspace poll failed: %s", exc)
+                log.warning("workspace/consent sync failed: %s", exc)
         result = self.engine.run(self.budget, world_state=world_state)
         self.cycles += 1
         self._last_report = result
@@ -324,6 +335,7 @@ def _build_adapter_from_cli(args, fallback_model: str):
 def main(argv: Optional[Sequence[str]] = None) -> int:
     from .engine import ConsciousnessEngine
     from .workspace import WorkspaceContext
+    from .structural_consent import StructuralConsent, consent_path
 
     parser = argparse.ArgumentParser(
         prog="conscio-daemon",
@@ -390,8 +402,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     budget = (ActBudget(max_cycles=args.budget_cycles)
               if args.budget_cycles else None)
     workspace = WorkspaceContext(emit=engine.event_bus.emit)
+    consent = StructuralConsent(consent_path(engine.storage))   # v1.7.2
     daemon = Daemon(engine, sensors=sensors, interval=interval,
-                    budget=budget, workspace=workspace)
+                    budget=budget, workspace=workspace, consent=consent)
     daemon.run(once=args.once)
     return 0
 

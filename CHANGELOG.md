@@ -31,9 +31,23 @@ v1.7.x.
 - **Engine pull surfaces (`advisory()` siblings — read-only, no inference).**
   `engine.load_structure(path)` ingests + distils a graph (opt-in; nothing is
   injected until called); `engine.structural_lookup(id)` drills down on demand;
-  `engine.structural_signal()` returns the cached signal. `advisory()` gains a
-  `structural` block (`loaded`/`commit`/`hash`/counts, or `null`) for status +
-  staleness detection.
+  `engine.structural_signal()` returns the cached signal; `engine.unload_structure()`
+  drops it. `advisory()` gains a `structural` block (`loaded`/`commit`/`hash`/
+  counts, or `null`) for status + staleness detection.
+- **Workspace-aware, consent-gated ingestion (`conscio.structural_consent`).**
+  Which workspace's graph may be ingested is an access-control decision, made
+  per-`Workspace.id` and persisted. `StructuralConsent` (`ConsentScope.OFF`/
+  `PROJECT`/`PARENT`, **default OFF**), `sync_structure(engine, workspace,
+  consent)`, and a `conscio consent <off|project|parent>` operator command. The
+  daemon auto-loads the consented graph and re-syncs only on workspace change.
+
+### Security
+
+- **Switch-safe ingestion.** Switching into a workspace without consent **unloads**
+  any loaded graph — one project's structure never leaks into another. Reading the
+  parent multi-project folder happens only with explicit `PARENT` consent.
+  Ingestion is opt-in (default OFF); a malformed graph unloads and reports rather
+  than crashing the loop.
 - **Provenance + staleness.** The signal carries `built_at_commit` and a sha256
   `content_hash` of the raw bytes, so a host can detect a stale graph versus the
   working tree. Conscio surfaces staleness; it never runs Graphify itself.
