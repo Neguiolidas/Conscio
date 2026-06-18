@@ -53,6 +53,43 @@ def test_try_break_truncated_db_recovers(tmp_path):
     assert _corrupt_files(tmp_path)
 
 
+_JSON_SIDECARS = ("state_summary.json", "world_model.json", "meta_cognition.json")
+
+
+def test_try_break_binary_json_sidecars_construct(tmp_path):
+    # I-S4: a corrupt/binary JSON sidecar (state/world/meta) must not crash
+    # construction — the JSON twin of B-006 (read_text -> UnicodeDecodeError).
+    for name in _JSON_SIDECARS:
+        (tmp_path / name).write_bytes(b"\xff\xfe\x00 not json \xff")
+    eng = _engine(tmp_path)                              # must NOT raise
+    try:
+        assert isinstance(eng.advisory(), dict)
+    finally:
+        eng.close()
+
+
+def test_try_break_nondict_json_sidecars_construct(tmp_path):
+    # Valid JSON of the WRONG type ([]), not a dict: must fall to defaults, not
+    # crash on data.get(...) (AttributeError).
+    for name in _JSON_SIDECARS:
+        (tmp_path / name).write_text("[]")
+    eng = _engine(tmp_path)                              # must NOT raise
+    try:
+        assert isinstance(eng.advisory(), dict)
+    finally:
+        eng.close()
+
+
+def test_try_break_binary_legacy_txt_state_constructs(tmp_path):
+    # Legacy text state (pre-v0.5.1), corrupt/binary, with no json sidecar present.
+    (tmp_path / "state_summary.txt").write_bytes(b"\xff\xfe legacy \x00state")
+    eng = _engine(tmp_path)                              # must NOT raise
+    try:
+        assert isinstance(eng.advisory(), dict)
+    finally:
+        eng.close()
+
+
 def test_try_keep_healthy_db_not_quarantined(tmp_path):
     # A normal create + reopen must NOT quarantine a healthy DB.
     _engine(tmp_path).close()
