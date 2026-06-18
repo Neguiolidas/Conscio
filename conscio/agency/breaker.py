@@ -19,10 +19,10 @@ from __future__ import annotations
 import re
 import sqlite3
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..timeutil import naive_utc_from_epoch
 from .ledger import ActionLedger
 
 DEFAULT_MAX_RETRIES = 3        # fallback when no TrustMatrix is wired
@@ -156,7 +156,7 @@ class CircuitBreaker:
         tokens = set(_TOKEN_RE.findall(goal_text.lower()))
         if not tokens:
             return False
-        since = datetime.fromtimestamp(locked_at).isoformat()
+        since = naive_utc_from_epoch(locked_at).isoformat()
         try:
             events = self.event_bus.query(category="consciousness",
                                           since=since, limit=50)
