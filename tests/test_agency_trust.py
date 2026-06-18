@@ -175,6 +175,36 @@ def test_no_trip_evidence_caps_at_l2(tmp_path):
     led.close()
 
 
+# ── B-003b: tz-correct L3 trip window (I-A3) ─────────────────────────────
+
+
+def test_try_break_trips_window_counts_recent_trip_under_nonutc_tz(
+        monkeypatch, tmp_path):
+    """engine._trips_since must count a recent trip regardless of machine TZ.
+
+    Trip events are stored naive-UTC; the OLD code built the window boundary via
+    datetime.fromtimestamp(ts) (naive LOCAL), so under UTC+X the boundary landed in
+    the future and recent trips were undercounted -> L3 granted despite trips.
+    """
+    import time
+
+    from conscio.engine import ConsciousnessEngine
+
+    monkeypatch.setenv("TZ", "Asia/Tokyo")               # UTC+9
+    time.tzset()
+    eng = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
+    try:
+        eng.event_bus.emit(
+            type="error", category="system",
+            data={"msg": "Intractable dissonance on goal X"})
+        boundary = time.time() - 5                        # window opened 5s ago
+        assert eng._trips_since(boundary) >= 1            # OLD local-tz code -> 0
+    finally:
+        eng.close()
+        monkeypatch.delenv("TZ", raising=False)
+        time.tzset()
+
+
 def test_fast_path_requires_high_calibration(tmp_path):
     meta = MetaCognition(tmp_path)
     trust, led = _trust(tmp_path, meta)

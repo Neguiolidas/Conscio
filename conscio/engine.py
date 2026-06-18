@@ -12,11 +12,10 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
-from .timeutil import naive_utcnow
+from .timeutil import naive_utcnow, naive_utc_from_epoch
 
 from .context_manager import ContextManager
 from .inner_monologue import InnerMonologue
@@ -887,7 +886,7 @@ class ConsciousnessEngine:
 
     def _trips_since(self, ts: float) -> int:
         """Breaker trips since `ts` — feeds L3 earned autonomy (5.7)."""
-        since = datetime.fromtimestamp(ts).isoformat() if ts else None
+        since = naive_utc_from_epoch(ts).isoformat() if ts else None
         events = self.event_bus.query(type="error", category="system",
                                       since=since, limit=1000)
         return sum(1 for e in (events or [])
