@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from .guards import safe_read_json
+from .guards import read_json_dict
 
 # Entropy scoring (v0.4): higher entropy = more disordered = better prune candidate.
 HALFLIFE_DAYS = 7        # age normalization half-life
@@ -66,11 +66,16 @@ class WorldModel:
         self._data = self._load()
 
     def _load(self) -> dict:
-        """Load world model from disk."""
-        data = safe_read_json(self.path)            # None on any corruption
-        if data is not None:
-            return data
-        return {"entities": {}, "relations": [], "predictions": [], "prediction_log": []}
+        """Load world model from disk.
+
+        B-011: merge over the default skeleton so a valid-but-incomplete file
+        (legacy/migrated, missing relations/predictions/prediction_log) can't
+        KeyError on first use.
+        """
+        return read_json_dict(
+            self.path,
+            {"entities": {}, "relations": [], "predictions": [], "prediction_log": []},
+        )
 
     def _save(self) -> None:
         """Save world model to disk."""

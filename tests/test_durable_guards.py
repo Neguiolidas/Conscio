@@ -6,7 +6,7 @@ sentinel-as-unbounded) from resurfacing in NEW modules. The Wave-1/2 fixes solve
 import ast
 import pathlib
 
-from conscio.guards import clamp_int, safe_read_json
+from conscio.guards import clamp_int, read_json_dict, safe_read_json
 
 _CONSCIO = pathlib.Path(__file__).resolve().parent.parent / "conscio"
 
@@ -65,6 +65,39 @@ class TestSafeReadJson:
         p = tmp_path / "d.json"
         p.write_text('{"a": 1}')
         assert safe_read_json(p) == {"a": 1}
+
+
+# ── schema-drift / incomplete-JSON class: read_json_dict ─────────────────────
+class TestReadJsonDict:
+    _DEFAULT = {"entities": {}, "relations": [], "predictions": []}
+
+    def test_try_break_incomplete_fills_missing_keys(self, tmp_path):
+        p = tmp_path / "w.json"
+        p.write_text('{"entities": {"bot": {"type": "system"}}}')
+        out = read_json_dict(p, dict(self._DEFAULT))
+        assert out["entities"] == {"bot": {"type": "system"}}   # loaded wins
+        assert out["relations"] == [] and out["predictions"] == []  # filled
+
+    def test_try_break_empty_dict_gets_full_skeleton(self, tmp_path):
+        p = tmp_path / "w.json"
+        p.write_text("{}")
+        assert read_json_dict(p, dict(self._DEFAULT)) == self._DEFAULT
+
+    def test_try_break_missing_file_is_default(self, tmp_path):
+        assert read_json_dict(tmp_path / "nope.json",
+                              dict(self._DEFAULT)) == self._DEFAULT
+
+    def test_try_break_corrupt_is_default(self, tmp_path):
+        p = tmp_path / "w.json"
+        p.write_bytes(b"\xff\xfe not json")
+        assert read_json_dict(p, dict(self._DEFAULT)) == self._DEFAULT
+
+    def test_does_not_mutate_caller_default(self, tmp_path):
+        p = tmp_path / "w.json"
+        p.write_text('{"entities": {"x": 1}}')
+        default = dict(self._DEFAULT)
+        read_json_dict(p, default)
+        assert default["entities"] == {}            # caller default untouched
 
 
 # ── sentinel-as-unbounded class: clamp_int ───────────────────────────────────
