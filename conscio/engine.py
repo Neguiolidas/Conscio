@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -52,6 +53,38 @@ if TYPE_CHECKING:
     from .session_lifecycle import SessionSummary
 
 logger = logging.getLogger(__name__)
+
+
+def _quarantine_if_corrupt(db_path: Path) -> Optional[Path]:
+    """If ``db_path`` exists but is not a usable sqlite DB, move it aside so a fresh
+    one is created — power-loss-mid-write or a garbage file must never crash
+    construction (I-S4). The corrupt file (and any ``-wal``/``-shm``) is PRESERVED
+    as ``<name>.corrupt-<ts>`` for forensics, never deleted. Returns the quarantine
+    path, or None when the DB is healthy / absent.
+    """
+    if not db_path.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(db_path))
+        try:
+            row = conn.execute("PRAGMA quick_check").fetchone()
+        finally:
+            conn.close()
+        if row and row[0] == "ok":
+            return None                              # healthy
+    except sqlite3.DatabaseError:
+        pass                                         # not a database / malformed
+    stamp = naive_utcnow().strftime("%Y%m%d%H%M%S%f")
+    dest = db_path.with_name(f"{db_path.name}.corrupt-{stamp}")
+    db_path.rename(dest)                             # writable dir is a precondition
+    for sidecar in ("-wal", "-shm"):
+        side = db_path.with_name(db_path.name + sidecar)
+        if side.exists():
+            try:
+                side.rename(dest.with_name(dest.name + sidecar))
+            except OSError:
+                pass                                 # best-effort sidecar move
+    return dest
 
 # RAG-disable sentinel is OWNED by content_layer and re-exported via the import
 # above, so `from conscio.engine import _RAG_DISABLED` yields the SAME object the
@@ -111,7 +144,21 @@ class ConsciousnessEngine:
 
         # --- v0.2: SQLite-backed modules (shared DB) ---
         db_path = self.storage / "conscio.db"
+        # I-S4: a corrupt store (power-loss-mid-write, garbage file) must not crash
+        # construction. Quarantine it (preserved on disk) and recreate fresh.
+        quarantined = _quarantine_if_corrupt(db_path)
         self.event_bus = EventBus(db_path=db_path)
+        if quarantined is not None:
+            logger.warning(
+                "conscio.db was corrupt; quarantined to %s and recreated fresh",
+                quarantined)
+            try:
+                self.event_bus.emit(
+                    type="system", category="system",
+                    data={"event": "storage_recovered",
+                          "quarantined": str(quarantined)})
+            except Exception:                        # telemetry must never crash init
+                pass
         self.shard_engine = ShardEngine(self.event_bus)
         self.coherence = CoherenceEngine(self.meta, self.world)
         # v0.8: shared semantic engine (lazy embedder) + contradiction detector.
