@@ -67,8 +67,10 @@ class WorldModel:
         """Load world model from disk."""
         if self.path.exists():
             try:
-                return json.loads(self.path.read_text())
-            except json.JSONDecodeError:
+                data = json.loads(self.path.read_text())
+                if isinstance(data, dict):
+                    return data
+            except (OSError, ValueError):           # binary/corrupt -> default
                 pass
         return {"entities": {}, "relations": [], "predictions": [], "prediction_log": []}
 

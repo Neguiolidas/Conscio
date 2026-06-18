@@ -42,8 +42,10 @@ class MetaCognition:
     def _load(self) -> dict:
         if self.path.exists():
             try:
-                return json.loads(self.path.read_text())
-            except json.JSONDecodeError:
+                data = json.loads(self.path.read_text())
+                if isinstance(data, dict):
+                    return data
+            except (OSError, ValueError):           # binary/corrupt -> default
                 pass
         return {
             "confidence_history": [],

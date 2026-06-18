@@ -300,43 +300,51 @@ class ContextManager:
         """Load the last saved consciousness state from disk."""
         json_path = self.storage_path / "state_summary.json"
         if json_path.exists():
-            data = json.loads(json_path.read_text())
-            return ConsciousnessState(
-                model_name=self.model_info.name,
-                context_mode=self.mode,
-                context_window=self.model_info.context_window,
-                state_summary=data.get("state_summary", ""),
-                last_reflection=data.get("last_reflection", ""),
-                active_goals=data.get("active_goals", []),
-                world_model_snippet=data.get("world_model_snippet", ""),
-                meta_cognition=data.get("meta_cognition", ""),
-                metabolic=data.get("metabolic", ""),
-                reflection_quality=data.get("reflection_quality", ""),
-                shard=data.get("shard", ""),
-                coherence=data.get("coherence"),
-                coherence_note=data.get("coherence_note", ""),
-                voice=data.get("voice", ""),
-                self_prompt=data.get("self_prompt", ""),
-                dream_recommended=data.get("dream_recommended", ""),
-                action_lockdown=data.get("action_lockdown", False),
-                awake=data.get("awake", False),
-            )
+            try:
+                data = json.loads(json_path.read_text())
+            except (OSError, ValueError):
+                data = None                       # corrupt/binary state -> default
+            if isinstance(data, dict):
+                return ConsciousnessState(
+                    model_name=self.model_info.name,
+                    context_mode=self.mode,
+                    context_window=self.model_info.context_window,
+                    state_summary=data.get("state_summary", ""),
+                    last_reflection=data.get("last_reflection", ""),
+                    active_goals=data.get("active_goals", []),
+                    world_model_snippet=data.get("world_model_snippet", ""),
+                    meta_cognition=data.get("meta_cognition", ""),
+                    metabolic=data.get("metabolic", ""),
+                    reflection_quality=data.get("reflection_quality", ""),
+                    shard=data.get("shard", ""),
+                    coherence=data.get("coherence"),
+                    coherence_note=data.get("coherence_note", ""),
+                    voice=data.get("voice", ""),
+                    self_prompt=data.get("self_prompt", ""),
+                    dream_recommended=data.get("dream_recommended", ""),
+                    action_lockdown=data.get("action_lockdown", False),
+                    awake=data.get("awake", False),
+                )
 
         # Fallback: parse legacy text format (pre-v0.5.1 saves)
         txt_path = self.storage_path / "state_summary.txt"
         if txt_path.exists():
-            text = txt_path.read_text()
-            return ConsciousnessState(
-                model_name=self.model_info.name,
-                context_mode=self.mode,
-                context_window=self.model_info.context_window,
-                state_summary=self._extract_section(text, "§"),
-                last_reflection=self._extract_section(text, "⧖"),
-                meta_cognition=self._extract_section(text, "🪞"),
-                metabolic=self._extract_section(text, "⊘"),
-                reflection_quality=self._extract_section(text, "◈"),
-                shard=self._extract_section(text, "▷"),
-            )
+            try:
+                text = txt_path.read_text()
+            except (OSError, ValueError):
+                text = None                       # corrupt/binary legacy -> default
+            if text is not None:
+                return ConsciousnessState(
+                    model_name=self.model_info.name,
+                    context_mode=self.mode,
+                    context_window=self.model_info.context_window,
+                    state_summary=self._extract_section(text, "§"),
+                    last_reflection=self._extract_section(text, "⧖"),
+                    meta_cognition=self._extract_section(text, "🪞"),
+                    metabolic=self._extract_section(text, "⊘"),
+                    reflection_quality=self._extract_section(text, "◈"),
+                    shard=self._extract_section(text, "▷"),
+                )
 
         # No saved state at all
         return ConsciousnessState(
