@@ -300,7 +300,9 @@ def read_head_commit(root: str | Path) -> Optional[str]:
                 if name.strip() == ref:
                     return _clean_sha(sha)
         return None
-    except OSError:
+    except (OSError, ValueError):
+        # OSError: unreadable / not-a-repo. ValueError: a binary / non-UTF-8 HEAD
+        # (UnicodeDecodeError) — must yield None, never raise into the host loop.
         return None
 
 
