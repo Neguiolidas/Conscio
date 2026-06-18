@@ -219,6 +219,10 @@ class ContentStore:
         paragraph break (\\n\\n) before the limit. This preserves
         semantic coherence within chunks.
         """
+        # B-009: chunk_size<=0 makes the slice below never shrink `remaining`
+        # → infinite loop + unbounded list growth. Floor at 1 (latent footgun,
+        # same class as B-004's negative LIMIT).
+        chunk_size = max(1, chunk_size)
         if len(content) <= chunk_size:
             return [content]
 
