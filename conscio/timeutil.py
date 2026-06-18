@@ -13,3 +13,13 @@ from datetime import datetime, timezone
 
 def naive_utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def naive_utc_from_epoch(ts: float) -> datetime:
+    """Naive-UTC datetime from a Unix epoch (matches naive_utcnow()'s convention).
+
+    datetime.fromtimestamp(ts) returns NAIVE LOCAL time; comparing that ISO string
+    against the naive-UTC strings the event store persists skews any time window by
+    the machine's UTC offset. Convert through UTC explicitly.
+    """
+    return datetime.fromtimestamp(ts, timezone.utc).replace(tzinfo=None)
