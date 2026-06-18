@@ -124,7 +124,8 @@ def sync_structure(engine: Any, workspace: Any, consent: StructuralConsent) -> s
 
     if path is not None:
         try:
-            engine.load_structure(path)
+            engine.load_structure(
+                path, workspace_id=workspace.id, root=workspace.root)
             return f"loaded:{path}"
         except Exception as exc:                   # malformed/oversized -> stay safe
             log.warning("structure load failed (%s); unloading", exc)

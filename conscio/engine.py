@@ -43,6 +43,10 @@ from .structural import (
     StructuralDistiller, StructuralSignal, render_structural, structural_budget,
     DEFAULT_MAX_BYTES, DEFAULT_MAX_NODES,
 )
+from .structural_drift import (
+    StructuralDelta, StructuralDigest, StructuralDriftStore, StructuralFreshness,
+    compute_delta, compute_freshness, drift_path,
+)
 
 if TYPE_CHECKING:
     from .dreaming import DreamReport
@@ -160,6 +164,12 @@ class ConsciousnessEngine:
         # load_structure(). Keeps cognition (reflect()) entirely untouched.
         self._distiller: Optional[StructuralDistiller] = None
         self._structural_signal: Optional[StructuralSignal] = None
+        # v1.8: structural drift — temporal awareness over the ingested snapshot.
+        # Tracked only when load_structure() is given a workspace_id; the store is
+        # built lazily and keyed per Workspace.id (the engine owns the watermark).
+        self._structural_delta: Optional[StructuralDelta] = None
+        self._structural_freshness: Optional[StructuralFreshness] = None
+        self._drift_store: Optional[StructuralDriftStore] = None
 
     # --- Meta-Cognition → Goal Generator Feed ---
 
@@ -497,29 +507,82 @@ class ConsciousnessEngine:
         *,
         max_bytes: int = DEFAULT_MAX_BYTES,
         max_nodes: int = DEFAULT_MAX_NODES,
+        workspace_id: Optional[str] = None,
+        root: Optional[str | Path] = None,
     ) -> StructuralSignal:
         """Load + distill a Graphify ``graph.json`` (data, never code; R10).
 
         Caches the distiller (for ``structural_lookup``) and the distilled
         ``StructuralSignal`` (for injection / ``structural_signal``). Raises
         ``StructuralError`` (a ``ValueError``) on malformed or non-graph input.
+
+        When ``workspace_id`` is given (v1.8), drift is tracked: the fresh signal
+        is compared against the persisted baseline for that workspace, the
+        baseline is advanced, and ``structure:changed`` is emitted on real drift.
+        ``root`` (the workspace root) additionally enables freshness-vs-HEAD. With
+        no ``workspace_id`` the behaviour is identical to v1.7 (no drift state).
         """
         self._distiller = StructuralDistiller.from_path(
             path, max_bytes=max_bytes, max_nodes=max_nodes)
         self._structural_signal = self._distiller.distill()
+        if workspace_id is not None:
+            self._track_drift(workspace_id, root, self._structural_signal)
+        else:
+            self._structural_delta = None
+            self._structural_freshness = None
         return self._structural_signal
+
+    def _track_drift(
+        self, workspace_id: str, root: Optional[str | Path], sig: StructuralSignal
+    ) -> None:
+        store = self._drift_store or StructuralDriftStore(drift_path(self.storage))
+        self._drift_store = store
+        prev = store.get(workspace_id)
+        self._structural_delta = compute_delta(prev, sig)
+        self._structural_freshness = (
+            compute_freshness(root, sig.built_at_commit) if root is not None else None)
+        store.put(workspace_id, StructuralDigest.from_signal(sig))  # advance baseline
+        if self._structural_delta.changed:
+            self._emit_structure_changed(self._structural_delta)
+
+    def _emit_structure_changed(self, delta: StructuralDelta) -> None:
+        try:
+            self.event_bus.emit(
+                type="structure:changed", category="system",
+                data={"from": delta.commit_from, "to": delta.commit_to,
+                      "hyperedges_added": len(delta.hyperedges_added),
+                      "hyperedges_removed": len(delta.hyperedges_removed),
+                      "summary": delta.summary})
+        except Exception as exc:                       # passive signal — never fatal
+            logger.debug("structure:changed emit failed: %s", exc)
 
     def structural_signal(self) -> Optional[StructuralSignal]:
         """The distilled signal of the loaded graph, or None if none loaded."""
         return self._structural_signal
 
+    def structural_delta(self) -> Optional[StructuralDelta]:
+        """Drift of the last loaded graph vs its prior baseline (v1.8).
+
+        None unless the graph was loaded with a ``workspace_id``. Read-only,
+        no-LLM — an ``advisory()`` sibling."""
+        return self._structural_delta
+
+    def structural_freshness(self) -> Optional[StructuralFreshness]:
+        """Freshness of the last loaded graph vs the repo HEAD (v1.8).
+
+        None unless the graph was loaded with both a ``workspace_id`` and a
+        ``root``. Read-only, no-LLM."""
+        return self._structural_freshness
+
     def unload_structure(self) -> None:
-        """Drop any loaded structural graph.
+        """Drop any loaded structural graph (and its drift state).
 
         Used on a workspace switch into a workspace without consent (v1.7.2), so
         one project's structure never leaks into another's context."""
         self._distiller = None
         self._structural_signal = None
+        self._structural_delta = None
+        self._structural_freshness = None
 
     def structural_lookup(self, key: str) -> Optional[dict[str, Any]]:
         """On-demand drill-down: resolve a node / hyperedge / community id to
@@ -538,6 +601,10 @@ class ConsciousnessEngine:
             "nodes": sig.node_count,
             "hyperedges": len(sig.hyperedges),
             "communities": len(sig.communities),
+            "drift": (self._structural_delta.to_advisory()
+                      if self._structural_delta is not None else None),
+            "freshness": (self._structural_freshness.to_advisory()
+                          if self._structural_freshness is not None else None),
         }
 
     def advisory(self) -> dict:

@@ -28,7 +28,8 @@ from conscio import (
 `ConsciousnessEngine` is a context manager (`with ConsciousnessEngine(...) as e:`).
 Key methods: `reflect()`, `get_state_for_injection()`, `advisory()`, `recall()`,
 `status()`, `attach_adapter()`, `probe()`, `act()`, `approve()`, `run()`,
-`load_structure()`, `structural_lookup()`, `structural_signal()`, `close()`.
+`load_structure()`, `structural_lookup()`, `structural_signal()`,
+`structural_delta()`, `structural_freshness()`, `close()`.
 
 `advisory()` is the structured, read-only pull surface a host consumes each turn
 (goals tagged by provenance, lockdown/brake status). See
@@ -40,6 +41,15 @@ structure block, and `structural_lookup(id)` / `structural_signal()` are the
 read-only drill-down surfaces. `conscio.structural` exports `StructuralDistiller`,
 `StructuralSignal`, `Hyperedge`, `CommunitySummary`, `GraphNode`,
 `StructuralError`. See [Structural cognition](../guides/integration.md#structural-cognition).
+
+`load_structure(path, workspace_id=…, root=…)` additionally tracks **drift**
+(vs the persisted per-workspace baseline) and **freshness** (graph commit vs the
+repo `HEAD`, read purely from `.git`); `structural_delta()` /
+`structural_freshness()` expose them and they appear in
+`advisory()["structural"]`. `conscio.structural_drift` exports `StructuralDigest`,
+`StructuralDelta`, `StructuralFreshness`, `StructuralDriftStore`, `compute_delta`,
+`compute_freshness`, `read_head_commit`, `drift_path`. See
+[Drift & freshness](../guides/integration.md#drift-freshness-v18).
 
 ## `conscio.agency`
 

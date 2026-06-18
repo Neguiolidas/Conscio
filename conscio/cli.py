@@ -52,6 +52,12 @@ def _build_parser() -> argparse.ArgumentParser:
                            help="grant this scope (omit to show the current one)")
     p_consent.add_argument("--storage", default="", help="storage dir (default: ~/.hermes)")
 
+    p_structure = sub.add_parser(
+        "structure",
+        help="show structural drift + freshness for the current workspace (read-only)")
+    p_structure.add_argument(
+        "--storage", default="", help="storage dir (default: ~/.hermes)")
+
     p_awake = sub.add_parser("awake",
                              help="enter Awake Mode (R9; enables autonomous run)")
     p_awake.add_argument("--model", default=DEFAULT_MODEL)
@@ -170,6 +176,58 @@ def _cmd_consent(scope_arg: str, storage: str) -> int:
     return 0
 
 
+def _cmd_structure(storage: str) -> int:
+    """Read-only: distill the consented graph and report drift + freshness.
+
+    Never advances the persisted baseline (so it cannot mask drift from a running
+    daemon) — it peeks at the stored baseline and computes the delta in memory.
+    """
+    from .workspace import WorkspaceContext
+    from .structural_consent import StructuralConsent, consent_path
+    from .structural import StructuralDistiller, StructuralError
+    from .structural_drift import (
+        StructuralDriftStore, compute_delta, compute_freshness, drift_path)
+
+    store_dir = _storage(storage)
+    ws = WorkspaceContext().current()
+    consent = StructuralConsent(consent_path(store_dir))
+    path = consent.graph_path_for(ws)
+    tag = f"{ws.root} [{ws.id[:8]}]"
+    if path is None:
+        print(f"structure for {tag}: no consented graph "
+              f"(scope: {consent.scope_for(ws.id).value})")
+        return 0
+
+    try:
+        sig = StructuralDistiller.from_path(path).distill()
+    except StructuralError as exc:
+        print(f"structure for {tag}: load error: {exc}")
+        return 1
+
+    prev = StructuralDriftStore(drift_path(store_dir)).get(ws.id)   # read-only peek
+    delta = compute_delta(prev, sig)
+    fresh = compute_freshness(ws.root, sig.built_at_commit)
+
+    print(f"structure for {tag}: {path}")
+    print(f"  commit {sig.built_at_commit[:8] or '-'}  hash {sig.content_hash}  "
+          f"nodes {sig.node_count}  hyperedges {len(sig.hyperedges)}  "
+          f"communities {len(sig.communities)}")
+    if fresh.is_stale:
+        print(f"  freshness: STALE — graph@{(fresh.graph_commit or '')[:8]} vs "
+              f"HEAD@{(fresh.head_commit or '')[:8]}")
+    elif fresh.known:
+        print(f"  freshness: up to date (HEAD@{(fresh.head_commit or '')[:8]})")
+    else:
+        print("  freshness: HEAD unknown (not a git repo / graph commit absent)")
+    if delta.first_sight:
+        print("  drift: first sighting (no prior baseline)")
+    elif delta.changed:
+        print(f"  drift: {delta.summary}")
+    else:
+        print("  drift: unchanged since last seen")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -196,6 +254,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_plugins()
     if args.command == "consent":
         return _cmd_consent(args.scope, args.storage)
+    if args.command == "structure":
+        return _cmd_structure(args.storage)
     if args.command == "awake":
         return _cmd_set_awake(args.model, args.storage, awake=True)
     if args.command == "sleep":

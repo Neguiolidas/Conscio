@@ -4,7 +4,7 @@ A framework about self-knowledge should know what it can and cannot prove
 about itself. Every load-bearing claim Conscio makes, mapped to evidence.
 
 **Status:** PROVEN (test) · MEASURED (real backend) · PARTIAL · UNPROVEN.
-Updated each phase. Current as of **v1.5.0** (2026-06-15).
+Updated each phase. Current as of **v1.8.0** (2026-06-18).
 
 | # | Claim | Evidence | Status |
 |---|-------|----------|--------|
@@ -24,7 +24,7 @@ Updated each phase. Current as of **v1.5.0** (2026-06-15).
 | 14 | The plugin surface is discoverable and **resilient to a bad plugin** | `tests/test_plugins.py` (valid/wrong-type/load-failure/one-bad-doesn't-hide-good) | PROVEN |
 | 15 | The package ships types (PEP 561) | `conscio/py.typed` present in the built wheel; `mypy conscio/` is a real gate | PROVEN |
 | 16 | The docs site builds clean with no internal leak | `mkdocs build --strict` green; `exclude_docs` + a `site/` grep verify no internal/forward-looking page renders | PROVEN |
-| 17 | Installable as a wheel; core pulls only numpy | wheel + sdist pass `twine check`; fresh-venv install of the wheel resolved `conscio` + `numpy` only. **Live PyPI upload pending the first tag** | PARTIAL |
+| 17 | Installable as a wheel; core pulls only numpy | wheel + sdist pass `twine check`; fresh-venv install resolves `conscio` + `numpy` only; **live on PyPI since v1.3.0** (`pip install conscio`) | PROVEN |
 | 18 | Engine/context construction is offline & deterministic by default | `tests/test_model_offline_default.py` (known-model `detect()` does zero fs/net I/O via tripwires; `tests/test_metabolic.py` passes with no config isolation) | PROVEN |
 | 19 | Host-state model-context auto-detection is opt-in (never default) | `tests/test_model_offline_default.py`, `tests/test_model_auto_detect.py::TestJsonConfig` (config consulted only under `autodetect`/`CONSCIO_AUTODETECT`) | PROVEN |
 | 20 | Config path has no optional-dependency footgun | config is stdlib JSON; `tests/test_model_auto_detect.py::TestJsonConfig::test_no_yaml_dependency_in_import_graph` | PROVEN |
@@ -37,6 +37,14 @@ Updated each phase. Current as of **v1.5.0** (2026-06-15).
 | 27 | Reference sensors are read-only (`Risk.LOW`) and never raise | `tests/test_host_sensor.py` (every probe guarded, non-Linux/bad-port safe), `tests/test_agent_sensor.py::test_read_only_does_not_mutate_peer` (byte-identical peer) | PROVEN |
 | 28 | Workspace root + env class are detected and changes are signalled | `tests/test_workspace.py` (explicit/env/git/cwd resolution, EnvClass, `workspace:changed` on root change) | PROVEN |
 | 29 | A single daemon holds a state dir (advisory pidfile, stale-pid reclaim) | `tests/test_daemon.py::test_pidfile_blocks_second_daemon`/`::test_stale_pidfile_is_reclaimed` | PROVEN |
+| 30 | Diagnostic goals (meta_error/self_prompt/compaction) never auto-run; stay visible | `tests/test_goal_provenance.py` (origin taxonomy, arbiter skips diagnostic, advisory still shows them) | PROVEN |
+| 31 | `advisory()` is a cheap read-only pull — no LLM, no state mutation | `tests/test_engine_advisory.py` (no adapter required; goals tagged by provenance; lockdown/brake status) | PROVEN |
+| 32 | An imported code graph is consumed as **data, never code** (R10) | `tests/test_structural.py` (json-only parse; a code-looking label is returned verbatim, never evaluated; no `networkx`/`eval`/`exec`/`pickle` import) | PROVEN |
+| 33 | Structural injection is additive — the consciousness-state block is byte-identical | `tests/test_structural_inject.py` (`get_state_for_injection()` unchanged with no graph; appends labels-only, never raw node-ids) | PROVEN |
+| 34 | Structural ingestion is consent-gated (default OFF) and switch-safe | `tests/test_structural_consent.py`, `tests/test_daemon_structure_sync.py` (unconsented switch unloads — no cross-project leak) | PROVEN |
+| 35 | The agent detects structural **drift** vs a persisted per-workspace baseline | `tests/test_structural_drift.py`, `tests/test_structural_inject.py::TestStructuralDrift` (commit/hash/community/hyperedge diff by id; `structure:changed` emitted) | PROVEN |
+| 36 | **Freshness** vs the repo HEAD is read **purely from `.git`** — no `git` subprocess | `tests/test_structural_drift.py` (ref/packed-refs/detached/worktree `.git`-file; `test_module_uses_no_subprocess_or_shell`) | PROVEN |
+| 37 | Drift never raises into the host loop (corrupt store / unreadable `.git`) | `tests/test_structural_drift.py` (corrupt/non-dict store → empty; save-failure swallowed; malformed `.git` → None) | PROVEN |
 
 ## Honest limits (what is NOT proven)
 

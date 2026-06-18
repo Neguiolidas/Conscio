@@ -123,3 +123,41 @@ def test_plugins_lists_reference_sensors(capsys):
     assert main(["plugins"]) == 0
     out = capsys.readouterr().out
     assert "HostSensor" in out and "AgentSensor" in out
+
+
+# ── v1.8 `conscio structure` (read-only drift report) ────────────────────────
+FIXTURE = ROOT / "tests" / "fixtures" / "graph_small.json"
+
+
+def _plant_graph(workspace_root):
+    import shutil
+    d = pathlib.Path(workspace_root) / "graphify-out"
+    d.mkdir(parents=True, exist_ok=True)
+    shutil.copy(FIXTURE, d / "graph.json")
+
+
+def test_structure_no_consent_message(capsys, tmp_path, monkeypatch):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    monkeypatch.setenv("CONSCIO_WORKSPACE", str(ws))
+    store = tmp_path / "store"
+    assert main(["structure", "--storage", str(store)]) == 0
+    out = capsys.readouterr().out
+    assert "no consented graph" in out and "off" in out
+    assert not (store / "structural_drift.json").exists()       # read-only, wrote nothing
+
+
+def test_structure_reports_first_sighting(capsys, tmp_path, monkeypatch):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    _plant_graph(ws)
+    monkeypatch.setenv("CONSCIO_WORKSPACE", str(ws))
+    store = tmp_path / "store"
+    assert main(["consent", "project", "--storage", str(store)]) == 0
+    capsys.readouterr()
+    assert main(["structure", "--storage", str(store)]) == 0
+    out = capsys.readouterr().out
+    assert "nodes 101" in out and "hyperedges 24" in out
+    assert "first sighting" in out
+    # the report peeks but never advances the baseline
+    assert not (store / "structural_drift.json").exists()
