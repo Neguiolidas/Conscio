@@ -51,6 +51,14 @@ class TestStructuralBudget:
     def test_monotonic_between_floor_and_ceil(self):
         assert structural_budget(8000) < structural_budget(131000)
 
+    def test_try_break_extreme_windows_stay_clamped(self):
+        # I-B1: nonsensical / overflow windows must never escape [FLOOR, CEIL].
+        for window in (-1, 0, 1, 10 ** 12):
+            b = structural_budget(window)
+            assert 120 <= b <= 1200, (window, b)
+        assert structural_budget(-1) == 120          # negative -> floor, not negative
+        assert structural_budget(10 ** 12) == 1200   # overflow -> ceil, not flood
+
 
 # ── renderer ─────────────────────────────────────────────────────────────────
 class TestRenderStructural:
