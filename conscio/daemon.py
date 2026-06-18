@@ -210,7 +210,11 @@ class Daemon:
                 log.warning("advisory snapshot failed: %s", exc)
         try:
             self.heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
-            self.heartbeat_path.write_text(json.dumps(data, indent=2))
+            # B-012: atomic write so a host tailing the heartbeat (v1.6 #5/#9)
+            # never reads a torn/partial file — write a sibling tmp then replace.
+            tmp = self.heartbeat_path.with_name(self.heartbeat_path.name + ".tmp")
+            tmp.write_text(json.dumps(data, indent=2))
+            os.replace(tmp, self.heartbeat_path)
         except OSError as exc:
             log.warning("heartbeat write failed: %s", exc)
 
