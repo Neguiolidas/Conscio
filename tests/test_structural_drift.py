@@ -263,6 +263,25 @@ class TestReadHeadCommit:
         _mk_git(tmp_path, "ref: refs/heads/ghost\n")     # no loose, no packed
         assert read_head_commit(tmp_path) is None
 
+    def test_try_break_binary_head_never_raises(self, tmp_path):
+        # I-X4: a non-UTF-8 / binary HEAD must yield None, never raise.
+        # UnicodeDecodeError is a ValueError — NOT an OSError.
+        g = tmp_path / ".git"
+        g.mkdir()
+        (g / "HEAD").write_bytes(b"\xff\xfe\x00\x80garbage\xff")
+        assert read_head_commit(tmp_path) is None
+
+    def test_try_break_binary_loose_ref_never_raises(self, tmp_path):
+        g = tmp_path / ".git"
+        (g / "refs" / "heads").mkdir(parents=True)
+        (g / "HEAD").write_text("ref: refs/heads/main\n")
+        (g / "refs" / "heads" / "main").write_bytes(b"\xff\xfe\x00sha")
+        assert read_head_commit(tmp_path) is None
+
+    def test_try_break_binary_gitfile_never_raises(self, tmp_path):
+        (tmp_path / ".git").write_bytes(b"\xff\xfegitdir: somewhere")
+        assert read_head_commit(tmp_path) is None
+
 
 # ── compute_freshness ─────────────────────────────────────────────────────────
 class TestComputeFreshness:
@@ -301,8 +320,15 @@ class TestComputeFreshness:
 
 # ── no subprocess (R10 by spirit) ─────────────────────────────────────────────
 def test_module_uses_no_subprocess_or_shell():
-    src = pathlib.Path(__file__).resolve().parent.parent / "conscio" / "structural_drift.py"
-    text = src.read_text()
-    assert "import subprocess" not in text and "subprocess." not in text
-    assert "import os" not in text or "os.system" not in text
-    assert "popen" not in text.lower()
+    # R10-by-spirit, generalized across the WHOLE structural subsystem: no module
+    # may shell out, import networkx, or eval/exec/pickle imported data.
+    base = pathlib.Path(__file__).resolve().parent.parent / "conscio"
+    for name in ("structural.py", "structural_consent.py", "structural_drift.py"):
+        text = (base / name).read_text()
+        assert "import subprocess" not in text and "subprocess." not in text, name
+        assert "popen" not in text.lower(), name
+        assert "os.system" not in text, name
+        # forbid the import/usage, not the word (docstrings say "no networkx")
+        assert "import networkx" not in text and "networkx." not in text, name
+        assert "eval(" not in text and "exec(" not in text, name
+        assert "import pickle" not in text and "pickle." not in text, name
