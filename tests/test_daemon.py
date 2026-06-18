@@ -74,6 +74,33 @@ def test_asleep_cycle_is_reflect_only(tmp_path):
         eng.close()
 
 
+def test_try_break_asleep_daemon_runs_a_cycle_but_never_acts(tmp_path, monkeypatch):
+    """I-R9: the daemon drives autonomy via engine.run() (awake-gated), never act().
+
+    Non-hollow by construction: it asserts a real cycle ran (run called once) AND
+    act() was not called — so a no-op daemon (run==0) and a future direct-act()
+    regression (act>0) both fail this test.
+    """
+    eng = _engine(tmp_path)                        # default: asleep
+    calls = {"run": 0, "act": 0}
+    real_run = eng.run
+
+    def spy_run(*a, **k):
+        calls["run"] += 1
+        return real_run(*a, **k)
+
+    monkeypatch.setattr(eng, "run", spy_run)
+    monkeypatch.setattr(eng, "act",
+                        lambda *a, **k: calls.__setitem__("act", calls["act"] + 1))
+    d = Daemon(eng, sensors=[MockSensor([_frame()])])
+    try:
+        d.cycle()
+        assert calls["run"] == 1                    # a real heartbeat cycle ran
+        assert calls["act"] == 0                    # but autonomy never acted
+    finally:
+        eng.close()
+
+
 def test_assemble_concatenates_world_states(tmp_path):
     eng = _engine(tmp_path)
     try:
