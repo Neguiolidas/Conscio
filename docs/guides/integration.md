@@ -44,6 +44,7 @@ if adv["status"]["brake"]:
 | `goals` | List of `{description, origin, executable}`. |
 | `coherence` | `{score, dominant}` — aggregate coherence + dominant dissonance. |
 | `status` | `{action_lockdown, dream_recommended, brake}`. |
+| `structural` | `{loaded, commit, hash, nodes, hyperedges, communities}` or `null` — the loaded code graph; see [Structural cognition](#structural-cognition). |
 | `recommendations` | Derived hints, e.g. "N diagnostic goal(s) pending review". |
 
 ### Goal origins
@@ -80,6 +81,41 @@ cycle it writes `<storage>/daemon_heartbeat.json`:
 `tail -f` it, or poll on your own cadence. The `last_run` block is the previous
 heartbeat's [`RunReport`](../reference/public-api.md) summary; `advisory` is the
 full snapshot above.
+
+## Structural cognition
+
+Conscio can give the refined model **structural awareness of the codebase it is
+working in**, distilled from a [Graphify](https://github.com/)-format
+`graph.json`. The graph is consumed as **data, never code** (R10): parsed with
+`json` only, no `networkx`, no Graphify runtime dependency. It is **opt-in** —
+nothing is injected until you load a graph.
+
+```python
+sig = engine.load_structure("graphify-out/graph.json")   # distils once
+# from here, get_state_for_injection() appends a budget-adaptive structure block
+```
+
+The distilled signal is the graph's **curated hyperedges + per-community
+summaries**, not its thousands of raw nodes. Injection is sized to the model's
+context window (scales from ~120 tokens at small contexts up to ~1200), and
+renders **labels only** — never raw node-ids — so it stays compact and safe.
+
+Drill down on demand with the pull surface (an `advisory()` sibling — read-only,
+no inference):
+
+```python
+engine.structural_lookup("conscio_engine_reflect")
+# -> {"kind": "node", "label": "ConsciousnessEngine.reflect",
+#     "source_file": "conscio/engine.py", "source_location": "187", ...}
+engine.structural_lookup("agency_act_cycle_pipeline")   # -> {"kind": "hyperedge", ...}
+engine.structural_lookup("0")                            # -> {"kind": "community", ...}
+engine.structural_lookup("unknown")                      # -> None (always graceful)
+```
+
+**Staleness is yours to detect.** The signal carries `built_at_commit` and a
+`content_hash` (surfaced in `advisory()["structural"]`); compare `commit` to your
+current `HEAD` to know when to regenerate the graph. Conscio never runs Graphify
+itself.
 
 ## Full example
 

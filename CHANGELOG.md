@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.7.0] — 2026-06-18
 
-"Structural Cognition" — slice 1 of 3: the pure distiller core. Turns a
-Graphify-format `graph.json` into a compact, ranked structural signal. No engine
-wiring yet — budget-adaptive injection (v1.7.1) and workspace-aware,
-consent-gated ingestion (v1.7.2) follow. Dependency-free; debt-zero.
+"Structural Cognition" — gives the refined model structural awareness of the
+codebase it works in, distilled from a Graphify-format `graph.json`. Consumed as
+data, never code (R10): no `networkx`, no Graphify runtime dependency.
+Dependency-free; debt-zero. Workspace-aware, consent-gated ingestion follows in
+v1.7.x.
 
 ### Added
 
@@ -21,7 +22,18 @@ consent-gated ingestion (v1.7.2) follow. Dependency-free; debt-zero.
   summaries — `distill()` returns the *full ranked* `StructuralSignal` (how much
   to inject is the consumer's budget call, not the distiller's). A pure
   `lookup(key)` data layer resolves any node / hyperedge / community id to detail
-  on demand (v1.7.1 will expose it as `engine.structural_lookup()`).
+  on demand.
+- **Budget-adaptive injection.** When a graph is loaded, `get_state_for_injection()`
+  appends a structure block sized to the model's context window (scales from
+  ~120 tokens at small contexts up to ~1200 — no hard gate). It is **additive**:
+  the consciousness-state block is byte-for-byte unchanged. It renders **labels
+  only**, never raw node-ids.
+- **Engine pull surfaces (`advisory()` siblings — read-only, no inference).**
+  `engine.load_structure(path)` ingests + distils a graph (opt-in; nothing is
+  injected until called); `engine.structural_lookup(id)` drills down on demand;
+  `engine.structural_signal()` returns the cached signal. `advisory()` gains a
+  `structural` block (`loaded`/`commit`/`hash`/counts, or `null`) for status +
+  staleness detection.
 - **Provenance + staleness.** The signal carries `built_at_commit` and a sha256
   `content_hash` of the raw bytes, so a host can detect a stale graph versus the
   working tree. Conscio surfaces staleness; it never runs Graphify itself.

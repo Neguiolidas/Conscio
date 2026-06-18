@@ -320,3 +320,63 @@ class StructuralDistiller:
         summaries.sort(key=lambda c: (-c.size, c.community_id))
         self._comm_cache = tuple(summaries)
         return self._comm_cache
+
+
+# ── budget-adaptive injection (v1.7.1) ──────────────────────────────────────────
+STRUCTURAL_PCT = 0.03            # share of the context window given to structure
+STRUCTURAL_FLOOR_TOKENS = 120    # smallest useful digest (works at >=8k context)
+STRUCTURAL_CEIL_TOKENS = 1200    # cap — structure is awareness, not the payload
+_CHARS_PER_TOKEN = 4             # rough, matches ConsciousnessState.total_tokens_approx
+_HE_MARK = "⬡"
+_COMM_MARK = "▣"
+
+
+def structural_budget(context_window: int) -> int:
+    """Token budget for the structural injection, scaled to the context window.
+
+    Scales with the window (the locked "budget-adaptive 8k+, no hard gate"
+    decision) and clamps to [FLOOR, CEIL] so a small model still gets a useful
+    digest and a huge one is not flooded.
+    """
+    return max(STRUCTURAL_FLOOR_TOKENS,
+               min(STRUCTURAL_CEIL_TOKENS, int(context_window * STRUCTURAL_PCT)))
+
+
+def render_structural(signal: StructuralSignal, budget_tokens: int) -> str:
+    """Render a budget-bounded structural block for LLM context injection.
+
+    Hyperedge labels first (highest signal), then community digests, until the
+    token budget is spent. LABELS and community digests only — never raw
+    node-ids — so the v1.7.0 dangling-ref artifact never reaches the LLM.
+    Returns "" when the signal is empty or nothing fits (the engine then appends
+    nothing).
+    """
+    char_budget = max(0, budget_tokens) * _CHARS_PER_TOKEN
+    commit = (signal.built_at_commit or "")[:8]
+    header = f"═══ WORKSPACE STRUCTURE [{signal.source_path}@{commit}] ═══"
+    if len(header) > char_budget:
+        return ""
+    lines = [header]
+    used = len(header)
+
+    def _try(line: str) -> bool:
+        nonlocal used
+        cost = len(line) + 1  # + newline
+        if used + cost > char_budget:
+            return False
+        lines.append(line)
+        used += cost
+        return True
+
+    for h in signal.hyperedges:
+        if not _try(f"{_HE_MARK} {h.label}"):
+            break
+    for c in signal.communities:
+        labels = ", ".join(c.top_labels)
+        files = ", ".join(c.files)
+        if not _try(f"{_COMM_MARK} c{c.community_id} ({c.size}): {labels} — {files}"):
+            break
+
+    if len(lines) == 1:   # header only -> nothing useful
+        return ""
+    return "\n".join(lines)
