@@ -165,3 +165,31 @@ def test_relevant_event_releases_quarantine(tmp_path):
     assert released == ["g1"]
     brk.close()
     led.close()
+
+
+def test_try_break_relevant_event_window_is_tz_correct(tmp_path, monkeypatch):
+    """B-007: _relevant_event_since builds its window from an epoch; a naive-LOCAL
+    conversion skews it vs the naive-UTC event store (same class as B-003b). Under a
+    non-UTC TZ a genuinely-recent relevant event must still be found. Uses a REAL
+    EventBus (the _Bus fake ignores `since`, so it can't see this bug)."""
+    import time as _t
+
+    from conscio.event_bus import EventBus
+
+    monkeypatch.setenv("TZ", "Asia/Tokyo")                # UTC+9
+    _t.tzset()
+    bus = EventBus(db_path=tmp_path / "conscio.db")
+    led = ActionLedger(tmp_path / "conscio.db")
+    brk = CircuitBreaker(led, bus)
+    try:
+        bus.emit(type="reflection", category="consciousness",
+                 data={"summary": "refactor the parser module"})
+        locked_at = _t.time() - 5                          # window opened 5s ago
+        # OLD naive-local 'since' lands ~9h in the FUTURE -> 0 events -> False
+        assert brk._relevant_event_since("refactor parser", locked_at) is True
+    finally:
+        brk.close()
+        led.close()
+        bus.close()
+        monkeypatch.delenv("TZ", raising=False)
+        _t.tzset()
