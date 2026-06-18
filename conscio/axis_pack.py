@@ -44,7 +44,7 @@ def _read_pack(name: str) -> list[dict]:
         return []
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (OSError, ValueError):     # B-013: ValueError covers UnicodeDecodeError
         return []
     axes = data.get("axes", [])
     return axes if isinstance(axes, list) else []
