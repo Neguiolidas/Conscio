@@ -1,0 +1,2789 @@
+{
+ "directed": false,
+ "multigraph": false,
+ "graph": {
+  "hyperedges": [
+   {
+    "id": "agency_act_cycle_pipeline",
+    "label": "Act cycle pipeline (act -> audit -> ledger -> breaker)",
+    "nodes": [
+     "act_actpipeline_act",
+     "loop_goalarbiter_choose",
+     "gateway_outputgateway_request_action",
+     "skeptic_skeptic_audit",
+     "ledger_actionledger_record",
+     "breaker_circuitbreaker_should_trip",
+     "tools_toolregistry_dispatch"
+    ],
+    "relation": "participate_in",
+    "confidence": "EXTRACTED",
+    "confidence_score": 0.95,
+    "source_file": "conscio/agency/act.py"
+   },
+   {
+    "id": "inference_adapter_implementations",
+    "label": "Concrete InferenceAdapter implementations",
+    "nodes": [
+     "adapter_mockadapter",
+     "adapter_meteredadapter",
+     "adapters_ollamaadapter",
+     "adapters_llamacppadapter",
+     "adapters_openaicompatadapter",
+     "adapters_lmstudioadapter"
+    ],
+    "relation": "implement",
+    "confidence": "EXTRACTED",
+    "confidence_score": 1.0,
+    "source_file": "conscio/agency/adapter.py"
+   },
+   {
+    "id": "gateway_decode_tiers",
+    "label": "Gateway decode tier hierarchy T1/T2/T3",
+    "nodes": [
+     "gateway_outputgateway_try_grammar",
+     "gateway_outputgateway_try_json",
+     "gateway_outputgateway_try_kv",
+     "grammar_compile_schema_grammar",
+     "gateway_parse_kv"
+    ],
+    "relation": "form",
+    "confidence": "EXTRACTED",
+    "confidence_score": 0.95,
+    "source_file": "conscio/agency/gateway.py"
+   },
+   {
+    "id": "reflect_cycle_pipeline",
+    "label": "reflect() orchestration pipeline (perceive/coherence/self-prompt/goals/output)",
+    "nodes": [
+     "conscio_engine_reflect",
+     "coherence_assess",
+     "self_prompt_generate_self_prompts",
+     "goal_generator_score_all_goals",
+     "output_filter_apply",
+     "content_store_index",
+     "context_manager_build_state"
+    ],
+    "relation": "participate_in",
+    "confidence": "INFERRED",
+    "confidence_score": 0.85,
+    "source_file": "conscio/engine.py"
+   },
+   {
+    "id": "dream_consolidation_phases",
+    "label": "DreamCycle Release/Prune/Reconcile/Crystallize/Distill phases",
+    "nodes": [
+     "dreaming_run",
+     "event_bus_purge_duplicates",
+     "dreaming_crystallize",
+     "dreaming_distill",
+     "coherence_assess"
+    ],
+    "relation": "participate_in",
+    "confidence": "EXTRACTED",
+    "confidence_score": 1.0,
+    "source_file": "conscio/dreaming.py"
+   },
+   {
+    "id": "coherence_dimension_scorers",
+    "label": "Four coherence dimensions feeding CoherenceEngine.assess",
+    "nodes": [
+     "coherence_epistemic_score",
+     "coherence_reality_score",
+     "coherence_ontological_score",
+     "coherence_temporal_score",
+     "coherence_assess"
+    ],
+    "relation": "participate_in",
+    "confidence": "EXTRACTED",
+    "confidence_score": 1.0,
+    "source_file": "conscio/coherence.py"
+   },
+   {
+    "id": "agency_immune_pipeline",
+    "label": "Agency immune-system pipeline (ActPipeline + Skeptic + CircuitBreaker + ActionLedger)",
+    "nodes": [
+     "agency_act_actpipeline",
+     "agency_skeptic_skeptic",
+     "agency_breaker_circuitbreaker",
+     "agency_ledger_actionledger",
+     "agency_tools_toolregistry"
+    ],
+    "relation": "participate_in",
+    "confidence": "EXTRACTED",
+    "confidence_score": 0.9,
+    "source_file": "tests/test_agency_act_immunity.py"
+   },
+   {
+    "id": "inference_adapter_implementations",
+    "label": "InferenceAdapter implementations across backends",
+    "nodes": [
+     "agency_adapter_inferenceadapter",
+     "agency_adapters_ollamaadapter",
+     "agency_adapters_lmstudioadapter",
+     "agency_adapters_llamacppadapter",
+     "agency_adapters_openaicompatadapter",
+     "agency_adapter_mockadapter",
+     "custom_adapter_echoadapter"
+    ],
+    "relation": "implement",
+    "confidence": "EXTRACTED",
+    "confidence_score": 0.9,
+    "source_file": "conscio/agency/adapter.py"
+   },
+   {
+    "id": "sensoradapter_examples",
+    "label": "SensorAdapter example implementations feeding engine.reflect via PerceptionFrame",
+    "nodes": [
+     "perception_sensoradapter",
+     "perception_perceptionframe",
+     "agent_companion_agentsensor",
+     "host_guardian_hostsensor",
+     "engine_consciousnessengine"
+    ],
+    "relation": "participate_in",
+    "confidence": "EXTRACTED",
+    "confidence_score": 0.85,
+    "source_file": "examples/host_guardian.py"
+   },
+   {
+    "id": "f2_immunity_layer_pattern",
+    "label": "F2 immunity layer: skeptic audit + trust + circuit breaker quarantine",
+    "nodes": [
+     "tests_test_agency_skeptic_skeptic",
+     "tests_test_agency_trust_trustmatrix",
+     "tests_test_agency_breaker_circuitbreaker",
+     "tests_test_agency_engine_immunity_consciousnessengine"
+    ],
+    "relation": "participate_in",
+    "confidence": "EXTRACTED",
+    "confidence_score": 0.95,
+    "source_file": "tests/test_agency_engine_immunity.py"
+   },
+   {
+    "id": "output_gateway_tier_pipeline",
+    "label": "Tiered output gateway: grammar (T1), JSON repair (T2), KV-line (T3)",
+    "nodes": [
+     "tests_test_agency_gateway_outputgateway",
+     "tests_test_agency_grammar_compile_proposal_grammar",
+     "tests_test_agency_gateway_repair_json",
+     "tests_test_agency_gateway_parse_kv",
+     "tests_test_agency_profiles_choose_tier"
+    ],
+    "relation": "form",
+    "confidence": "INFERRED",
+    "confidence_score": 0.85,
+    "source_file": "tests/test_agency_gateway.py"
+   },
+   {
+    "id": "act_pipeline_ledger_skills_cycle",
+    "label": "Act pipeline: ledger records actions, breaker monitors failures, skills distill from ledger and serve few-shot exemplars",
+    "nodes": [
+     "tests_test_agency_no_network_actpipeline",
+     "tests_test_agency_ledger_actionledger",
+     "tests_test_agency_breaker_circuitbreaker",
+     "tests_test_agency_skills_skilllibrary"
+    ],
+    "relation": "participate_in",
+    "confidence": "INFERRED",
+    "confidence_score": 0.85,
+    "source_file": "tests/test_agency_no_network.py"
+   },
+   {
+    "id": "dream_cycle_phases",
+    "label": "Dream cycle: reconcile, prune, crystallize, distill phases share ConsciousnessEngine.dream()",
+    "nodes": [
+     "conscio_engine_dream",
+     "conscio_dreaming_dreamcycle",
+     "conscio_world_model_worldmodel_contradicted_entities",
+     "conscio_agency_skills_skilllibrary",
+     "conscio_content_store_contentstore"
+    ],
+    "relation": "participate_in",
+    "confidence": "INFERRED",
+    "confidence_score": 0.85,
+    "source_file": "tests/test_dreaming.py"
+   },
+   {
+    "id": "shared_sqlite_db_modules",
+    "label": "ContentStore, EventBus, and Migrator share the same SQLite-backed conscio.db",
+    "nodes": [
+     "conscio_content_store_contentstore",
+     "conscio_event_bus_eventbus",
+     "conscio_migrate_migrator"
+    ],
+    "relation": "form",
+    "confidence": "EXTRACTED",
+    "confidence_score": 1.0,
+    "source_file": "tests/test_migrate.py"
+   },
+   {
+    "id": "recall_layered_retrieval",
+    "label": "Recall pipeline combines ContentLayer ordering, ContentStore FTS5 search, and ConsciousnessEngine.recall",
+    "nodes": [
+     "conscio_content_layer_layer_sort_key",
+     "conscio_content_layer_contentlayermanager_recall",
+     "conscio_content_store_contentstore_search",
+     "conscio_engine_recall"
+    ],
+    "relation": "participate_in",
+    "confidence": "INFERRED",
+    "confidence_score": 0.85,
+    "source_file": "tests/test_engine_recall.py"
+   },
+   {
+    "id": "hyperedge_dry_run_preview_pattern",
+    "label": "dry_run preview-matches-reality pattern across world model mutations",
+    "nodes": [
+     "tests_test_world_contradictions_test_mark_dry_run_does_not_write",
+     "tests_test_world_model_entropy_test_prune_by_entropy_dry_run_no_mutation_and_matches_real",
+     "tests_test_world_model_prune_test_prune_dry_run_matches_real_prune_after_decay"
+    ],
+    "relation": "form",
+    "confidence": "INFERRED",
+    "confidence_score": 0.85,
+    "source_file": "tests/test_world_contradictions.py"
+   },
+   {
+    "id": "hyperedge_shared_sqlite_db_modules",
+    "label": "Multiple modules coexist in same sqlite db (TokenTracker/EventBus/ContentStore/SessionLifecycle)",
+    "nodes": [
+     "tests_test_token_tracker_testshareddb",
+     "tests_test_session_lifecycle_testeventbusintegration",
+     "tests_test_session_lifecycle_testcontentstoreintegration"
+    ],
+    "relation": "participate_in",
+    "confidence": "INFERRED",
+    "confidence_score": 0.85,
+    "source_file": "tests/test_token_tracker.py"
+   },
+   {
+    "id": "hyperedge_stub_embedder_axis_pattern",
+    "label": "Deterministic stub embedders driving SemanticEngine axis-based contradiction detection across test files",
+    "nodes": [
+     "tests_test_semantic_engine_stubembedder",
+     "tests_test_semantic_dedup_stubembedder",
+     "tests_test_semantic_reconcile_integration_stubembedder"
+    ],
+    "relation": "participate_in",
+    "confidence": "INFERRED",
+    "confidence_score": 0.85,
+    "source_file": "tests/test_semantic_engine.py"
+   },
+   {
+    "id": "hyperedge_release_pipeline",
+    "label": "Tag-to-PyPI release pipeline",
+    "nodes": [
+     "release_release_workflow",
+     "release_gate_job",
+     "release_build_job",
+     "release_publish_job",
+     "releasing_releasing",
+     "releasing_pypi_trusted_publisher"
+    ],
+    "relation": "participate_in",
+    "confidence": "EXTRACTED",
+    "confidence_score": 1.0,
+    "source_file": "docs/RELEASING.md"
+   },
+   {
+    "id": "hyperedge_v1_2_prove_measurement",
+    "label": "v1.2 Prove campaign \u2014 real-backend measurement of competence/immunity claims",
+    "nodes": [
+     "v1_2_campaign_v1_2_campaign",
+     "v1_2_skill_curve_v1_2_skill_curve",
+     "claims_claims_ledger",
+     "changelog_v1_2_0",
+     "v1_2_skill_curve_distill"
+    ],
+    "relation": "form",
+    "confidence": "EXTRACTED",
+    "confidence_score": 1.0,
+    "source_file": "docs/bench/v1.2-skill-curve.md"
+   },
+   {
+    "id": "hyperedge_audited_volition_discipline_corpus",
+    "label": "Engineering-discipline meta-prompt corpus (G0-G6, F3 analysis, Fable quality patterns, F1 method report)",
+    "nodes": [
+     "auditedf2_volition_clone_prompt_audited_volition_method",
+     "f3_discipline_analysis_discipline_meta_prompt",
+     "fable_quality_patterns_fable_quality_patterns",
+     "fable5_f1_method_analysis_report_discipline_meta_prompt_v2"
+    ],
+    "relation": "participate_in",
+    "confidence": "INFERRED",
+    "confidence_score": 0.85,
+    "source_file": "docs/f3-discipline-analysis.md"
+   },
+   {
+    "id": "dream_cycle_pipeline",
+    "label": "DreamCycle pipeline (Release-Prune-Friction-Reconcile-Crystallize-Distill)",
+    "nodes": [
+     "metabolic_model_dreamcycle",
+     "self_judgment_model_friction",
+     "semantic_reconciliation_contradictiondetector",
+     "self_judgment_model_prune_by_entropy",
+     "f4_procedural_distill"
+    ],
+    "relation": "participate_in",
+    "confidence": "EXTRACTED",
+    "confidence_score": 1.0,
+    "source_file": "docs/noosphere/semantic-reconciliation.md"
+   },
+   {
+    "id": "act_audit_pipeline",
+    "label": "act() audited pipeline (Actor-Skeptic-Breaker-Ledger-TrustMatrix-Risk gating)",
+    "nodes": [
+     "agentic_design_actorphase",
+     "f2_immunity_skeptic",
+     "f1_spine_breaker",
+     "f1_spine_ledger",
+     "f2_immunity_trustmatrix",
+     "f2_immunity_risk_gating"
+    ],
+    "relation": "participate_in",
+    "confidence": "EXTRACTED",
+    "confidence_score": 1.0,
+    "source_file": "docs/superpowers/specs/2026-06-11-conscio-v1.0.0-agentic-design.md"
+   },
+   {
+    "id": "v2_0_phase_roadmap",
+    "label": "v2.0 four-phase roadmap (Prove-Ship-Live-Connect)",
+    "nodes": [
+     "v2_0_roadmap_phase_prove",
+     "v2_0_roadmap_phase_ship",
+     "v2_0_roadmap_phase_live",
+     "v2_0_roadmap_phase_connect"
+    ],
+    "relation": "form",
+    "confidence": "EXTRACTED",
+    "confidence_score": 1.0,
+    "source_file": "docs/superpowers/specs/2026-06-13-conscio-v2.0-roadmap-design.md"
+   }
+  ]
+ },
+ "nodes": [
+  {
+   "label": "ActPipeline",
+   "file_type": "code",
+   "source_file": "conscio/agency/act.py",
+   "source_location": "L60",
+   "_origin": "ast",
+   "id": "agency_act_actpipeline",
+   "community": 11,
+   "norm_label": "actpipeline"
+  },
+  {
+   "label": "InferenceAdapter",
+   "file_type": "code",
+   "source_file": "conscio/agency/adapter.py",
+   "source_location": "L61",
+   "_origin": "ast",
+   "id": "agency_adapter_inferenceadapter",
+   "community": 2,
+   "norm_label": "inferenceadapter"
+  },
+  {
+   "label": "MockAdapter",
+   "file_type": "code",
+   "source_file": "conscio/agency/adapter.py",
+   "source_location": "L72",
+   "_origin": "ast",
+   "id": "agency_adapter_mockadapter",
+   "community": 15,
+   "norm_label": "mockadapter"
+  },
+  {
+   "label": "OllamaAdapter",
+   "file_type": "code",
+   "source_file": "conscio/agency/adapters.py",
+   "source_location": "L45",
+   "_origin": "ast",
+   "id": "agency_adapters_ollamaadapter",
+   "community": 16,
+   "norm_label": "ollamaadapter"
+  },
+  {
+   "label": "LlamaCppAdapter",
+   "file_type": "code",
+   "source_file": "conscio/agency/adapters.py",
+   "source_location": "L76",
+   "_origin": "ast",
+   "id": "agency_adapters_llamacppadapter",
+   "community": 16,
+   "norm_label": "llamacppadapter"
+  },
+  {
+   "label": "OpenAICompatAdapter",
+   "file_type": "code",
+   "source_file": "conscio/agency/adapters.py",
+   "source_location": "L106",
+   "_origin": "ast",
+   "id": "agency_adapters_openaicompatadapter",
+   "community": 16,
+   "norm_label": "openaicompatadapter"
+  },
+  {
+   "label": "LMStudioAdapter",
+   "file_type": "code",
+   "source_file": "conscio/agency/adapters.py",
+   "source_location": "L155",
+   "_origin": "ast",
+   "id": "agency_adapters_lmstudioadapter",
+   "community": 103,
+   "norm_label": "lmstudioadapter"
+  },
+  {
+   "label": "CircuitBreaker",
+   "file_type": "code",
+   "source_file": "conscio/agency/breaker.py",
+   "source_location": "L45",
+   "_origin": "ast",
+   "id": "agency_breaker_circuitbreaker",
+   "community": 0,
+   "norm_label": "circuitbreaker"
+  },
+  {
+   "label": "ActionLedger",
+   "file_type": "code",
+   "source_file": "conscio/agency/ledger.py",
+   "source_location": "L40",
+   "_origin": "ast",
+   "id": "agency_ledger_actionledger",
+   "community": 0,
+   "norm_label": "actionledger"
+  },
+  {
+   "label": "Skeptic",
+   "file_type": "code",
+   "source_file": "conscio/agency/skeptic.py",
+   "source_location": "L92",
+   "_origin": "ast",
+   "id": "agency_skeptic_skeptic",
+   "community": 2,
+   "norm_label": "skeptic"
+  },
+  {
+   "label": "ToolRegistry",
+   "file_type": "code",
+   "source_file": "conscio/agency/tools.py",
+   "source_location": "L34",
+   "_origin": "ast",
+   "id": "agency_tools_toolregistry",
+   "community": 14,
+   "norm_label": "toolregistry"
+  },
+  {
+   "label": "layer_sort_key()",
+   "file_type": "code",
+   "source_file": "conscio/content_layer.py",
+   "source_location": "L64",
+   "_origin": "ast",
+   "id": "conscio_content_layer_layer_sort_key",
+   "community": 67,
+   "norm_label": "layer_sort_key()"
+  },
+  {
+   "label": ".recall()",
+   "file_type": "code",
+   "source_file": "conscio/content_layer.py",
+   "source_location": "L106",
+   "_origin": "ast",
+   "id": "conscio_content_layer_contentlayermanager_recall",
+   "community": 115,
+   "norm_label": ".recall()"
+  },
+  {
+   "label": "ContentStore",
+   "file_type": "code",
+   "source_file": "conscio/content_store.py",
+   "source_location": "L79",
+   "_origin": "ast",
+   "id": "conscio_content_store_contentstore",
+   "community": 22,
+   "norm_label": "contentstore"
+  },
+  {
+   "label": ".search()",
+   "file_type": "code",
+   "source_file": "conscio/content_store.py",
+   "source_location": "L252",
+   "_origin": "ast",
+   "id": "conscio_content_store_contentstore_search",
+   "community": 17,
+   "norm_label": ".search()"
+  },
+  {
+   "label": "DreamCycle",
+   "file_type": "code",
+   "source_file": "conscio/dreaming.py",
+   "source_location": "L77",
+   "_origin": "ast",
+   "id": "conscio_dreaming_dreamcycle",
+   "community": 38,
+   "norm_label": "dreamcycle"
+  },
+  {
+   "label": "EventBus",
+   "file_type": "code",
+   "source_file": "conscio/event_bus.py",
+   "source_location": "L83",
+   "_origin": "ast",
+   "id": "conscio_event_bus_eventbus",
+   "community": 7,
+   "norm_label": "eventbus"
+  },
+  {
+   "label": "Migrator",
+   "file_type": "code",
+   "source_file": "conscio/migrate.py",
+   "source_location": "L112",
+   "_origin": "ast",
+   "id": "conscio_migrate_migrator",
+   "community": 1,
+   "norm_label": "migrator"
+  },
+  {
+   "label": ".contradicted_entities()",
+   "file_type": "code",
+   "source_file": "conscio/world_model.py",
+   "source_location": "L601",
+   "_origin": "ast",
+   "id": "conscio_world_model_worldmodel_contradicted_entities",
+   "community": 108,
+   "norm_label": ".contradicted_entities()"
+  },
+  {
+   "label": "StubEmbedder",
+   "file_type": "code",
+   "source_file": "tests/test_semantic_dedup.py",
+   "source_location": "L6",
+   "_origin": "ast",
+   "id": "tests_test_semantic_dedup_stubembedder",
+   "community": 47,
+   "norm_label": "stubembedder"
+  },
+  {
+   "label": "StubEmbedder",
+   "file_type": "code",
+   "source_file": "tests/test_semantic_engine.py",
+   "source_location": "L5",
+   "_origin": "ast",
+   "id": "tests_test_semantic_engine_stubembedder",
+   "community": 56,
+   "norm_label": "stubembedder"
+  },
+  {
+   "label": "StubEmbedder",
+   "file_type": "code",
+   "source_file": "tests/test_semantic_reconcile_integration.py",
+   "source_location": "L6",
+   "_origin": "ast",
+   "id": "tests_test_semantic_reconcile_integration_stubembedder",
+   "community": 142,
+   "norm_label": "stubembedder"
+  },
+  {
+   "label": "TestEventBusIntegration",
+   "file_type": "code",
+   "source_file": "tests/test_session_lifecycle.py",
+   "source_location": "L549",
+   "_origin": "ast",
+   "id": "tests_test_session_lifecycle_testeventbusintegration",
+   "community": 7,
+   "norm_label": "testeventbusintegration"
+  },
+  {
+   "label": "TestContentStoreIntegration",
+   "file_type": "code",
+   "source_file": "tests/test_session_lifecycle.py",
+   "source_location": "L579",
+   "_origin": "ast",
+   "id": "tests_test_session_lifecycle_testcontentstoreintegration",
+   "community": 7,
+   "norm_label": "testcontentstoreintegration"
+  },
+  {
+   "label": "TestSharedDB",
+   "file_type": "code",
+   "source_file": "tests/test_token_tracker.py",
+   "source_location": "L246",
+   "_origin": "ast",
+   "id": "tests_test_token_tracker_testshareddb",
+   "community": 7,
+   "norm_label": "testshareddb"
+  },
+  {
+   "label": "test_mark_dry_run_does_not_write()",
+   "file_type": "code",
+   "source_file": "tests/test_world_contradictions.py",
+   "source_location": "L72",
+   "_origin": "ast",
+   "id": "tests_test_world_contradictions_test_mark_dry_run_does_not_write",
+   "community": 72,
+   "norm_label": "test_mark_dry_run_does_not_write()"
+  },
+  {
+   "label": "test_prune_by_entropy_dry_run_no_mutation_and_matches_real()",
+   "file_type": "code",
+   "source_file": "tests/test_world_model_entropy.py",
+   "source_location": "L78",
+   "_origin": "ast",
+   "id": "tests_test_world_model_entropy_test_prune_by_entropy_dry_run_no_mutation_and_matches_real",
+   "community": 112,
+   "norm_label": "test_prune_by_entropy_dry_run_no_mutation_and_matches_real()"
+  },
+  {
+   "label": "test_prune_dry_run_matches_real_prune_after_decay()",
+   "file_type": "code",
+   "source_file": "tests/test_world_model_prune.py",
+   "source_location": "L75",
+   "_origin": "ast",
+   "id": "tests_test_world_model_prune_test_prune_dry_run_matches_real_prune_after_decay",
+   "community": 89,
+   "norm_label": "test_prune_dry_run_matches_real_prune_after_decay()"
+  },
+  {
+   "label": "GoalArbiter.choose",
+   "file_type": "code",
+   "source_file": "conscio/agency/loop.py",
+   "source_location": "def choose",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "loop_goalarbiter_choose",
+   "community": 90,
+   "norm_label": "goalarbiter.choose"
+  },
+  {
+   "label": "OutputGateway.request_action",
+   "file_type": "code",
+   "source_file": "conscio/agency/gateway.py",
+   "source_location": "def request_action",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "gateway_outputgateway_request_action",
+   "community": 81,
+   "norm_label": "outputgateway.request_action"
+  },
+  {
+   "label": "OutputGateway._try_grammar",
+   "file_type": "code",
+   "source_file": "conscio/agency/gateway.py",
+   "source_location": "def _try_grammar",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "gateway_outputgateway_try_grammar",
+   "community": 81,
+   "norm_label": "outputgateway._try_grammar"
+  },
+  {
+   "label": "OutputGateway._try_json",
+   "file_type": "code",
+   "source_file": "conscio/agency/gateway.py",
+   "source_location": "def _try_json",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "gateway_outputgateway_try_json",
+   "community": 81,
+   "norm_label": "outputgateway._try_json"
+  },
+  {
+   "label": "OutputGateway._try_kv",
+   "file_type": "code",
+   "source_file": "conscio/agency/gateway.py",
+   "source_location": "def _try_kv",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "gateway_outputgateway_try_kv",
+   "community": 81,
+   "norm_label": "outputgateway._try_kv"
+  },
+  {
+   "label": "parse_kv",
+   "file_type": "code",
+   "source_file": "conscio/agency/gateway.py",
+   "source_location": "def parse_kv",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "gateway_parse_kv",
+   "community": 81,
+   "norm_label": "parse_kv"
+  },
+  {
+   "label": "ActPipeline.act",
+   "file_type": "code",
+   "source_file": "conscio/agency/act.py",
+   "source_location": "def act",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "act_actpipeline_act",
+   "community": 90,
+   "norm_label": "actpipeline.act"
+  },
+  {
+   "label": "CircuitBreaker.should_trip",
+   "file_type": "code",
+   "source_file": "conscio/agency/breaker.py",
+   "source_location": "def should_trip",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "breaker_circuitbreaker_should_trip",
+   "community": 152,
+   "norm_label": "circuitbreaker.should_trip"
+  },
+  {
+   "label": "compile_schema_grammar",
+   "file_type": "code",
+   "source_file": "conscio/agency/grammar.py",
+   "source_location": "def compile_schema_grammar",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "grammar_compile_schema_grammar",
+   "community": 81,
+   "norm_label": "compile_schema_grammar"
+  },
+  {
+   "label": "ActionLedger.record",
+   "file_type": "code",
+   "source_file": "conscio/agency/ledger.py",
+   "source_location": "def record",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "ledger_actionledger_record",
+   "community": 90,
+   "norm_label": "actionledger.record"
+  },
+  {
+   "label": "Skeptic.audit",
+   "file_type": "code",
+   "source_file": "conscio/agency/skeptic.py",
+   "source_location": "def audit",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "skeptic_skeptic_audit",
+   "community": 120,
+   "norm_label": "skeptic.audit"
+  },
+  {
+   "label": "ToolRegistry.dispatch",
+   "file_type": "code",
+   "source_file": "conscio/agency/tools.py",
+   "source_location": "def dispatch",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "tools_toolregistry_dispatch",
+   "community": 134,
+   "norm_label": "toolregistry.dispatch"
+  },
+  {
+   "label": "ConsciousnessEngine.reflect",
+   "file_type": "code",
+   "source_file": "conscio/engine.py",
+   "source_location": "187",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "conscio_engine_reflect",
+   "community": 33,
+   "norm_label": "consciousnessengine.reflect"
+  },
+  {
+   "label": "ConsciousnessEngine.recall",
+   "file_type": "code",
+   "source_file": "conscio/engine.py",
+   "source_location": "454",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "conscio_engine_recall",
+   "community": 67,
+   "norm_label": "consciousnessengine.recall"
+  },
+  {
+   "label": "ConsciousnessEngine.dream",
+   "file_type": "code",
+   "source_file": "conscio/engine.py",
+   "source_location": "533",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "conscio_engine_dream",
+   "community": 108,
+   "norm_label": "consciousnessengine.dream"
+  },
+  {
+   "label": "CoherenceEngine.assess",
+   "file_type": "code",
+   "source_file": "conscio/coherence.py",
+   "source_location": "160",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "coherence_assess",
+   "community": 33,
+   "norm_label": "coherenceengine.assess"
+  },
+  {
+   "label": "epistemic_score",
+   "file_type": "code",
+   "source_file": "conscio/coherence.py",
+   "source_location": "104",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "coherence_epistemic_score",
+   "community": 33,
+   "norm_label": "epistemic_score"
+  },
+  {
+   "label": "reality_score",
+   "file_type": "code",
+   "source_file": "conscio/coherence.py",
+   "source_location": "112",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "coherence_reality_score",
+   "community": 33,
+   "norm_label": "reality_score"
+  },
+  {
+   "label": "ontological_score",
+   "file_type": "code",
+   "source_file": "conscio/coherence.py",
+   "source_location": "120",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "coherence_ontological_score",
+   "community": 33,
+   "norm_label": "ontological_score"
+  },
+  {
+   "label": "temporal_score",
+   "file_type": "code",
+   "source_file": "conscio/coherence.py",
+   "source_location": "140",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "coherence_temporal_score",
+   "community": 33,
+   "norm_label": "temporal_score"
+  },
+  {
+   "label": "ContentStore.index",
+   "file_type": "code",
+   "source_file": "conscio/content_store.py",
+   "source_location": "144",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "content_store_index",
+   "community": 108,
+   "norm_label": "contentstore.index"
+  },
+  {
+   "label": "ContextManager.build_state",
+   "file_type": "code",
+   "source_file": "conscio/context_manager.py",
+   "source_location": "166",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "context_manager_build_state",
+   "community": 33,
+   "norm_label": "contextmanager.build_state"
+  },
+  {
+   "label": "DreamCycle.run",
+   "file_type": "code",
+   "source_file": "conscio/dreaming.py",
+   "source_location": "96",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "dreaming_run",
+   "community": 108,
+   "norm_label": "dreamcycle.run"
+  },
+  {
+   "label": "DreamCycle._crystallize",
+   "file_type": "code",
+   "source_file": "conscio/dreaming.py",
+   "source_location": "206",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "dreaming_crystallize",
+   "community": 108,
+   "norm_label": "dreamcycle._crystallize"
+  },
+  {
+   "label": "DreamCycle._distill",
+   "file_type": "code",
+   "source_file": "conscio/dreaming.py",
+   "source_location": "170",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "dreaming_distill",
+   "community": 108,
+   "norm_label": "dreamcycle._distill"
+  },
+  {
+   "label": "EventBus.purge_duplicates",
+   "file_type": "code",
+   "source_file": "conscio/event_bus.py",
+   "source_location": "411",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "event_bus_purge_duplicates",
+   "community": 108,
+   "norm_label": "eventbus.purge_duplicates"
+  },
+  {
+   "label": "GoalGenerator.score_all_goals",
+   "file_type": "code",
+   "source_file": "conscio/goal_generator.py",
+   "source_location": "273",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "goal_generator_score_all_goals",
+   "community": 33,
+   "norm_label": "goalgenerator.score_all_goals"
+  },
+  {
+   "label": "FilterPipeline.apply",
+   "file_type": "code",
+   "source_file": "conscio/output_filter.py",
+   "source_location": "435",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "output_filter_apply",
+   "community": 39,
+   "norm_label": "filterpipeline.apply"
+  },
+  {
+   "label": "generate_self_prompts",
+   "file_type": "code",
+   "source_file": "conscio/self_prompt.py",
+   "source_location": "57",
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "self_prompt_generate_self_prompts",
+   "community": 33,
+   "norm_label": "generate_self_prompts"
+  },
+  {
+   "label": "PerceptionFrame",
+   "file_type": "code",
+   "source_file": "conscio/perception.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "perception_perceptionframe",
+   "community": 4,
+   "norm_label": "perceptionframe"
+  },
+  {
+   "label": "SensorAdapter",
+   "file_type": "code",
+   "source_file": "conscio/perception.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "perception_sensoradapter",
+   "community": 4,
+   "norm_label": "sensoradapter"
+  },
+  {
+   "label": "CircuitBreaker (tested)",
+   "file_type": "code",
+   "source_file": "tests/test_agency_breaker.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "tests_test_agency_breaker_circuitbreaker",
+   "community": 0,
+   "norm_label": "circuitbreaker (tested)"
+  },
+  {
+   "label": "ConsciousnessEngine (immunity wiring)",
+   "file_type": "code",
+   "source_file": "tests/test_agency_engine_immunity.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "tests_test_agency_engine_immunity_consciousnessengine",
+   "community": 60,
+   "norm_label": "consciousnessengine (immunity wiring)"
+  },
+  {
+   "label": "OutputGateway (tested)",
+   "file_type": "code",
+   "source_file": "tests/test_agency_gateway.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "tests_test_agency_gateway_outputgateway",
+   "community": 6,
+   "norm_label": "outputgateway (tested)"
+  },
+  {
+   "label": "repair_json",
+   "file_type": "code",
+   "source_file": "tests/test_agency_gateway.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "tests_test_agency_gateway_repair_json",
+   "community": 6,
+   "norm_label": "repair_json"
+  },
+  {
+   "label": "parse_kv",
+   "file_type": "code",
+   "source_file": "tests/test_agency_gateway.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "tests_test_agency_gateway_parse_kv",
+   "community": 6,
+   "norm_label": "parse_kv"
+  },
+  {
+   "label": "compile_proposal_grammar",
+   "file_type": "code",
+   "source_file": "tests/test_agency_grammar.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "tests_test_agency_grammar_compile_proposal_grammar",
+   "community": 49,
+   "norm_label": "compile_proposal_grammar"
+  },
+  {
+   "label": "ActionLedger (tested)",
+   "file_type": "code",
+   "source_file": "tests/test_agency_ledger.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "tests_test_agency_ledger_actionledger",
+   "community": 0,
+   "norm_label": "actionledger (tested)"
+  },
+  {
+   "label": "ActPipeline (used offline)",
+   "file_type": "code",
+   "source_file": "tests/test_agency_no_network.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "tests_test_agency_no_network_actpipeline",
+   "community": 11,
+   "norm_label": "actpipeline (used offline)"
+  },
+  {
+   "label": "choose_tier",
+   "file_type": "code",
+   "source_file": "tests/test_agency_profiles.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "tests_test_agency_profiles_choose_tier",
+   "community": 6,
+   "norm_label": "choose_tier"
+  },
+  {
+   "label": "Skeptic (tested)",
+   "file_type": "code",
+   "source_file": "tests/test_agency_skeptic.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "tests_test_agency_skeptic_skeptic",
+   "community": 36,
+   "norm_label": "skeptic (tested)"
+  },
+  {
+   "label": "SkillLibrary (tested)",
+   "file_type": "code",
+   "source_file": "tests/test_agency_skills.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "tests_test_agency_skills_skilllibrary",
+   "community": 61,
+   "norm_label": "skilllibrary (tested)"
+  },
+  {
+   "label": "TrustMatrix (tested)",
+   "file_type": "code",
+   "source_file": "tests/test_agency_trust.py",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "tests_test_agency_trust_trustmatrix",
+   "community": 70,
+   "norm_label": "trustmatrix (tested)"
+  },
+  {
+   "label": "Release CI Workflow (tag v*)",
+   "file_type": "code",
+   "source_file": ".github/workflows/release.yml",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "release_release_workflow",
+   "community": 78,
+   "norm_label": "release ci workflow (tag v*)"
+  },
+  {
+   "label": "gate job (per-file pytest + ruff + mypy)",
+   "file_type": "code",
+   "source_file": ".github/workflows/release.yml",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "release_gate_job",
+   "community": 78,
+   "norm_label": "gate job (per-file pytest + ruff + mypy)"
+  },
+  {
+   "label": "build job (python -m build + twine check)",
+   "file_type": "code",
+   "source_file": ".github/workflows/release.yml",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "release_build_job",
+   "community": 78,
+   "norm_label": "build job (python -m build + twine check)"
+  },
+  {
+   "label": "publish job (PyPI OIDC trusted publishing)",
+   "file_type": "code",
+   "source_file": ".github/workflows/release.yml",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "release_publish_job",
+   "community": 78,
+   "norm_label": "publish job (pypi oidc trusted publishing)"
+  },
+  {
+   "label": "v1.2.0 \u2014 Prove (measured proof, F2-deferred hardening)",
+   "file_type": "document",
+   "source_file": "CHANGELOG.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "changelog_v1_2_0",
+   "community": 83,
+   "norm_label": "v1.2.0 \u2014 prove (measured proof, f2-deferred hardening)"
+  },
+  {
+   "label": "Claims Ledger (CLAIMS.md)",
+   "file_type": "document",
+   "source_file": "docs/CLAIMS.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "claims_claims_ledger",
+   "community": 83,
+   "norm_label": "claims ledger (claims.md)"
+  },
+  {
+   "label": "RELEASING.md runbook",
+   "file_type": "document",
+   "source_file": "docs/RELEASING.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "releasing_releasing",
+   "community": 78,
+   "norm_label": "releasing.md runbook"
+  },
+  {
+   "label": "PyPI trusted publisher (OIDC)",
+   "file_type": "concept",
+   "source_file": "docs/RELEASING.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "releasing_pypi_trusted_publisher",
+   "community": 78,
+   "norm_label": "pypi trusted publisher (oidc)"
+  },
+  {
+   "label": "Audited Volition Method (G0-G6 gates)",
+   "file_type": "rationale",
+   "source_file": "docs/auditedF2-volition-clone-prompt.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "rationale": "Extracted method from F2 Immunity session: context reading before planning, pre-registering decisions/risks, fail-closed skepticism, TDD red-green, evidence-based verification \u2014 discipline not special architecture",
+   "id": "auditedf2_volition_clone_prompt_audited_volition_method",
+   "community": 92,
+   "norm_label": "audited volition method (g0-g6 gates)"
+  },
+  {
+   "label": "v1.2 Prove Bench Campaign Protocol",
+   "file_type": "document",
+   "source_file": "docs/bench/v1.2-campaign.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "v1_2_campaign_v1_2_campaign",
+   "community": 83,
+   "norm_label": "v1.2 prove bench campaign protocol"
+  },
+  {
+   "label": "v1.2 Measured Skill-Acquisition Curve",
+   "file_type": "document",
+   "source_file": "docs/bench/v1.2-skill-curve.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "v1_2_skill_curve_v1_2_skill_curve",
+   "community": 83,
+   "norm_label": "v1.2 measured skill-acquisition curve"
+  },
+  {
+   "label": "Distill (procedural memory distillation)",
+   "file_type": "concept",
+   "source_file": "docs/bench/v1.2-skill-curve.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "v1_2_skill_curve_distill",
+   "community": 83,
+   "norm_label": "distill (procedural memory distillation)"
+  },
+  {
+   "label": "Discipline Meta-Prompt (Mechanical Engineering Rigor)",
+   "file_type": "rationale",
+   "source_file": "docs/f3-discipline-analysis.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "rationale": "Model-agnostic system prompt: ground truth phase, dependency-ordered decomposition, contract-before-mechanism TDD, continuous invariant gates",
+   "id": "f3_discipline_analysis_discipline_meta_prompt",
+   "community": 144,
+   "norm_label": "discipline meta-prompt (mechanical engineering rigor)"
+  },
+  {
+   "label": "Fable 5 Quality Patterns Study",
+   "file_type": "document",
+   "source_file": "docs/fable-quality-patterns.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": "Opus 4.8",
+   "contributor": null,
+   "id": "fable_quality_patterns_fable_quality_patterns",
+   "community": 104,
+   "norm_label": "fable 5 quality patterns study"
+  },
+  {
+   "label": "Operating Directive: Adversarial Evidence-Gated Engineer",
+   "file_type": "rationale",
+   "source_file": "docs/fable5-F1-method-analysis-report.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "rationale": "Evidence before assertion; symmetric distrust; context explosion; standing constraints as invariants",
+   "id": "fable5_f1_method_analysis_report_discipline_meta_prompt_v2",
+   "community": 144,
+   "norm_label": "operating directive: adversarial evidence-gated engineer"
+  },
+  {
+   "label": "DreamCycle (Release/Prune/Crystallize)",
+   "file_type": "code",
+   "source_file": "docs/noosphere/metabolic-model.md",
+   "source_location": null,
+   "source_url": "https://github.com/acidgreenservers/Noosphere-Manifold",
+   "captured_at": null,
+   "author": "Lucas Kara",
+   "contributor": null,
+   "id": "metabolic_model_dreamcycle",
+   "community": 130,
+   "norm_label": "dreamcycle (release/prune/crystallize)"
+  },
+  {
+   "label": "Friction before crystallization (Noetic Helix)",
+   "file_type": "concept",
+   "source_file": "docs/noosphere/self-judgment-model.md",
+   "source_location": null,
+   "source_url": "https://github.com/acidgreenservers/Noosphere-Manifold",
+   "captured_at": null,
+   "author": "Lucas Kara",
+   "contributor": null,
+   "id": "self_judgment_model_friction",
+   "community": 130,
+   "norm_label": "friction before crystallization (noetic helix)"
+  },
+  {
+   "label": "WorldModel.prune_by_entropy(threshold=0.85)",
+   "file_type": "code",
+   "source_file": "docs/noosphere/self-judgment-model.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "self_judgment_model_prune_by_entropy",
+   "community": 105,
+   "norm_label": "worldmodel.prune_by_entropy(threshold=0.85)"
+  },
+  {
+   "label": "ContradictionDetector",
+   "file_type": "code",
+   "source_file": "docs/noosphere/semantic-reconciliation.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "semantic_reconciliation_contradictiondetector",
+   "community": 114,
+   "norm_label": "contradictiondetector"
+  },
+  {
+   "label": "conscio/agency/ledger.py (ActionLedger)",
+   "file_type": "code",
+   "source_file": "docs/superpowers/plans/2026-06-11-conscio-v1.0.0-f1-spine.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "f1_spine_ledger",
+   "community": 37,
+   "norm_label": "conscio/agency/ledger.py (actionledger)"
+  },
+  {
+   "label": "conscio/agency/breaker.py (CircuitBreaker)",
+   "file_type": "code",
+   "source_file": "docs/superpowers/plans/2026-06-11-conscio-v1.0.0-f1-spine.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "f1_spine_breaker",
+   "community": 37,
+   "norm_label": "conscio/agency/breaker.py (circuitbreaker)"
+  },
+  {
+   "label": "TrustMatrix (trust.py)",
+   "file_type": "code",
+   "source_file": "docs/superpowers/plans/2026-06-12-conscio-v1.0.0-f2-immunity.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "f2_immunity_trustmatrix",
+   "community": 37,
+   "norm_label": "trustmatrix (trust.py)"
+  },
+  {
+   "label": "Skeptic phase (skeptic.py)",
+   "file_type": "code",
+   "source_file": "docs/superpowers/plans/2026-06-12-conscio-v1.0.0-f2-immunity.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "f2_immunity_skeptic",
+   "community": 37,
+   "norm_label": "skeptic phase (skeptic.py)"
+  },
+  {
+   "label": "act.py risk gating + L2 SUPERVISED",
+   "file_type": "code",
+   "source_file": "docs/superpowers/plans/2026-06-12-conscio-v1.0.0-f2-immunity.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "f2_immunity_risk_gating",
+   "community": 37,
+   "norm_label": "act.py risk gating + l2 supervised"
+  },
+  {
+   "label": "Distill sub-phase of DreamCycle",
+   "file_type": "code",
+   "source_file": "docs/superpowers/plans/2026-06-12-conscio-v1.1-f4-procedural.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "f4_procedural_distill",
+   "community": 130,
+   "norm_label": "distill sub-phase of dreamcycle"
+  },
+  {
+   "label": "Actor phase (actor.py)",
+   "file_type": "code",
+   "source_file": "docs/superpowers/specs/2026-06-11-conscio-v1.0.0-agentic-design.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "agentic_design_actorphase",
+   "community": 37,
+   "norm_label": "actor phase (actor.py)"
+  },
+  {
+   "label": "v1.2 Prove (the instrument)",
+   "file_type": "concept",
+   "source_file": "docs/superpowers/specs/2026-06-13-conscio-v2.0-roadmap-design.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "v2_0_roadmap_phase_prove",
+   "community": 126,
+   "norm_label": "v1.2 prove (the instrument)"
+  },
+  {
+   "label": "v1.3 Ship (the product / ecosystem)",
+   "file_type": "concept",
+   "source_file": "docs/superpowers/specs/2026-06-13-conscio-v2.0-roadmap-design.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "v2_0_roadmap_phase_ship",
+   "community": 121,
+   "norm_label": "v1.3 ship (the product / ecosystem)"
+  },
+  {
+   "label": "v1.5 Live (the organism, F5)",
+   "file_type": "concept",
+   "source_file": "docs/superpowers/specs/2026-06-13-conscio-v2.0-roadmap-design.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "v2_0_roadmap_phase_live",
+   "community": 121,
+   "norm_label": "v1.5 live (the organism, f5)"
+  },
+  {
+   "label": "v2.0 Connect (the society, F6)",
+   "file_type": "concept",
+   "source_file": "docs/superpowers/specs/2026-06-13-conscio-v2.0-roadmap-design.md",
+   "source_location": null,
+   "source_url": null,
+   "captured_at": null,
+   "author": null,
+   "contributor": null,
+   "id": "v2_0_roadmap_phase_connect",
+   "community": 85,
+   "norm_label": "v2.0 connect (the society, f6)"
+  }
+ ],
+ "links": [
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "source_file": "conscio/agency/act.py",
+   "source_location": "L26",
+   "weight": 0.8,
+   "source": "agency_act_actpipeline",
+   "target": "agency_adapter_inferenceadapter",
+   "confidence_score": 0.5
+  },
+  {
+   "relation": "shares_data_with",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "tests/test_agency_act.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "agency_act_actpipeline",
+   "target": "agency_adapter_mockadapter"
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/act.py",
+   "source_location": "L27",
+   "weight": 0.8,
+   "source": "agency_act_actpipeline",
+   "target": "agency_breaker_circuitbreaker"
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/act.py",
+   "source_location": "L31",
+   "weight": 0.8,
+   "source": "agency_act_actpipeline",
+   "target": "agency_ledger_actionledger"
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/act.py",
+   "source_location": "L32",
+   "weight": 0.8,
+   "source": "agency_act_actpipeline",
+   "target": "agency_skeptic_skeptic"
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/act.py",
+   "source_location": "L33",
+   "weight": 0.8,
+   "source": "agency_act_actpipeline",
+   "target": "agency_tools_toolregistry"
+  },
+  {
+   "relation": "inherits",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/adapter.py",
+   "source_location": "L72",
+   "weight": 1.0,
+   "source": "agency_adapter_mockadapter",
+   "target": "agency_adapter_inferenceadapter"
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/adapters.py",
+   "source_location": "L14",
+   "weight": 0.8,
+   "source": "agency_adapters_llamacppadapter",
+   "target": "agency_adapter_inferenceadapter"
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/adapters.py",
+   "source_location": "L14",
+   "weight": 0.8,
+   "source": "agency_adapters_ollamaadapter",
+   "target": "agency_adapter_inferenceadapter"
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/adapters.py",
+   "source_location": "L14",
+   "weight": 0.8,
+   "source": "agency_adapters_openaicompatadapter",
+   "target": "agency_adapter_inferenceadapter"
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/adapters.py",
+   "source_location": "L14",
+   "weight": 0.8,
+   "source": "agency_adapters_lmstudioadapter",
+   "target": "agency_adapter_inferenceadapter"
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "source_file": "conscio/agency/skeptic.py",
+   "source_location": "L21",
+   "weight": 0.8,
+   "source": "agency_skeptic_skeptic",
+   "target": "agency_adapter_inferenceadapter",
+   "confidence_score": 0.5
+  },
+  {
+   "relation": "semantically_similar_to",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_agency_adapters_http.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "agency_adapters_lmstudioadapter",
+   "target": "agency_adapters_openaicompatadapter"
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "source_file": "conscio/agency/breaker.py",
+   "source_location": "L26",
+   "weight": 0.8,
+   "source": "agency_breaker_circuitbreaker",
+   "target": "agency_ledger_actionledger",
+   "confidence_score": 0.5
+  },
+  {
+   "relation": "calls",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_engine_recall.py",
+   "source_location": "L74-96",
+   "weight": 0.85,
+   "source": "conscio_engine_recall",
+   "target": "conscio_content_layer_layer_sort_key"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "tests/test_content_layer_manager.py",
+   "source_location": "L200",
+   "weight": 1.0,
+   "source": "conscio_content_layer_contentlayermanager_recall",
+   "target": "conscio_content_store_contentstore_search"
+  },
+  {
+   "relation": "method",
+   "confidence": "EXTRACTED",
+   "source_file": "conscio/content_store.py",
+   "source_location": "L252",
+   "weight": 1.0,
+   "source": "conscio_content_store_contentstore",
+   "target": "conscio_content_store_contentstore_search",
+   "confidence_score": 1.0
+  },
+  {
+   "relation": "calls",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_dreaming.py",
+   "source_location": "L90-99",
+   "weight": 0.85,
+   "source": "conscio_dreaming_dreamcycle",
+   "target": "conscio_content_store_contentstore"
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "source_file": "tests/test_session_lifecycle.py",
+   "source_location": "L38",
+   "weight": 0.8,
+   "source": "tests_test_session_lifecycle_testcontentstoreintegration",
+   "target": "conscio_content_store_contentstore",
+   "confidence_score": 0.5
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "source_file": "tests/test_session_lifecycle.py",
+   "source_location": "L38",
+   "weight": 0.8,
+   "source": "tests_test_session_lifecycle_testeventbusintegration",
+   "target": "conscio_content_store_contentstore",
+   "confidence_score": 0.5
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "source_file": "tests/test_token_tracker.py",
+   "source_location": "L266",
+   "weight": 0.8,
+   "source": "tests_test_token_tracker_testshareddb",
+   "target": "conscio_content_store_contentstore",
+   "confidence_score": 0.5
+  },
+  {
+   "relation": "calls",
+   "confidence": "INFERRED",
+   "confidence_score": 0.95,
+   "source_file": "tests/test_engine_recall.py",
+   "source_location": "L15-22",
+   "weight": 0.95,
+   "source": "conscio_engine_recall",
+   "target": "conscio_content_store_contentstore_search"
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "source_file": "tests/test_session_lifecycle.py",
+   "source_location": "L37",
+   "weight": 0.8,
+   "source": "tests_test_session_lifecycle_testcontentstoreintegration",
+   "target": "conscio_event_bus_eventbus",
+   "confidence_score": 0.5
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "source_file": "tests/test_session_lifecycle.py",
+   "source_location": "L37",
+   "weight": 0.8,
+   "source": "tests_test_session_lifecycle_testeventbusintegration",
+   "target": "conscio_event_bus_eventbus",
+   "confidence_score": 0.5
+  },
+  {
+   "relation": "uses",
+   "confidence": "INFERRED",
+   "source_file": "tests/test_token_tracker.py",
+   "source_location": "L249",
+   "weight": 0.8,
+   "source": "tests_test_token_tracker_testshareddb",
+   "target": "conscio_event_bus_eventbus",
+   "confidence_score": 0.5
+  },
+  {
+   "relation": "calls",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_dream_reconcile.py",
+   "source_location": "L34",
+   "weight": 0.85,
+   "source": "conscio_engine_dream",
+   "target": "conscio_world_model_worldmodel_contradicted_entities"
+  },
+  {
+   "relation": "semantically_similar_to",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_semantic_engine.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "tests_test_semantic_engine_stubembedder",
+   "target": "tests_test_semantic_dedup_stubembedder"
+  },
+  {
+   "relation": "semantically_similar_to",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_semantic_engine.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "tests_test_semantic_engine_stubembedder",
+   "target": "tests_test_semantic_reconcile_integration_stubembedder"
+  },
+  {
+   "relation": "semantically_similar_to",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_session_lifecycle.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "tests_test_session_lifecycle_testeventbusintegration",
+   "target": "tests_test_token_tracker_testshareddb"
+  },
+  {
+   "relation": "semantically_similar_to",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_session_lifecycle.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "tests_test_session_lifecycle_testcontentstoreintegration",
+   "target": "tests_test_token_tracker_testshareddb"
+  },
+  {
+   "relation": "conceptually_related_to",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_world_contradictions.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "tests_test_world_contradictions_test_mark_dry_run_does_not_write",
+   "target": "tests_test_world_model_entropy_test_prune_by_entropy_dry_run_no_mutation_and_matches_real"
+  },
+  {
+   "relation": "semantically_similar_to",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_world_contradictions.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "tests_test_world_contradictions_test_mark_dry_run_does_not_write",
+   "target": "tests_test_world_model_prune_test_prune_dry_run_matches_real_prune_after_decay"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/act.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "act_actpipeline_act",
+   "target": "loop_goalarbiter_choose"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/act.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "act_actpipeline_act",
+   "target": "gateway_outputgateway_request_action"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/gateway.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "gateway_outputgateway_request_action",
+   "target": "gateway_outputgateway_try_grammar"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/gateway.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "gateway_outputgateway_request_action",
+   "target": "gateway_outputgateway_try_json"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/gateway.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "gateway_outputgateway_request_action",
+   "target": "gateway_outputgateway_try_kv"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/gateway.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "gateway_outputgateway_try_grammar",
+   "target": "grammar_compile_schema_grammar"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/gateway.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "gateway_outputgateway_try_kv",
+   "target": "gateway_parse_kv"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/act.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "act_actpipeline_act",
+   "target": "ledger_actionledger_record"
+  },
+  {
+   "relation": "calls",
+   "confidence": "INFERRED",
+   "confidence_score": 0.95,
+   "source_file": "conscio/agency/act.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "act_actpipeline_act",
+   "target": "tools_toolregistry_dispatch"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/engine.py",
+   "source_location": "216",
+   "weight": 1.0,
+   "source": "conscio_engine_reflect",
+   "target": "coherence_assess"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/engine.py",
+   "source_location": "275",
+   "weight": 1.0,
+   "source": "conscio_engine_reflect",
+   "target": "conscio_engine_recall"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/engine.py",
+   "source_location": "321",
+   "weight": 1.0,
+   "source": "conscio_engine_reflect",
+   "target": "content_store_index"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/engine.py",
+   "source_location": "351",
+   "weight": 1.0,
+   "source": "conscio_engine_reflect",
+   "target": "context_manager_build_state"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/engine.py",
+   "source_location": "268",
+   "weight": 1.0,
+   "source": "conscio_engine_reflect",
+   "target": "goal_generator_score_all_goals"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/engine.py",
+   "source_location": "313",
+   "weight": 1.0,
+   "source": "conscio_engine_reflect",
+   "target": "output_filter_apply"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/engine.py",
+   "source_location": "245",
+   "weight": 1.0,
+   "source": "conscio_engine_reflect",
+   "target": "self_prompt_generate_self_prompts"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/engine.py",
+   "source_location": "542",
+   "weight": 1.0,
+   "source": "conscio_engine_dream",
+   "target": "dreaming_run"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/coherence.py",
+   "source_location": "162",
+   "weight": 1.0,
+   "source": "coherence_assess",
+   "target": "coherence_epistemic_score"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/coherence.py",
+   "source_location": "164",
+   "weight": 1.0,
+   "source": "coherence_assess",
+   "target": "coherence_ontological_score"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/coherence.py",
+   "source_location": "163",
+   "weight": 1.0,
+   "source": "coherence_assess",
+   "target": "coherence_reality_score"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/coherence.py",
+   "source_location": "165",
+   "weight": 1.0,
+   "source": "coherence_assess",
+   "target": "coherence_temporal_score"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/dreaming.py",
+   "source_location": "111",
+   "weight": 1.0,
+   "source": "dreaming_run",
+   "target": "coherence_assess"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/dreaming.py",
+   "source_location": "245",
+   "weight": 1.0,
+   "source": "dreaming_crystallize",
+   "target": "content_store_index"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/dreaming.py",
+   "source_location": "146",
+   "weight": 1.0,
+   "source": "dreaming_run",
+   "target": "dreaming_crystallize"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/dreaming.py",
+   "source_location": "158",
+   "weight": 1.0,
+   "source": "dreaming_run",
+   "target": "dreaming_distill"
+  },
+  {
+   "relation": "calls",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/dreaming.py",
+   "source_location": "114",
+   "weight": 1.0,
+   "source": "dreaming_run",
+   "target": "event_bus_purge_duplicates"
+  },
+  {
+   "relation": "shares_data_with",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_agency_gateway.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "tests_test_agency_gateway_outputgateway",
+   "target": "tests_test_agency_gateway_parse_kv"
+  },
+  {
+   "relation": "shares_data_with",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_agency_gateway.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "tests_test_agency_gateway_outputgateway",
+   "target": "tests_test_agency_gateway_repair_json"
+  },
+  {
+   "relation": "conceptually_related_to",
+   "confidence": "INFERRED",
+   "confidence_score": 0.75,
+   "source_file": "tests/test_agency_profiles.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "tests_test_agency_profiles_choose_tier",
+   "target": "tests_test_agency_gateway_outputgateway"
+  },
+  {
+   "relation": "shares_data_with",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "tests/test_agency_skills.py",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "tests_test_agency_skills_skilllibrary",
+   "target": "tests_test_agency_ledger_actionledger"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": ".github/workflows/release.yml",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "release_release_workflow",
+   "target": "release_build_job"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": ".github/workflows/release.yml",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "release_release_workflow",
+   "target": "release_gate_job"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": ".github/workflows/release.yml",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "release_release_workflow",
+   "target": "release_publish_job"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/RELEASING.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "releasing_releasing",
+   "target": "release_release_workflow"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": ".github/workflows/release.yml",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "release_build_job",
+   "target": "release_gate_job"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": ".github/workflows/release.yml",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "release_publish_job",
+   "target": "release_build_job"
+  },
+  {
+   "relation": "implements",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": ".github/workflows/release.yml",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "release_publish_job",
+   "target": "releasing_pypi_trusted_publisher"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "CHANGELOG.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "changelog_v1_2_0",
+   "target": "claims_claims_ledger"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "CHANGELOG.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "changelog_v1_2_0",
+   "target": "v1_2_campaign_v1_2_campaign"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "CHANGELOG.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "changelog_v1_2_0",
+   "target": "v1_2_skill_curve_v1_2_skill_curve"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/RELEASING.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "releasing_releasing",
+   "target": "claims_claims_ledger"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/bench/v1.2-skill-curve.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "v1_2_skill_curve_v1_2_skill_curve",
+   "target": "claims_claims_ledger"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/RELEASING.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "releasing_releasing",
+   "target": "releasing_pypi_trusted_publisher"
+  },
+  {
+   "relation": "semantically_similar_to",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "docs/f3-discipline-analysis.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "f3_discipline_analysis_discipline_meta_prompt",
+   "target": "auditedf2_volition_clone_prompt_audited_volition_method"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/bench/v1.2-campaign.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "v1_2_campaign_v1_2_campaign",
+   "target": "v1_2_skill_curve_v1_2_skill_curve"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/bench/v1.2-skill-curve.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "v1_2_skill_curve_v1_2_skill_curve",
+   "target": "v1_2_skill_curve_distill"
+  },
+  {
+   "relation": "semantically_similar_to",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "docs/f3-discipline-analysis.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "f3_discipline_analysis_discipline_meta_prompt",
+   "target": "fable5_f1_method_analysis_report_discipline_meta_prompt_v2"
+  },
+  {
+   "relation": "implements",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/superpowers/plans/2026-06-12-conscio-v1.1-f4-procedural.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "f4_procedural_distill",
+   "target": "metabolic_model_dreamcycle"
+  },
+  {
+   "relation": "implements",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/noosphere/self-judgment-model.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "self_judgment_model_friction",
+   "target": "metabolic_model_dreamcycle"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/noosphere/semantic-reconciliation.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "semantic_reconciliation_contradictiondetector",
+   "target": "metabolic_model_dreamcycle"
+  },
+  {
+   "relation": "references",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/superpowers/plans/2026-06-12-conscio-v1.0.0-f2-immunity.md",
+   "source_location": null,
+   "weight": 1.0,
+   "source": "f2_immunity_skeptic",
+   "target": "agentic_design_actorphase"
+  }
+ ],
+ "hyperedges": [
+  {
+   "id": "agency_act_cycle_pipeline",
+   "label": "Act cycle pipeline (act -> audit -> ledger -> breaker)",
+   "nodes": [
+    "act_actpipeline_act",
+    "loop_goalarbiter_choose",
+    "gateway_outputgateway_request_action",
+    "skeptic_skeptic_audit",
+    "ledger_actionledger_record",
+    "breaker_circuitbreaker_should_trip",
+    "tools_toolregistry_dispatch"
+   ],
+   "relation": "participate_in",
+   "confidence": "EXTRACTED",
+   "confidence_score": 0.95,
+   "source_file": "conscio/agency/act.py"
+  },
+  {
+   "id": "inference_adapter_implementations",
+   "label": "Concrete InferenceAdapter implementations",
+   "nodes": [
+    "adapter_mockadapter",
+    "adapter_meteredadapter",
+    "adapters_ollamaadapter",
+    "adapters_llamacppadapter",
+    "adapters_openaicompatadapter",
+    "adapters_lmstudioadapter"
+   ],
+   "relation": "implement",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/agency/adapter.py"
+  },
+  {
+   "id": "gateway_decode_tiers",
+   "label": "Gateway decode tier hierarchy T1/T2/T3",
+   "nodes": [
+    "gateway_outputgateway_try_grammar",
+    "gateway_outputgateway_try_json",
+    "gateway_outputgateway_try_kv",
+    "grammar_compile_schema_grammar",
+    "gateway_parse_kv"
+   ],
+   "relation": "form",
+   "confidence": "EXTRACTED",
+   "confidence_score": 0.95,
+   "source_file": "conscio/agency/gateway.py"
+  },
+  {
+   "id": "reflect_cycle_pipeline",
+   "label": "reflect() orchestration pipeline (perceive/coherence/self-prompt/goals/output)",
+   "nodes": [
+    "conscio_engine_reflect",
+    "coherence_assess",
+    "self_prompt_generate_self_prompts",
+    "goal_generator_score_all_goals",
+    "output_filter_apply",
+    "content_store_index",
+    "context_manager_build_state"
+   ],
+   "relation": "participate_in",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "conscio/engine.py"
+  },
+  {
+   "id": "dream_consolidation_phases",
+   "label": "DreamCycle Release/Prune/Reconcile/Crystallize/Distill phases",
+   "nodes": [
+    "dreaming_run",
+    "event_bus_purge_duplicates",
+    "dreaming_crystallize",
+    "dreaming_distill",
+    "coherence_assess"
+   ],
+   "relation": "participate_in",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/dreaming.py"
+  },
+  {
+   "id": "coherence_dimension_scorers",
+   "label": "Four coherence dimensions feeding CoherenceEngine.assess",
+   "nodes": [
+    "coherence_epistemic_score",
+    "coherence_reality_score",
+    "coherence_ontological_score",
+    "coherence_temporal_score",
+    "coherence_assess"
+   ],
+   "relation": "participate_in",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "conscio/coherence.py"
+  },
+  {
+   "id": "agency_immune_pipeline",
+   "label": "Agency immune-system pipeline (ActPipeline + Skeptic + CircuitBreaker + ActionLedger)",
+   "nodes": [
+    "agency_act_actpipeline",
+    "agency_skeptic_skeptic",
+    "agency_breaker_circuitbreaker",
+    "agency_ledger_actionledger",
+    "agency_tools_toolregistry"
+   ],
+   "relation": "participate_in",
+   "confidence": "EXTRACTED",
+   "confidence_score": 0.9,
+   "source_file": "tests/test_agency_act_immunity.py"
+  },
+  {
+   "id": "inference_adapter_implementations",
+   "label": "InferenceAdapter implementations across backends",
+   "nodes": [
+    "agency_adapter_inferenceadapter",
+    "agency_adapters_ollamaadapter",
+    "agency_adapters_lmstudioadapter",
+    "agency_adapters_llamacppadapter",
+    "agency_adapters_openaicompatadapter",
+    "agency_adapter_mockadapter",
+    "custom_adapter_echoadapter"
+   ],
+   "relation": "implement",
+   "confidence": "EXTRACTED",
+   "confidence_score": 0.9,
+   "source_file": "conscio/agency/adapter.py"
+  },
+  {
+   "id": "sensoradapter_examples",
+   "label": "SensorAdapter example implementations feeding engine.reflect via PerceptionFrame",
+   "nodes": [
+    "perception_sensoradapter",
+    "perception_perceptionframe",
+    "agent_companion_agentsensor",
+    "host_guardian_hostsensor",
+    "engine_consciousnessengine"
+   ],
+   "relation": "participate_in",
+   "confidence": "EXTRACTED",
+   "confidence_score": 0.85,
+   "source_file": "examples/host_guardian.py"
+  },
+  {
+   "id": "f2_immunity_layer_pattern",
+   "label": "F2 immunity layer: skeptic audit + trust + circuit breaker quarantine",
+   "nodes": [
+    "tests_test_agency_skeptic_skeptic",
+    "tests_test_agency_trust_trustmatrix",
+    "tests_test_agency_breaker_circuitbreaker",
+    "tests_test_agency_engine_immunity_consciousnessengine"
+   ],
+   "relation": "participate_in",
+   "confidence": "EXTRACTED",
+   "confidence_score": 0.95,
+   "source_file": "tests/test_agency_engine_immunity.py"
+  },
+  {
+   "id": "output_gateway_tier_pipeline",
+   "label": "Tiered output gateway: grammar (T1), JSON repair (T2), KV-line (T3)",
+   "nodes": [
+    "tests_test_agency_gateway_outputgateway",
+    "tests_test_agency_grammar_compile_proposal_grammar",
+    "tests_test_agency_gateway_repair_json",
+    "tests_test_agency_gateway_parse_kv",
+    "tests_test_agency_profiles_choose_tier"
+   ],
+   "relation": "form",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_agency_gateway.py"
+  },
+  {
+   "id": "act_pipeline_ledger_skills_cycle",
+   "label": "Act pipeline: ledger records actions, breaker monitors failures, skills distill from ledger and serve few-shot exemplars",
+   "nodes": [
+    "tests_test_agency_no_network_actpipeline",
+    "tests_test_agency_ledger_actionledger",
+    "tests_test_agency_breaker_circuitbreaker",
+    "tests_test_agency_skills_skilllibrary"
+   ],
+   "relation": "participate_in",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_agency_no_network.py"
+  },
+  {
+   "id": "dream_cycle_phases",
+   "label": "Dream cycle: reconcile, prune, crystallize, distill phases share ConsciousnessEngine.dream()",
+   "nodes": [
+    "conscio_engine_dream",
+    "conscio_dreaming_dreamcycle",
+    "conscio_world_model_worldmodel_contradicted_entities",
+    "conscio_agency_skills_skilllibrary",
+    "conscio_content_store_contentstore"
+   ],
+   "relation": "participate_in",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_dreaming.py"
+  },
+  {
+   "id": "shared_sqlite_db_modules",
+   "label": "ContentStore, EventBus, and Migrator share the same SQLite-backed conscio.db",
+   "nodes": [
+    "conscio_content_store_contentstore",
+    "conscio_event_bus_eventbus",
+    "conscio_migrate_migrator"
+   ],
+   "relation": "form",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "tests/test_migrate.py"
+  },
+  {
+   "id": "recall_layered_retrieval",
+   "label": "Recall pipeline combines ContentLayer ordering, ContentStore FTS5 search, and ConsciousnessEngine.recall",
+   "nodes": [
+    "conscio_content_layer_layer_sort_key",
+    "conscio_content_layer_contentlayermanager_recall",
+    "conscio_content_store_contentstore_search",
+    "conscio_engine_recall"
+   ],
+   "relation": "participate_in",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_engine_recall.py"
+  },
+  {
+   "id": "hyperedge_dry_run_preview_pattern",
+   "label": "dry_run preview-matches-reality pattern across world model mutations",
+   "nodes": [
+    "tests_test_world_contradictions_test_mark_dry_run_does_not_write",
+    "tests_test_world_model_entropy_test_prune_by_entropy_dry_run_no_mutation_and_matches_real",
+    "tests_test_world_model_prune_test_prune_dry_run_matches_real_prune_after_decay"
+   ],
+   "relation": "form",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_world_contradictions.py"
+  },
+  {
+   "id": "hyperedge_shared_sqlite_db_modules",
+   "label": "Multiple modules coexist in same sqlite db (TokenTracker/EventBus/ContentStore/SessionLifecycle)",
+   "nodes": [
+    "tests_test_token_tracker_testshareddb",
+    "tests_test_session_lifecycle_testeventbusintegration",
+    "tests_test_session_lifecycle_testcontentstoreintegration"
+   ],
+   "relation": "participate_in",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_token_tracker.py"
+  },
+  {
+   "id": "hyperedge_stub_embedder_axis_pattern",
+   "label": "Deterministic stub embedders driving SemanticEngine axis-based contradiction detection across test files",
+   "nodes": [
+    "tests_test_semantic_engine_stubembedder",
+    "tests_test_semantic_dedup_stubembedder",
+    "tests_test_semantic_reconcile_integration_stubembedder"
+   ],
+   "relation": "participate_in",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "tests/test_semantic_engine.py"
+  },
+  {
+   "id": "hyperedge_release_pipeline",
+   "label": "Tag-to-PyPI release pipeline",
+   "nodes": [
+    "release_release_workflow",
+    "release_gate_job",
+    "release_build_job",
+    "release_publish_job",
+    "releasing_releasing",
+    "releasing_pypi_trusted_publisher"
+   ],
+   "relation": "participate_in",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/RELEASING.md"
+  },
+  {
+   "id": "hyperedge_v1_2_prove_measurement",
+   "label": "v1.2 Prove campaign \u2014 real-backend measurement of competence/immunity claims",
+   "nodes": [
+    "v1_2_campaign_v1_2_campaign",
+    "v1_2_skill_curve_v1_2_skill_curve",
+    "claims_claims_ledger",
+    "changelog_v1_2_0",
+    "v1_2_skill_curve_distill"
+   ],
+   "relation": "form",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/bench/v1.2-skill-curve.md"
+  },
+  {
+   "id": "hyperedge_audited_volition_discipline_corpus",
+   "label": "Engineering-discipline meta-prompt corpus (G0-G6, F3 analysis, Fable quality patterns, F1 method report)",
+   "nodes": [
+    "auditedf2_volition_clone_prompt_audited_volition_method",
+    "f3_discipline_analysis_discipline_meta_prompt",
+    "fable_quality_patterns_fable_quality_patterns",
+    "fable5_f1_method_analysis_report_discipline_meta_prompt_v2"
+   ],
+   "relation": "participate_in",
+   "confidence": "INFERRED",
+   "confidence_score": 0.85,
+   "source_file": "docs/f3-discipline-analysis.md"
+  },
+  {
+   "id": "dream_cycle_pipeline",
+   "label": "DreamCycle pipeline (Release-Prune-Friction-Reconcile-Crystallize-Distill)",
+   "nodes": [
+    "metabolic_model_dreamcycle",
+    "self_judgment_model_friction",
+    "semantic_reconciliation_contradictiondetector",
+    "self_judgment_model_prune_by_entropy",
+    "f4_procedural_distill"
+   ],
+   "relation": "participate_in",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/noosphere/semantic-reconciliation.md"
+  },
+  {
+   "id": "act_audit_pipeline",
+   "label": "act() audited pipeline (Actor-Skeptic-Breaker-Ledger-TrustMatrix-Risk gating)",
+   "nodes": [
+    "agentic_design_actorphase",
+    "f2_immunity_skeptic",
+    "f1_spine_breaker",
+    "f1_spine_ledger",
+    "f2_immunity_trustmatrix",
+    "f2_immunity_risk_gating"
+   ],
+   "relation": "participate_in",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/superpowers/specs/2026-06-11-conscio-v1.0.0-agentic-design.md"
+  },
+  {
+   "id": "v2_0_phase_roadmap",
+   "label": "v2.0 four-phase roadmap (Prove-Ship-Live-Connect)",
+   "nodes": [
+    "v2_0_roadmap_phase_prove",
+    "v2_0_roadmap_phase_ship",
+    "v2_0_roadmap_phase_live",
+    "v2_0_roadmap_phase_connect"
+   ],
+   "relation": "form",
+   "confidence": "EXTRACTED",
+   "confidence_score": 1.0,
+   "source_file": "docs/superpowers/specs/2026-06-13-conscio-v2.0-roadmap-design.md"
+  }
+ ],
+ "built_at_commit": "48f14a61aa36e6d336577593fb9bf2f812fa85df"
+}
