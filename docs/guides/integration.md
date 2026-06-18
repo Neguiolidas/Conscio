@@ -44,7 +44,7 @@ if adv["status"]["brake"]:
 | `goals` | List of `{description, origin, executable}`. |
 | `coherence` | `{score, dominant}` — aggregate coherence + dominant dissonance. |
 | `status` | `{action_lockdown, dream_recommended, brake}`. |
-| `structural` | `{loaded, commit, hash, nodes, hyperedges, communities}` or `null` — the loaded code graph; see [Structural cognition](#structural-cognition). |
+| `structural` | `{loaded, commit, hash, nodes, hyperedges, communities, drift, freshness}` or `null` — the loaded code graph; `drift`/`freshness` are `null` unless loaded with a workspace identity. See [Structural cognition](#structural-cognition). |
 | `recommendations` | Derived hints, e.g. "N diagnostic goal(s) pending review". |
 
 ### Goal origins
@@ -112,10 +112,36 @@ engine.structural_lookup("0")                            # -> {"kind": "communit
 engine.structural_lookup("unknown")                      # -> None (always graceful)
 ```
 
-**Staleness is yours to detect.** The signal carries `built_at_commit` and a
-`content_hash` (surfaced in `advisory()["structural"]`); compare `commit` to your
-current `HEAD` to know when to regenerate the graph. Conscio never runs Graphify
-itself.
+### Drift & freshness (v1.8)
+
+The ingested graph is a snapshot; v1.8 makes it **temporal**. When you load with a
+workspace identity (the daemon does this automatically), the engine persists a
+small baseline per `Workspace.id` under `<storage>/structural_drift.json` and
+reports two signals:
+
+- **Drift** — what changed since the last load: commit moved, `content_hash`
+  changed, communities / hyperedges added·removed·resized, node/link count
+  deltas. A passive `structure:changed` event fires on real drift.
+- **Freshness** — whether the graph is behind the repo *right now*: the graph's
+  `built_at_commit` is compared against the repo `HEAD`, read **purely from
+  `.git`** (no `git` subprocess). `is_stale` ⇒ regenerate the graph. Conscio
+  never runs Graphify itself.
+
+Both appear in `advisory()["structural"]` as `drift` / `freshness`, and as pull
+surfaces:
+
+```python
+sig = engine.load_structure(path, workspace_id=ws.id, root=ws.root)
+engine.structural_delta()       # -> StructuralDelta | None
+engine.structural_freshness()   # -> StructuralFreshness | None
+```
+
+Inspect the current workspace from the CLI (read-only — never advances the
+baseline, so it cannot mask drift from a running daemon):
+
+```bash
+conscio structure
+```
 
 ### Consent (workspace-scoped)
 

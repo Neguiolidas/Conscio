@@ -15,6 +15,18 @@
 | v0.7 | Recursive Coherence | dream+coherence loop + self-prompting | ✅ Done |
 | v0.8 | Semantic Reconciliation | embedding antonym-axis contradiction + non-destructive dedup | ✅ Done |
 | v0.9 | Full Integration | axis-pack, semantic, content-layer-manager, trajectory | ✅ Done (707 tests) |
+| v1.0 | Volição (F1–F3) | agency spine + immunity + volition (`act()`, Skeptic, TrustMatrix, breaker, GBNF, autonomy loop) | ✅ Done |
+| v1.1 | Procedural (F4) | `SkillLibrary` procedural memory + dream Distill | ✅ Done |
+| v1.2 | Prove | real-backend skill curve + `docs/CLAIMS.md` honesty ledger | ✅ Done |
+| v1.3 | Ship | PyPI (`pip install conscio`), docs site, plugin surface, release CI | ✅ Done (live on PyPI) |
+| v1.4 | Attune | offline/deterministic detect + dim-safe embedder + Claude/Gemini adapters | ✅ Done |
+| v1.5 | Live | Awake Mode (R9) + daemon + sensors + WorkspaceContext | ✅ Done |
+| v1.6 | Structural Cognition (field slice) | goal-provenance gate + `advisory()` consumption seam | ✅ Done |
+| v1.7 | Structural Cognition (distiller) | `StructuralDistiller` + budget-adaptive injection + consent (R10) | ✅ Done |
+| v1.8 | Structural Drift | drift + freshness (vs repo HEAD, pure `.git`) — temporal structure | ✅ Done |
+
+> Full per-release detail lives in [`CHANGELOG.md`](../CHANGELOG.md). Next: the
+> **Connect** band (v2.0 — same-host noosphere; cross-host deferred to authenticated transport).
 
 ---
 

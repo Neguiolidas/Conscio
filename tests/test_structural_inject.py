@@ -7,6 +7,7 @@ and exposes engine.structural_lookup()/structural_signal() as advisory()-style
 pull surfaces. Injection renders LABELS + community digests only, never raw
 node-ids (so the v1.7.0 dangling-ref artifact never reaches the LLM).
 """
+import json
 import pathlib
 
 import pytest
@@ -168,3 +169,106 @@ class TestAdvisoryStructural:
         assert s["nodes"] == 101
         assert s["commit"].startswith("48f14a61")
         assert s["hash"] and s["communities"] > 0
+
+
+# ── v1.8 structural drift (temporal awareness) ───────────────────────────────
+_SHA1 = "1111111111111111111111111111111111111111"
+_SHA2 = "2222222222222222222222222222222222222222"
+
+
+def _n(nid, community=0):
+    return {"id": nid, "label": nid.upper(), "community": community,
+            "source_file": "a.py", "source_location": "L1", "file_type": "code"}
+
+
+def _h(hid, label):
+    return {"id": hid, "label": label, "nodes": ["n1"],
+            "relation": "participate_in", "confidence_score": 0.9, "source_file": "a.py"}
+
+
+def _write_graph(path, *, nodes=None, hyperedges=None, links=None, commit="c1"):
+    path.write_text(json.dumps({
+        "nodes": nodes or [], "hyperedges": hyperedges or [],
+        "links": links or [], "built_at_commit": commit}))
+    return path
+
+
+def _event_types(engine):
+    return [e.to_dict()["type"] for e in engine.event_bus.query(limit=50)]
+
+
+class TestStructuralDrift:
+    def test_event_type_is_valid(self):
+        from conscio.event_bus import VALID_TYPES
+        assert "structure:changed" in VALID_TYPES
+
+    def test_first_load_is_first_sight(self, engine, tmp_path):
+        g = _write_graph(tmp_path / "g.json", nodes=[_n("n1")],
+                         hyperedges=[_h("h1", "E1")])
+        engine.load_structure(g, workspace_id="wsA")
+        d = engine.structural_delta()
+        assert d is not None
+        assert d.first_sight is True and d.changed is False
+
+    def test_baseline_persisted(self, engine, tmp_path):
+        g = _write_graph(tmp_path / "g.json", nodes=[_n("n1")])
+        engine.load_structure(g, workspace_id="wsA")
+        assert (engine.storage / "structural_drift.json").exists()
+
+    def test_reload_identical_not_changed(self, engine, tmp_path):
+        g = _write_graph(tmp_path / "g.json", nodes=[_n("n1")],
+                         hyperedges=[_h("h1", "E1")])
+        engine.load_structure(g, workspace_id="wsA")
+        engine.load_structure(g, workspace_id="wsA")
+        assert engine.structural_delta().changed is False
+
+    def test_mutation_detected_with_labels(self, engine, tmp_path):
+        p = tmp_path / "g.json"
+        _write_graph(p, hyperedges=[_h("h1", "E1"), _h("h2", "Gone Edge")], commit="c1")
+        engine.load_structure(p, workspace_id="wsA")
+        _write_graph(p, hyperedges=[_h("h1", "E1")], commit="c2")   # drop h2, new commit
+        engine.load_structure(p, workspace_id="wsA")
+        d = engine.structural_delta()
+        assert d.changed is True
+        assert d.commit_changed is True
+        assert "Gone Edge" in d.hyperedges_removed
+
+    def test_structure_changed_event_emitted_on_drift(self, engine, tmp_path):
+        p = tmp_path / "g.json"
+        _write_graph(p, hyperedges=[_h("h1", "E1")], commit="c1")
+        engine.load_structure(p, workspace_id="wsA")
+        assert "structure:changed" not in _event_types(engine)      # first sight: silent
+        _write_graph(p, hyperedges=[_h("h1", "E1"), _h("h2", "E2")], commit="c2")
+        engine.load_structure(p, workspace_id="wsA")
+        assert "structure:changed" in _event_types(engine)
+
+    def test_advisory_carries_drift_and_freshness(self, engine, tmp_path):
+        git = tmp_path / ".git"
+        git.mkdir()
+        (git / "HEAD").write_text(_SHA2 + "\n")                      # repo HEAD
+        g = _write_graph(tmp_path / "g.json", nodes=[_n("n1")], commit=_SHA1)
+        engine.load_structure(g, workspace_id="wsA", root=tmp_path)
+        s = engine.advisory()["structural"]
+        assert s["drift"] is not None and s["drift"]["first_sight"] is True
+        assert s["freshness"]["stale"] is True                       # SHA1 != SHA2
+
+    def test_no_workspace_id_means_no_drift(self, engine):
+        engine.load_structure(FIXTURE)                               # v1.7 call shape
+        assert engine.structural_delta() is None
+        assert engine.structural_freshness() is None
+        s = engine.advisory()["structural"]
+        assert s["drift"] is None and s["freshness"] is None
+
+    def test_freshness_none_without_root(self, engine, tmp_path):
+        g = _write_graph(tmp_path / "g.json", nodes=[_n("n1")])
+        engine.load_structure(g, workspace_id="wsA")                 # no root
+        assert engine.structural_delta() is not None
+        assert engine.structural_freshness() is None
+
+    def test_unload_clears_drift(self, engine, tmp_path):
+        g = _write_graph(tmp_path / "g.json", nodes=[_n("n1")])
+        engine.load_structure(g, workspace_id="wsA", root=tmp_path)
+        assert engine.structural_delta() is not None
+        engine.unload_structure()
+        assert engine.structural_delta() is None
+        assert engine.structural_freshness() is None

@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.0] — 2026-06-18
+
+"Structural Drift" — makes the ingested structure (v1.7) **temporal**. The agent
+now notices when its structural map has *drifted* (the graph was rebuilt) or gone
+*stale* (the repo moved past the graph). Pure data + stdlib — **no `subprocess`,
+no `git` invocation** (R10 by spirit); cognition (`reflect()`) untouched;
+dependency-free; debt-zero.
+
+### Added
+
+- **`conscio.structural_drift`.** A pure, fail-tolerant module:
+  `StructuralDigest` (the small persisted baseline of a signal), `StructuralDelta`
+  + `compute_delta` (a pure prev→current diff: commit moved, `content_hash`
+  changed, communities / hyperedges added·removed·resized, node/link deltas —
+  diffed by **id** so a relabel is not counted as drift), `StructuralFreshness` +
+  `read_head_commit` / `compute_freshness` (graph commit vs the repo `HEAD`, read
+  **purely from `.git`** — ref / `packed-refs` / detached / worktree `.git`-file,
+  `None` on anything unreadable, never raises), `StructuralDriftStore` (per-
+  `Workspace.id` baseline, corrupt/missing/write-failure tolerant), and
+  `render_delta`.
+- **Drift tracking on `engine.load_structure(path, workspace_id=…, root=…)`.**
+  Computes the delta vs the persisted baseline, computes freshness, advances the
+  baseline, and emits a passive `structure:changed` event on real drift. New pull
+  surfaces `engine.structural_delta()` / `engine.structural_freshness()`;
+  `advisory()["structural"]` gains `drift` and `freshness`. Calling
+  `load_structure(path)` with no `workspace_id` is byte-identical to v1.7.
+- **`conscio structure` CLI.** A read-only drift + freshness report for the
+  current workspace — it peeks at the baseline but never advances it, so it cannot
+  mask drift from a running daemon.
+- **Daemon.** `sync_structure` now passes the workspace id + root, so the
+  enriched `daemon_heartbeat.json` carries drift + freshness each cycle.
+- **EventBus.** `structure:changed` added to `VALID_TYPES`.
+
+### Notes
+
+- The numeric "commits behind HEAD" distance was deliberately **not** included:
+  it would require a `git` subprocess (a new shell attack/failure surface), and
+  `is_stale` drives the identical remedy (re-distill), so the count is noise. It
+  may return later in an opt-in `structural_drift_extras` module if a real case
+  appears.
+
+---
+
 ## [1.7.0] — 2026-06-18
 
 "Structural Cognition" — gives the refined model structural awareness of the

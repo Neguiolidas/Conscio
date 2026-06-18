@@ -11,7 +11,8 @@ nothing else). It is designed to make small, local models punch far above their
 size by giving them memory, self-judgment, and procedural skill — and to prove
 that claim by measurement, not assertion.
 
-- **Current release:** `v1.5.0` — "Live" (**Awake Mode (R9)** — autonomy is a gated, persisted, default-OFF state; a **daemon** + `conscio-daemon` that runs Conscio as a living perceive→reflect→act process; reference **sensors** `HostSensor`/`AgentSensor`; **`WorkspaceContext`** environment/workspace awareness; **`OpenAIAdapter`** + any custom OpenAI-compatible cloud endpoint, alongside the v1.4 Claude/Gemini frontier adapters; `pip install conscio`; 1137 tests, CI green, mypy a real gate)
+- **Current release:** `v1.8.0` — "Structural Drift", completing the **Structural Cognition** arc (v1.6–v1.8): Conscio can ingest a Graphify `graph.json` of the codebase it works in — distilled to a compact, **budget-adaptive** signal (hyperedges + community digests, not thousands of nodes), consumed as **data, never code** (R10: no `networkx`, no Graphify runtime dep) — **consent-gated per workspace** (default OFF, switch-safe), and now tracks **drift** (what changed since last load) and **freshness** (whether the graph is behind the repo `HEAD`, read purely from `.git` — no `git` subprocess). Plus the v1.6 **goal-provenance gate** + read-only `advisory()` consumption pull. Cognition (`reflect()`) untouched; zero-deps core; `pip install conscio`.
+- **Prior:** `v1.5.0` "Live" — **Awake Mode (R9)** (gated, persisted, default-OFF autonomy), the **daemon** + `conscio-daemon`, reference **sensors** `HostSensor`/`AgentSensor`, **`WorkspaceContext`**, and the `OpenAIAdapter` alongside the v1.4 Claude/Gemini frontier adapters.
 
 ---
 
@@ -34,6 +35,9 @@ that claim by measurement, not assertion.
 - **Consolidates while idle** — a dream cycle that releases, prunes, reconciles,
   crystallizes, and distills.
 - **Persists across sessions** — heartbeat/handoff continuity with on-demand injection.
+- **Knows its codebase (structurally)** — optional, consent-gated ingestion of a
+  Graphify graph, distilled to a compact signal injected budget-aware; tracks
+  structural drift + staleness vs the repo HEAD. Data, never code (R10).
 
 `reflect()` is the **passive heart** and is never allowed to act. Everything that
 can change the world lives behind `act()` and its safety gates. This separation
@@ -58,7 +62,7 @@ anything from **8k context up** — small windows simply get the Minimal budget.
 
 ---
 
-## Architecture (v1.1.0)
+## Architecture (v1.8.0)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -96,6 +100,12 @@ anything from **8k context up** — small windows simply get the Minimal budget.
 │ Skeptic (hostile audit) · TrustMatrix · CircuitBreaker (quarantine)    │
 │ ProbeSuite/ModelProfile · GBNF compiler · GoalArbiter · AutonomyLoop   │
 │ Meter/MeteredAdapter · SkillLibrary (procedural memory) · Bench        │
+└────────────────────────────────────────────────────────────────────────┘
+┌─────────────── Structural cognition (v1.6–1.8) ───────────────────────┐
+│ GoalOrigin provenance gate · advisory() consumption pull              │
+│ StructuralDistiller (graph.json → ranked signal; data, never code/R10) │
+│ budget-adaptive injection · consent (per-workspace, switch-safe)       │
+│ drift + freshness (vs repo HEAD, pure .git read; no subprocess)        │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -204,6 +214,44 @@ Daemon(engine, sensors=[HostSensor()], interval=30).run()   # perceive→reflect
 
 ---
 
+## Structural cognition (v1.6–1.8)
+
+Conscio can give the refined model **structural awareness of the codebase it
+works in**, distilled from a [Graphify](https://github.com)-format `graph.json` —
+consumed as **data, never code** (R10: no `networkx`, no Graphify runtime
+dependency, every field inert).
+
+```python
+# Consent is per-workspace and defaults OFF — nothing is read until granted.
+#   conscio consent project        # ingest THIS workspace's graphify-out/graph.json
+sig = engine.load_structure("graphify-out/graph.json",
+                            workspace_id=ws.id, root=ws.root)
+
+engine.get_state_for_injection()   # appends a budget-adaptive structure block (labels only)
+engine.structural_lookup("conscio_engine_reflect")   # on-demand drill-down
+engine.structural_delta()          # what changed since the last load (v1.8)
+engine.structural_freshness()      # is the graph behind the repo HEAD? (v1.8)
+conscio structure                  # read-only drift + freshness report (CLI)
+```
+
+- **Distiller** — thousands of nodes → ~24 curated hyperedges + per-community
+  digests; a pure `lookup()` resolves any node/hyperedge/community id on demand.
+- **Budget-adaptive injection** — sized to the model's context window
+  (~120→1200 tokens), **additive** (the consciousness-state block is byte-for-byte
+  unchanged), **labels only** — never raw node-ids.
+- **Consent-gated & switch-safe** — per-`Workspace.id`, default OFF; a
+  workspace-switching agent only ingests a consented workspace, and unloads on
+  switch-away — one project's structure never leaks into another.
+- **Drift & freshness (v1.8)** — a per-workspace baseline lets the agent notice
+  when the graph was rebuilt (commit moved, communities/hyperedges
+  added·removed·resized) or has gone stale vs the repo `HEAD` (read **purely from
+  `.git`** — no `git` subprocess). Surfaced in `advisory()` + the daemon
+  heartbeat; a passive `structure:changed` event fires on real drift.
+
+See [the integration guide](docs/guides/integration.md#structural-cognition).
+
+---
+
 ## Module reference
 
 **Core / Witness (v0.1)** — `ConsciousnessEngine`, `ContextManager`,
@@ -251,6 +299,15 @@ presets.
 discovers third-party `InferenceAdapter`/`SensorAdapter`/tool plugins via entry
 points (`conscio.adapters` / `conscio.sensors` / `conscio.tools`), resilient to a
 broken plugin. `conscio.risk.Risk` is the shared safety-tier vocabulary.
+
+**Structural cognition (v1.6–1.8)** — `conscio.structural` (`StructuralDistiller`
+→ ranked `StructuralSignal`, pure `lookup`), `conscio.structural_consent`
+(`StructuralConsent`/`ConsentScope`, `sync_structure`), `conscio.structural_drift`
+(`StructuralDigest`, `StructuralDelta`/`compute_delta`, `StructuralFreshness`/
+`read_head_commit`/`compute_freshness`, `StructuralDriftStore`). Engine surfaces:
+`load_structure()`, `structural_lookup()`/`structural_signal()`,
+`structural_delta()`/`structural_freshness()`, and the `GoalOrigin` provenance gate
++ read-only `advisory()` pull. Data, never code (R10).
 
 ---
 
@@ -346,7 +403,7 @@ Docs site: guides, public-API reference, the claims ledger, and the bench report
 ## Testing
 
 ```bash
-# Full suite (1137 tests) — house rule: one file per pytest process
+# Full suite (1315 tests) — house rule: one file per pytest process
 # (low-RAM machines OOM on the full run; CI does the same)
 for f in tests/test_*.py; do pytest "$f" -q; done
 

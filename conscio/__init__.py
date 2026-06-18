@@ -6,7 +6,7 @@ and goal generation. Adapts behavior based on the underlying model's
 context window size.
 """
 
-__version__ = "1.7.0"
+__version__ = "1.8.0"
 __author__ = "Neguiolidas / Neguitech"
 
 from .engine import ConsciousnessEngine
@@ -30,6 +30,9 @@ from .structural import StructuralDistiller, StructuralSignal, \
     Hyperedge, CommunitySummary, GraphNode, StructuralError  # noqa: F401
 from .structural_consent import ConsentScope, StructuralConsent, \
     sync_structure  # noqa: F401
+from .structural_drift import StructuralDigest, StructuralDelta, \
+    StructuralFreshness, StructuralDriftStore, compute_delta, \
+    compute_freshness, read_head_commit, drift_path  # noqa: F401
 # Plugin discovery lives under `conscio.plugins` (discover_adapters/sensors/tools)
 # — kept out of the top-level namespace to keep this import light.
 
@@ -80,4 +83,12 @@ __all__ = [
  "ConsentScope",
  "StructuralConsent",
  "sync_structure",
+ "StructuralDigest",
+ "StructuralDelta",
+ "StructuralFreshness",
+ "StructuralDriftStore",
+ "compute_delta",
+ "compute_freshness",
+ "read_head_commit",
+ "drift_path",
 ]

@@ -64,6 +64,31 @@ def test_daemon_loads_on_consent_then_unloads_on_switch(tmp_path):
         eng.close()
 
 
+def test_daemon_tracks_drift_on_consented_load(tmp_path):
+    # v1.8: sync passes workspace id+root, so the consented load tracks drift and
+    # the advisory (hence the heartbeat) carries it.
+    wa = tmp_path / "a"
+    wa.mkdir()
+    _plant(wa)
+    A = Workspace(root=wa, env=EnvClass.STABLE, id="ws-a")
+    consent = StructuralConsent(tmp_path / "c.json")
+    consent.grant("ws-a", ConsentScope.PROJECT)
+
+    eng = ConsciousnessEngine("glm-5.1", storage_path=tmp_path / "s")
+    d = Daemon(eng, sensors=[MockSensor([_frame() for _ in range(3)])],
+               workspace=_StubWorkspace([A]), consent=consent)
+    try:
+        d.cycle()
+        assert eng.structural_signal() is not None
+        delta = eng.structural_delta()
+        assert delta is not None and delta.first_sight is True       # baseline set
+        adv = eng.advisory()["structural"]
+        assert adv["drift"] is not None
+        assert adv["freshness"] is not None                          # root was passed
+    finally:
+        eng.close()
+
+
 def test_daemon_no_consent_loads_nothing(tmp_path):
     wa = tmp_path / "a"
     wa.mkdir()
