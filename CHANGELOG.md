@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.0] — 2026-06-17
+
+"Structural Cognition" (field-driven slice) — turns Awake Mode from overhead
+into consumable signal and closes the remaining provenance hole from the
+Hermes-Agent field run. The native distiller / budget-adaptive injection (R10)
+is deferred to v1.7 to keep this release debt-free.
+
+### Added
+
+- **`engine.advisory()` — the host pull surface (#5/#9).** A cheap, read-only,
+  no-inference, no-mutation structured snapshot the host calls each turn:
+  cognitive state, active goals tagged by provenance (`executable` vs
+  `diagnostic`), and operational status (`action_lockdown`, last failure-rate
+  `brake`). `get_state_for_injection()` (prose) is unchanged; `advisory()` is its
+  machine-readable sibling.
+- **Enriched daemon heartbeat (#5/#9).** `daemon_heartbeat.json` now carries the
+  last-cycle run summary (`cycles`/`failures`/`stopped`) and the full advisory
+  snapshot every cycle, so an out-of-process host can `tail` it for canonical,
+  always-current output. Liveness keys (`ts`/`cycles`/`awake`/`pid`) are
+  preserved; a failing advisory never breaks the heartbeat write.
+- **Goal provenance gate (#7).** A `GoalOrigin` taxonomy decides whether the
+  actor may auto-execute a goal. Externally/environmentally grounded origins
+  (`user`, `internal`, `curiosity`, `anomaly`, `maintenance`) are executable;
+  self-referential / error / compaction-derived origins (`meta_error`,
+  `self_prompt`, `compaction`) are **diagnostic-only** — visible to the host via
+  `advisory()` and injection, but the `GoalArbiter` never auto-runs them. This
+  generalizes the v1.5.1 #6 slice (which removed exactly one diagnostic origin)
+  into a full gate, and closes the field failure where context-compaction
+  fabricated tasks auto-executed without consent. Provenance rides the existing
+  `Goal.source` string, so there is **no storage migration**. A host can route a
+  compaction-derived task diagnostically with
+  `add_user_goal(text, origin=GoalOrigin.COMPACTION)`.
+- **Integration contract + example.** New `docs/guides/integration.md`
+  ("Consuming awake output") documents the pull/tail contract and the
+  executable/diagnostic split; `examples/host_consumer.py` is a runnable,
+  offline end-to-end host.
+
+### Changed
+
+- Blind-spot evolution goals (`feed_meta_to_goals`) are now tagged `meta_error`
+  (diagnostic) — vague self-improvement (`Evolve: … low confidence area`) is not
+  actor-actionable and stays advisory rather than feeding the act loop.
+- **CI/release/docs workflows** bumped off the Node 20 runtime (force-deprecated
+  2026-06-16): `actions/checkout@v6`, `actions/setup-python@v6`,
+  `actions/upload-artifact@v7`, `actions/download-artifact@v8` (all Node 24).
+  Inputs verified compatible against each action's pinned `action.yml`.
+
+---
+
 ## [1.5.1] — 2026-06-17
 
 "Awake Hardening" — fixes from the first real-world Awake Mode run (in the
