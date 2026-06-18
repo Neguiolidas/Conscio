@@ -117,6 +117,36 @@ engine.structural_lookup("unknown")                      # -> None (always grace
 current `HEAD` to know when to regenerate the graph. Conscio never runs Graphify
 itself.
 
+### Consent (workspace-scoped)
+
+Ingestion is **consent-gated and defaults OFF** — nothing is read until an
+operator grants consent for a workspace. Consent is per-`Workspace.id`, persisted
+under `<storage>/structural_consent.json`:
+
+```bash
+conscio consent project   # ingest THIS workspace's graphify-out/graph.json
+conscio consent parent    # ingest the PARENT multi-project folder's graph
+conscio consent off       # revoke
+conscio consent           # show the current workspace's scope
+```
+
+When run under the daemon, this is **switch-safe**: an agent that changes
+workspace mid-run only ingests a workspace it has consented to, and any
+previously loaded graph is **unloaded on switch-away** — one project's structure
+never leaks into another's context. Reading the parent folder happens only with
+explicit `parent` consent.
+
+In-process hosts can drive the same policy directly:
+
+```python
+from conscio import StructuralConsent, ConsentScope, sync_structure
+from conscio.structural_consent import consent_path
+
+consent = StructuralConsent(consent_path(engine.storage))
+consent.grant(workspace.id, ConsentScope.PROJECT)
+sync_structure(engine, workspace, consent)   # auto-loads, or unloads if revoked
+```
+
 ## Full example
 
 See [`examples/host_consumer.py`](https://github.com/Neguiolidas/Conscio/blob/main/examples/host_consumer.py)

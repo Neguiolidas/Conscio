@@ -44,6 +44,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("plugins", help="list discovered adapter/sensor/tool plugins")
 
+    p_consent = sub.add_parser(
+        "consent",
+        help="grant/show structural-graph consent for the current workspace")
+    p_consent.add_argument("scope", nargs="?",
+                           choices=["off", "project", "parent"],
+                           help="grant this scope (omit to show the current one)")
+    p_consent.add_argument("--storage", default="", help="storage dir (default: ~/.hermes)")
+
     p_awake = sub.add_parser("awake",
                              help="enter Awake Mode (R9; enables autonomous run)")
     p_awake.add_argument("--model", default=DEFAULT_MODEL)
@@ -145,6 +153,23 @@ def _cmd_set_awake(model: str, storage: str, awake: bool) -> int:
     return 0
 
 
+def _cmd_consent(scope_arg: str, storage: str) -> int:
+    from .workspace import WorkspaceContext
+    from .structural_consent import (
+        ConsentScope, StructuralConsent, consent_path)
+    ws = WorkspaceContext().current()
+    consent = StructuralConsent(consent_path(_storage(storage)))
+    if scope_arg:
+        scope = ConsentScope(scope_arg)
+        consent.grant(ws.id, scope)
+        verb = "set"
+    else:
+        scope = consent.scope_for(ws.id)
+        verb = "current"
+    print(f"structural consent {verb} for {ws.root} [{ws.id[:8]}]: {scope.value}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -169,6 +194,8 @@ def main(argv: list[str] | None = None) -> int:
                             args.storage)
     if args.command == "plugins":
         return _cmd_plugins()
+    if args.command == "consent":
+        return _cmd_consent(args.scope, args.storage)
     if args.command == "awake":
         return _cmd_set_awake(args.model, args.storage, awake=True)
     if args.command == "sleep":

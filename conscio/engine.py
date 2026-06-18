@@ -513,6 +513,14 @@ class ConsciousnessEngine:
         """The distilled signal of the loaded graph, or None if none loaded."""
         return self._structural_signal
 
+    def unload_structure(self) -> None:
+        """Drop any loaded structural graph.
+
+        Used on a workspace switch into a workspace without consent (v1.7.2), so
+        one project's structure never leaks into another's context."""
+        self._distiller = None
+        self._structural_signal = None
+
     def structural_lookup(self, key: str) -> Optional[dict[str, Any]]:
         """On-demand drill-down: resolve a node / hyperedge / community id to
         detail (read-only, no-LLM, no-mutation — an ``advisory()`` sibling).

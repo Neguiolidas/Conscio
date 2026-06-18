@@ -28,6 +28,8 @@ from .perception import SensorAdapter, PerceptionFrame, MockSensor, \
 from .workspace import Workspace, WorkspaceContext, EnvClass  # noqa: F401
 from .structural import StructuralDistiller, StructuralSignal, \
     Hyperedge, CommunitySummary, GraphNode, StructuralError  # noqa: F401
+from .structural_consent import ConsentScope, StructuralConsent, \
+    sync_structure  # noqa: F401
 # Plugin discovery lives under `conscio.plugins` (discover_adapters/sensors/tools)
 # — kept out of the top-level namespace to keep this import light.
 
@@ -75,4 +77,7 @@ __all__ = [
  "CommunitySummary",
  "GraphNode",
  "StructuralError",
+ "ConsentScope",
+ "StructuralConsent",
+ "sync_structure",
 ]
