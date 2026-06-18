@@ -66,3 +66,21 @@ def test_try_break_binary_drift_store(tmp_path):
     p.write_bytes(b"\xff\xfe binary drift \x00")
     s = StructuralDriftStore(p)                          # must NOT raise
     assert s._map == {}                                  # degraded to empty
+
+
+# ── I-S4 capstone: every persistent state file corrupt at once ────────────────
+def test_try_break_all_state_files_corrupt_constructs(tmp_path):
+    """No single loader's failure cascades: EVERY known persistent file binary
+    at once → engine still constructs and advisory() works (B-006 + B-008 +
+    B-011 + B-013 together)."""
+    for name in ("conscio.db", "state_summary.json", "state_summary.txt",
+                 "world_model.json", "meta_cognition.json", "goals.json",
+                 "evolution_proposals.json"):
+        (tmp_path / name).write_bytes(b"\xff\xfe\x00 garbage not valid json \xff")
+    eng = _engine(tmp_path)                              # must NOT raise
+    try:
+        assert isinstance(eng.advisory(), dict)
+        assert eng.goals.active_goals() == []
+        assert eng.evolution.pending_proposals() == []
+    finally:
+        eng.close()
