@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+from .guards import safe_read_json
+
 # Entropy scoring (v0.4): higher entropy = more disordered = better prune candidate.
 HALFLIFE_DAYS = 7        # age normalization half-life
 MAX_RELATIONS = 8        # relations at/above which an entity is fully "connected"
@@ -65,13 +67,9 @@ class WorldModel:
 
     def _load(self) -> dict:
         """Load world model from disk."""
-        if self.path.exists():
-            try:
-                data = json.loads(self.path.read_text())
-                if isinstance(data, dict):
-                    return data
-            except (OSError, ValueError):           # binary/corrupt -> default
-                pass
+        data = safe_read_json(self.path)            # None on any corruption
+        if data is not None:
+            return data
         return {"entities": {}, "relations": [], "predictions": [], "prediction_log": []}
 
     def _save(self) -> None:

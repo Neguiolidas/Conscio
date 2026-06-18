@@ -14,6 +14,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from .guards import safe_read_json
+
 
 class MetaCognition:
     """
@@ -40,13 +42,9 @@ class MetaCognition:
         self._data = self._load()
 
     def _load(self) -> dict:
-        if self.path.exists():
-            try:
-                data = json.loads(self.path.read_text())
-                if isinstance(data, dict):
-                    return data
-            except (OSError, ValueError):           # binary/corrupt -> default
-                pass
+        data = safe_read_json(self.path)            # None on any corruption
+        if data is not None:
+            return data
         return {
             "confidence_history": [],
             "blind_spots": [],

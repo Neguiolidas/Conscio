@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from .guards import safe_read_json
 from .models import ContextMode, ModelRegistry
 
 
@@ -299,32 +300,28 @@ class ContextManager:
     def load_state(self) -> ConsciousnessState:
         """Load the last saved consciousness state from disk."""
         json_path = self.storage_path / "state_summary.json"
-        if json_path.exists():
-            try:
-                data = json.loads(json_path.read_text())
-            except (OSError, ValueError):
-                data = None                       # corrupt/binary state -> default
-            if isinstance(data, dict):
-                return ConsciousnessState(
-                    model_name=self.model_info.name,
-                    context_mode=self.mode,
-                    context_window=self.model_info.context_window,
-                    state_summary=data.get("state_summary", ""),
-                    last_reflection=data.get("last_reflection", ""),
-                    active_goals=data.get("active_goals", []),
-                    world_model_snippet=data.get("world_model_snippet", ""),
-                    meta_cognition=data.get("meta_cognition", ""),
-                    metabolic=data.get("metabolic", ""),
-                    reflection_quality=data.get("reflection_quality", ""),
-                    shard=data.get("shard", ""),
-                    coherence=data.get("coherence"),
-                    coherence_note=data.get("coherence_note", ""),
-                    voice=data.get("voice", ""),
-                    self_prompt=data.get("self_prompt", ""),
-                    dream_recommended=data.get("dream_recommended", ""),
-                    action_lockdown=data.get("action_lockdown", False),
-                    awake=data.get("awake", False),
-                )
+        data = safe_read_json(json_path)          # None on any corruption -> default
+        if data is not None:
+            return ConsciousnessState(
+                model_name=self.model_info.name,
+                context_mode=self.mode,
+                context_window=self.model_info.context_window,
+                state_summary=data.get("state_summary", ""),
+                last_reflection=data.get("last_reflection", ""),
+                active_goals=data.get("active_goals", []),
+                world_model_snippet=data.get("world_model_snippet", ""),
+                meta_cognition=data.get("meta_cognition", ""),
+                metabolic=data.get("metabolic", ""),
+                reflection_quality=data.get("reflection_quality", ""),
+                shard=data.get("shard", ""),
+                coherence=data.get("coherence"),
+                coherence_note=data.get("coherence_note", ""),
+                voice=data.get("voice", ""),
+                self_prompt=data.get("self_prompt", ""),
+                dream_recommended=data.get("dream_recommended", ""),
+                action_lockdown=data.get("action_lockdown", False),
+                awake=data.get("awake", False),
+            )
 
         # Fallback: parse legacy text format (pre-v0.5.1 saves)
         txt_path = self.storage_path / "state_summary.txt"
