@@ -141,8 +141,10 @@ with ConsciousnessEngine(model_name="kimi-k2.6") as engine:
 from conscio.agency import OllamaAdapter
 
 engine.attach_adapter(OllamaAdapter(model="qwen3.5:0.8b"))
-# Local (Ollama/llama.cpp/LM Studio/OpenAI-compatible) or a frontier API —
-# the backends behind Claude Code and Antigravity:
+# Local (Ollama/llama.cpp/LM Studio/OpenAI-compatible) or a frontier API.
+# These call the SAME model APIs that power Claude Code / Antigravity, so Conscio
+# can think with those models — they do NOT make Conscio run *inside* those tools
+# (a turnkey plug-in / MCP is v2.0 "Connect" work):
 #   from conscio.agency import AnthropicAdapter, GeminiAdapter
 #   engine.attach_adapter(AnthropicAdapter(model="claude-sonnet-4-6"))  # ANTHROPIC_API_KEY
 #   engine.attach_adapter(GeminiAdapter(model="gemini-2.5-pro"))        # GOOGLE_API_KEY

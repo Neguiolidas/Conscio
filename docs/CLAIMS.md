@@ -58,5 +58,11 @@ Updated each phase. Current as of **v1.8.0** (2026-06-18).
 - **Reasoning-distilled small models are not yet supported** for strict
   structured decode (verbose chain-of-thought breaks extraction). See
   `docs/bench/v1.2-skill-curve.md`.
+- **Adapters are not an "inside-tool" surface.** The inference adapters
+  (`AnthropicAdapter`/`GeminiAdapter`/`OpenAIAdapter`/…) are LLM-API callers for
+  Conscio's *own* cognition — they do **not** make Conscio run *inside* Claude Code
+  or Antigravity. A turnkey plug-in / MCP server / IDE extension is v2.0 "Connect"
+  work, not shipped today. Host integration today is the documented contract
+  (`engine.advisory()` + `daemon_heartbeat.json` + `SensorAdapter`).
 - Claims about not-yet-shipped capabilities do **not** appear here. This ledger
   records only what exists today.
