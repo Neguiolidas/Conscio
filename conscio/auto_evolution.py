@@ -110,11 +110,15 @@ class AutoEvolution:
         self._proposals: list[EvolutionProposal] = self._load()
 
     def _load(self) -> list[EvolutionProposal]:
+        # B-013: broaden to ValueError (covers UnicodeDecodeError on a binary
+        # file) + type guard so a corrupt/legacy proposals file degrades to []
+        # instead of crashing engine.__init__ (I-S4).
         if self.path.exists():
             try:
                 data = json.loads(self.path.read_text())
-                return [EvolutionProposal.from_dict(p) for p in data]
-            except (json.JSONDecodeError, KeyError):
+                if isinstance(data, list):
+                    return [EvolutionProposal.from_dict(p) for p in data]
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
                 pass
         return []
 
