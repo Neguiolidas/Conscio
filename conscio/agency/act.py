@@ -68,7 +68,8 @@ class ActPipeline:
                  recall_fn: Callable[[str], list[str]] | None = None,
                  emit_fn: Callable[..., Any] | None = None,
                  few_shot_provider: Callable[[str], list[str]] | None = None,
-                 arbiter: Any = None):
+                 arbiter: Any = None,
+                 executable_fn: Callable[[str], bool] | None = None):
         from .loop import GoalArbiter      # runtime: loop imports this module
 
         self.adapter = adapter
@@ -83,7 +84,8 @@ class ActPipeline:
         self.recall_fn = recall_fn
         self.emit_fn = emit_fn or (lambda **kw: None)
         self.few_shot_provider = few_shot_provider
-        self.arbiter = arbiter or GoalArbiter(breaker)
+        self.arbiter = arbiter or GoalArbiter(breaker,
+                                              executable_fn=executable_fn)
         self.max_visible_tools: int | None = None    # set by engine.probe()
 
     # ── act cycle (spec §6) ──
@@ -98,8 +100,11 @@ class ActPipeline:
 
         goal_text = self.arbiter.choose(state)
         if goal_text is None:
-            return ActReport(status=ActStatus.FAILED,
-                             reason="all active goals quarantined")
+            # No goal the actor may run: every active goal is either quarantined
+            # (breaker) or diagnostic-only (v1.6 #7 provenance gate).
+            return ActReport(
+                status=ActStatus.FAILED,
+                reason="no executable goal (all quarantined or diagnostic-only)")
         goal_fp = goal_fingerprint(goal_text)
 
         recall = self.recall_fn(goal_text) if self.recall_fn else []

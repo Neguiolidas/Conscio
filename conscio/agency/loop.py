@@ -33,13 +33,22 @@ ALIGNMENT_BONUS = 2.0
 class GoalArbiter:
     """Deterministic goal selection for one act() cycle."""
 
-    def __init__(self, breaker: Any):
+    def __init__(self, breaker: Any, executable_fn: Any = None):
         self.breaker = breaker
+        # #7 provenance gate: a predicate (description -> bool). When wired by
+        # the engine it denies diagnostic-origin goals (self_prompt, meta_error,
+        # compaction) so they are never auto-executed. Default None -> no gate
+        # (back-compat: the bare arbiter executes everything).
+        self.executable_fn = executable_fn
+
+    def _executable(self, description: str) -> bool:
+        return self.executable_fn(description) if self.executable_fn else True
 
     def choose(self, state: Any) -> str | None:
         self.breaker.review_quarantine()
         goals = [g for g in state.active_goals
-                 if not self.breaker.is_quarantined(goal_fingerprint(g))]
+                 if not self.breaker.is_quarantined(goal_fingerprint(g))
+                 and self._executable(g)]
         if not goals:
             return None
         hints = DISSONANCE_HINTS.get((state.coherence_note or "").lower(), ())

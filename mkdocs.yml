@@ -42,6 +42,7 @@ nav:
       - Architecture: guides/architecture.md
       - Plugins & extension points: guides/plugins.md
       - Safety rules: guides/safety-rules.md
+      - Consuming awake output: guides/integration.md
   - Reference:
       - Public API: reference/public-api.md
   - Claims ledger: CLAIMS.md

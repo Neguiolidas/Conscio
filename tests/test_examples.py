@@ -27,3 +27,12 @@ def test_host_guardian_runs(capsys, tmp_path):
 def test_agent_companion_runs(capsys, tmp_path):
     assert _load("agent_companion").main(storage=str(tmp_path)) == 0
     assert capsys.readouterr().out.strip()
+
+
+def test_host_consumer_runs(capsys, tmp_path):
+    # v1.6 (#5/#9): the consumption-seam example — a host pulling advisory().
+    assert _load("host_consumer").main(storage=str(tmp_path)) == 0
+    out = capsys.readouterr().out
+    assert out.strip()
+    # it must demonstrate the executable/diagnostic provenance split (#7)
+    assert "executable" in out.lower() and "diagnostic" in out.lower()

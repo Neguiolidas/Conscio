@@ -71,6 +71,7 @@ class Daemon:
                                else storage / "daemon_heartbeat.json")
         self.close_engine_on_shutdown = close_engine_on_shutdown
         self.cycles = 0
+        self._last_report: Optional[RunReport] = None   # v1.6: last-cycle summary
         self._stop = threading.Event()
         self._orig_handlers: dict[int, Any] = {}
 
@@ -91,6 +92,7 @@ class Daemon:
                 log.warning("workspace poll failed: %s", exc)
         result = self.engine.run(self.budget, world_state=world_state)
         self.cycles += 1
+        self._last_report = result
         # Write heartbeat every cycle (not just on shutdown)
         self._write_heartbeat()
         try:
@@ -175,12 +177,26 @@ class Daemon:
             pass
 
     def _write_heartbeat(self) -> None:
-        data = {
+        data: dict[str, Any] = {
             "ts": time.time(),
             "cycles": self.cycles,
             "awake": bool(getattr(self.engine, "awake", False)),
             "pid": os.getpid(),
         }
+        # v1.6 (#5/#9): carry Conscio's output so a host can tail this file.
+        if self._last_report is not None:
+            r = self._last_report
+            data["last_run"] = {
+                "cycles": getattr(r, "cycles", 0),
+                "failures": getattr(r, "failures", 0),
+                "stopped": getattr(r, "stopped", ""),
+            }
+        advisory_fn = getattr(self.engine, "advisory", None)
+        if callable(advisory_fn):
+            try:
+                data["advisory"] = advisory_fn()
+            except Exception as exc:        # a bad advisory never breaks liveness
+                log.warning("advisory snapshot failed: %s", exc)
         try:
             self.heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
             self.heartbeat_path.write_text(json.dumps(data, indent=2))

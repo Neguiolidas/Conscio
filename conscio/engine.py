@@ -166,7 +166,13 @@ class ConsciousnessEngine:
         for blind_spot in meta._data.get("blind_spots", []):
             expected_desc = f"Evolve: {blind_spot} \u2014 low confidence area"
             if expected_desc not in active_descriptions:
-                goals.generate_from_evolution(blind_spot, target="low confidence area")
+                # v1.6 (#7): blind-spot goals are meta-derived -> diagnostic-only.
+                # Vague self-improvement ("Evolve: low confidence area") is not
+                # actor-actionable; it stays visible (advisory/injection) but the
+                # arbiter never auto-executes it. Generalizes the #6 slice.
+                goals.generate_from_evolution(blind_spot,
+                                              target="low confidence area",
+                                              source="meta_error")
                 active_descriptions.add(expected_desc)
 
         # v1.5.1 (#6): error patterns do NOT mint actor-executable goals.
@@ -462,6 +468,62 @@ class ConsciousnessEngine:
         """
         return self._state.to_injection()
 
+    def advisory(self) -> dict:
+        """Structured, read-only snapshot for the host to PULL each turn (#5/#9).
+
+        Where `get_state_for_injection()` returns prose for the LLM context,
+        `advisory()` returns machine-readable signal a host consumes directly:
+        cognitive state, active goals tagged by provenance (executable vs
+        diagnostic, #7), and operational status (action lockdown / last
+        failure-rate brake, #8). It MUST stay cheap — no inference call, no state
+        mutation — so it is safe to call on every host turn (and with no adapter
+        attached).
+        """
+        s = self._state
+        goals = [
+            {"description": g.description, "origin": g.origin.value,
+             "executable": g.executable}
+            for g in self.goals.active_goals()
+        ]
+        diagnostic = [g for g in goals if not g["executable"]]
+        recommendations: list[str] = []
+        if s.dream_recommended:
+            recommendations.append("dream recommended")
+        if diagnostic:
+            recommendations.append(
+                f"{len(diagnostic)} diagnostic goal(s) pending review "
+                f"(visible, not auto-run)")
+        return {
+            "awake": self.awake,
+            "reflection": s.last_reflection,
+            "meta": s.meta_cognition,
+            "goals": goals,
+            "coherence": {"score": s.coherence, "dominant": s.coherence_note},
+            "status": {
+                "action_lockdown": s.action_lockdown,
+                "dream_recommended": bool(s.dream_recommended),
+                "brake": self._last_brake_message(),
+            },
+            "recommendations": recommendations,
+        }
+
+    def _last_brake_message(self) -> Optional[str]:
+        """Most recent aggregate failure-rate brake message, if any (#8).
+
+        Read-only scan of recent system events; returns None when no brake has
+        tripped. Never raises (a strict bus must not break the advisory)."""
+        try:
+            events = self.event_bus.query(
+                type="system", category="system", limit=20)
+        except Exception:
+            return None
+        for e in events:                      # newest first
+            data = getattr(e, "data", {}) or {}
+            msg = data.get("message", "") if isinstance(data, dict) else ""
+            if "failure-rate brake" in msg:
+                return msg
+        return None
+
     def recall(
         self,
         query: str,
@@ -672,7 +734,8 @@ class ConsciousnessEngine:
             skeptic=skeptic, trust=trust, meta=self.meta,
             autonomy_cap=autonomy_cap,
             recall_fn=lambda q: self.recall(q, k=3),
-            emit_fn=self.event_bus.emit)
+            emit_fn=self.event_bus.emit,
+            executable_fn=self.goals.is_executable)   # #7 provenance gate
         # v1.1: procedural memory — distilled by the dream, served to the
         # actor as few-shot rendered for the gateway's effective tier.
         skills = SkillLibrary(db)

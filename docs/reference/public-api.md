@@ -26,8 +26,13 @@ from conscio import (
 ```
 
 `ConsciousnessEngine` is a context manager (`with ConsciousnessEngine(...) as e:`).
-Key methods: `reflect()`, `get_state_for_injection()`, `recall()`, `status()`,
-`attach_adapter()`, `probe()`, `act()`, `approve()`, `run()`, `close()`.
+Key methods: `reflect()`, `get_state_for_injection()`, `advisory()`, `recall()`,
+`status()`, `attach_adapter()`, `probe()`, `act()`, `approve()`, `run()`,
+`close()`.
+
+`advisory()` is the structured, read-only pull surface a host consumes each turn
+(goals tagged by provenance, lockdown/brake status). See
+[Consuming awake output](../guides/integration.md).
 
 ## `conscio.agency`
 
