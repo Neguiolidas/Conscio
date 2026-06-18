@@ -46,6 +46,7 @@ Updated each phase. Current as of **v1.8.0** (2026-06-18).
 | 36 | **Freshness** vs the repo HEAD is read **purely from `.git`** — no `git` subprocess | `tests/test_structural_drift.py` (ref/packed-refs/detached/worktree `.git`-file; `test_module_uses_no_subprocess_or_shell`) | PROVEN |
 | 37 | Drift never raises into the host loop (corrupt store / unreadable `.git`) | `tests/test_structural_drift.py` (corrupt/non-dict store → empty; save-failure swallowed; malformed `.git` → None) | PROVEN |
 | 38 | Direct `act()` is intentionally **not** awake-gated (human escape hatch) — still fully governed by the ActPipeline; autonomy (the daemon) is gated via `run()` | `tests/test_awake.py::test_run_asleep_reflects_but_does_not_act`, `::test_direct_act_works_while_asleep`; `tests/test_daemon.py::test_try_break_asleep_daemon_runs_a_cycle_but_never_acts` | PROVEN |
+| 39 | The engine survives a **corrupt store at construction** — quarantines + recreates, never crashes the host (I-S4) | `tests/test_engine_init.py` (garbage / truncated `conscio.db` → constructs, `advisory()` works, corrupt file preserved as `.corrupt-<ts>`) | PROVEN |
 
 ## Honest limits (what is NOT proven)
 
@@ -64,5 +65,10 @@ Updated each phase. Current as of **v1.8.0** (2026-06-18).
   or Antigravity. A turnkey plug-in / MCP server / IDE extension is v2.0 "Connect"
   work, not shipped today. Host integration today is the documented contract
   (`engine.advisory()` + `daemon_heartbeat.json` + `SensorAdapter`).
+- **Corrupt-store recovery discards live history.** When `conscio.db` is corrupt
+  at startup it is quarantined to `conscio.db.corrupt-<ts>` (preserved on disk,
+  never auto-replayed) and a fresh DB is created — so the engine's prior cognitive
+  history is not in the live store after recovery. A `storage_recovered` event +
+  WARNING log record it; pruning the accumulated quarantine files is v2.0 work.
 - Claims about not-yet-shipped capabilities do **not** appear here. This ledger
   records only what exists today.
