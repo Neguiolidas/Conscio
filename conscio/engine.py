@@ -894,7 +894,17 @@ class ConsciousnessEngine:
                        e.to_dict() if hasattr(e, "to_dict") else e))
 
     def act(self, state=None):
-        """Run one L1 PROPOSE cycle downstream of reflect()."""
+        """Run one L1 PROPOSE cycle downstream of reflect().
+
+        Two entry paths, deliberately different (R9 / I-R9):
+          1. Direct call (this method) = the human escape hatch. NOT awake-gated by
+             design, but still fully governed by the ActPipeline — skeptic, breaker,
+             trust, and the R6 approval queue (R7 / R9 / I-A4). It cannot run an
+             action the pipeline would refuse.
+          2. Daemon / autonomy path = routed via run(), which IS awake-gated: asleep
+             => reflect-only, zero arbiter/act/dream. The daemon never calls act()
+             directly (see tests/test_daemon.py).
+        """
         from .agency.act import ActReport, ActStatus
 
         if getattr(self, "_act_pipeline", None) is None:

@@ -45,6 +45,7 @@ Updated each phase. Current as of **v1.8.0** (2026-06-18).
 | 35 | The agent detects structural **drift** vs a persisted per-workspace baseline | `tests/test_structural_drift.py`, `tests/test_structural_inject.py::TestStructuralDrift` (commit/hash/community/hyperedge diff by id; `structure:changed` emitted) | PROVEN |
 | 36 | **Freshness** vs the repo HEAD is read **purely from `.git`** — no `git` subprocess | `tests/test_structural_drift.py` (ref/packed-refs/detached/worktree `.git`-file; `test_module_uses_no_subprocess_or_shell`) | PROVEN |
 | 37 | Drift never raises into the host loop (corrupt store / unreadable `.git`) | `tests/test_structural_drift.py` (corrupt/non-dict store → empty; save-failure swallowed; malformed `.git` → None) | PROVEN |
+| 38 | Direct `act()` is intentionally **not** awake-gated (human escape hatch) — still fully governed by the ActPipeline; autonomy (the daemon) is gated via `run()` | `tests/test_awake.py::test_run_asleep_reflects_but_does_not_act`, `::test_direct_act_works_while_asleep`; `tests/test_daemon.py::test_try_break_asleep_daemon_runs_a_cycle_but_never_acts` | PROVEN |
 
 ## Honest limits (what is NOT proven)
 
