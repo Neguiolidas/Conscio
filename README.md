@@ -11,8 +11,9 @@ nothing else). It is designed to make small, local models punch far above their
 size by giving them memory, self-judgment, and procedural skill — and to prove
 that claim by measurement, not assertion.
 
-- **Current release:** `v1.8.0` — "Structural Drift", completing the **Structural Cognition** arc (v1.6–v1.8): Conscio can ingest a Graphify `graph.json` of the codebase it works in — distilled to a compact, **budget-adaptive** signal (hyperedges + community digests, not thousands of nodes), consumed as **data, never code** (R10: no `networkx`, no Graphify runtime dep) — **consent-gated per workspace** (default OFF, switch-safe), and now tracks **drift** (what changed since last load) and **freshness** (whether the graph is behind the repo `HEAD`, read purely from `.git` — no `git` subprocess). Plus the v1.6 **goal-provenance gate** + read-only `advisory()` consumption pull. Cognition (`reflect()`) untouched; zero-deps core; `pip install conscio`.
-- **Prior:** `v1.5.0` "Live" — **Awake Mode (R9)** (gated, persisted, default-OFF autonomy), the **daemon** + `conscio-daemon`, reference **sensors** `HostSensor`/`AgentSensor`, **`WorkspaceContext`**, and the `OpenAIAdapter` alongside the v1.4 Claude/Gemini frontier adapters.
+- **Current release:** `v1.9.0` — "Anneal", a pre-v2.0 **hardening** pass. No new public surface (the API is **frozen** ahead of the v2.0 "Connect" phase) — instead the corrupt/legacy/concurrent edges are now safe: the engine survives a corrupt or legacy/incomplete store/state file at construction (quarantine + recreate; every JSON loader degrades to a default), the daemon heartbeat is written atomically (a tailing host never reads a torn file), and earned-autonomy/quarantine time windows are correct on non-UTC hosts. Backed by durable guards that stop whole bug *classes* from resurfacing (incl. an AST CI rule). Cognition (`reflect()`) untouched; zero-deps core; `pip install conscio`.
+- **Prior:** `v1.8.0` — "Structural Drift", completing the **Structural Cognition** arc (v1.6–v1.8): Conscio can ingest a Graphify `graph.json` of the codebase it works in — distilled to a compact, **budget-adaptive** signal (hyperedges + community digests, not thousands of nodes), consumed as **data, never code** (R10: no `networkx`, no Graphify runtime dep) — **consent-gated per workspace** (default OFF, switch-safe), and tracks **drift** (what changed since last load) and **freshness** (whether the graph is behind the repo `HEAD`, read purely from `.git` — no `git` subprocess). Plus the v1.6 **goal-provenance gate** + read-only `advisory()` consumption pull.
+- **Earlier:** `v1.5.0` "Live" — **Awake Mode (R9)** (gated, persisted, default-OFF autonomy), the **daemon** + `conscio-daemon`, reference **sensors** `HostSensor`/`AgentSensor`, **`WorkspaceContext`**, and the `OpenAIAdapter` alongside the v1.4 Claude/Gemini frontier adapters.
 
 ---
 
@@ -62,7 +63,7 @@ anything from **8k context up** — small windows simply get the Minimal budget.
 
 ---
 
-## Architecture (v1.8.0)
+## Architecture (v1.9.0)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐

@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.0] — 2026-06-18
+
+"Anneal" — a pre-v2.0 hardening release. No new public surface (the API is
+**frozen** ahead of the v2.0 "Connect" phase); this is a bug-hunt + robustness
+pass that makes the corrupt/legacy/concurrent edges safe. Defense-in-depth: an
+invariant catalog driven as adversarial `try_break` suites, a risk-ranked
+per-module battery, cross-cutting tracks, and durable guards that stop whole bug
+*classes* from resurfacing. Cognition (`reflect()`) untouched; dependency-free;
+debt-zero.
+
+### Fixed
+
+- **Earned-autonomy & quarantine-release time windows were tz-skewed** (B-003b,
+  B-007). `engine._trips_since` and `agency.breaker._relevant_event_since` built
+  their window boundary with naive **local** time while the event store is naive
+  **UTC**, so on a non-UTC host the L3 trip window and the goal-release relevance
+  window were wrong (e.g. UTC+9 counted zero recent trips). Both now go through
+  the single sanctioned converter `timeutil.naive_utc_from_epoch`.
+- **`event_bus.query(limit=-1)` returned the whole table** (B-004): a negative
+  limit hit SQLite `LIMIT -1` = unbounded. Floored to `max(0, limit)`.
+- **A corrupt or legacy store/state file crashed construction** (B-006, B-008,
+  B-011, B-013). The engine now survives, at construction (I-S4):
+  - a corrupt/garbage/truncated shared `conscio.db` is **quarantined**
+    (`conscio.db.corrupt-<ts>`, preserved) and recreated fresh, with a
+    `storage_recovered` event (B-006);
+  - a binary / non-UTF-8 / non-dict JSON sidecar (`state_summary`, `world_model`,
+    `meta_cognition`) falls back to defaults instead of raising (B-008);
+  - a **valid-but-incomplete** `world_model.json` / `meta_cognition.json`
+    (a legacy/migrated file missing keys a newer version expects) is merged over a
+    default skeleton, so it can no longer `KeyError` on first use (B-011);
+  - a binary / wrong-type `goals.json` / `evolution_proposals.json` (and the
+    `structural_consent` / `structural_drift` / axis-pack loaders) degrade to the
+    empty default — previously a `UnicodeDecodeError` escaped the narrow
+    `except json.JSONDecodeError` (B-013).
+- **`structural_drift.read_head_commit` raised on a binary `.git`** (B-005):
+  broadened to `(OSError, ValueError)`.
+- **`session_lifecycle.format_handoff` crashed on a NULL session title** (B-010):
+  `None[:50]` → `TypeError`, which silently blanked the handoff and skipped the
+  reflection. Guarded to match the heartbeat formatter.
+- **`content_store._chunk_content` hung on `chunk_size <= 0`** (B-009): the
+  paragraph-split slice never advanced → infinite loop. Floored at 1.
+- **The daemon heartbeat could be read torn** (B-012): `daemon_heartbeat.json` is
+  written atomically (temp + `os.replace`) so a host tailing it never sees a
+  partial file.
+
+### Internal
+
+- **Durable guards** (`conscio.guards`, not part of the public API):
+  `safe_read_json` (never-raising JSON→dict), `read_json_dict` (schema-drift-safe
+  load merged over a default skeleton), and `clamp_int`. Plus an AST-based test
+  rule that fails CI if any module reintroduces a bare `datetime.fromtimestamp()`
+  (the tz class). These turn one-off fixes into class-level prevention.
+
+---
+
 ## [1.8.0] — 2026-06-18
 
 "Structural Drift" — makes the ingested structure (v1.7) **temporal**. The agent
