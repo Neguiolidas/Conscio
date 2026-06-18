@@ -64,3 +64,37 @@ class TestChoose:
         state = _state(["organize files", "verify the anomaly"],
                        note="unmapped-dimension")
         assert arbiter.choose(state) == "organize files"
+
+
+class TestProvenanceGate:
+    """v1.6 (#7): the arbiter refuses to choose diagnostic-origin goals."""
+
+    def test_diagnostic_goal_skipped_even_when_first(self):
+        # "diagnostic task" sorts first by priority order, but the executable_fn
+        # denies it -> the arbiter picks the executable one instead.
+        def executable(desc):
+            return desc != "diagnostic task"
+
+        arbiter = GoalArbiter(_FakeBreaker(), executable_fn=executable)
+        state = _state(["diagnostic task", "real task"])
+        assert arbiter.choose(state) == "real task"
+
+    def test_all_diagnostic_returns_none(self):
+        arbiter = GoalArbiter(_FakeBreaker(), executable_fn=lambda d: False)
+        assert arbiter.choose(_state(["a", "b"])) is None
+
+    def test_no_executable_fn_executes_all(self):
+        # Back-compat: the default arbiter (no predicate) behaves exactly as
+        # before — nothing is gated.
+        arbiter = GoalArbiter(_FakeBreaker())
+        assert arbiter.choose(_state(["alpha task", "beta task"])) == "alpha task"
+
+    def test_gate_composes_with_quarantine(self):
+        # executable but quarantined -> skip; diagnostic -> skip; the survivor wins.
+        def executable(desc):
+            return desc != "diagnostic task"
+
+        arbiter = GoalArbiter(_FakeBreaker(quarantined=["quarantined task"]),
+                              executable_fn=executable)
+        state = _state(["diagnostic task", "quarantined task", "good task"])
+        assert arbiter.choose(state) == "good task"

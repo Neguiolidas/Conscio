@@ -30,6 +30,48 @@ class GoalPriority(Enum):
     CRITICAL = 4
 
 
+class GoalOrigin(str, Enum):
+    """Provenance of a goal — decides whether the actor may auto-execute it (#7).
+
+    The values ARE the existing free-form ``Goal.source`` strings, so the
+    taxonomy maps onto stored goals with no migration. Executable origins are
+    externally or environmentally grounded; diagnostic origins are
+    self-referential / error / compaction-derived — visible to the host but
+    never auto-run (the structural generalization of the v1.5.1 #6 slice).
+    """
+
+    USER = "user"               # explicit user request           -> executable
+    INTERNAL = "internal"       # legacy/default drive goal        -> executable
+    CURIOSITY = "curiosity"     # self-generated from a drive      -> executable
+    ANOMALY = "anomaly"         # perceived world-model anomaly    -> executable
+    MAINTENANCE = "maintenance"  # observed maintenance need       -> executable
+    META_ERROR = "meta_error"   # meta-cognition / error-derived   -> diagnostic
+    SELF_PROMPT = "self_prompt"  # goal proposing more goals       -> diagnostic
+    COMPACTION = "compaction"   # context-compaction-derived       -> diagnostic
+
+    @property
+    def auto_executable(self) -> bool:
+        return self in _EXECUTABLE_ORIGINS
+
+
+_EXECUTABLE_ORIGINS = frozenset({
+    GoalOrigin.USER, GoalOrigin.INTERNAL, GoalOrigin.CURIOSITY,
+    GoalOrigin.ANOMALY, GoalOrigin.MAINTENANCE,
+})
+
+
+def origin_of(source: str) -> GoalOrigin:
+    """Map a free-form source string to a GoalOrigin.
+
+    Unrecognized (legacy) values fall back to INTERNAL (executable) so older
+    goals.json files and any free-form source are never silently denied.
+    """
+    try:
+        return GoalOrigin(source)
+    except ValueError:
+        return GoalOrigin.INTERNAL
+
+
 class Goal:
     """A single goal with drive source, priority, and status."""
 
@@ -73,6 +115,16 @@ class Goal:
 
         self.meta_score = min(1.0, base * conf_factor * cal_penalty)
         return self.meta_score
+
+    @property
+    def origin(self) -> GoalOrigin:
+        """Provenance derived from ``source`` (#7). Legacy values -> INTERNAL."""
+        return origin_of(self.source)
+
+    @property
+    def executable(self) -> bool:
+        """Whether the actor may auto-execute this goal (#7 provenance gate)."""
+        return self.origin.auto_executable
 
     def to_dict(self) -> dict:
         return {
@@ -210,13 +262,20 @@ class GoalGenerator:
         self._add_goal(goal)
         return goal
 
-    def add_user_goal(self, description: str, priority: GoalPriority = GoalPriority.HIGH) -> Goal:
-        """Add a goal explicitly requested by the user."""
+    def add_user_goal(self, description: str,
+                      priority: GoalPriority = GoalPriority.HIGH,
+                      origin: GoalOrigin = GoalOrigin.USER) -> Goal:
+        """Add a goal explicitly requested by the user.
+
+        ``origin`` lets a host route provenance: the default USER is executable,
+        but a host that knows the text is compaction-derived passes
+        ``origin=GoalOrigin.COMPACTION`` so the actor never auto-runs it (#7).
+        """
         goal = Goal(
             description=description,
             drive=Drive.CURIOSITY,  # User goals default to curiosity drive
             priority=priority,
-            source="user",
+            source=origin.value,
         )
         self._add_goal(goal)
         return goal
@@ -269,6 +328,20 @@ class GoalGenerator:
         else:
             active.sort(key=lambda g: g.priority.value, reverse=True)
         return active[:max_count]
+
+    def is_executable(self, description: str) -> bool:
+        """Provenance gate (#7): may the actor auto-execute the active goal with
+        this description?
+
+        Returns the goal's ``executable`` flag. An untracked description (a raw
+        string from bench/tests, or any goal the generator never made) defaults
+        to True — the gate only denies a *known diagnostic* goal, so back-compat
+        is preserved.
+        """
+        for g in self._goals:
+            if g.status == "active" and g.description == description:
+                return g.executable
+        return True
 
     def score_all_goals(self, confidence: float, calibration: float) -> None:
         """
