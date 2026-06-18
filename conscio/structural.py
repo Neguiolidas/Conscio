@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+from .guards import clamp_int
+
 log = logging.getLogger(__name__)
 
 # OOM backstops (this is consumed on memory-constrained hosts).
@@ -338,8 +340,8 @@ def structural_budget(context_window: int) -> int:
     decision) and clamps to [FLOOR, CEIL] so a small model still gets a useful
     digest and a huge one is not flooded.
     """
-    return max(STRUCTURAL_FLOOR_TOKENS,
-               min(STRUCTURAL_CEIL_TOKENS, int(context_window * STRUCTURAL_PCT)))
+    return clamp_int(int(context_window * STRUCTURAL_PCT),
+                     STRUCTURAL_FLOOR_TOKENS, STRUCTURAL_CEIL_TOKENS)
 
 
 def render_structural(signal: StructuralSignal, budget_tokens: int) -> str:
