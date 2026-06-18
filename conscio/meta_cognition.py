@@ -14,7 +14,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from .guards import safe_read_json
+from .guards import read_json_dict
 
 
 class MetaCognition:
@@ -42,15 +42,14 @@ class MetaCognition:
         self._data = self._load()
 
     def _load(self) -> dict:
-        data = safe_read_json(self.path)            # None on any corruption
-        if data is not None:
-            return data
-        return {
+        # B-011: merge over the default skeleton so a valid-but-incomplete file
+        # (legacy/migrated, missing any of the four keys) can't KeyError on use.
+        return read_json_dict(self.path, {
             "confidence_history": [],
             "blind_spots": [],
             "error_patterns": [],
             "self_critiques": [],
-        }
+        })
 
     def _save(self) -> None:
         # Keep only last 100 entries per category to prevent unbounded growth

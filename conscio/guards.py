@@ -7,6 +7,9 @@ Postmortem class → durable guard:
   - narrow-except / corrupt-file read (B-005, B-006, B-008) → ``safe_read_json``:
     read + parse a JSON file to a dict, returning None on ANY problem (missing,
     OSError, binary/non-UTF-8, malformed, wrong type). Never raises.
+  - schema-drift / incomplete-JSON (B-011: a valid dict missing keys a newer
+    version expects → KeyError on first use) → ``read_json_dict``: merge the
+    loaded object over a default skeleton so every required key always exists.
   - sentinel-as-unbounded (B-004: SQLite ``LIMIT -1`` = unbounded) → ``clamp_int``.
   - tz / local-vs-UTC (B-003b, B-007) is guarded by
     ``timeutil.naive_utc_from_epoch`` + the architectural test
@@ -34,6 +37,25 @@ def safe_read_json(path: Path) -> Optional[dict]:
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def read_json_dict(path: Path, default: dict) -> dict:
+    """Load the JSON object at ``path``, MERGED over ``default`` so every key in
+    ``default`` is guaranteed present (loaded values win).
+
+    Guards the schema-drift class (B-011): a long-lived persisted file written by
+    an older version can be valid JSON yet miss a key a newer method assumes,
+    which would raise KeyError on first use. Corruption / missing / non-dict all
+    fall back to a copy of ``default``.
+
+    ``default`` must be a freshly-built skeleton (its mutable values are shared
+    into the result by a shallow copy); callers here build one per call.
+    """
+    merged = dict(default)
+    data = safe_read_json(path)
+    if data is not None:
+        merged.update(data)
+    return merged
 
 
 def clamp_int(value: int, lo: int, hi: int) -> int:
