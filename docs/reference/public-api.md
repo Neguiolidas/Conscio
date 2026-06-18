@@ -28,11 +28,18 @@ from conscio import (
 `ConsciousnessEngine` is a context manager (`with ConsciousnessEngine(...) as e:`).
 Key methods: `reflect()`, `get_state_for_injection()`, `advisory()`, `recall()`,
 `status()`, `attach_adapter()`, `probe()`, `act()`, `approve()`, `run()`,
-`close()`.
+`load_structure()`, `structural_lookup()`, `structural_signal()`, `close()`.
 
 `advisory()` is the structured, read-only pull surface a host consumes each turn
 (goals tagged by provenance, lockdown/brake status). See
 [Consuming awake output](../guides/integration.md).
+
+`load_structure(path)` ingests a Graphify `graph.json` (data, never code; R10)
+and distils it; `get_state_for_injection()` then appends a budget-adaptive
+structure block, and `structural_lookup(id)` / `structural_signal()` are the
+read-only drill-down surfaces. `conscio.structural` exports `StructuralDistiller`,
+`StructuralSignal`, `Hyperedge`, `CommunitySummary`, `GraphNode`,
+`StructuralError`. See [Structural cognition](../guides/integration.md#structural-cognition).
 
 ## `conscio.agency`
 

@@ -39,6 +39,10 @@ from .content_layer import _RAG_DISABLED as _RAG_DISABLED  # re-export (one sent
 from .session_lifecycle import SessionLifecycle
 from .metabolic import MetabolicContext
 from .session_rag_factory import create_session_rag
+from .structural import (
+    StructuralDistiller, StructuralSignal, render_structural, structural_budget,
+    DEFAULT_MAX_BYTES, DEFAULT_MAX_NODES,
+)
 
 if TYPE_CHECKING:
     from .dreaming import DreamReport
@@ -150,6 +154,12 @@ class ConsciousnessEngine:
         self.session_lifecycle = SessionLifecycle(engine=self)
 
         self._state = self.ctx.load_state()
+
+        # v1.7: structural cognition — optional, opt-in. No graph is loaded by
+        # default, so injection/lookup/advisory stay inert until the host calls
+        # load_structure(). Keeps cognition (reflect()) entirely untouched.
+        self._distiller: Optional[StructuralDistiller] = None
+        self._structural_signal: Optional[StructuralSignal] = None
 
     # --- Meta-Cognition → Goal Generator Feed ---
 
@@ -465,8 +475,62 @@ class ConsciousnessEngine:
         
         This is what gets inserted into the system prompt or context
         to give the agent self-awareness.
+
+        When a structural graph is loaded (v1.7), a budget-adaptive structure
+        block is appended ADDITIVELY — the consciousness-state block is byte-for-
+        byte unchanged (cognition stays untouched); structure is layered after.
         """
-        return self._state.to_injection()
+        base = self._state.to_injection()
+        if self._structural_signal is not None:
+            block = render_structural(
+                self._structural_signal,
+                structural_budget(self._state.context_window))
+            if block:
+                return base + "\n" + block
+        return base
+
+    # --- Structural Cognition pull surfaces (v1.7) ---
+
+    def load_structure(
+        self,
+        path: str | Path,
+        *,
+        max_bytes: int = DEFAULT_MAX_BYTES,
+        max_nodes: int = DEFAULT_MAX_NODES,
+    ) -> StructuralSignal:
+        """Load + distill a Graphify ``graph.json`` (data, never code; R10).
+
+        Caches the distiller (for ``structural_lookup``) and the distilled
+        ``StructuralSignal`` (for injection / ``structural_signal``). Raises
+        ``StructuralError`` (a ``ValueError``) on malformed or non-graph input.
+        """
+        self._distiller = StructuralDistiller.from_path(
+            path, max_bytes=max_bytes, max_nodes=max_nodes)
+        self._structural_signal = self._distiller.distill()
+        return self._structural_signal
+
+    def structural_signal(self) -> Optional[StructuralSignal]:
+        """The distilled signal of the loaded graph, or None if none loaded."""
+        return self._structural_signal
+
+    def structural_lookup(self, key: str) -> Optional[dict[str, Any]]:
+        """On-demand drill-down: resolve a node / hyperedge / community id to
+        detail (read-only, no-LLM, no-mutation — an ``advisory()`` sibling).
+        Returns None when no graph is loaded or the id is unknown."""
+        return self._distiller.lookup(key) if self._distiller is not None else None
+
+    def _structural_advisory(self) -> Optional[dict[str, Any]]:
+        sig = self._structural_signal
+        if sig is None:
+            return None
+        return {
+            "loaded": True,
+            "commit": sig.built_at_commit,
+            "hash": sig.content_hash,
+            "nodes": sig.node_count,
+            "hyperedges": len(sig.hyperedges),
+            "communities": len(sig.communities),
+        }
 
     def advisory(self) -> dict:
         """Structured, read-only snapshot for the host to PULL each turn (#5/#9).
@@ -504,6 +568,7 @@ class ConsciousnessEngine:
                 "dream_recommended": bool(s.dream_recommended),
                 "brake": self._last_brake_message(),
             },
+            "structural": self._structural_advisory(),
             "recommendations": recommendations,
         }
 
