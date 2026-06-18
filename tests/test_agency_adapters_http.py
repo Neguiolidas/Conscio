@@ -375,3 +375,52 @@ class TestErrors:
         monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
         with pytest.raises(AdapterBadResponse):
             adapters._post_json("http://x", {}, 1.0)
+
+
+class TestAdapterTaxonomyHardening:
+    """v1.9 I-D — every failure maps to the Adapter* taxonomy; no raw exception
+    escapes, no key leaks. (try_keep = the existing per-adapter parse tests above.)
+    """
+
+    def test_try_break_timeout_maps_to_adapter_timeout(self, monkeypatch):
+        import urllib.request
+
+        from conscio.agency.adapter import AdapterTimeout
+
+        def fake_urlopen(*args, **kwargs):
+            raise TimeoutError("slow")
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        with pytest.raises(AdapterTimeout):
+            adapters._post_json("http://x", {}, 1.0)
+
+    def test_try_break_empty_payload_is_badresponse_not_keyerror(self, monkeypatch):
+        # The strict extractors (choices/content/candidates) must wrap a missing
+        # field as AdapterBadResponse, never let a raw KeyError/IndexError escape.
+        monkeypatch.setattr(adapters, "_post_json", lambda *a, **k: {})
+        for adapter in (
+            OpenAICompatAdapter(model="m", base_url="http://x/v1"),
+            AnthropicAdapter(model="m", api_key="k"),
+            GeminiAdapter(model="m", api_key="k"),
+        ):
+            with pytest.raises(AdapterBadResponse):
+                adapter.generate("hi")
+
+    def test_try_break_api_key_never_in_exception(self, monkeypatch):
+        import io
+        import urllib.error
+        import urllib.request
+
+        def fake_urlopen(*args, **kwargs):
+            raise urllib.error.HTTPError(
+                "http://x", 401, "Unauthorized", {}, io.BytesIO(b""))
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        leaky = "sk-SEKRET-LEAK-7f3a"
+        try:
+            OpenAIAdapter(model="gpt-4o", api_key=leaky).generate("hi")
+        except Exception as exc:                       # noqa: BLE001 - asserting hygiene
+            assert leaky not in str(exc)
+            assert leaky not in repr(exc)
+        else:
+            raise AssertionError("expected an adapter error")
