@@ -82,3 +82,26 @@ def test_shutdown_heartbeat_has_advisory_without_a_cycle(tmp_path):
         assert "last_run" not in hb              # no cycle ran -> no run summary
     finally:
         eng.close()
+
+
+def test_try_break_heartbeat_well_formed_when_sensor_raises(tmp_path):
+    """Probe C / I-C3 (run for Hermet): a sensor that raises mid-cycle must not
+    corrupt the heartbeat — daemon_heartbeat.json stays parseable with its liveness
+    + advisory keys, so a tailing host never reads a truncated/partial file."""
+    from conscio.perception import SensorAdapter
+
+    class _Boom(SensorAdapter):
+        name = "boom"
+
+        def perceive(self):
+            raise RuntimeError("sensor down")
+
+    eng = ConsciousnessEngine("glm-5.1", storage_path=tmp_path / "s")
+    d = Daemon(eng, sensors=[_Boom(), MockSensor([_frame()])])
+    try:
+        d.cycle()                                       # must not raise
+        hb = json.loads(d.heartbeat_path.read_text())   # must parse cleanly
+        assert {"ts", "cycles", "awake", "pid"} <= set(hb)
+        assert isinstance(hb.get("advisory"), dict)     # advisory snapshot intact
+    finally:
+        eng.close()
