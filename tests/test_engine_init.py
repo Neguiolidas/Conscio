@@ -90,6 +90,25 @@ def test_try_break_binary_legacy_txt_state_constructs(tmp_path):
         eng.close()
 
 
+def test_try_break_two_engines_one_storage_no_false_quarantine(tmp_path):
+    """I-S4 / R-03: a 2nd engine opening a storage the 1st holds open (WAL) must
+    NOT crash, and must NOT let _quarantine_if_corrupt false-positive on the LIVE
+    db (which would quarantine a healthy store = data loss). Regression guard for
+    the B-006 quick_check probe under concurrent open."""
+    e1 = _engine(tmp_path)
+    try:
+        e1.event_bus.emit(type="reflection", category="consciousness",
+                          data={"x": 1})
+        e2 = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
+        try:
+            assert isinstance(e2.advisory(), dict)          # constructed cleanly
+            assert not _corrupt_files(tmp_path)             # live db NOT quarantined
+        finally:
+            e2.close()
+    finally:
+        e1.close()
+
+
 def test_try_keep_healthy_db_not_quarantined(tmp_path):
     # A normal create + reopen must NOT quarantine a healthy DB.
     _engine(tmp_path).close()
