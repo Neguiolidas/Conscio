@@ -59,8 +59,9 @@ def _quarantine_if_corrupt(db_path: Path) -> Optional[Path]:
     """If ``db_path`` exists but is not a usable sqlite DB, move it aside so a fresh
     one is created — power-loss-mid-write or a garbage file must never crash
     construction (I-S4). The corrupt file (and any ``-wal``/``-shm``) is PRESERVED
-    as ``<name>.corrupt-<ts>`` for forensics, never deleted. Returns the quarantine
-    path, or None when the DB is healthy / absent.
+    as ``<name>.corrupt-<ts>`` for forensics; only the newest few are kept (R-02
+    prune — they no longer accumulate unbounded). Returns the quarantine path, or
+    None when the DB is healthy / absent.
     """
     if not db_path.exists():
         return None
@@ -84,7 +85,25 @@ def _quarantine_if_corrupt(db_path: Path) -> Optional[Path]:
                 side.rename(dest.with_name(dest.name + sidecar))
             except OSError:
                 pass                                 # best-effort sidecar move
+    _prune_quarantine(db_path)                       # R-02: keep only newest few
     return dest
+
+
+def _prune_quarantine(db_path: Path, keep: int = 3) -> None:
+    """Keep only the newest ``keep`` quarantined ``<name>.corrupt-<ts>`` copies
+    (R-02 — they used to accumulate forever). The ``-<ts>`` stamp is lexically
+    sortable; each pruned main file's ``-wal``/``-shm`` sidecars go with it."""
+    mains = sorted(
+        (p for p in db_path.parent.glob(f"{db_path.name}.corrupt-*")
+         if not p.name.endswith(("-wal", "-shm"))),
+        key=lambda p: p.name, reverse=True)
+    for stale in mains[keep:]:
+        for path in (stale, stale.with_name(stale.name + "-wal"),
+                     stale.with_name(stale.name + "-shm")):
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
 # RAG-disable sentinel is OWNED by content_layer and re-exported via the import
 # above, so `from conscio.engine import _RAG_DISABLED` yields the SAME object the

@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .guards import safe_read_json
+from .guards import atomic_write_text, safe_read_json
 from .models import ContextMode, ModelRegistry
 
 
@@ -291,10 +291,10 @@ class ContextManager:
             "action_lockdown": state.action_lockdown,
             "awake": state.awake,
         }
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+        atomic_write_text(path, json.dumps(data, ensure_ascii=False, indent=2))
         # Also write the human-readable injection for manual inspection
         inj_path = self.storage_path / "state_summary.txt"
-        inj_path.write_text(state.to_injection())
+        atomic_write_text(inj_path, state.to_injection())
         return path
 
     def load_state(self) -> ConsciousnessState:

@@ -14,7 +14,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from .guards import read_json_dict
+from .guards import atomic_write_text, read_json_dict
 
 
 class MetaCognition:
@@ -56,7 +56,8 @@ class MetaCognition:
         data = self._data
         data["confidence_history"] = data["confidence_history"][-100:]
         data["self_critiques"] = data["self_critiques"][-50:]
-        self.path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        atomic_write_text(self.path,
+                          json.dumps(data, indent=2, ensure_ascii=False))
 
     # --- Confidence Tracking ---
 

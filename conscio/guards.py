@@ -21,6 +21,7 @@ Internal only — not exported from ``conscio/__init__`` (public API is frozen).
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -63,3 +64,14 @@ def clamp_int(value: int, lo: int, hi: int) -> int:
     sentinel-as-unbounded class — e.g. a negative limit reaching SQLite
     ``LIMIT ?`` (where ``-1`` means *no limit*)."""
     return max(lo, min(hi, value))
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` atomically: write a sibling ``.tmp`` then
+    ``os.replace`` (atomic on POSIX). Guards the torn-write class (B-012 / R-09):
+    a tailing reader or a power-loss mid-write never sees a truncated file, and
+    the prior contents survive a failed write. ``os.replace`` raising propagates
+    (the original file is left intact)."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
