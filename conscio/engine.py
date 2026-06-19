@@ -982,6 +982,81 @@ class ConsciousnessEngine:
             return []
         return self._act_pipeline.ledger.pending(limit)
 
+    # --- v2.0 "Connect": propose-only cognition (never executes) ---
+
+    def propose_action(self, intent: dict) -> dict:
+        """Audit an explicit host intent with the Skeptic. Never executes."""
+        from .agency.contracts import (PROPOSAL_SCHEMA, proposal_from_dict,
+                                        validate)
+        pipe = getattr(self, "_act_pipeline", None)
+        if pipe is None or pipe.skeptic is None:
+            return self._no_adapter_result()
+        errors = validate(intent, PROPOSAL_SCHEMA)
+        if errors:
+            return {"verdict": "FAIL", "reasons": errors, "risk_flags": [],
+                    "confidence": 0.0, "proposal": None}
+        goal = str(intent.get("goal", ""))
+        proposal = proposal_from_dict(intent, goal_id=goal)
+        verdict = pipe.skeptic.audit(proposal, goal_text=goal)
+        self._emit_proposal(proposal, verdict)
+        return self._proposal_result(proposal, verdict)
+
+    def propose_plan(self, goal: str,
+                     tools: Optional[list[dict]] = None) -> dict:
+        """Generate ONE audited action from a goal (Actor), constrained to the
+        host's declared tool vocabulary. Never executes; not free-form."""
+        from .agency.act import goal_fingerprint
+        from .agency.actor import build_actor_prompt
+        from .agency.contracts import PROPOSAL_SCHEMA
+        from .agency.gateway import GatewayError
+        pipe = getattr(self, "_act_pipeline", None)
+        if pipe is None or pipe.skeptic is None:
+            return self._no_adapter_result()
+        if not tools:
+            return {"verdict": "FAIL",
+                    "reasons": ["propose_plan requires a declared tool "
+                                "vocabulary"],
+                    "risk_flags": [], "confidence": 0.0, "proposal": None}
+        catalog = "\n".join(f"- {t['name']}: {t.get('description', '')}"
+                            for t in tools)
+        prompt = build_actor_prompt(
+            state=self._state, goal_text=goal, catalog_text=catalog,
+            recall_snippets=self.recall(goal), few_shot=[])
+        try:
+            proposal = pipe.gateway.request_action(
+                prompt, PROPOSAL_SCHEMA, goal_id=goal_fingerprint(goal),
+                tool_names=[t["name"] for t in tools])
+        except GatewayError as exc:
+            return {"verdict": "FAIL", "reasons": [f"decode failed: {exc}"],
+                    "risk_flags": [], "confidence": 0.0, "proposal": None}
+        verdict = pipe.skeptic.audit(proposal, goal_text=goal)
+        self._emit_proposal(proposal, verdict)
+        return self._proposal_result(proposal, verdict)
+
+    @staticmethod
+    def _no_adapter_result() -> dict:
+        return {"verdict": "FAIL", "reasons": ["no adapter attached"],
+                "risk_flags": [], "confidence": 0.0, "proposal": None}
+
+    def _emit_proposal(self, proposal, verdict) -> None:
+        self.event_bus.emit(
+            type="proposal:audited", category="consciousness",
+            data={"tool": proposal.tool, "args": proposal.args,
+                  "rationale": proposal.rationale,
+                  "expected_outcome": proposal.expected_outcome,
+                  "verdict": verdict.verdict, "reasons": verdict.reasons,
+                  "confidence": verdict.confidence})
+
+    @staticmethod
+    def _proposal_result(proposal, verdict) -> dict:
+        return {"verdict": verdict.verdict, "reasons": verdict.reasons,
+                "risk_flags": verdict.risk_flags,
+                "confidence": verdict.confidence,
+                "proposal": {"tool": proposal.tool, "args": proposal.args,
+                             "rationale": proposal.rationale,
+                             "expected_outcome": proposal.expected_outcome,
+                             "action_id": proposal.action_id}}
+
     def probe(self, *, force: bool = False):
         """Run/refresh the ProbeSuite for the attached adapter (spec 5.10).
 

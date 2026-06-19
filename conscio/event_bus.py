@@ -66,6 +66,8 @@ VALID_TYPES = {
  "awake:changed",         # v1.5: Awake Mode (R9) toggled — auditable autonomy gate
  "workspace:changed",     # v1.5: active workspace root changed (env awareness)
  "structure:changed",     # v1.8: ingested structure drifted (graph rebuilt/moved)
+ "proposal:audited",      # v2.0: MCP propose_* audited proposal (advisory)
+ "host:event",            # v2.0: raw host event recorded via MCP note()
 }
 
 VALID_CATEGORIES = {"system", "trading", "consciousness", "external", "session"}
