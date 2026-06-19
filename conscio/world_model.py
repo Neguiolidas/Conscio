@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from .guards import read_json_dict
+from .guards import atomic_write_text, read_json_dict
 
 # Entropy scoring (v0.4): higher entropy = more disordered = better prune candidate.
 HALFLIFE_DAYS = 7        # age normalization half-life
@@ -79,7 +79,8 @@ class WorldModel:
 
     def _save(self) -> None:
         """Save world model to disk."""
-        self.path.write_text(json.dumps(self._data, indent=2, ensure_ascii=False))
+        atomic_write_text(self.path,
+                          json.dumps(self._data, indent=2, ensure_ascii=False))
 
     # --- Entities ---
 
