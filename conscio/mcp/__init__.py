@@ -1,6 +1,8 @@
-"""Conscio MCP — embodiment surface (v2.0 "Connect"). See server.py.
+"""Conscio MCP — embodiment surface (v2.0 "Connect"). Propose-only (v2.0.0).
 
-A hand-rolled, stdlib-only MCP stdio server. Propose-only in v2.0.0;
-audited execution (act) lands in v2.0.1. Zero new runtime dependency.
+A hand-rolled, stdlib-only MCP stdio server. Zero new runtime dependency.
 Nothing here opens a socket.
 """
+from .server import main, serve
+
+__all__ = ["main", "serve"]
