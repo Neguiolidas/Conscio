@@ -19,14 +19,14 @@ from conscio.agency.adapters import (
 
 
 class _Handler(BaseHTTPRequestHandler):
-    responses = {}
-    captured = []
+    responses_map: dict[str, dict[str, object]] = {}
+    captured: list[tuple[str, dict[str, object]]] = []
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         payload = json.loads(self.rfile.read(length) or b"{}")
         _Handler.captured.append((self.path, payload))
-        body = json.dumps(_Handler.responses.get(self.path, {})).encode()
+        body = json.dumps(_Handler.responses_map.get(self.path, {})).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -39,7 +39,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def server():
-    _Handler.responses, _Handler.captured = {}, []
+    _Handler.responses_map, _Handler.captured = {}, []
     httpd = HTTPServer(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -50,7 +50,7 @@ def server():
 class TestOllama:
     def test_generate_parses_response_and_tokens(self, server):
         url, handler = server
-        handler.responses["/api/generate"] = {
+        handler.responses_map["/api/generate"] = {
             "response": '{"x": 1}', "prompt_eval_count": 12, "eval_count": 4}
         adapter = OllamaAdapter(base_url=url, model="hermes")
         result = adapter.generate("hi", schema={"x": {}})
@@ -63,7 +63,7 @@ class TestOllama:
 
     def test_no_schema_means_no_format_key(self, server):
         url, handler = server
-        handler.responses["/api/generate"] = {"response": "plain"}
+        handler.responses_map["/api/generate"] = {"response": "plain"}
         OllamaAdapter(base_url=url, model="m").generate("hi")
         assert "format" not in handler.captured[0][1]
 
@@ -77,7 +77,7 @@ class TestOllama:
 class TestLlamaCpp:
     def test_generate_passes_grammar_through(self, server):
         url, handler = server
-        handler.responses["/completion"] = {
+        handler.responses_map["/completion"] = {
             "content": "out", "tokens_evaluated": 3, "tokens_predicted": 2}
         adapter = LlamaCppAdapter(base_url=url)
         result = adapter.generate("hi", grammar='root ::= "x"')
@@ -92,7 +92,7 @@ class TestLlamaCpp:
 class TestOpenAICompat:
     def test_generate_chat_payload_and_response(self, server):
         url, handler = server
-        handler.responses["/v1/chat/completions"] = {
+        handler.responses_map["/v1/chat/completions"] = {
             "choices": [{"message": {"content": "answer"}}],
             "usage": {"prompt_tokens": 7, "completion_tokens": 3}}
         adapter = OpenAICompatAdapter(base_url=url + "/v1", model="local")
@@ -121,7 +121,7 @@ class TestLMStudio:
     def test_speaks_openai_chat_shape(self, server):
         # LM Studio is OpenAI-compatible: same chat/completions surface.
         url, handler = server
-        handler.responses["/v1/chat/completions"] = {
+        handler.responses_map["/v1/chat/completions"] = {
             "choices": [{"message": {"content": "ok"}}],
             "usage": {"prompt_tokens": 5, "completion_tokens": 2}}
         adapter = LMStudioAdapter(model="local", base_url=url + "/v1")
@@ -134,7 +134,7 @@ class TestLMStudio:
         # LM Studio 400s on response_format=json_object, so we never send it
         # (the gateway elicits JSON via prompt instructions instead).
         url, handler = server
-        handler.responses["/v1/chat/completions"] = {
+        handler.responses_map["/v1/chat/completions"] = {
             "choices": [{"message": {"content": "{}"}}], "usage": {}}
         LMStudioAdapter(model="local",
                         base_url=url + "/v1").generate("hi", schema={"x": {}})
@@ -144,7 +144,7 @@ class TestLMStudio:
 class TestAnthropic:
     def test_generate_messages_shape_and_response(self, server):
         url, handler = server
-        handler.responses["/v1/messages"] = {
+        handler.responses_map["/v1/messages"] = {
             "content": [{"type": "text", "text": "claude says hi"}],
             "usage": {"input_tokens": 9, "output_tokens": 4}}
         adapter = AnthropicAdapter(base_url=url, model="claude-x",
@@ -160,7 +160,7 @@ class TestAnthropic:
 
     def test_concatenates_text_blocks(self, server):
         url, handler = server
-        handler.responses["/v1/messages"] = {
+        handler.responses_map["/v1/messages"] = {
             "content": [{"type": "text", "text": "a"},
                         {"type": "text", "text": "b"}], "usage": {}}
         out = AnthropicAdapter(base_url=url, model="m",
@@ -198,7 +198,7 @@ class TestAnthropic:
 class TestGemini:
     def test_generate_parses_candidates(self, server):
         url, handler = server
-        handler.responses["/v1beta/models/gemini-x:generateContent"] = {
+        handler.responses_map["/v1beta/models/gemini-x:generateContent"] = {
             "candidates": [{"content": {"parts": [{"text": "gemini hi"}]}}],
             "usageMetadata": {"promptTokenCount": 11, "candidatesTokenCount": 5}}
         adapter = GeminiAdapter(base_url=url, model="gemini-x", api_key="g-key")

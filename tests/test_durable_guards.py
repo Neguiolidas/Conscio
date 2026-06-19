@@ -69,7 +69,7 @@ class TestSafeReadJson:
 
 # ── schema-drift / incomplete-JSON class: read_json_dict ─────────────────────
 class TestReadJsonDict:
-    _DEFAULT = {"entities": {}, "relations": [], "predictions": []}
+    _DEFAULT: dict[str, object] = {"entities": {}, "relations": [], "predictions": []}
 
     def test_try_break_incomplete_fills_missing_keys(self, tmp_path):
         p = tmp_path / "w.json"

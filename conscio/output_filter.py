@@ -18,7 +18,7 @@ from pathlib import Path
 
 # YAML is optional — fall back to manual config if unavailable
 try:
-    import yaml
+    import yaml  # type: ignore[import-untyped]
     HAS_YAML = True
 except ImportError:
     HAS_YAML = False
