@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS actions (
     tokens_out INTEGER NOT NULL DEFAULT 0,
     duration_ms INTEGER NOT NULL DEFAULT 0,
     adapter TEXT NOT NULL DEFAULT '',
-    model TEXT NOT NULL DEFAULT ''
+    model TEXT NOT NULL DEFAULT '',
+    approval_policy TEXT NOT NULL DEFAULT ''   -- v2.0.1: host-act gate
 );
 CREATE INDEX IF NOT EXISTS idx_actions_goal ON actions(goal_fp, id);
 CREATE INDEX IF NOT EXISTS idx_actions_tool ON actions(tool);
@@ -56,19 +57,26 @@ class ActionLedger:
             self._conn.commit()
         except sqlite3.OperationalError:
             pass                               # already present
+        try:                                   # v2.0.1 databases lack approval_policy
+            self._conn.execute("ALTER TABLE actions ADD COLUMN"
+                               " approval_policy TEXT NOT NULL DEFAULT ''")
+            self._conn.commit()
+        except sqlite3.OperationalError:
+            pass                               # already present
 
     def record(self, *, goal_fp: str, tool: str, args_json: str,
                rationale: str, tier: str, status: str, ok: bool | None = None,
                tokens_in: int = 0, tokens_out: int = 0,
                adapter: str = "", model: str = "",
-               goal_text: str = "") -> int:
+               goal_text: str = "", approval_policy: str = "") -> int:
         cur = self._conn.execute(
             "INSERT INTO actions (ts, goal_fp, goal_text, tool, args_json,"
             " rationale, tier, status, ok, tokens_in, tokens_out, adapter,"
-            " model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " model, approval_policy)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (time.time(), goal_fp, goal_text, tool, args_json, rationale,
              tier, status, None if ok is None else int(ok), tokens_in,
-             tokens_out, adapter, model))
+             tokens_out, adapter, model, approval_policy))
         self._conn.commit()
         return int(cur.lastrowid or 0)
 
@@ -107,6 +115,14 @@ class ActionLedger:
             "SELECT * FROM actions WHERE status='proposed'"
             " ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return [dict(r) for r in rows]
+
+    def has_in_flight(self) -> bool:
+        """True iff any action is still proposed or executing (v2.0.1:
+        blocks a host-act manifest swap mid-flight)."""
+        row = self._conn.execute(
+            "SELECT 1 FROM actions WHERE status IN ('proposed','executing')"
+            " LIMIT 1").fetchone()
+        return row is not None
 
     def get(self, row_id: int) -> dict | None:
         row = self._conn.execute(
