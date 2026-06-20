@@ -83,7 +83,7 @@ class Bindings:
         return {"content": [{"type": "text", "text": json.dumps(fn(args))}]}
 
     def _tools(self):
-        return {
+        tools = {
             "conscio.feed": self._feed,
             "conscio.note": self._note,
             "conscio.advisory": lambda a: self.engine.advisory(),
@@ -95,6 +95,36 @@ class Bindings:
             "conscio.propose_plan": lambda a: self.engine.propose_plan(
                 self._require(a, "goal"), a.get("tools")),
         }
+        if self._act_enabled():
+            tools.update({
+                "conscio.act": self._act,
+                "conscio.report_result": self._report_result,
+                "conscio.pending": lambda a: self.engine.host_act.pending(
+                    self._int_arg(a, "limit", 20)),
+                "conscio.approve": lambda a: self.engine.host_act.approve(
+                    self._int_arg(a, "ledger_id")),
+                "conscio.reject": lambda a: self.engine.host_act.reject(
+                    self._int_arg(a, "ledger_id"), str(a.get("reason", ""))),
+            })
+        return tools
+
+    def _int_arg(self, args: dict, key: str,
+                 default: int | None = None) -> int:
+        if key not in args:
+            if default is not None:
+                return default
+            raise j.InvalidParams(f"missing '{key}'")
+        val = args[key]
+        if isinstance(val, bool) or not isinstance(val, int):  # not str/float/None
+            raise j.InvalidParams(f"'{key}' must be an integer")
+        return val
+
+    def _report_result(self, args: dict) -> dict:
+        ledger_id = self._int_arg(args, "ledger_id")
+        result = self._require(args, "result")
+        if not isinstance(result, dict):
+            raise j.InvalidParams("result must be an object")
+        return self.engine.host_act.report(ledger_id, result)
 
     @staticmethod
     def _require(args: dict, key: str):
@@ -137,6 +167,24 @@ class Bindings:
         result = {"event_id": eid, "noted": True}
         self.seen.mark(eid, json.dumps(result),
                        float(event.get("ts") or time.time()))
+        return result
+
+    def _act(self, args: dict) -> dict:
+        intent = self._require(args, "intent")
+        if not isinstance(intent, dict):
+            raise j.InvalidParams("intent must be an object")
+        key = intent.get("idempotency_key")
+        skey = None
+        if key is not None:
+            if not isinstance(key, str) or len(key) > 256:
+                raise j.InvalidParams("idempotency_key must be a str <= 256 chars")
+            skey = f"act:{self.workspace_id}:{intent.get('tool', '')}:{key}"
+            prior = self.seen.seen(skey)
+            if prior is not None:
+                return json.loads(prior)
+        result = self.engine.host_act.propose(intent)
+        if skey is not None:
+            self.seen.mark(skey, json.dumps(result), time.time())
         return result
 
     # ── resources ──
