@@ -175,13 +175,38 @@ class ContentStore:
         content_hash = hashlib.sha256(content.encode()).hexdigest()
         timestamp = naive_utcnow().isoformat()
 
-        # Check for duplicate content (same hash = already indexed)
+        # Check for duplicate content (same hash = source already indexed)
         existing = self.db.execute(
-            "SELECT id FROM sources WHERE content_hash = ? LIMIT 1",
+            "SELECT id, label FROM sources WHERE content_hash = ? LIMIT 1",
             (content_hash,),
         ).fetchone()
         if existing:
-            return existing["id"]
+            source_id = int(existing["id"])
+            # R-05: ensure chunks exist for THIS category so a filtered search
+            # finds the text. label stays first-seen provenance. session_id is
+            # recorded on the new chunks but is NOT a dedup key or a search axis
+            # in v2.0.1 (search() filters by category, not session).
+            already = self.db.execute(
+                "SELECT 1 FROM chunks WHERE source_id = ? AND source_category = ?"
+                " LIMIT 1",
+                (source_id, category),
+            ).fetchone()
+            if already:
+                return source_id
+            label = existing["label"]
+            chunks = self._chunk_content(content, chunk_size)
+            for i, chunk in enumerate(chunks):
+                title = (f"{label}" if len(chunks) == 1
+                         else f"{label} [part {i+1}/{len(chunks)}]")
+                for table in ("chunks", "chunks_trigram"):
+                    self.db.execute(
+                        f"INSERT INTO {table} (title, content, source_id,"
+                        " content_type, source_category, session_id, timestamp)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (title, chunk, source_id, content_type, category,
+                         session_id, timestamp))
+            self.db.commit()
+            return source_id
 
         # Create source record
         cursor = self.db.execute(
