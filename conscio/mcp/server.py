@@ -123,11 +123,16 @@ class Bindings:
                                        self.engine.advisory().get("state", {}))
         if base == "conscio://events":
             q = parse_qs(parsed.query)
+
+            def first(key: str) -> str | None:
+                vals = q.get(key)
+                return vals[0] if vals else None
+
             rows = self.engine.event_bus.query(
-                type=(q.get("type") or [None])[0],
-                category=(q.get("category") or [None])[0],
-                since=(q.get("since") or [None])[0],
-                limit=int((q.get("limit") or ["50"])[0]))
+                type=first("type"),
+                category=first("category"),
+                since=first("since"),
+                limit=int(first("limit") or "50"))
             return self._json_resource(uri, [e.to_dict() for e in rows])
         if base == "conscio://handoff":
             return {"contents": [{"uri": uri, "mimeType": "text/markdown",

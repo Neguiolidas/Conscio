@@ -50,31 +50,36 @@ def test_initialize_falls_back_to_latest():
 
 
 def test_notification_returns_none():
-    d = _d(); _init(d)
+    d = _d()
+    _init(d)
     assert d.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
 
 
 def test_tools_list_after_init():
-    d = _d(); _init(d)
+    d = _d()
+    _init(d)
     res = d.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     assert res["result"]["tools"][0]["name"] == "conscio.advisory"
 
 
 def test_tools_call_routes():
-    d = _d(); _init(d)
+    d = _d()
+    _init(d)
     res = d.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
                     "params": {"name": "conscio.advisory", "arguments": {}}})
     assert res["result"]["content"][0]["type"] == "text"
 
 
 def test_unknown_method_is_method_not_found():
-    d = _d(); _init(d)
+    d = _d()
+    _init(d)
     res = d.handle({"jsonrpc": "2.0", "id": 3, "method": "bogus"})
     assert res["error"]["code"] == j.METHOD_NOT_FOUND
 
 
 def test_unavailable_tool_is_method_not_found():
-    d = _d(); _init(d)
+    d = _d()
+    _init(d)
     res = d.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call",
                     "params": {"name": "conscio.act", "arguments": {}}})
     assert res["error"]["code"] == j.METHOD_NOT_FOUND
@@ -91,5 +96,6 @@ def test_non_2_0_is_invalid_request():
 
 
 def test_ping_after_init_is_empty_result():
-    d = _d(); _init(d)
+    d = _d()
+    _init(d)
     assert d.handle({"jsonrpc": "2.0", "id": 6, "method": "ping"})["result"] == {}

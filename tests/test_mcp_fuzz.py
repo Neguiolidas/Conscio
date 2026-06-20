@@ -56,7 +56,8 @@ def test_fuzz_serve_always_answers_or_skips(tmp_path):
                 msg = json.loads(raw)
                 assert "result" in msg or "error" in msg
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_fuzz_validate_event_never_crashes():

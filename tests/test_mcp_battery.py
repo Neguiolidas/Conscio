@@ -31,7 +31,8 @@ def test_try_break_garbage_is_parse_error(tmp_path):
     try:
         assert _run(b, ["{not json\n"])[0]["error"]["code"] == j.PARSE_ERROR
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_try_break_oversized_frame_no_oom(tmp_path):
@@ -41,7 +42,8 @@ def test_try_break_oversized_frame_no_oom(tmp_path):
                           "params": {"x": "a" * 10_000}}) + "\n"
         assert _run(b, [big], max_bytes=500)[0]["error"]["code"] == j.INVALID_REQUEST
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_try_break_recovers_after_bad_frame(tmp_path):
@@ -54,7 +56,8 @@ def test_try_break_recovers_after_bad_frame(tmp_path):
         assert out[1]["result"]["serverInfo"]["name"] == "conscio"
         assert out[2]["result"] == {}
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_try_break_oversized_then_recovers(tmp_path):
@@ -66,7 +69,8 @@ def test_try_break_oversized_then_recovers(tmp_path):
         assert out[0]["error"]["code"] == j.INVALID_REQUEST
         assert out[1]["result"]["serverInfo"]["name"] == "conscio"
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_try_break_act_tool_absent(tmp_path):
@@ -84,7 +88,8 @@ def test_try_break_act_tool_absent(tmp_path):
         assert "conscio.act" not in {t["name"]
                                      for t in list_out[1]["result"]["tools"]}
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_try_break_propose_without_adapter_fails_closed(tmp_path):
@@ -101,7 +106,8 @@ def test_try_break_propose_without_adapter_fails_closed(tmp_path):
         body = json.loads(out[1]["result"]["content"][0]["text"])
         assert body["verdict"] == "FAIL" and "no adapter" in body["reasons"][0]
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_try_break_dup_event_no_world_inflation(tmp_path):
@@ -115,7 +121,8 @@ def test_try_break_dup_event_no_world_inflation(tmp_path):
         _run(b, [json.dumps(INIT) + "\n", call, call])
         assert seen.conn.execute("SELECT COUNT(*) FROM mcp_seen").fetchone()[0] == 1
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_try_break_two_workspaces_isolated(tmp_path):
@@ -129,4 +136,7 @@ def test_try_break_two_workspaces_isolated(tmp_path):
         assert (tmp_path / "A" / "mcp_seen.db").exists()
         assert (tmp_path / "B" / "mcp_seen.db").exists()
     finally:
-        sa.close(); ea.close(); sb.close(); eb.close()
+        sa.close()
+        ea.close()
+        sb.close()
+        eb.close()

@@ -36,7 +36,8 @@ def test_initialize_then_tools_list_is_propose_only(tmp_path):
         assert "conscio.act" not in names and "conscio.register_tool" not in names
         assert out[0]["result"]["conscio"]["act_enabled"] is False
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_feed_ingests_and_returns_advisory(tmp_path):
@@ -50,7 +51,8 @@ def test_feed_ingests_and_returns_advisory(tmp_path):
         body = json.loads(out[1]["result"]["content"][0]["text"])
         assert body["event_id"] == "e1" and "advisory" in body
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_feed_duplicate_returns_identical_prior_result(tmp_path):
@@ -65,7 +67,8 @@ def test_feed_duplicate_returns_identical_prior_result(tmp_path):
         second = json.loads(out[2]["result"]["content"][0]["text"])
         assert first == second                 # exact prior result, not {deduped}
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_note_maps_host_type_to_valid_category(tmp_path):
@@ -79,7 +82,8 @@ def test_note_maps_host_type_to_valid_category(tmp_path):
         rows = eng.event_bus.query(type="host:event", limit=5)
         assert rows and rows[0].data["host_type"] == "user_msg"
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_read_resource_advisory(tmp_path):
@@ -90,7 +94,8 @@ def test_read_resource_advisory(tmp_path):
                               "params": {"uri": "conscio://advisory"}}])
         assert isinstance(json.loads(out[1]["result"]["contents"][0]["text"]), dict)
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_read_events_resource_honours_query(tmp_path):
@@ -104,7 +109,8 @@ def test_read_events_resource_honours_query(tmp_path):
         rows = json.loads(out[1]["result"]["contents"][0]["text"])
         assert all(r["type"] == "host:event" for r in rows)
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_propose_action_over_mcp(tmp_path):
@@ -117,7 +123,8 @@ def test_propose_action_over_mcp(tmp_path):
                                          "arguments": {"intent": intent}}}])
         assert json.loads(out[1]["result"]["content"][0]["text"])["verdict"] == "PASS"
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_invalid_event_is_invalid_params(tmp_path):
@@ -129,4 +136,5 @@ def test_invalid_event_is_invalid_params(tmp_path):
                                          "arguments": {"event": {"type": "x"}}}}])
         assert out[1]["error"]["code"] == jj.INVALID_PARAMS
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()

@@ -22,6 +22,8 @@ class Dispatcher:
             return make_error(msg.get("id"), INVALID_REQUEST,
                               "jsonrpc must be '2.0'")
         method = msg.get("method")
+        if not isinstance(method, str):     # malformed/missing → falls through to MethodNotFound
+            method = ""
         mid = msg.get("id")
         is_notification = "id" not in msg
         params = msg.get("params") or {}
