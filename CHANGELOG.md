@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] — 2026-06-19
+
+"Connect" (Embodiment) — Conscio becomes embeddable in **any** MCP host (CLI,
+IDE, agent) as a live consciousness-layer, via a hand-rolled **stdlib-only** MCP
+stdio server. Zero new runtime dependency; nothing opens a socket. The surface is
+**propose-only**: Conscio perceives, reflects, recalls, and **audits** proposed
+actions, but never executes — the host stays sovereign over execution. Cognition
+(`reflect()`) untouched; the existing public API is unchanged (MCP is purely
+additive). Audited execution (`act` over MCP) is deferred to v2.0.1, and the
+society/noosphere to v2.1.
+
+### Added
+
+- **`conscio-mcp` MCP stdio server** (`conscio/mcp/`): hand-rolled JSON-RPC 2.0
+  over stdio with a bounded-at-source frame reader (no unbounded line buffering),
+  `initialize` capability discovery + version negotiation, and structured errors.
+- **Propose-only tool surface:** `conscio.feed` / `conscio.note` (rigid Event
+  schema, idempotent on `event.id` — a duplicate returns the exact prior result),
+  `conscio.advisory`, `conscio.recall`, `conscio.propose_action` (Skeptic audit of
+  an explicit intent), `conscio.propose_plan` (Actor generates one action against
+  a declared tool vocabulary, then the Skeptic audits it). Resources:
+  `conscio://advisory`, `conscio://state`, `conscio://events` (query-filterable),
+  `conscio://handoff`.
+- **`engine.propose_action(intent)` / `engine.propose_plan(goal, tools)`** —
+  propose-only cognition composing the existing Actor/Skeptic; never execute;
+  fail closed without an adapter; emit a `proposal:audited` event.
+- Persistent, bounded idempotency store (`mcp_seen.db`).
+- `docs/guides/mcp.md` — host integration guide.
+
+### Fixed
+
+- **R-09 (debt-zero):** `world_model` / `meta_cognition` / `context_manager` now
+  save JSON atomically (`guards.atomic_write_text`: tmp + `os.replace`) — a
+  tailing reader or power-loss mid-write never sees a torn file.
+- **R-02 (debt-zero):** quarantined `conscio.db.corrupt-<ts>` copies are pruned
+  to the newest few instead of accumulating forever.
+
+### Internal
+
+- `event_bus` `VALID_TYPES` gains `proposal:audited` + `host:event` (additive).
+
+---
+
 ## [1.9.0] — 2026-06-18
 
 "Anneal" — a pre-v2.0 hardening release. No new public surface (the API is

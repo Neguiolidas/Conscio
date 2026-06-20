@@ -14,6 +14,11 @@ Two surfaces, deliberately separated:
   earned autonomy (TrustMatrix) + a circuit breaker. HIGH-risk actions are always
   queued for a human.
 
+Since **v2.0** ("Connect"), any MCP host — a CLI, an IDE, or an agent — can embed
+a Conscio instance over a stdlib-only MCP stdio server (`conscio-mcp`) and consume
+its cognition + audited proposals live. The surface is **propose-only**: Conscio
+signs and audits intent; the host executes. See [MCP server](guides/mcp.md).
+
 ## Install
 
 ```bash
@@ -46,6 +51,7 @@ conscio plugins
 - [Install](guides/install.md) · [Quickstart](guides/quickstart.md)
 - [Architecture](guides/architecture.md) — the layered design
 - [Plugins & extension points](guides/plugins.md) — adapters, sensors, tools
+- [MCP server (embodiment)](guides/mcp.md) — embed Conscio in any MCP host (v2.0)
 - [Safety rules](guides/safety-rules.md) — the non-negotiables
 - [Public API](reference/public-api.md) — the stable surface
 - [Claims ledger](CLAIMS.md) — what Conscio can and cannot prove about itself
