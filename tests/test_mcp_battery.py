@@ -255,3 +255,27 @@ def test_fuzz_act_never_crashes(tmp_path):
     finally:
         s.close()
         e.close()
+
+
+def test_act_high_risk_pending_approve_report(tmp_path):
+    d, b, e, s = _wired(tmp_path)
+    try:
+        e.enable_host_act([{"name": "deploy",
+                            "params": {"env": {"type": "str", "required": True}},
+                            "risk": "high", "approval_policy": "require_approval"}])
+        e.host_act.skeptic = _PassSkeptic()
+        out = _call(d, "conscio.act", {"intent": {
+            "tool": "deploy", "args": {"env": "prod"},
+            "rationale": "r", "expected_outcome": "o"}})
+        assert out["status"] == "pending_approval"
+        lid = out["ledger_id"]
+        pend = _call(d, "conscio.pending", {})
+        assert any(r["id"] == lid for r in pend)
+        appr = _call(d, "conscio.approve", {"ledger_id": lid})
+        assert appr["status"] == "executable"
+        rep = _call(d, "conscio.report_result",
+                    {"ledger_id": lid, "result": {"ok": True}})
+        assert rep["status"] == "executed"
+    finally:
+        s.close()
+        e.close()
