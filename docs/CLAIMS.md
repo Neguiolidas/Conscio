@@ -4,7 +4,7 @@ A framework about self-knowledge should know what it can and cannot prove
 about itself. Every load-bearing claim Conscio makes, mapped to evidence.
 
 **Status:** PROVEN (test) · MEASURED (real backend) · PARTIAL · UNPROVEN.
-Updated each phase. Current as of **v2.0.0** (2026-06-19).
+Updated each phase. Current as of **v2.0.1** (2026-06-20).
 
 | # | Claim | Evidence | Status |
 |---|-------|----------|--------|
