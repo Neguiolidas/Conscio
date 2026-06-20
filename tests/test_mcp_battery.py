@@ -237,3 +237,21 @@ def test_act_tools_reject_bad_typed_args(tmp_path):
     finally:
         s.close()
         e.close()
+
+
+def test_fuzz_act_never_crashes(tmp_path):
+    d, b, e, s = _wired(tmp_path)
+    try:
+        bads = [{}, {"intent": 5}, {"intent": {"tool": "deploy"}},
+                {"intent": {"tool": "deploy", "args": {}, "rationale": "r",
+                            "expected_outcome": "o",
+                            "idempotency_key": "x" * 5000}}]
+        for bad in bads:
+            res = d.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                            "params": {"name": "conscio.act", "arguments": bad}})
+            assert ("result" in res
+                    or res["error"]["code"] in (j.INVALID_PARAMS,
+                                                j.INTERNAL_ERROR))
+    finally:
+        s.close()
+        e.close()
