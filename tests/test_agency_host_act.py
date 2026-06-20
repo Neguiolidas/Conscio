@@ -159,3 +159,53 @@ def test_reject_marks_rejected(tmp_path):
     assert chan.reject(rid, "no")["status"] == "rejected"
     assert led.get(rid)["status"] == "rejected"
     led.close()
+
+
+# ── Task 6: report ──
+
+def _released(chan):
+    out = chan.propose(_intent())                 # low/auto -> executing
+    return out["ledger_id"]
+
+
+def test_report_ok_marks_executed_and_emits(tmp_path):
+    events = []
+    chan, led = _chan(tmp_path, events=events)
+    rid = _released(chan)
+    out = chan.report(rid, {"ok": True, "output": "done", "duration_ms": 5})
+    assert out == {"ok": True, "ledger_id": rid, "status": "executed"}
+    assert led.get(rid)["status"] == "executed"
+    assert any(e["type"] == "act:result" for e in events)
+    assert chan.trust.successes == ["deploy"]
+    led.close()
+
+
+def test_report_failure_trips_breaker(tmp_path):
+    chan, led = _chan(tmp_path)
+    rid = _released(chan)
+    out = chan.report(rid, {"ok": False, "error": "boom"})
+    assert out["status"] == "failed"
+    assert chan.breaker.trips                      # tripped on host failure
+    led.close()
+
+
+def test_report_duplicate_is_already_reported(tmp_path):
+    chan, led = _chan(tmp_path)
+    rid = _released(chan)
+    chan.report(rid, {"ok": True})
+    dup = chan.report(rid, {"ok": True})
+    assert dup["already_reported"] is True and dup["status"] == "executed"
+    led.close()
+
+
+def test_report_proposed_row_is_not_released(tmp_path):
+    chan, led = _chan(tmp_path, risk="high", policy="require_approval")
+    rid = chan.propose(_intent())["ledger_id"]     # stays 'proposed'
+    assert chan.report(rid, {"ok": True})["reason"] == "not_released"
+    led.close()
+
+
+def test_report_unknown_ledger_id(tmp_path):
+    chan, led = _chan(tmp_path)
+    assert chan.report(999, {"ok": True})["reason"] == "unknown_ledger_id"
+    led.close()
