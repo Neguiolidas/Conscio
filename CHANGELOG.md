@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.1] — 2026-06-20
+
+"Connect" continued — **opt-in, host-executed audited `act` over MCP**. Conscio
+audits + gates + ledgers an action and returns an *execution packet*; the **host**
+executes and reports the outcome back. Conscio still never touches the world
+(`registry.dispatch` is never called for a host tool). Off by default; cognition
+(`reflect()`) untouched; purely additive (no existing signature changed).
+
+### Added
+
+- **`HostActChannel`** (`conscio/agency/host_act.py`): the host-executed action
+  state machine — `propose` (Skeptic audit → risk + manifest `approval_policy`
+  gate → ledger), `approve`/`reject` (the high-risk human/Hermes gate), `report`
+  (closes the ledger entry, emits `act:result`, feeds breaker/trust), `pending`
+  (the R6 approval queue, clamped). Reuses the existing `ActionLedger` /
+  `Skeptic` / `CircuitBreaker` / `TrustMatrix` — one audit trail.
+- **MCP act tools** (visible only with `--enable-act`): `conscio.act(intent)`,
+  `conscio.report_result`, `conscio.pending`, `conscio.approve`, `conscio.reject`.
+  The host declares its tool manifest (`name`, `params`, `risk`,
+  `approval_policy`) in the `initialize` params.
+- **Engine:** `enable_host_act(manifest)` (idempotent; rejects a manifest swap
+  while actions are in-flight; atomic — an invalid manifest never half-enables),
+  `host_act` / `host_act_error`.
+- **CLI:** `conscio-mcp --enable-act` (off by default) and `--awake`. `act` and
+  `approve` require the engine **Awake** and no breaker lockdown, else
+  `{status: "gated"}`.
+- **Idempotency:** `conscio.act` accepts an optional `idempotency_key`, namespaced
+  `act:<workspace>:<tool>:<key>` and length-bounded, backed by the existing seen
+  store — a duplicate returns the exact prior result.
+- **Adapter parity:** `conscio-mcp` now builds the daemon's six provider types
+  (`lmstudio`/`ollama`/`openai`/`anthropic`/`gemini`/`openai-compat`) from
+  `~/.config/conscio/config.json` via a shared `conscio/adapter_config.py`
+  (extracted from the daemon — no daemon behavior change).
+- `conscio_meta` reports the real act state: `act_enabled`, `act_error`,
+  `host_tools_count`, `adapter_ready`, `manifest_hash`.
+
+### Fixed
+
+- **R-05 (content-store dedup ignored metadata):** `ContentStore.index()` now
+  re-indexes chunks under a new `category` on a content-hash match (label stays
+  first-seen provenance), so a category-filtered search finds re-filed text.
+  Closes the last carried v1.9 debt item — this phase ships **debt-zero**.
+
+### Safety
+
+- MCP stays propose-only **by default**; full `act` is opt-in, double-gated
+  (`--enable-act` + Awake), host-executed (never local dispatch), ledgered per
+  action, and HIGH-risk / `require_approval` / `hermes_review` actions stay queued
+  for human/Hermes approval (`conscio.pending` → `conscio.approve`).
+
+---
+
 ## [2.0.0] — 2026-06-19
 
 "Connect" (Embodiment) — Conscio becomes embeddable in **any** MCP host (CLI,

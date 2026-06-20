@@ -6,10 +6,12 @@ an IDE, or an agent — plug into a Conscio instance and consume its cognition a
 live consciousness-layer. Zero new runtime dependency; nothing here opens a
 socket.
 
-In v2.0.0 the surface is **propose-only**: Conscio perceives, reflects, recalls,
-and **audits** proposed actions, but never executes anything itself. The host
-stays sovereign over execution. (Audited execution — `act` — lands in v2.0.1 with
-a host-execution callback model.)
+The surface is **propose-only by default**: Conscio perceives, reflects, recalls,
+and **audits** proposed actions, but never executes anything itself — the host
+stays sovereign over execution. Since **v2.0.1**, opt-in **audited `act`** is
+available behind `--enable-act` (see [Audited act](#audited-act-v201-opt-in)):
+Conscio audits + gates + ledgers and returns an execution packet; the host still
+pulls the trigger.
 
 ## Configure a host
 
@@ -29,10 +31,13 @@ command:
 ```
 
 - `--storage` — per-workspace state dir (one engine = one workspace).
-- `--adapter` — only needed for `propose_action` / `propose_plan` (the Skeptic and
-  Actor call a model). Forms: `mock`, `ollama:<model>`. Without it, read tools
-  still work and `propose_*` fail closed with `verdict: FAIL, reasons:["no
-  adapter attached"]`.
+- `--adapter` — needed for `propose_action` / `propose_plan` / `act` (the Skeptic
+  and Actor call a model). Forms: `mock`, `ollama:<model>`. If omitted, the six
+  daemon provider types are also built from `~/.config/conscio/config.json`
+  (`lmstudio`/`ollama`/`openai`/`anthropic`/`gemini`/`openai-compat`). Without any
+  adapter, read tools still work and `propose_*` / `act` fail closed.
+- `--enable-act` (off by default) / `--awake` — opt into audited `act` (see
+  [Audited act](#audited-act-v201-opt-in)).
 - `--max-frame-bytes` (default `1048576`), `--seen-max-rows` (default `10000`),
   `--seen-max-age-days` (default `30`).
 
@@ -85,3 +90,40 @@ world model or the event log.
 6. Host feeds the result back as a new Event.
 
 Conscio signs and audits the intent; the host pulls the trigger.
+
+## Audited act (v2.0.1, opt-in)
+
+Off by default. Launch with `conscio-mcp --enable-act` and the engine **Awake**
+(`--awake`, or a persisted awake state). Only then do five more tools appear:
+`conscio.act`, `conscio.report_result`, `conscio.pending`, `conscio.approve`,
+`conscio.reject`.
+
+**The host owns the tools.** Declare a manifest in the `initialize` params — each
+entry has a `name`, `params` (the same arg schema the Skeptic validates), a base
+`risk` (`low`/`medium`/`high`), and an `approval_policy`
+(`auto` / `require_approval` / `hermes_review`):
+
+```jsonc
+"params": { "protocolVersion": "2025-06-18",
+  "conscio": { "tools": [
+    { "name": "deploy", "params": {"env": {"type": "str", "required": true}},
+      "risk": "high", "approval_policy": "require_approval" } ] } }
+```
+
+**The flow** (Conscio points the weapon and audits it; the host pulls the trigger):
+
+1. Host calls `conscio.act(intent)` with a concrete `{tool, args, rationale,
+   expected_outcome}` (optionally an `idempotency_key`). Conscio runs the Skeptic.
+2. Skeptic FAIL → `{status: "rejected"}`. PASS + `low`/`medium` + `auto` →
+   `{status: "executable", packet, ledger_id}` (claimed). PASS + `high` /
+   `require_approval` / `hermes_review` → `{status: "pending_approval"}`. Engine
+   asleep or breaker lockdown → `{status: "gated"}`.
+3. For a pending action, a human/Hermes calls `conscio.approve(ledger_id)`
+   (→ an executable packet) or `conscio.reject(ledger_id, reason)`.
+4. **The host executes the packet** — Conscio never does.
+5. Host calls `conscio.report_result(ledger_id, result)`; Conscio closes the
+   ledger entry, emits an `act:result` event, and feeds the breaker/trust. A
+   duplicate report returns `already_reported`.
+
+Every action writes an `ActionLedger` row — the same audited trail native `act()`
+uses. `act` is **never** local dispatch: Conscio audits, the host executes.
