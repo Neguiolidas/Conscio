@@ -238,75 +238,8 @@ def _build_sensors(spec: str, *, agent_source: Optional[str]) -> list[SensorAdap
     return sensors
 
 
-# ── config loader (adapter block from ~/.config/conscio/config.json) ──────────
-
-_CONFIG_PATHS = [
-    Path.home() / ".config" / "conscio" / "config.json",
-    Path.home() / ".conscio" / "config.json",
-]
-
-def _load_config() -> dict:
-    """Load the first existing conscio config file. Returns {} on failure."""
-    for path in _CONFIG_PATHS:
-        if not path.exists():
-            continue
-        try:
-            with open(path) as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                return data
-        except (OSError, ValueError):
-            continue
-    return {}
-
-
-def _build_adapter_from_config(cfg: dict, *, fallback_model: str):
-    """Build an InferenceAdapter from the config's 'adapter' block.
-
-    Returns (adapter, adapter_type_str) or (None, None) if no config adapter.
-    Config adapter keys: type (required), model, api_key, base_url.
-    CLI args always override config values.
-    """
-    adapter_cfg = cfg.get("adapter")
-    if not isinstance(adapter_cfg, dict):
-        return None, None
-    atype = adapter_cfg.get("type")
-    if not atype:
-        return None, None
-
-    from .agency.adapters import (
-        AnthropicAdapter, GeminiAdapter, LMStudioAdapter,
-        OllamaAdapter, OpenAIAdapter, OpenAICompatAdapter,
-    )
-
-    model = adapter_cfg.get("model") or fallback_model
-    api_key = adapter_cfg.get("api_key", "")
-    base_url = adapter_cfg.get("base_url")
-
-    if atype == "lmstudio":
-        return LMStudioAdapter(model=model,
-                                base_url=base_url or "http://localhost:1234/v1"), atype
-    if atype == "ollama":
-        return OllamaAdapter(model=model,
-                              base_url=base_url or "http://localhost:11434"), atype
-    if atype == "openai":
-        return OpenAIAdapter(model=model,
-                              base_url=base_url or "https://api.openai.com/v1",
-                              api_key=api_key), atype
-    if atype == "anthropic":
-        return AnthropicAdapter(model=model,
-                                 base_url=base_url or "https://api.anthropic.com",
-                                 api_key=api_key), atype
-    if atype == "gemini":
-        return GeminiAdapter(model=model,
-                              base_url=base_url or "https://generativelanguage.googleapis.com",
-                              api_key=api_key), atype
-    if atype == "openai-compat":
-        return OpenAICompatAdapter(model=model,
-                                    base_url=base_url or "http://localhost:8000/v1",
-                                    api_key=api_key), atype
-    log.warning("unknown adapter type %r in config; ignoring", atype)
-    return None, None
+# ── config loader + adapter builder live in conscio/adapter_config.py now
+# (shared by the daemon and the MCP server; v2.0.1, no behavior change) ──
 
 
 def _build_adapter_from_cli(args, fallback_model: str):
@@ -370,7 +303,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     # ── merge config (config < env < CLI) ──
-    cfg = _load_config()
+    from .adapter_config import build_adapter_from_config, load_config
+    cfg = load_config()
     if cfg.get("adapter"):
         log.info("loaded adapter config from file: type=%s",
                  cfg["adapter"].get("type", "?"))
@@ -394,7 +328,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         log.info("adapter attached from CLI: %s (%s)",
                  args.adapter, args.adapter_model or model)
     else:
-        adapter, atype = _build_adapter_from_config(cfg, fallback_model=model)
+        adapter, atype = build_adapter_from_config(cfg, fallback_model=model)
         if adapter is not None:
             engine.attach_adapter(adapter)
             log.info("adapter attached from config: %s (%s)",
