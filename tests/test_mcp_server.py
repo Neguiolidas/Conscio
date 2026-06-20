@@ -138,3 +138,56 @@ def test_invalid_event_is_invalid_params(tmp_path):
     finally:
         seen.close()
         eng.close()
+
+
+# ── v2.0.1 Full Act (Task 10): dynamic tool visibility + conscio_meta ──
+
+_MS = [{"name": "deploy", "params": {"env": {"type": "str", "required": True}},
+        "risk": "low", "approval_policy": "auto"}]
+
+
+def _act_bind(tmp_path, *, act_flag):
+    eng = ConsciousnessEngine("glm-5.1", storage_path=tmp_path)
+    eng.attach_adapter(MockAdapter(script=[]))
+    seen = SeenStore(tmp_path / "mcp_seen.db")
+    b = Bindings(eng, seen, adapter_name="mock", workspace_id="ws",
+                 act_flag=act_flag)
+    return b, eng, seen
+
+
+def test_act_tools_absent_without_flag(tmp_path):
+    b, eng, seen = _act_bind(tmp_path, act_flag=False)
+    try:
+        names = {t["name"] for t in b.tool_defs()}
+        assert "conscio.act" not in names
+        assert b.conscio_meta()["act_enabled"] is False
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_act_tools_present_after_enable(tmp_path):
+    b, eng, seen = _act_bind(tmp_path, act_flag=True)
+    try:
+        b.on_initialize({"conscio": {"tools": _MS}})
+        names = {t["name"] for t in b.tool_defs()}
+        assert {"conscio.act", "conscio.report_result", "conscio.pending",
+                "conscio.approve", "conscio.reject"} <= names
+        meta = b.conscio_meta()
+        assert meta["act_enabled"] is True and meta["host_tools_count"] == 1
+        assert meta["adapter_ready"] is True and meta["manifest_hash"]
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_invalid_manifest_keeps_act_disabled(tmp_path):
+    b, eng, seen = _act_bind(tmp_path, act_flag=True)
+    try:
+        b.on_initialize({"conscio": {"tools": [{"risk": "boom"}]}})
+        assert "conscio.act" not in {t["name"] for t in b.tool_defs()}
+        meta = b.conscio_meta()
+        assert meta["act_enabled"] is False and meta["act_error"]
+    finally:
+        seen.close()
+        eng.close()

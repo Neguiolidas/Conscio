@@ -99,3 +99,40 @@ RESOURCE_DEFS: list[dict] = [
     {"uri": "conscio://handoff", "name": "handoff",
      "description": "Latest session handoff", "mimeType": "text/markdown"},
 ]
+
+# ── v2.0.1 Full Act tool defs (exposed only when --enable-act) ───────────
+
+_INTENT_INPUT = {"type": "object",
+                 "properties": {"intent": {"type": "object"}},
+                 "required": ["intent"]}
+_LEDGER_INPUT = {"type": "object",
+                 "properties": {"ledger_id": {"type": "integer"}},
+                 "required": ["ledger_id"]}
+
+ACT_TOOL_DEFS: list[dict] = [
+    {"name": "conscio.act",
+     "description": "Audit a concrete action intent; if act is enabled + awake, "
+                    "ledger it and return an executable packet or a pending "
+                    "approval. The HOST executes; Conscio never does.",
+     "inputSchema": _INTENT_INPUT},
+    {"name": "conscio.report_result",
+     "description": "Report a host execution outcome to close the ledger entry "
+                    "and emit act:result.",
+     "inputSchema": {"type": "object",
+                     "properties": {"ledger_id": {"type": "integer"},
+                                    "result": {"type": "object"}},
+                     "required": ["ledger_id", "result"]}},
+    {"name": "conscio.pending",
+     "description": "List proposals awaiting approval (R6 queue).",
+     "inputSchema": {"type": "object",
+                     "properties": {"limit": {"type": "integer"}}}},
+    {"name": "conscio.approve",
+     "description": "Approve a pending proposal; returns an executable packet.",
+     "inputSchema": _LEDGER_INPUT},
+    {"name": "conscio.reject",
+     "description": "Reject a pending proposal.",
+     "inputSchema": {"type": "object",
+                     "properties": {"ledger_id": {"type": "integer"},
+                                    "reason": {"type": "string"}},
+                     "required": ["ledger_id"]}},
+]
