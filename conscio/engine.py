@@ -1076,6 +1076,63 @@ class ConsciousnessEngine:
                              "expected_outcome": proposal.expected_outcome,
                              "action_id": proposal.action_id}}
 
+    # --- v2.0.1 "Connect": host-executed audited act (opt-in) ---
+
+    @staticmethod
+    def _manifest_hash(manifest: list) -> str:
+        import hashlib
+        import json
+        return hashlib.sha256(
+            json.dumps(manifest, sort_keys=True, default=str).encode()
+        ).hexdigest()
+
+    def enable_host_act(self, manifest: list) -> bool:
+        """Build/replace the HostActChannel from a host-declared manifest.
+
+        same manifest                       -> idempotent no-op
+        different + in-flight ledger rows    -> reject (keep current)
+        different + clean                    -> replace
+        invalid manifest / no adapter        -> reject atomically (no half-enable)
+        """
+        from .agency.host_act import HostActChannel
+        from .agency.tools import registry_from_manifest
+
+        self._host_act_error = ""
+        pipe = getattr(self, "_act_pipeline", None)
+        if pipe is None or pipe.skeptic is None:
+            self._host_act_error = "act requires an adapter"
+            return False
+        try:
+            new_hash = self._manifest_hash(manifest)
+        except (TypeError, ValueError) as exc:
+            self._host_act_error = f"invalid manifest: {exc}"
+            return False
+        existing = getattr(self, "_host_act", None)
+        if existing is not None and new_hash == self._host_act_hash:
+            return True                                  # idempotent
+        if existing is not None and pipe.ledger.has_in_flight():
+            self._host_act_error = "cannot change manifest with in-flight actions"
+            return False
+        try:
+            registry = registry_from_manifest(manifest)
+        except ValueError as exc:
+            self._host_act_error = f"invalid manifest: {exc}"
+            return False                                 # atomic: state unchanged
+        self._host_act = HostActChannel(
+            ledger=pipe.ledger, skeptic=pipe.skeptic, breaker=pipe.breaker,
+            trust=pipe.trust, registry=registry, emit_fn=self.event_bus.emit,
+            awake_fn=lambda: self.awake)
+        self._host_act_hash = new_hash
+        return True
+
+    @property
+    def host_act(self):
+        return getattr(self, "_host_act", None)
+
+    @property
+    def host_act_error(self) -> str:
+        return getattr(self, "_host_act_error", "")
+
     def probe(self, *, force: bool = False):
         """Run/refresh the ProbeSuite for the attached adapter (spec 5.10).
 
