@@ -1108,7 +1108,8 @@ class ConsciousnessEngine:
             self._host_act_error = f"invalid manifest: {exc}"
             return False
         existing = getattr(self, "_host_act", None)
-        if existing is not None and new_hash == self._host_act_hash:
+        if existing is not None and new_hash == getattr(self, "_host_act_hash",
+                                                        ""):
             return True                                  # idempotent
         if existing is not None and pipe.ledger.has_in_flight():
             self._host_act_error = "cannot change manifest with in-flight actions"
