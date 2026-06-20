@@ -11,9 +11,9 @@ nothing else). It is designed to make small, local models punch far above their
 size by giving them memory, self-judgment, and procedural skill — and to prove
 that claim by measurement, not assertion.
 
-- **Current release:** `v2.0.0` — "Connect", the **Embodiment** phase: Conscio becomes embeddable in **any** MCP host (CLI, IDE, agent) as a live consciousness-layer, via a hand-rolled **stdlib-only** MCP stdio server (`conscio-mcp`, newline-delimited JSON-RPC 2.0). Zero new runtime dependency; nothing opens a socket. The surface is **propose-only** — Conscio perceives, reflects, recalls, and **audits** proposed actions, but never executes; the host stays sovereign over execution. Cognition (`reflect()`) untouched; the public API is unchanged (MCP is purely additive). Audited execution over MCP (`act`) is deferred to v2.0.1; the society/noosphere to v2.1. `pip install conscio`.
-- **Prior:** `v1.9.0` — "Anneal", a pre-v2.0 **hardening** pass. No new public surface (the API was **frozen** ahead of "Connect") — instead the corrupt/legacy/concurrent edges were made safe: the engine survives a corrupt or legacy/incomplete store/state file at construction (quarantine + recreate; every JSON loader degrades to a default), the daemon heartbeat is written atomically (a tailing host never reads a torn file), and earned-autonomy/quarantine time windows are correct on non-UTC hosts. Backed by durable guards that stop whole bug *classes* from resurfacing (incl. an AST CI rule). Cognition (`reflect()`) untouched; zero-deps core.
-- **Earlier:** `v1.8.0` — "Structural Drift", completing the **Structural Cognition** arc (v1.6–v1.8): Conscio can ingest a Graphify `graph.json` of the codebase it works in — distilled to a compact, **budget-adaptive** signal (hyperedges + community digests, not thousands of nodes), consumed as **data, never code** (R10: no `networkx`, no Graphify runtime dep) — **consent-gated per workspace** (default OFF, switch-safe), and tracks **drift** (what changed since last load) and **freshness** (whether the graph is behind the repo `HEAD`, read purely from `.git` — no `git` subprocess). Plus the v1.6 **goal-provenance gate** + read-only `advisory()` consumption pull.
+- **Current release:** `v2.0.1` — "Connect" continued: **opt-in, host-executed audited `act` over MCP**. Conscio audits + gates + ledgers an action and returns an *execution packet*; the **host** executes and reports the outcome back — Conscio still never touches the world. Off by default (`conscio-mcp --enable-act`, requires the engine **Awake**); the host declares its tool manifest (`name`/`params`/`risk`/`approval_policy`) in `initialize`; HIGH-risk / `require_approval` actions stay **queued for human/Hermes approval** (`conscio.pending` → `conscio.approve`). Also: `conscio-mcp` adapter parity (six providers from config) and the **R-05** content-store dedup fix — shipping **debt-zero**. Cognition (`reflect()`) untouched; purely additive. `pip install conscio`.
+- **Prior:** `v2.0.0` — "Connect", the **Embodiment** phase: Conscio becomes embeddable in **any** MCP host (CLI, IDE, agent) via a hand-rolled **stdlib-only** MCP stdio server (`conscio-mcp`, newline-delimited JSON-RPC 2.0). Zero new runtime dependency; nothing opens a socket. The v2.0.0 surface was **propose-only** — perceive, reflect, recall, and **audit**, but never execute. Cognition (`reflect()`) untouched; the public API unchanged (MCP purely additive).
+- **Earlier:** `v1.9.0` — "Anneal", a pre-v2.0 **hardening** pass. No new public surface (the API was **frozen** ahead of "Connect") — the corrupt/legacy/concurrent edges were made safe (quarantine + recreate at construction, atomic daemon heartbeat, tz-correct earned-autonomy windows), backed by durable guards that stop whole bug *classes* from resurfacing (incl. an AST CI rule). Cognition untouched; zero-deps core.
 
 ---
 
@@ -66,7 +66,7 @@ anything from **8k context up** — small windows simply get the Minimal budget.
 
 ---
 
-## Architecture (v2.0.0)
+## Architecture (v2.0.1)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -502,6 +502,17 @@ session DB/RAG → git). Configure your agent's hook to fire on `session:end` /
 
 ## Audit history
 
+- **v2.0.1 — "Connect" (act)** — opt-in, host-executed audited `act` over MCP. A
+  new `HostActChannel` (`conscio/agency/host_act.py`) audits (Skeptic) → gates
+  (base `risk` + manifest `approval_policy`, plus Awake + breaker) → ledgers →
+  returns an execution packet; the **host** executes and `conscio.report_result`
+  closes the ledger entry (emits `act:result`, feeds breaker/trust). The five act
+  tools appear only with `--enable-act`; HIGH-risk / `require_approval` stay queued
+  (`conscio.pending` → `conscio.approve`). The host declares its tool manifest in
+  `initialize`; `act` accepts a namespaced `idempotency_key`. Plus `conscio-mcp`
+  adapter parity (six providers from config, via a shared `conscio/adapter_config.py`)
+  and the **R-05** content-store chunk-dedup fix — **debt-zero**. Purely additive;
+  `reflect()` untouched.
 - **v2.0.0 — "Connect"** — the **Embodiment** phase. Conscio becomes embeddable
   in **any** MCP host (CLI, IDE, agent) as a live consciousness-layer via a
   hand-rolled, **stdlib-only** MCP stdio server (`conscio-mcp`, newline-delimited

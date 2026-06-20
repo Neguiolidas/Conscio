@@ -17,33 +17,60 @@ from conscio.workspace import WorkspaceContext
 
 from . import jsonrpc as j
 from .protocol import SUPPORTED_PROTOCOLS, Dispatcher
-from .schemas import (BASE_TOOL_DEFS, RESOURCE_DEFS, derive_event_id,
-                      event_to_frame, validate_event)
+from .schemas import (ACT_TOOL_DEFS, BASE_TOOL_DEFS, RESOURCE_DEFS,
+                      derive_event_id, event_to_frame, validate_event)
 from .seen import SeenStore
 
 
 class Bindings:
     def __init__(self, engine: ConsciousnessEngine, seen: SeenStore, *,
                  adapter_name: str | None = None,
-                 workspace_id: str = "") -> None:
+                 workspace_id: str = "", act_flag: bool = False) -> None:
         self.engine = engine
         self.seen = seen
         self.adapter_name = adapter_name
         self.workspace_id = workspace_id
+        self.act_flag = act_flag             # v2.0.1: --enable-act
+        self._act_error = ""
 
     # ── discovery ──
     def version(self) -> str:
         return __version__
 
+    def on_initialize(self, params: dict) -> None:
+        """v2.0.1: read the host tool manifest from initialize params and enable
+        act. Independent of session init — a bad/missing manifest never
+        half-enables act (act stays off, act_error set)."""
+        self._act_error = ""
+        if not self.act_flag:
+            return
+        tools = (params.get("conscio") or {}).get("tools")
+        if not tools:
+            self._act_error = "no tool manifest in initialize params"
+            return
+        if not self.engine.enable_host_act(tools):
+            self._act_error = self.engine.host_act_error or "act not enabled"
+
+    def _act_enabled(self) -> bool:
+        return self.act_flag and self.engine.host_act is not None
+
     def conscio_meta(self) -> dict:
+        ha = self.engine.host_act
         return {"workspace_id": self.workspace_id,
-                "awake": bool(getattr(self.engine.state, "awake", False)),
-                "act_enabled": False,           # v2.0.0: propose-only
+                "awake": bool(self.engine.awake),
+                "act_enabled": self._act_enabled(),
+                "act_error": self._act_error,
+                "host_tools_count": len(ha.registry.names()) if ha else 0,
+                "adapter_ready": self.adapter_name is not None,
+                "manifest_hash": getattr(self.engine, "_host_act_hash", ""),
                 "adapter": self.adapter_name,
                 "supported_protocols": SUPPORTED_PROTOCOLS}
 
     def tool_defs(self) -> list[dict]:
-        return list(BASE_TOOL_DEFS)
+        defs = list(BASE_TOOL_DEFS)
+        if self._act_enabled():
+            defs += list(ACT_TOOL_DEFS)
+        return defs
 
     def resource_defs(self) -> list[dict]:
         return list(RESOURCE_DEFS)
@@ -56,7 +83,7 @@ class Bindings:
         return {"content": [{"type": "text", "text": json.dumps(fn(args))}]}
 
     def _tools(self):
-        return {
+        tools = {
             "conscio.feed": self._feed,
             "conscio.note": self._note,
             "conscio.advisory": lambda a: self.engine.advisory(),
@@ -68,6 +95,36 @@ class Bindings:
             "conscio.propose_plan": lambda a: self.engine.propose_plan(
                 self._require(a, "goal"), a.get("tools")),
         }
+        if self._act_enabled():
+            tools.update({
+                "conscio.act": self._act,
+                "conscio.report_result": self._report_result,
+                "conscio.pending": lambda a: self.engine.host_act.pending(
+                    self._int_arg(a, "limit", 20)),
+                "conscio.approve": lambda a: self.engine.host_act.approve(
+                    self._int_arg(a, "ledger_id")),
+                "conscio.reject": lambda a: self.engine.host_act.reject(
+                    self._int_arg(a, "ledger_id"), str(a.get("reason", ""))),
+            })
+        return tools
+
+    def _int_arg(self, args: dict, key: str,
+                 default: int | None = None) -> int:
+        if key not in args:
+            if default is not None:
+                return default
+            raise j.InvalidParams(f"missing '{key}'")
+        val = args[key]
+        if isinstance(val, bool) or not isinstance(val, int):  # not str/float/None
+            raise j.InvalidParams(f"'{key}' must be an integer")
+        return val
+
+    def _report_result(self, args: dict) -> dict:
+        ledger_id = self._int_arg(args, "ledger_id")
+        result = self._require(args, "result")
+        if not isinstance(result, dict):
+            raise j.InvalidParams("result must be an object")
+        return self.engine.host_act.report(ledger_id, result)
 
     @staticmethod
     def _require(args: dict, key: str):
@@ -110,6 +167,24 @@ class Bindings:
         result = {"event_id": eid, "noted": True}
         self.seen.mark(eid, json.dumps(result),
                        float(event.get("ts") or time.time()))
+        return result
+
+    def _act(self, args: dict) -> dict:
+        intent = self._require(args, "intent")
+        if not isinstance(intent, dict):
+            raise j.InvalidParams("intent must be an object")
+        key = intent.get("idempotency_key")
+        skey = None
+        if key is not None:
+            if not isinstance(key, str) or len(key) > 256:
+                raise j.InvalidParams("idempotency_key must be a str <= 256 chars")
+            skey = f"act:{self.workspace_id}:{intent.get('tool', '')}:{key}"
+            prior = self.seen.seen(skey)
+            if prior is not None:
+                return json.loads(prior)
+        result = self.engine.host_act.propose(intent)
+        if skey is not None:
+            self.seen.mark(skey, json.dumps(result), time.time())
         return result
 
     # ── resources ──
@@ -189,10 +264,9 @@ def _build_adapter(spec: str):
     raise SystemExit(f"unsupported --adapter '{spec}'")
 
 
-def main(argv: list[str] | None = None) -> int:
+def _arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="conscio-mcp",
-                                     description="Conscio MCP stdio server "
-                                                 "(propose-only)")
+                                     description="Conscio MCP stdio server")
     parser.add_argument("--storage", default=None)
     parser.add_argument("--model", default="glm-5.1")
     parser.add_argument("--adapter", default=None)
@@ -200,20 +274,37 @@ def main(argv: list[str] | None = None) -> int:
                         default=j.DEFAULT_MAX_FRAME_BYTES)
     parser.add_argument("--seen-max-rows", type=int, default=10_000)
     parser.add_argument("--seen-max-age-days", type=int, default=30)
-    args = parser.parse_args(argv)
+    parser.add_argument("--enable-act", action="store_true",
+                        help="enable opt-in host-executed audited act")
+    parser.add_argument("--awake", action="store_true",
+                        help="set the engine Awake at startup (act gate)")
+    return parser
 
+
+def main(argv: list[str] | None = None) -> int:
+    args = _arg_parser().parse_args(argv)
     engine = ConsciousnessEngine(args.model, storage_path=args.storage)
+    from conscio.adapter_config import build_adapter_from_config, load_config
     adapter_name = None
-    if args.adapter:
+    if args.adapter:                               # CLI wins (mock | ollama:..)
         engine.attach_adapter(_build_adapter(args.adapter))
         adapter_name = args.adapter
+    else:
+        adapter, atype = build_adapter_from_config(load_config(),
+                                                   fallback_model=args.model)
+        if adapter is not None:
+            engine.attach_adapter(adapter)
+            adapter_name = atype
+    if args.awake:
+        engine.wake()                              # reuse the existing R9 toggle
     workspace = WorkspaceContext().current()
     seen = SeenStore(Path(engine.storage) / "mcp_seen.db")
     seen.prune(args.seen_max_rows, args.seen_max_age_days)
     bindings = Bindings(engine, seen, adapter_name=adapter_name,
-                        workspace_id=workspace.id)
+                        workspace_id=workspace.id, act_flag=args.enable_act)
+    mode = "act" if args.enable_act else "propose-only"
     print(f"conscio-mcp {__version__} ready "
-          f"(workspace={workspace.id}, mode=propose-only)", file=sys.stderr)
+          f"(workspace={workspace.id}, mode={mode})", file=sys.stderr)
     try:
         serve(bindings, sys.stdin, sys.stdout, max_bytes=args.max_frame_bytes)
     finally:
