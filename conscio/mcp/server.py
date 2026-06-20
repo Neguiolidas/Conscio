@@ -17,33 +17,60 @@ from conscio.workspace import WorkspaceContext
 
 from . import jsonrpc as j
 from .protocol import SUPPORTED_PROTOCOLS, Dispatcher
-from .schemas import (BASE_TOOL_DEFS, RESOURCE_DEFS, derive_event_id,
-                      event_to_frame, validate_event)
+from .schemas import (ACT_TOOL_DEFS, BASE_TOOL_DEFS, RESOURCE_DEFS,
+                      derive_event_id, event_to_frame, validate_event)
 from .seen import SeenStore
 
 
 class Bindings:
     def __init__(self, engine: ConsciousnessEngine, seen: SeenStore, *,
                  adapter_name: str | None = None,
-                 workspace_id: str = "") -> None:
+                 workspace_id: str = "", act_flag: bool = False) -> None:
         self.engine = engine
         self.seen = seen
         self.adapter_name = adapter_name
         self.workspace_id = workspace_id
+        self.act_flag = act_flag             # v2.0.1: --enable-act
+        self._act_error = ""
 
     # ── discovery ──
     def version(self) -> str:
         return __version__
 
+    def on_initialize(self, params: dict) -> None:
+        """v2.0.1: read the host tool manifest from initialize params and enable
+        act. Independent of session init — a bad/missing manifest never
+        half-enables act (act stays off, act_error set)."""
+        self._act_error = ""
+        if not self.act_flag:
+            return
+        tools = (params.get("conscio") or {}).get("tools")
+        if not tools:
+            self._act_error = "no tool manifest in initialize params"
+            return
+        if not self.engine.enable_host_act(tools):
+            self._act_error = self.engine.host_act_error or "act not enabled"
+
+    def _act_enabled(self) -> bool:
+        return self.act_flag and self.engine.host_act is not None
+
     def conscio_meta(self) -> dict:
+        ha = self.engine.host_act
         return {"workspace_id": self.workspace_id,
-                "awake": bool(getattr(self.engine.state, "awake", False)),
-                "act_enabled": False,           # v2.0.0: propose-only
+                "awake": bool(self.engine.awake),
+                "act_enabled": self._act_enabled(),
+                "act_error": self._act_error,
+                "host_tools_count": len(ha.registry.names()) if ha else 0,
+                "adapter_ready": self.adapter_name is not None,
+                "manifest_hash": getattr(self.engine, "_host_act_hash", ""),
                 "adapter": self.adapter_name,
                 "supported_protocols": SUPPORTED_PROTOCOLS}
 
     def tool_defs(self) -> list[dict]:
-        return list(BASE_TOOL_DEFS)
+        defs = list(BASE_TOOL_DEFS)
+        if self._act_enabled():
+            defs += list(ACT_TOOL_DEFS)
+        return defs
 
     def resource_defs(self) -> list[dict]:
         return list(RESOURCE_DEFS)
