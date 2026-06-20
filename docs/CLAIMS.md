@@ -4,7 +4,7 @@ A framework about self-knowledge should know what it can and cannot prove
 about itself. Every load-bearing claim Conscio makes, mapped to evidence.
 
 **Status:** PROVEN (test) · MEASURED (real backend) · PARTIAL · UNPROVEN.
-Updated each phase. Current as of **v1.8.0** (2026-06-18).
+Updated each phase. Current as of **v2.0.0** (2026-06-19).
 
 | # | Claim | Evidence | Status |
 |---|-------|----------|--------|
@@ -50,6 +50,9 @@ Updated each phase. Current as of **v1.8.0** (2026-06-18).
 | 40 | The engine survives **corrupt, binary, or legacy/incomplete state files** at construction — every JSON loader degrades to its default instead of crashing (I-S4) | `tests/test_state_loaders_battery.py` (binary `goals.json`/`evolution_proposals.json` + an all-files-corrupt capstone), `tests/test_state_persistence_battery.py` (valid-but-incomplete `world_model.json`/`meta_cognition.json`), `tests/test_engine_init.py` (binary/non-dict sidecars) | PROVEN |
 | 41 | The daemon heartbeat is written **atomically** — a host tailing `daemon_heartbeat.json` never reads a torn/partial file | `tests/test_daemon_battery.py` (concurrent reader `json.loads` during 120 rewrites of a large heartbeat sees zero torn reads) | PROVEN |
 | 42 | Earned-autonomy and quarantine-release **time windows are correct on a non-UTC host** — boundaries use naive-UTC, matching the event store | `tests/test_agency_trust.py`, `tests/test_agency_breaker.py` (TZ-shifted trip/relevance windows), `tests/test_durable_guards.py::test_no_bare_fromtimestamp_outside_timeutil` (AST rule fails CI on any bare `datetime.fromtimestamp`) | PROVEN |
+| 43 | The **MCP transport survives hostile host input** — malformed JSON, oversized frames (bounded at source, no OOM), partial frames, wrong protocol version, pre-initialize requests — answering with structured JSON-RPC errors and never crashing the loop | `tests/test_mcp_battery.py`, `tests/test_mcp_fuzz.py` (seeded stdlib fuzz: read+parse, full serve loop, event validation never hang/OOM/crash) | PROVEN |
+| 44 | The MCP surface is **propose-only — Conscio never executes** a tool over MCP; `propose_action`/`propose_plan` run the Skeptic/Actor and return a verdict, and fail closed without an adapter | `tests/test_engine_propose.py`, `tests/test_mcp_server.py`, `tests/test_mcp_battery.py` (`act` absent from `tools/list`; propose-without-adapter → `FAIL`) | PROVEN |
+| 45 | `feed`/`note` are **idempotent on `event.id`** — a duplicate returns the exact prior result, so host retries never inflate the world model or event log | `tests/test_mcp_server.py::test_feed_duplicate_returns_identical_prior_result`, `tests/test_mcp_battery.py::test_try_break_dup_event_no_world_inflation` | PROVEN |
 
 ## Honest limits (what is NOT proven)
 
@@ -65,13 +68,19 @@ Updated each phase. Current as of **v1.8.0** (2026-06-18).
 - **Adapters are not an "inside-tool" surface.** The inference adapters
   (`AnthropicAdapter`/`GeminiAdapter`/`OpenAIAdapter`/…) are LLM-API callers for
   Conscio's *own* cognition — they do **not** make Conscio run *inside* Claude Code
-  or Antigravity. A turnkey plug-in / MCP server / IDE extension is v2.0 "Connect"
-  work, not shipped today. Host integration today is the documented contract
-  (`engine.advisory()` + `daemon_heartbeat.json` + `SensorAdapter`).
+  or Antigravity. The **MCP server (`conscio-mcp`) ships in v2.0** as the turnkey
+  host surface, but it is **propose-only**: a host feeds perception and gets
+  audited proposals; Conscio *executing* a host's tool over MCP (`act`) is
+  **v2.0.1** (it needs a host-execution callback — `ToolRegistry` requires a local
+  function Conscio cannot supply for a host tool). The documented contract
+  (`engine.advisory()` + `daemon_heartbeat.json` + `SensorAdapter`) also still
+  works.
 - **Corrupt-store recovery discards live history.** When `conscio.db` is corrupt
   at startup it is quarantined to `conscio.db.corrupt-<ts>` (preserved on disk,
   never auto-replayed) and a fresh DB is created — so the engine's prior cognitive
   history is not in the live store after recovery. A `storage_recovered` event +
-  WARNING log record it; pruning the accumulated quarantine files is v2.0 work.
+  WARNING log record it; as of v2.0.0 the accumulated `conscio.db.corrupt-<ts>`
+  copies are pruned to the newest few (R-02), so quarantine no longer grows
+  unbounded.
 - Claims about not-yet-shipped capabilities do **not** appear here. This ledger
   records only what exists today.

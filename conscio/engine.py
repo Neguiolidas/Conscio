@@ -59,8 +59,9 @@ def _quarantine_if_corrupt(db_path: Path) -> Optional[Path]:
     """If ``db_path`` exists but is not a usable sqlite DB, move it aside so a fresh
     one is created — power-loss-mid-write or a garbage file must never crash
     construction (I-S4). The corrupt file (and any ``-wal``/``-shm``) is PRESERVED
-    as ``<name>.corrupt-<ts>`` for forensics, never deleted. Returns the quarantine
-    path, or None when the DB is healthy / absent.
+    as ``<name>.corrupt-<ts>`` for forensics; only the newest few are kept (R-02
+    prune — they no longer accumulate unbounded). Returns the quarantine path, or
+    None when the DB is healthy / absent.
     """
     if not db_path.exists():
         return None
@@ -84,7 +85,25 @@ def _quarantine_if_corrupt(db_path: Path) -> Optional[Path]:
                 side.rename(dest.with_name(dest.name + sidecar))
             except OSError:
                 pass                                 # best-effort sidecar move
+    _prune_quarantine(db_path)                       # R-02: keep only newest few
     return dest
+
+
+def _prune_quarantine(db_path: Path, keep: int = 3) -> None:
+    """Keep only the newest ``keep`` quarantined ``<name>.corrupt-<ts>`` copies
+    (R-02 — they used to accumulate forever). The ``-<ts>`` stamp is lexically
+    sortable; each pruned main file's ``-wal``/``-shm`` sidecars go with it."""
+    mains = sorted(
+        (p for p in db_path.parent.glob(f"{db_path.name}.corrupt-*")
+         if not p.name.endswith(("-wal", "-shm"))),
+        key=lambda p: p.name, reverse=True)
+    for stale in mains[keep:]:
+        for path in (stale, stale.with_name(stale.name + "-wal"),
+                     stale.with_name(stale.name + "-shm")):
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
 # RAG-disable sentinel is OWNED by content_layer and re-exported via the import
 # above, so `from conscio.engine import _RAG_DISABLED` yields the SAME object the
@@ -981,6 +1000,81 @@ class ConsciousnessEngine:
         if getattr(self, "_act_pipeline", None) is None:
             return []
         return self._act_pipeline.ledger.pending(limit)
+
+    # --- v2.0 "Connect": propose-only cognition (never executes) ---
+
+    def propose_action(self, intent: dict) -> dict:
+        """Audit an explicit host intent with the Skeptic. Never executes."""
+        from .agency.contracts import (PROPOSAL_SCHEMA, proposal_from_dict,
+                                        validate)
+        pipe = getattr(self, "_act_pipeline", None)
+        if pipe is None or pipe.skeptic is None:
+            return self._no_adapter_result()
+        errors = validate(intent, PROPOSAL_SCHEMA)
+        if errors:
+            return {"verdict": "FAIL", "reasons": errors, "risk_flags": [],
+                    "confidence": 0.0, "proposal": None}
+        goal = str(intent.get("goal", ""))
+        proposal = proposal_from_dict(intent, goal_id=goal)
+        verdict = pipe.skeptic.audit(proposal, goal_text=goal)
+        self._emit_proposal(proposal, verdict)
+        return self._proposal_result(proposal, verdict)
+
+    def propose_plan(self, goal: str,
+                     tools: Optional[list[dict]] = None) -> dict:
+        """Generate ONE audited action from a goal (Actor), constrained to the
+        host's declared tool vocabulary. Never executes; not free-form."""
+        from .agency.act import goal_fingerprint
+        from .agency.actor import build_actor_prompt
+        from .agency.contracts import PROPOSAL_SCHEMA
+        from .agency.gateway import GatewayError
+        pipe = getattr(self, "_act_pipeline", None)
+        if pipe is None or pipe.skeptic is None:
+            return self._no_adapter_result()
+        if not tools:
+            return {"verdict": "FAIL",
+                    "reasons": ["propose_plan requires a declared tool "
+                                "vocabulary"],
+                    "risk_flags": [], "confidence": 0.0, "proposal": None}
+        catalog = "\n".join(f"- {t['name']}: {t.get('description', '')}"
+                            for t in tools)
+        prompt = build_actor_prompt(
+            state=self._state, goal_text=goal, catalog_text=catalog,
+            recall_snippets=self.recall(goal), few_shot=[])
+        try:
+            proposal = pipe.gateway.request_action(
+                prompt, PROPOSAL_SCHEMA, goal_id=goal_fingerprint(goal),
+                tool_names=[t["name"] for t in tools])
+        except GatewayError as exc:
+            return {"verdict": "FAIL", "reasons": [f"decode failed: {exc}"],
+                    "risk_flags": [], "confidence": 0.0, "proposal": None}
+        verdict = pipe.skeptic.audit(proposal, goal_text=goal)
+        self._emit_proposal(proposal, verdict)
+        return self._proposal_result(proposal, verdict)
+
+    @staticmethod
+    def _no_adapter_result() -> dict:
+        return {"verdict": "FAIL", "reasons": ["no adapter attached"],
+                "risk_flags": [], "confidence": 0.0, "proposal": None}
+
+    def _emit_proposal(self, proposal, verdict) -> None:
+        self.event_bus.emit(
+            type="proposal:audited", category="consciousness",
+            data={"tool": proposal.tool, "args": proposal.args,
+                  "rationale": proposal.rationale,
+                  "expected_outcome": proposal.expected_outcome,
+                  "verdict": verdict.verdict, "reasons": verdict.reasons,
+                  "confidence": verdict.confidence})
+
+    @staticmethod
+    def _proposal_result(proposal, verdict) -> dict:
+        return {"verdict": verdict.verdict, "reasons": verdict.reasons,
+                "risk_flags": verdict.risk_flags,
+                "confidence": verdict.confidence,
+                "proposal": {"tool": proposal.tool, "args": proposal.args,
+                             "rationale": proposal.rationale,
+                             "expected_outcome": proposal.expected_outcome,
+                             "action_id": proposal.action_id}}
 
     def probe(self, *, force: bool = False):
         """Run/refresh the ProbeSuite for the attached adapter (spec 5.10).
