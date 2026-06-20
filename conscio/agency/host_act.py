@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
+from ..guards import clamp_int
 from ..risk import Risk
 from .act import goal_fingerprint
 from .contracts import PROPOSAL_SCHEMA, proposal_from_dict, validate
@@ -154,3 +155,7 @@ class HostActChannel:
                 self.breaker.trip(goal_fp, detail=str(result.get("error", "")),
                                   goal_text=row["goal_text"])
         return {"ok": True, "ledger_id": ledger_id, "status": new_status}
+
+    # ── pending (R6 approval queue, clamped) ──
+    def pending(self, limit: int = 20) -> list[dict]:
+        return self.ledger.pending(clamp_int(limit, 1, 200))

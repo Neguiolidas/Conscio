@@ -1,4 +1,5 @@
 # tests/test_agency_host_act.py
+import pytest
 from conscio.agency.host_act import HostActChannel
 from conscio.agency.ledger import ActionLedger
 from conscio.agency.contracts import AuditVerdict
@@ -208,4 +209,22 @@ def test_report_proposed_row_is_not_released(tmp_path):
 def test_report_unknown_ledger_id(tmp_path):
     chan, led = _chan(tmp_path)
     assert chan.report(999, {"ok": True})["reason"] == "unknown_ledger_id"
+    led.close()
+
+
+# ── Task 7: pending (clamped) ──
+
+def test_pending_lists_proposed(tmp_path):
+    chan, led = _chan(tmp_path, risk="high", policy="require_approval")
+    chan.propose(_intent())
+    rows = chan.pending(20)
+    assert rows and rows[0]["status"] == "proposed"
+    led.close()
+
+
+@pytest.mark.parametrize("bad", [-1, 0, 9999])
+def test_pending_clamps_limit(tmp_path, bad):
+    chan, led = _chan(tmp_path, risk="high", policy="require_approval")
+    chan.propose(_intent())
+    assert isinstance(chan.pending(bad), list)     # never raises / unbounded
     led.close()
