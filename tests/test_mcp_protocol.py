@@ -99,3 +99,17 @@ def test_ping_after_init_is_empty_result():
     d = _d()
     _init(d)
     assert d.handle({"jsonrpc": "2.0", "id": 6, "method": "ping"})["result"] == {}
+
+
+def test_initialize_calls_on_initialize_with_params():
+    seen = {}
+
+    class B(FakeBindings):
+        def on_initialize(self, params):
+            seen["tools"] = (params.get("conscio") or {}).get("tools")
+
+    d = Dispatcher(B())
+    d.handle({"jsonrpc": "2.0", "id": 0, "method": "initialize",
+              "params": {"protocolVersion": "2025-06-18",
+                         "conscio": {"tools": [{"name": "x"}]}}})
+    assert seen["tools"] == [{"name": "x"}]

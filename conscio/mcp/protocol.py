@@ -75,6 +75,9 @@ class Dispatcher:
         raise MethodNotFound(f"unknown method '{method}'")
 
     def _initialize(self, params: dict) -> dict:
+        hook = getattr(self.b, "on_initialize", None)
+        if hook is not None:                 # v2.0.1: host manifest wiring
+            hook(params)
         requested = params.get("protocolVersion")
         version = (requested if requested in SUPPORTED_PROTOCOLS
                    else SUPPORTED_PROTOCOLS[-1])
