@@ -5,8 +5,10 @@ fail-closed, duplicate-id prior-result, workspace isolation, act absent."""
 import io
 import json
 
+from conscio.agency import MockAdapter
 from conscio.engine import ConsciousnessEngine
 from conscio.mcp import jsonrpc as j
+from conscio.mcp.protocol import Dispatcher
 from conscio.mcp.seen import SeenStore
 from conscio.mcp.server import Bindings, serve
 
@@ -140,3 +142,98 @@ def test_try_break_two_workspaces_isolated(tmp_path):
         ea.close()
         sb.close()
         eb.close()
+
+
+# ── v2.0.1 Full Act wiring (Task 11): act tools + namespaced idempotency ──
+
+class _PassSkeptic:
+    """Deterministic PASS — the MCP wiring/idempotency is under test here, not
+    the Skeptic (unit-tested separately with the engine's real adapter)."""
+
+    def audit(self, proposal, *, goal_text=""):
+        from conscio.agency.contracts import AuditVerdict
+        return AuditVerdict(verdict="PASS", reasons=[], risk_flags=[],
+                            confidence=0.9)
+
+
+_MA = [{"name": "deploy", "params": {"env": {"type": "str", "required": True}},
+        "risk": "low", "approval_policy": "auto"}]
+
+
+def _wired(tmp_path):
+    e = ConsciousnessEngine("glm-5.1", storage_path=tmp_path)
+    e.attach_adapter(MockAdapter(script=[]))
+    e.wake()
+    seen = SeenStore(tmp_path / "mcp_seen.db")
+    b = Bindings(e, seen, adapter_name="mock", workspace_id="ws", act_flag=True)
+    d = Dispatcher(b)
+    d.handle({"jsonrpc": "2.0", "id": 0, "method": "initialize",
+              "params": {"conscio": {"tools": _MA}}})
+    e.host_act.skeptic = _PassSkeptic()         # deterministic verdict
+    return d, b, e, seen
+
+
+def _call(d, name, args, _id=1):
+    res = d.handle({"jsonrpc": "2.0", "id": _id, "method": "tools/call",
+                    "params": {"name": name, "arguments": args}})
+    return json.loads(res["result"]["content"][0]["text"])
+
+
+def test_act_executable_then_report(tmp_path):
+    d, b, e, s = _wired(tmp_path)
+    try:
+        out = _call(d, "conscio.act", {"intent": {
+            "tool": "deploy", "args": {"env": "prod"},
+            "rationale": "r", "expected_outcome": "o"}})
+        assert out["status"] == "executable"
+        rep = _call(d, "conscio.report_result",
+                    {"ledger_id": out["ledger_id"], "result": {"ok": True}})
+        assert rep["status"] == "executed"
+    finally:
+        s.close()
+        e.close()
+
+
+def test_act_idempotency_key_returns_prior(tmp_path):
+    d, b, e, s = _wired(tmp_path)
+    try:
+        intent = {"tool": "deploy", "args": {"env": "prod"}, "rationale": "r",
+                  "expected_outcome": "o", "idempotency_key": "k1"}
+        a = _call(d, "conscio.act", {"intent": intent})
+        bb = _call(d, "conscio.act", {"intent": intent})
+        assert a == bb                              # exact prior, same ledger_id
+    finally:
+        s.close()
+        e.close()
+
+
+def test_act_absent_when_disabled_is_method_not_found(tmp_path):
+    e = ConsciousnessEngine("glm-5.1", storage_path=tmp_path)
+    e.attach_adapter(MockAdapter(script=[]))
+    seen = SeenStore(tmp_path / "mcp_seen.db")
+    d = Dispatcher(Bindings(e, seen, act_flag=False))
+    try:
+        d.handle({"jsonrpc": "2.0", "id": 0, "method": "initialize",
+                  "params": {}})
+        res = d.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                        "params": {"name": "conscio.act", "arguments": {}}})
+        assert res["error"]["code"] == j.METHOD_NOT_FOUND
+    finally:
+        seen.close()
+        e.close()
+
+
+def test_act_tools_reject_bad_typed_args(tmp_path):
+    d, b, e, s = _wired(tmp_path)
+    try:
+        def _err(name, args):
+            return d.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                             "params": {"name": name, "arguments": args}}
+                            )["error"]["code"]
+        assert _err("conscio.approve", {"ledger_id": "abc"}) == j.INVALID_PARAMS
+        assert _err("conscio.pending", {"limit": "abc"}) == j.INVALID_PARAMS
+        assert _err("conscio.report_result",
+                    {"ledger_id": 1, "result": "nope"}) == j.INVALID_PARAMS
+    finally:
+        s.close()
+        e.close()
