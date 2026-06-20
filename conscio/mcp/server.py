@@ -264,10 +264,9 @@ def _build_adapter(spec: str):
     raise SystemExit(f"unsupported --adapter '{spec}'")
 
 
-def main(argv: list[str] | None = None) -> int:
+def _arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="conscio-mcp",
-                                     description="Conscio MCP stdio server "
-                                                 "(propose-only)")
+                                     description="Conscio MCP stdio server")
     parser.add_argument("--storage", default=None)
     parser.add_argument("--model", default="glm-5.1")
     parser.add_argument("--adapter", default=None)
@@ -275,20 +274,30 @@ def main(argv: list[str] | None = None) -> int:
                         default=j.DEFAULT_MAX_FRAME_BYTES)
     parser.add_argument("--seen-max-rows", type=int, default=10_000)
     parser.add_argument("--seen-max-age-days", type=int, default=30)
-    args = parser.parse_args(argv)
+    parser.add_argument("--enable-act", action="store_true",
+                        help="enable opt-in host-executed audited act")
+    parser.add_argument("--awake", action="store_true",
+                        help="set the engine Awake at startup (act gate)")
+    return parser
 
+
+def main(argv: list[str] | None = None) -> int:
+    args = _arg_parser().parse_args(argv)
     engine = ConsciousnessEngine(args.model, storage_path=args.storage)
     adapter_name = None
     if args.adapter:
         engine.attach_adapter(_build_adapter(args.adapter))
         adapter_name = args.adapter
+    if args.awake:
+        engine.wake()                              # reuse the existing R9 toggle
     workspace = WorkspaceContext().current()
     seen = SeenStore(Path(engine.storage) / "mcp_seen.db")
     seen.prune(args.seen_max_rows, args.seen_max_age_days)
     bindings = Bindings(engine, seen, adapter_name=adapter_name,
-                        workspace_id=workspace.id)
+                        workspace_id=workspace.id, act_flag=args.enable_act)
+    mode = "act" if args.enable_act else "propose-only"
     print(f"conscio-mcp {__version__} ready "
-          f"(workspace={workspace.id}, mode=propose-only)", file=sys.stderr)
+          f"(workspace={workspace.id}, mode={mode})", file=sys.stderr)
     try:
         serve(bindings, sys.stdin, sys.stdout, max_bytes=args.max_frame_bytes)
     finally:
