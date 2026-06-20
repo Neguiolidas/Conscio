@@ -29,6 +29,7 @@ class ToolSpec:
     risk: Risk
     description: str
     precheck: Callable[[dict], str | None] | None = None
+    approval_policy: str = "require_approval"      # v2.0.1: host-act gate
 
 
 class ToolRegistry:
@@ -38,11 +39,12 @@ class ToolRegistry:
     def register(self, name: str, fn: Callable[..., str], *,
                  params: dict[str, dict], risk: Risk,
                  description: str,
-                 precheck: Callable[[dict], str | None] | None = None) -> None:
+                 precheck: Callable[[dict], str | None] | None = None,
+                 approval_policy: str = "require_approval") -> None:
         if name in self._tools:
             raise ValueError(f"tool '{name}' already registered")
         self._tools[name] = ToolSpec(name, fn, params, risk, description,
-                                     precheck)
+                                     precheck, approval_policy)
 
     def get(self, name: str) -> ToolSpec | None:
         return self._tools.get(name)
@@ -177,4 +179,45 @@ def make_default_registry(*, sandbox_root: Path,
             risk=Risk.MEDIUM,
             description="complete or cancel one of the agent's goals")
 
+    return reg
+
+
+# ── host manifest → registry (v2.0.1 Full Act) ───────────────────────────
+
+_RISK_BY_NAME = {"low": Risk.LOW, "medium": Risk.MEDIUM, "high": Risk.HIGH}
+_POLICIES = {"auto", "require_approval", "hermes_review"}
+
+
+def _host_sentinel(**kwargs: object) -> str:
+    raise RuntimeError("host tool — executed by the host, never by Conscio")
+
+
+def registry_from_manifest(manifest: object) -> ToolRegistry:
+    """Build a host-owned ToolRegistry from a declared manifest.
+
+    Each tool's fn is a sentinel that raises if ever dispatched — Conscio never
+    dispatches a host tool. Raises ValueError on the FIRST invalid entry so the
+    caller can stay all-or-nothing (no partial registration).
+    """
+    if not isinstance(manifest, list):
+        raise ValueError("manifest must be a list of tool objects")
+    reg = ToolRegistry()
+    for entry in manifest:
+        if not isinstance(entry, dict):
+            raise ValueError("each tool entry must be an object")
+        name = entry.get("name")
+        if not name or not isinstance(name, str):
+            raise ValueError("tool entry requires a non-empty string 'name'")
+        params = entry.get("params") or {}
+        if not isinstance(params, dict):
+            raise ValueError(f"'{name}': params must be an object")
+        risk = _RISK_BY_NAME.get(str(entry.get("risk", "high")).lower())
+        if risk is None:
+            raise ValueError(f"'{name}': risk must be low|medium|high")
+        policy = entry.get("approval_policy") or "require_approval"
+        if policy not in _POLICIES:
+            raise ValueError(f"'{name}': bad approval_policy '{policy}'")
+        reg.register(name, _host_sentinel, params=params, risk=risk,
+                     description=str(entry.get("description", "")),
+                     approval_policy=policy)
     return reg
