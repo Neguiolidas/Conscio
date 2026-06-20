@@ -123,3 +123,39 @@ def test_propose_when_lockdown_is_gated(tmp_path):
     chan, led = _chan(tmp_path, lockdown=True)
     assert chan.propose(_intent())["status"] == "gated"
     led.close()
+
+
+# ── Task 5: approve + reject ──
+
+def test_approve_pending_returns_packet(tmp_path):
+    chan, led = _chan(tmp_path, risk="high", policy="require_approval")
+    rid = chan.propose(_intent())["ledger_id"]
+    out = chan.approve(rid)
+    assert out["status"] == "executable"
+    assert out["packet"]["ledger_id"] == rid
+    assert led.get(rid)["status"] == "executing"
+    led.close()
+
+
+def test_approve_twice_is_already_handled(tmp_path):
+    chan, led = _chan(tmp_path, risk="high", policy="require_approval")
+    rid = chan.propose(_intent())["ledger_id"]
+    chan.approve(rid)
+    assert chan.approve(rid)["reason"] == "already_handled"
+    led.close()
+
+
+def test_approve_when_asleep_is_gated(tmp_path):
+    chan, led = _chan(tmp_path, risk="high", policy="require_approval")
+    rid = chan.propose(_intent())["ledger_id"]
+    chan.awake_fn = lambda: False
+    assert chan.approve(rid)["status"] == "gated"
+    led.close()
+
+
+def test_reject_marks_rejected(tmp_path):
+    chan, led = _chan(tmp_path, risk="high", policy="require_approval")
+    rid = chan.propose(_intent())["ledger_id"]
+    assert chan.reject(rid, "no")["status"] == "rejected"
+    assert led.get(rid)["status"] == "rejected"
+    led.close()

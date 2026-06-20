@@ -98,3 +98,27 @@ class HostActChannel:
                 "confidence": verdict.confidence,
                 "packet": {"tool": proposal.tool, "args": proposal.args,
                            "ledger_id": rid}}
+
+    # ── approve / reject (the high-risk gate) ──
+    def approve(self, ledger_id: int) -> dict:
+        row = self.ledger.get(ledger_id)
+        if row is None or row["status"] != "proposed":
+            return {"ok": False, "reason": "already_handled"}
+        gated = self._gate()
+        if gated:
+            return gated
+        if not self.ledger.claim(ledger_id):
+            return {"ok": False, "reason": "already_handled"}
+        return {"status": "executable", "ledger_id": ledger_id,
+                "packet": {"tool": row["tool"],
+                           "args": json.loads(row["args_json"]),
+                           "ledger_id": ledger_id}}
+
+    def reject(self, ledger_id: int, reason: str = "") -> dict:
+        row = self.ledger.get(ledger_id)
+        if row is None or row["status"] != "proposed":
+            return {"ok": False, "reason": "already_handled"}
+        self.ledger.update_execution(ledger_id, ok=False, output="",
+                                     error=reason or "rejected",
+                                     duration_ms=0, status="rejected")
+        return {"ok": True, "status": "rejected", "ledger_id": ledger_id}
