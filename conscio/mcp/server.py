@@ -284,10 +284,17 @@ def _arg_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
     engine = ConsciousnessEngine(args.model, storage_path=args.storage)
+    from conscio.adapter_config import build_adapter_from_config, load_config
     adapter_name = None
-    if args.adapter:
+    if args.adapter:                               # CLI wins (mock | ollama:..)
         engine.attach_adapter(_build_adapter(args.adapter))
         adapter_name = args.adapter
+    else:
+        adapter, atype = build_adapter_from_config(load_config(),
+                                                   fallback_model=args.model)
+        if adapter is not None:
+            engine.attach_adapter(adapter)
+            adapter_name = atype
     if args.awake:
         engine.wake()                              # reuse the existing R9 toggle
     workspace = WorkspaceContext().current()
