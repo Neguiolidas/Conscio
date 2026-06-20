@@ -68,6 +68,7 @@ VALID_TYPES = {
  "structure:changed",     # v1.8: ingested structure drifted (graph rebuilt/moved)
  "proposal:audited",      # v2.0: MCP propose_* audited proposal (advisory)
  "host:event",            # v2.0: raw host event recorded via MCP note()
+ "act:result",            # v2.0.1: host-executed action outcome (report_result)
 }
 
 VALID_CATEGORIES = {"system", "trading", "consciousness", "external", "session"}
