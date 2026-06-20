@@ -122,3 +122,35 @@ class HostActChannel:
                                      error=reason or "rejected",
                                      duration_ms=0, status="rejected")
         return {"ok": True, "status": "rejected", "ledger_id": ledger_id}
+
+    # ── report (host execution outcome closes the ledger entry) ──
+    def report(self, ledger_id: int, result: dict) -> dict:
+        row = self.ledger.get(ledger_id)
+        if row is None:
+            return {"ok": False, "ledger_id": ledger_id,
+                    "reason": "unknown_ledger_id"}
+        status = row["status"]
+        if status in ("executed", "failed"):
+            return {"ok": True, "ledger_id": ledger_id, "status": status,
+                    "already_reported": True}
+        if status != "executing":
+            return {"ok": False, "ledger_id": ledger_id,
+                    "reason": "not_released"}
+        ok = bool(result.get("ok"))
+        new_status = "executed" if ok else "failed"
+        self.ledger.update_execution(
+            ledger_id, ok=ok, output=str(result.get("output", "")),
+            error=str(result.get("error", "")),
+            duration_ms=int(result.get("duration_ms", 0) or 0),
+            status=new_status)
+        self.emit_fn(type="act:result", category="external",
+                     data={"tool": row["tool"], "ledger_id": ledger_id,
+                           "ok": ok, "error": str(result.get("error", ""))})
+        if ok:
+            self.trust.on_success(row["tool"])
+        else:
+            goal_fp = row["goal_fp"]
+            if self.breaker.should_trip(goal_fp, task_type=row["tool"]):
+                self.breaker.trip(goal_fp, detail=str(result.get("error", "")),
+                                  goal_text=row["goal_text"])
+        return {"ok": True, "ledger_id": ledger_id, "status": new_status}
