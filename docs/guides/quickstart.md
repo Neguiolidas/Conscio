@@ -63,3 +63,10 @@ engine.reflect(world_state=frame.to_world_state())
 ```
 
 See [Plugins](plugins.md) for writing your own sensors, adapters, and tools.
+
+## Embed in an MCP host (v2.0)
+
+To run Conscio *inside* a host (CLI/IDE/agent), point it at the `conscio-mcp`
+stdio server instead of calling the engine directly. The host feeds perception,
+reads cognition, and asks for audited proposals — **propose-only**: Conscio signs
+and audits the intent, the host executes. See [MCP server](mcp.md).

@@ -40,6 +40,14 @@ two surfaces — passive `reflect()` and audited `act()` — never blur.
 │ ProbeSuite/ModelProfile · GBNF compiler · GoalArbiter · AutonomyLoop   │
 │ Meter/MeteredAdapter · SkillLibrary (procedural memory) · Bench        │
 └────────────────────────────────────────────────────────────────────────┘
+┌─────────────── Structural cognition · conscio/structural* ────────────┐
+│ StructuralDistiller (graph.json → ranked signal; data, never code/R10) │
+│ budget-adaptive injection · consent (per-workspace) · drift+freshness  │
+└────────────────────────────────────────────────────────────────────────┘
+┌─────────────── Embodiment · conscio/mcp/ (propose-only) ──────────────┐
+│ conscio-mcp: hand-rolled JSON-RPC 2.0 over stdio (stdlib only)         │
+│ feed/note/advisory/recall/propose_action/propose_plan · never executes │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## The two surfaces
@@ -57,6 +65,17 @@ two surfaces — passive `reflect()` and audited `act()` — never blur.
 A `SensorAdapter` produces a `PerceptionFrame`; `frame.to_world_state()` yields
 the plain string `reflect()` consumes. Perception is therefore pluggable *without
 modifying `reflect()`* — the same move that made inference and action pluggable.
+
+## Embodiment (MCP, v2.0)
+
+`conscio/mcp/` exposes the engine to **any** MCP host (CLI, IDE, agent) over a
+hand-rolled, stdlib-only JSON-RPC 2.0 stdio server (`conscio-mcp`). It adds a
+third, **propose-only** surface alongside `reflect()` and `act()`: the host feeds
+perception (`feed`/`note`), reads cognition (`advisory`/`recall` + resources), and
+asks for an audited verdict on an intent (`propose_action`/`propose_plan`, which
+compose the existing Actor/Skeptic and **never execute**). The transport is
+bounded-at-source against hostile input and nothing opens a socket. Audited
+execution over MCP (`act`) is deferred to v2.0.1.
 
 ## Design invariants
 

@@ -37,7 +37,7 @@ class Bindings:
 
     def conscio_meta(self) -> dict:
         return {"workspace_id": self.workspace_id,
-                "awake": bool(getattr(self.engine._state, "awake", False)),
+                "awake": bool(getattr(self.engine.state, "awake", False)),
                 "act_enabled": False,           # v2.0.0: propose-only
                 "adapter": self.adapter_name,
                 "supported_protocols": SUPPORTED_PROTOCOLS}

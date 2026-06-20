@@ -11,9 +11,9 @@ nothing else). It is designed to make small, local models punch far above their
 size by giving them memory, self-judgment, and procedural skill — and to prove
 that claim by measurement, not assertion.
 
-- **Current release:** `v1.9.0` — "Anneal", a pre-v2.0 **hardening** pass. No new public surface (the API is **frozen** ahead of the v2.0 "Connect" phase) — instead the corrupt/legacy/concurrent edges are now safe: the engine survives a corrupt or legacy/incomplete store/state file at construction (quarantine + recreate; every JSON loader degrades to a default), the daemon heartbeat is written atomically (a tailing host never reads a torn file), and earned-autonomy/quarantine time windows are correct on non-UTC hosts. Backed by durable guards that stop whole bug *classes* from resurfacing (incl. an AST CI rule). Cognition (`reflect()`) untouched; zero-deps core; `pip install conscio`.
-- **Prior:** `v1.8.0` — "Structural Drift", completing the **Structural Cognition** arc (v1.6–v1.8): Conscio can ingest a Graphify `graph.json` of the codebase it works in — distilled to a compact, **budget-adaptive** signal (hyperedges + community digests, not thousands of nodes), consumed as **data, never code** (R10: no `networkx`, no Graphify runtime dep) — **consent-gated per workspace** (default OFF, switch-safe), and tracks **drift** (what changed since last load) and **freshness** (whether the graph is behind the repo `HEAD`, read purely from `.git` — no `git` subprocess). Plus the v1.6 **goal-provenance gate** + read-only `advisory()` consumption pull.
-- **Earlier:** `v1.5.0` "Live" — **Awake Mode (R9)** (gated, persisted, default-OFF autonomy), the **daemon** + `conscio-daemon`, reference **sensors** `HostSensor`/`AgentSensor`, **`WorkspaceContext`**, and the `OpenAIAdapter` alongside the v1.4 Claude/Gemini frontier adapters.
+- **Current release:** `v2.0.0` — "Connect", the **Embodiment** phase: Conscio becomes embeddable in **any** MCP host (CLI, IDE, agent) as a live consciousness-layer, via a hand-rolled **stdlib-only** MCP stdio server (`conscio-mcp`, newline-delimited JSON-RPC 2.0). Zero new runtime dependency; nothing opens a socket. The surface is **propose-only** — Conscio perceives, reflects, recalls, and **audits** proposed actions, but never executes; the host stays sovereign over execution. Cognition (`reflect()`) untouched; the public API is unchanged (MCP is purely additive). Audited execution over MCP (`act`) is deferred to v2.0.1; the society/noosphere to v2.1. `pip install conscio`.
+- **Prior:** `v1.9.0` — "Anneal", a pre-v2.0 **hardening** pass. No new public surface (the API was **frozen** ahead of "Connect") — instead the corrupt/legacy/concurrent edges were made safe: the engine survives a corrupt or legacy/incomplete store/state file at construction (quarantine + recreate; every JSON loader degrades to a default), the daemon heartbeat is written atomically (a tailing host never reads a torn file), and earned-autonomy/quarantine time windows are correct on non-UTC hosts. Backed by durable guards that stop whole bug *classes* from resurfacing (incl. an AST CI rule). Cognition (`reflect()`) untouched; zero-deps core.
+- **Earlier:** `v1.8.0` — "Structural Drift", completing the **Structural Cognition** arc (v1.6–v1.8): Conscio can ingest a Graphify `graph.json` of the codebase it works in — distilled to a compact, **budget-adaptive** signal (hyperedges + community digests, not thousands of nodes), consumed as **data, never code** (R10: no `networkx`, no Graphify runtime dep) — **consent-gated per workspace** (default OFF, switch-safe), and tracks **drift** (what changed since last load) and **freshness** (whether the graph is behind the repo `HEAD`, read purely from `.git` — no `git` subprocess). Plus the v1.6 **goal-provenance gate** + read-only `advisory()` consumption pull.
 
 ---
 
@@ -39,6 +39,9 @@ that claim by measurement, not assertion.
 - **Knows its codebase (structurally)** — optional, consent-gated ingestion of a
   Graphify graph, distilled to a compact signal injected budget-aware; tracks
   structural drift + staleness vs the repo HEAD. Data, never code (R10).
+- **Plugs into any host (v2.0)** — a stdlib-only MCP stdio server (`conscio-mcp`)
+  lets any CLI/IDE/agent feed it perception and consume its cognition + audited
+  proposals live. Propose-only: it signs and audits intent; the host executes.
 
 `reflect()` is the **passive heart** and is never allowed to act. Everything that
 can change the world lives behind `act()` and its safety gates. This separation
@@ -63,7 +66,7 @@ anything from **8k context up** — small windows simply get the Minimal budget.
 
 ---
 
-## Architecture (v1.9.0)
+## Architecture (v2.0.0)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -108,6 +111,13 @@ anything from **8k context up** — small windows simply get the Minimal budget.
 │ budget-adaptive injection · consent (per-workspace, switch-safe)       │
 │ drift + freshness (vs repo HEAD, pure .git read; no subprocess)        │
 └────────────────────────────────────────────────────────────────────────┘
+┌─────────────── Embodiment · conscio/mcp/ (v2.0, propose-only) ─────────┐
+│ conscio-mcp: hand-rolled JSON-RPC 2.0 over stdio (stdlib only)         │
+│ bounded-at-source frame reader · version negotiation · structured errs │
+│ tools: feed/note/advisory/recall/propose_action/propose_plan          │
+│ resources: advisory/state/events/handoff · idempotent (mcp_seen.db)    │
+│ NEVER executes — host stays sovereign; act → v2.0.1                    │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -144,8 +154,8 @@ from conscio.agency import OllamaAdapter
 engine.attach_adapter(OllamaAdapter(model="qwen3.5:0.8b"))
 # Local (Ollama/llama.cpp/LM Studio/OpenAI-compatible) or a frontier API.
 # These call the SAME model APIs that power Claude Code / Antigravity, so Conscio
-# can think with those models — they do NOT make Conscio run *inside* those tools
-# (a turnkey plug-in / MCP is v2.0 "Connect" work):
+# can think with those models — they do NOT make Conscio run *inside* those tools.
+# To run *inside* a host, use the v2.0 MCP server (`conscio-mcp`, see Embodiment):
 #   from conscio.agency import AnthropicAdapter, GeminiAdapter
 #   engine.attach_adapter(AnthropicAdapter(model="claude-sonnet-4-6"))  # ANTHROPIC_API_KEY
 #   engine.attach_adapter(GeminiAdapter(model="gemini-2.5-pro"))        # GOOGLE_API_KEY
@@ -255,6 +265,42 @@ See [the integration guide](docs/guides/integration.md#structural-cognition).
 
 ---
 
+## Embodiment — MCP server (v2.0)
+
+Conscio ships a hand-rolled, **stdlib-only** [MCP](https://modelcontextprotocol.io)
+stdio server (newline-delimited JSON-RPC 2.0) so **any** MCP host — a CLI, an IDE,
+or an agent — can plug into a Conscio instance and consume its cognition as a live
+consciousness-layer. Zero new runtime dependency; nothing opens a socket.
+
+```jsonc
+// point any MCP host at the console entry point (one engine = one workspace)
+{
+  "mcpServers": {
+    "conscio": {
+      "command": "conscio-mcp",
+      "args": ["--storage", "/path/to/workspace/.conscio",
+               "--adapter", "ollama:qwen3.5:0.8b"]
+    }
+  }
+}
+```
+
+In v2.0.0 the surface is **propose-only**: Conscio perceives (`feed`/`note`),
+reflects, recalls, and **audits** proposed actions (`propose_action` /
+`propose_plan` → Skeptic verdict), but never executes — the host stays sovereign
+over execution. `feed`/`note` are **idempotent** on `event.id` (a duplicate
+returns the exact prior result, so retries never inflate the world model). The
+transport is hardened against hostile host input (malformed/oversized/partial
+frames, wrong protocol version, pre-initialize requests) by a seeded stdlib fuzz
+battery. Audited execution over MCP (`act`) lands in v2.0.1 with a host-execution
+callback model.
+
+> *Conscio signs and audits the intent; the host pulls the trigger.*
+
+See [the MCP guide](docs/guides/mcp.md).
+
+---
+
 ## Module reference
 
 **Core / Witness (v0.1)** — `ConsciousnessEngine`, `ContextManager`,
@@ -311,6 +357,16 @@ broken plugin. `conscio.risk.Risk` is the shared safety-tier vocabulary.
 `load_structure()`, `structural_lookup()`/`structural_signal()`,
 `structural_delta()`/`structural_freshness()`, and the `GoalOrigin` provenance gate
 + read-only `advisory()` pull. Data, never code (R10).
+
+**Embodiment — `conscio/mcp/` (v2.0)** — `conscio.mcp.server` (`serve`/`main`,
+the `conscio-mcp` console script), `jsonrpc` (bounded-at-source frame reader,
+structured errors), `protocol` (`Dispatcher`, version negotiation), `schemas`
+(rigid Event schema + propose-only tool/resource defs), `seen` (`SeenStore`, the
+bounded `mcp_seen.db` idempotency store). Engine pull surfaces:
+`engine.propose_action(intent)` / `engine.propose_plan(goal, tools)` —
+propose-only cognition composing the existing Actor/Skeptic; never execute, fail
+closed without an adapter, emit a `proposal:audited` event. Nothing opens a
+socket; nothing executes (act → v2.0.1).
 
 ---
 
@@ -406,7 +462,7 @@ Docs site: guides, public-API reference, the claims ledger, and the bench report
 ## Testing
 
 ```bash
-# Full suite (1315 tests) — house rule: one file per pytest process
+# Full suite (1437 tests) — house rule: one file per pytest process
 # (low-RAM machines OOM on the full run; CI does the same)
 for f in tests/test_*.py; do pytest "$f" -q; done
 
@@ -446,6 +502,72 @@ session DB/RAG → git). Configure your agent's hook to fire on `session:end` /
 
 ## Audit history
 
+- **v2.0.0 — "Connect"** — the **Embodiment** phase. Conscio becomes embeddable
+  in **any** MCP host (CLI, IDE, agent) as a live consciousness-layer via a
+  hand-rolled, **stdlib-only** MCP stdio server (`conscio-mcp`, newline-delimited
+  JSON-RPC 2.0): a bounded-at-source frame reader (no unbounded line buffering),
+  `initialize` capability discovery + version negotiation, structured JSON-RPC
+  errors. The surface is **propose-only** — tools `feed`/`note` (rigid Event
+  schema, **idempotent** on `event.id`: a duplicate returns the exact prior
+  result), `advisory`, `recall`, `propose_action` (Skeptic audit of an explicit
+  intent), `propose_plan` (Actor generates one action against a declared tool
+  vocabulary, then the Skeptic audits it); resources `advisory`/`state`/`events`/
+  `handoff`; a bounded idempotency store (`mcp_seen.db`). Engine pulls
+  `propose_action`/`propose_plan` compose the existing Actor/Skeptic, **never
+  execute**, fail closed without an adapter, and emit `proposal:audited`. A seeded
+  stdlib fuzz battery proves the transport survives hostile host input
+  (malformed/oversized/partial frames, wrong version, pre-initialize) without
+  hang/OOM/crash. Also paid debt-zero: atomic JSON saves for
+  `world_model`/`meta_cognition`/`context_manager` (R-09), bounded quarantine
+  pruning (R-02). Zero new runtime dep; nothing opens a socket; `act` over MCP →
+  v2.0.1; society/noosphere → v2.1. reflect() untouched; public API unchanged.
+  **1437 total.**
+- **v1.9.0 — "Anneal"** — a pre-v2.0 **hardening** release; no new public surface
+  (API frozen ahead of "Connect"). A bug-hunt + robustness pass making the
+  corrupt/legacy/concurrent edges safe: tz-skewed earned-autonomy & quarantine
+  windows fixed (naive-UTC via `timeutil`), `event_bus.query(limit=-1)` no longer
+  unbounded, and the engine now **survives a corrupt/binary/legacy-incomplete
+  store or state file at construction** (quarantine + recreate; every JSON loader
+  degrades to a default), a NULL session title no longer blanks the handoff,
+  `chunk_size<=0` no longer hangs, and the daemon heartbeat is written atomically.
+  Backed by **durable guards** (`conscio.guards`: `safe_read_json`/
+  `read_json_dict`/`clamp_int`) + an AST CI rule that fails on any bare
+  `datetime.fromtimestamp` — turning one-off fixes into class-level prevention.
+  reflect() untouched; dependency-free; debt-zero.
+- **v1.8.0 — "Structural Drift"** — makes the ingested structure **temporal**.
+  `conscio.structural_drift`: `compute_delta` (a pure prev→current diff — commit
+  moved, content_hash changed, communities/hyperedges added·removed·resized,
+  diffed by **id** so a relabel isn't drift) and `compute_freshness` /
+  `read_head_commit` (graph commit vs the repo `HEAD`, read **purely from `.git`**
+  — ref/packed-refs/detached/worktree, never raises, **no `git` subprocess**), with
+  a corrupt-tolerant per-workspace `StructuralDriftStore`. `engine.load_structure`
+  advances the baseline and emits `structure:changed` on real drift; new pulls
+  `structural_delta()`/`structural_freshness()`; `advisory()["structural"]` gains
+  `drift`+`freshness`; a read-only `conscio structure` CLI. reflect() untouched;
+  dependency-free; debt-zero.
+- **v1.7.0 — "Structural Cognition"** — the centerpiece: `StructuralDistiller`
+  (`conscio.structural`) distils a Graphify `graph.json` (thousands of nodes) to
+  its curated hyperedges + per-community digests, with a pure `lookup()` data
+  layer. **Budget-adaptive injection** sized to the context window (~120→1200
+  tokens), **additive** (the consciousness-state block byte-for-byte unchanged),
+  **labels only**. **Consent-gated** ingestion (`conscio.structural_consent`,
+  per-`Workspace.id`, **default OFF**, switch-safe — one project's structure never
+  leaks into another). **R10 — imported cognition is data, never code**: parsed
+  with `json` only, every field inert; no `networkx`, no Graphify runtime
+  dependency. OOM guards (`max_bytes`/`max_nodes`) before parse. reflect()
+  untouched; dependency-free; debt-zero.
+- **v1.6.0 — "Structural Cognition" (field-driven slice)** — closes the
+  provenance hole from the Hermes-Agent field run and turns Awake Mode into
+  consumable signal. The **`GoalOrigin` provenance gate**: diagnostic goals
+  (meta_error/self_prompt/compaction) never auto-run yet stay visible; a read-only
+  `advisory()` consumption pull (no LLM, no mutation) surfaces state + goals
+  tagged by provenance + lockdown/brake status. CI moved to Node 24. reflect()
+  untouched; dependency-free; debt-zero. (Native distiller/R10 deferred to v1.7 to
+  keep this release debt-free.)
+- **v1.5.1 — "Awake Hardening" (patch)** — a skeptical review (not just TDD)
+  hardened three live-only edges: awake survives an `act()` lockdown, the host
+  port probe never raises, an awake heartbeat with no backend still reflects; plus
+  sentinel/CLI/breaker fixes.
 - **v1.5.0 — "Live"** — Conscio runs as a living process. **Awake Mode (R9)** —
   a persisted, default-OFF gate: the self-initiated heartbeat (`engine.run()` /
   the daemon) perceives + `reflect()`s only while asleep, full loop only when

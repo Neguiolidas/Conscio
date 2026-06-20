@@ -28,8 +28,8 @@ from conscio import (
 `ConsciousnessEngine` is a context manager (`with ConsciousnessEngine(...) as e:`).
 Key methods: `reflect()`, `get_state_for_injection()`, `advisory()`, `recall()`,
 `status()`, `attach_adapter()`, `probe()`, `act()`, `approve()`, `run()`,
-`load_structure()`, `structural_lookup()`, `structural_signal()`,
-`structural_delta()`, `structural_freshness()`, `close()`.
+`propose_action()`, `propose_plan()`, `load_structure()`, `structural_lookup()`,
+`structural_signal()`, `structural_delta()`, `structural_freshness()`, `close()`.
 
 `advisory()` is the structured, read-only pull surface a host consumes each turn
 (goals tagged by provenance, lockdown/brake status). See
@@ -70,6 +70,28 @@ from conscio.agency import (
     ProbeSuite, ModelProfile, GoalArbiter, AutonomyLoop, RunReport, ActBudget,
 )
 ```
+
+`propose_action(intent)` and `propose_plan(goal, tools)` are the **propose-only**
+cognition surfaces added in v2.0: they compose the existing Actor/Skeptic, return
+an audited `{verdict, reasons, risk_flags, confidence, proposal}`, **never
+execute**, and fail closed (`verdict: FAIL`) without an attached adapter. They are
+what the MCP server exposes to a host; a direct caller can use them too.
+
+## `conscio.mcp`
+
+The embodiment surface (v2.0) — embed Conscio in any MCP host. Normally driven via
+the `conscio-mcp` console script, not imported:
+
+```python
+from conscio.mcp import serve, main      # stdio serve loop + CLI entry point
+```
+
+`conscio-mcp` speaks newline-delimited JSON-RPC 2.0 over stdio (stdlib only,
+nothing opens a socket). Propose-only tools: `conscio.feed`/`conscio.note`
+(idempotent on `event.id`), `conscio.advisory`, `conscio.recall`,
+`conscio.propose_action`, `conscio.propose_plan`. Resources: `conscio://advisory`,
+`conscio://state`, `conscio://events`, `conscio://handoff`. See
+[MCP server](../guides/mcp.md).
 
 ## `conscio.perception`
 
