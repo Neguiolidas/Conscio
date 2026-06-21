@@ -1,0 +1,129 @@
+"""Hub config layer: load / validate / redact / atomic save.
+
+Reuses conscio.adapter_config for the canonical config paths + loader. Writes
+are atomic (guards.atomic_write_text). Secrets are NEVER returned raw."""
+from __future__ import annotations
+
+import copy
+import json
+import os
+import re
+import urllib.parse
+from pathlib import Path
+
+from .. import adapter_config
+from ..guards import atomic_write_text
+
+KNOWN_TYPES = ("lmstudio", "ollama", "openai", "anthropic", "gemini",
+               "openai-compat")
+_ENV_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+
+
+def load() -> dict:
+    """Current config (or {} if none/corrupt)."""
+    return adapter_config.load_config()
+
+
+def config_path() -> Path:
+    """First existing config path, else the first default (for first write)."""
+    for p in adapter_config._CONFIG_PATHS:
+        if p.exists():
+            return p
+    return adapter_config._CONFIG_PATHS[0]
+
+
+def _valid_env_name(v) -> bool:
+    return isinstance(v, str) and len(v) <= 128 and bool(_ENV_RE.match(v))
+
+
+def _check_base_url(bu: str, where: str) -> list[str]:
+    """Scheme/host allowlist: http(s) only, host required, no embedded creds.
+    Blocks file:// reads and credential-in-URL before probe_models urlopens it."""
+    parsed = urllib.parse.urlparse(bu)
+    if parsed.scheme not in ("http", "https"):
+        return [f"{where}.base_url must use http or https, got {parsed.scheme!r}"]
+    if not parsed.hostname:
+        return [f"{where}.base_url must include a host"]
+    if parsed.username or parsed.password:
+        return [f"{where}.base_url must not embed credentials"]
+    return []
+
+
+def _check_adapter(block: dict, where: str) -> list[str]:
+    errs: list[str] = []
+    atype = block.get("type")
+    if atype not in KNOWN_TYPES:
+        errs.append(f"{where}.type must be one of {KNOWN_TYPES}, got {atype!r}")
+    bu = block.get("base_url")
+    if bu is not None:
+        if not isinstance(bu, str):
+            errs.append(f"{where}.base_url must be a string")
+        else:
+            errs += _check_base_url(bu, where)
+    env = block.get("api_key_env")
+    if env is not None and not _valid_env_name(env):
+        errs.append(f"{where}.api_key_env must be an ENV VAR NAME "
+                    f"(^[A-Z_][A-Z0-9_]*$, <=128), not a key")
+    if "api_key" in block:
+        errs.append(f"{where}.api_key is not allowed; use api_key_env "
+                    f"(the NAME of an environment variable)")
+    return errs
+
+
+def validate(cfg: dict) -> list[str]:
+    """Return human-readable errors ([] = valid). Enforces the security
+    contract: api_key_env is a NAME, never a raw key."""
+    errs: list[str] = []
+    model = cfg.get("model")
+    if not isinstance(model, str) or not model.strip():
+        errs.append("model must be a non-empty string")
+    adapter = cfg.get("adapter")
+    if not isinstance(adapter, dict):
+        errs.append("adapter must be an object")
+    else:
+        errs += _check_adapter(adapter, "adapter")
+    providers = cfg.get("providers", {})
+    if providers:
+        if not isinstance(providers, dict):
+            errs.append("providers must be an object")
+        else:
+            for name, block in providers.items():
+                if not isinstance(block, dict):
+                    errs.append(f"providers.{name} must be an object")
+                    continue
+                errs += _check_adapter(block, f"providers.{name}")
+    return errs
+
+
+def _redact_block(block: dict) -> dict:
+    out = dict(block)
+    out.pop("api_key", None)                       # never echo a raw key
+    env = out.get("api_key_env")
+    if env is not None:
+        out["api_key_present"] = bool(os.environ.get(env))
+    return out
+
+
+def redact(cfg: dict) -> dict:
+    """Deep copy safe to return over the API: raw api_key dropped everywhere,
+    api_key_env annotated with api_key_present."""
+    out = copy.deepcopy(cfg)
+    if isinstance(cfg.get("adapter"), dict):
+        out["adapter"] = _redact_block(cfg["adapter"])
+    if isinstance(cfg.get("providers"), dict):
+        out["providers"] = {k: _redact_block(v) if isinstance(v, dict) else v
+                            for k, v in cfg["providers"].items()}
+    return out
+
+
+def save(cfg: dict) -> None:
+    """Validate then atomically persist. Raises ValueError if invalid (no write)."""
+    errs = validate(cfg)
+    if errs:
+        raise ValueError("; ".join(errs))
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # config stores api_key_env (env var NAMES), never raw secrets, so the brief
+    # window between os.replace and chmod exposes no credentials.
+    atomic_write_text(path, json.dumps(cfg, indent=2))
+    os.chmod(path, 0o600)

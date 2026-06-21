@@ -52,6 +52,7 @@ conscio = "conscio.cli:main"
 conscio-bench = "conscio.bench:main"
 conscio-daemon = "conscio.daemon:main"
 conscio-mcp = "conscio.mcp.server:main"
+conscio-hub = "conscio.hub.server:main"
 
 [project.entry-points."conscio.sensors"]
 host = "conscio.perception.host_sensor:HostSensor"
@@ -68,4 +69,4 @@ include = ["conscio*"]
 version = {attr = "conscio.__version__"}
 
 [tool.setuptools.package-data]
-conscio = ["py.typed"]
+conscio = ["py.typed", "hub/static/*"]

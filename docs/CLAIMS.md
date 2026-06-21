@@ -4,7 +4,7 @@ A framework about self-knowledge should know what it can and cannot prove
 about itself. Every load-bearing claim Conscio makes, mapped to evidence.
 
 **Status:** PROVEN (test) · MEASURED (real backend) · PARTIAL · UNPROVEN.
-Updated each phase. Current as of **v2.0.1** (2026-06-20).
+Updated each phase. Current as of **v2.1.0** (2026-06-21).
 
 | # | Claim | Evidence | Status |
 |---|-------|----------|--------|
@@ -53,6 +53,7 @@ Updated each phase. Current as of **v2.0.1** (2026-06-20).
 | 43 | The **MCP transport survives hostile host input** — malformed JSON, oversized frames (bounded at source, no OOM), partial frames, wrong protocol version, pre-initialize requests — answering with structured JSON-RPC errors and never crashing the loop | `tests/test_mcp_battery.py`, `tests/test_mcp_fuzz.py` (seeded stdlib fuzz: read+parse, full serve loop, event validation never hang/OOM/crash) | PROVEN |
 | 44 | The MCP surface is **propose-only — Conscio never executes** a tool over MCP; `propose_action`/`propose_plan` run the Skeptic/Actor and return a verdict, and fail closed without an adapter | `tests/test_engine_propose.py`, `tests/test_mcp_server.py`, `tests/test_mcp_battery.py` (`act` absent from `tools/list`; propose-without-adapter → `FAIL`) | PROVEN |
 | 45 | `feed`/`note` are **idempotent on `event.id`** — a duplicate returns the exact prior result, so host retries never inflate the world model or event log | `tests/test_mcp_server.py::test_feed_duplicate_returns_identical_prior_result`, `tests/test_mcp_battery.py::test_try_break_dup_event_no_world_inflation` | PROVEN |
+| 46 | The **Hub never returns a raw API key** — `redact()` drops `api_key` and masks `api_key_env` → `api_key_present`; `api_key_env` is validated as an env var NAME; Hub binds 127.0.0.1-only; optional `CONSCIO_HUB_TOKEN`; no exec / no SQLite write / no provider delete | `tests/test_hub_server.py` (redact, token auth, bind address, no-delete) | PROVEN |
 
 ## Honest limits (what is NOT proven)
 

@@ -5,6 +5,7 @@ __pycache__/
 
 # Distribution / packaging
 dist/
+dist-*/
 build/
 *.egg-info/
 *.egg
@@ -15,6 +16,7 @@ site/
 # Virtual environments
 venv/
 .venv/
+.venv-*/
 
 # IDE
 .vscode/
