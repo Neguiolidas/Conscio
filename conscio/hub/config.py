@@ -47,6 +47,9 @@ def _check_adapter(block: dict, where: str) -> list[str]:
     if env is not None and not _valid_env_name(env):
         errs.append(f"{where}.api_key_env must be an ENV VAR NAME "
                     f"(^[A-Z_][A-Z0-9_]*$, <=128), not a key")
+    if "api_key" in block:
+        errs.append(f"{where}.api_key is not allowed; use api_key_env "
+                    f"(the NAME of an environment variable)")
     return errs
 
 
