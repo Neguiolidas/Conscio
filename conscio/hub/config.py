@@ -72,3 +72,24 @@ def validate(cfg: dict) -> list[str]:
                     continue
                 errs += _check_adapter(block, f"providers.{name}")
     return errs
+
+
+def _redact_block(block: dict) -> dict:
+    out = dict(block)
+    out.pop("api_key", None)                       # never echo a raw key
+    env = out.get("api_key_env")
+    if env is not None:
+        out["api_key_present"] = bool(os.environ.get(env))
+    return out
+
+
+def redact(cfg: dict) -> dict:
+    """Deep copy safe to return over the API: raw api_key dropped everywhere,
+    api_key_env annotated with api_key_present."""
+    out = dict(cfg)
+    if isinstance(cfg.get("adapter"), dict):
+        out["adapter"] = _redact_block(cfg["adapter"])
+    if isinstance(cfg.get("providers"), dict):
+        out["providers"] = {k: _redact_block(v) if isinstance(v, dict) else v
+                            for k, v in cfg["providers"].items()}
+    return out
