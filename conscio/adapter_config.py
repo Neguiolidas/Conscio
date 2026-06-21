@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,10 @@ def build_adapter_from_config(cfg: dict, *,
 
     model = adapter_cfg.get("model") or fallback_model
     api_key = adapter_cfg.get("api_key", "")
+    if not api_key:
+        env_name = adapter_cfg.get("api_key_env")
+        if env_name:
+            api_key = os.environ.get(env_name, "")
     base_url = adapter_cfg.get("base_url")
 
     if atype == "lmstudio":
