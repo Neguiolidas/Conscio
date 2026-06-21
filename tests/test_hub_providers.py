@@ -120,3 +120,26 @@ def test_probe_refresh_bypasses_cache(monkeypatch):
     providers.probe_models(pc)
     providers.probe_models(pc, refresh=True)
     assert calls["n"] == 2
+
+
+def test_probe_non_dict_json_falls_back(monkeypatch):
+    providers._CACHE.clear()
+    monkeypatch.setattr(providers, "_get_json", lambda url, **k: None)
+    out = providers.probe_models({"type": "openai", "base_url": "https://h/v1"},
+                                 refresh=True)
+    assert out["source"] == "fallback" and out["probed"] is False
+
+
+def test_probe_gemini_injects_key(monkeypatch):
+    providers._CACHE.clear()
+    seen = {}
+
+    def capture(url, **k):
+        seen["url"] = url
+        return {"models": [{"name": "models/gemini-2.5-pro"}]}
+    monkeypatch.setattr(providers, "_get_json", capture)
+    monkeypatch.setenv("GEM_KEY", "testkey")
+    providers.probe_models(
+        {"type": "gemini", "base_url": "https://g", "api_key_env": "GEM_KEY"},
+        refresh=True)
+    assert seen["url"].endswith("?key=testkey")

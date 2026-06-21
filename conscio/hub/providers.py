@@ -104,7 +104,7 @@ def probe_models(provider_cfg: dict, *, refresh: bool = False) -> dict:
     if not refresh:
         hit = _CACHE.get(cache_key)
         if hit and (time.monotonic() - hit[0]) < _CACHE_TTL:
-            return hit[1]
+            return dict(hit[1])
     try:
         if atype == "ollama":
             url = f"{base}/api/tags"
@@ -115,7 +115,7 @@ def probe_models(provider_cfg: dict, *, refresh: bool = False) -> dict:
         else:                                          # openai / openai-compat / lmstudio
             url = f"{base}/models"
         models = _parse(atype, _get_json(url))
-    except (OSError, ValueError, urllib.error.URLError, KeyError, TypeError):
+    except (OSError, ValueError, urllib.error.URLError, KeyError, TypeError, AttributeError):
         return _fallback(atype)
     result = {"models": models, "source": "api", "probed": True}
     _CACHE[cache_key] = (time.monotonic(), result)
