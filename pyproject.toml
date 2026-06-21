@@ -69,4 +69,4 @@ include = ["conscio*"]
 version = {attr = "conscio.__version__"}
 
 [tool.setuptools.package-data]
-conscio = ["py.typed"]
+conscio = ["py.typed", "hub/static/*"]
