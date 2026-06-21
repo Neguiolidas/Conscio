@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.0] - 2026-06-21 — "Hub"
+
+### Added
+- `conscio-hub`: localhost (127.0.0.1) stdlib HTTP control plane to swap the
+  active model/provider and register custom OpenAI-compatible providers without
+  editing JSON. Engine-free; config applies on next boot.
+- Per-provider model auto-discovery (`/v1/models`, `/api/tags`, `/v1beta/models`)
+  with free-text fallback; one-shot provider smoke test before save.
+- `adapter_config` now resolves `api_key_env` (env var name) in addition to a raw
+  `api_key` (additive, back-compat) — daemon + MCP inherit it.
+
+### Security
+- Hub never returns a raw API key (`redact()` drops `api_key`, masks
+  `api_key_env`→`api_key_present`); `api_key_env` is validated as an env var NAME;
+  127.0.0.1-only; optional `CONSCIO_HUB_TOKEN`; no exec / no SQLite write / no
+  provider delete.
+
+---
+
 ## [2.0.1] — 2026-06-20
 
 "Connect" continued — **opt-in, host-executed audited `act` over MCP**. Conscio
