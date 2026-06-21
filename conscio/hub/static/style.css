@@ -1,0 +1,11 @@
+:root { font-family: system-ui, sans-serif; }
+body { max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+h1 small { font-size: .6em; color: #2a7; }
+section { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+label { display: block; margin: .5rem 0; }
+input, select { padding: .3rem; min-width: 14rem; }
+button { padding: .35rem .8rem; cursor: pointer; }
+.hint { color: #888; font-size: .85em; margin-left: .5rem; }
+ul { list-style: none; padding: 0; }
+li { padding: .25rem 0; font-family: ui-monospace, monospace; font-size: .9em; }
+em { color: #999; } b { color: #06c; }
