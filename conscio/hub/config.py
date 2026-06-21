@@ -93,3 +93,14 @@ def redact(cfg: dict) -> dict:
         out["providers"] = {k: _redact_block(v) if isinstance(v, dict) else v
                             for k, v in cfg["providers"].items()}
     return out
+
+
+def save(cfg: dict) -> None:
+    """Validate then atomically persist. Raises ValueError if invalid (no write)."""
+    errs = validate(cfg)
+    if errs:
+        raise ValueError("; ".join(errs))
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(path, json.dumps(cfg, indent=2))
+    os.chmod(path, 0o600)

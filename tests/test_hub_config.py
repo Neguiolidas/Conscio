@@ -60,3 +60,27 @@ def test_redact_recurses_providers():
         {"adapter": {"type": "openai"},
          "providers": {"x": {"type": "openai", "api_key": "leak"}}})
     assert "api_key" not in out["providers"]["x"]
+
+
+def test_save_round_trip(tmp_path, monkeypatch):
+    p = tmp_path / "config.json"
+    monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
+    config.save({"model": "m", "adapter": {"type": "openai"}})
+    assert json.loads(p.read_text())["model"] == "m"
+
+
+def test_save_rejects_invalid(tmp_path, monkeypatch):
+    p = tmp_path / "config.json"
+    monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
+    try:
+        config.save({"model": "", "adapter": {"type": "bogus"}})
+        assert False, "should have raised"
+    except ValueError:
+        assert not p.exists()           # no write on invalid
+
+
+def test_save_mode_0600(tmp_path, monkeypatch):
+    p = tmp_path / "config.json"
+    monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
+    config.save({"model": "m", "adapter": {"type": "openai"}})
+    assert (p.stat().st_mode & 0o777) == 0o600
