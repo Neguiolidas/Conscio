@@ -173,3 +173,22 @@ def test_static_traversal_blocked():
     r = server.route("GET", "/static/../config.py", {}, None,
                      token=None, auth=None)
     assert r.status == 404
+
+
+def test_post_provider_rejects_raw_api_key_field(tmp_path, monkeypatch):
+    p = tmp_path / "config.json"
+    p.write_text(_json.dumps({"model": "m", "adapter": {"type": "openai"}}))
+    monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
+    body = {"name": "x", "type": "openai", "api_key": "sk-live-xxx"}
+    r = server.route("POST", "/api/providers", {}, body, token=None, auth=None)
+    assert r.status == 400
+
+
+def test_get_config_redacts_providers(tmp_path, monkeypatch):
+    p = tmp_path / "config.json"
+    p.write_text(_json.dumps(
+        {"model": "m", "adapter": {"type": "openai"},
+         "providers": {"x": {"type": "openai", "api_key": "leak"}}}))
+    monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
+    r = server.route("GET", "/api/config", {}, None, token=None, auth=None)
+    assert "api_key" not in r.payload["providers"]["x"]

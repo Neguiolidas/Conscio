@@ -91,3 +91,9 @@ def test_validate_and_redact_handle_null_providers():
     assert config.validate(cfg) == []          # null providers = no providers
     out = config.redact(cfg)
     assert out["providers"] is None            # passes through untouched, no crash
+
+
+def test_validate_rejects_raw_api_key_field():
+    errs = config.validate(
+        {"model": "m", "adapter": {"type": "openai", "api_key": "sk-live-x"}})
+    assert errs
