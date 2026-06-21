@@ -1,10 +1,22 @@
 const $ = (id) => document.getElementById(id);
+const TOKEN_KEY = "conscio_hub_token";
 const api = async (m, p, body) => {
+  const headers = {};
+  if (body) headers["Content-Type"] = "application/json";
+  const tok = localStorage.getItem(TOKEN_KEY);
+  if (tok) headers["Authorization"] = `Bearer ${tok}`;
   const r = await fetch(p, {
     method: m,
-    headers: body ? {"Content-Type": "application/json"} : {},
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
+  if (r.status === 401) {                       // token set on server but missing/wrong here
+    const t = prompt("Hub token required (CONSCIO_HUB_TOKEN):");
+    if (t) {
+      localStorage.setItem(TOKEN_KEY, t);
+      return api(m, p, body);
+    }
+  }
   return {status: r.status, data: await r.json()};
 };
 

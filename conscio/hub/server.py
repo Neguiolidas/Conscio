@@ -6,6 +6,8 @@ is the thin BaseHTTPRequestHandler adapter. Binds 127.0.0.1 by default; never
 from __future__ import annotations
 
 import argparse
+import hmac
+import ipaddress
 import json
 import os
 from dataclasses import dataclass, field
@@ -49,7 +51,8 @@ def _err(status: int, error: str, detail: Any = None) -> Resp:
 def route(method: str, path: str, query: dict, body: dict | None,
           *, token: str | None, auth: str | None) -> Resp:
     if path.startswith("/api/") and token:
-        if auth != f"Bearer {token}":
+        expected = f"Bearer {token}"
+        if not (auth and hmac.compare_digest(auth, expected)):
             return _err(401, "unauthorized")
 
     if path == "/api/health" and method == "GET":
@@ -137,7 +140,22 @@ def route(method: str, path: str, query: dict, body: dict | None,
     return _err(404, "not found", path)
 
 
+def _check_host(host: str) -> None:
+    """Refuse any non-loopback bind — the Hub is localhost-only by contract.
+    Makes the module docstring's 'never 0.0.0.0' literally true."""
+    if host == "localhost":
+        return
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return
+    except ValueError:
+        pass
+    raise ValueError(
+        f"refusing non-loopback host {host!r}: Conscio Hub binds loopback only")
+
+
 def make_server(host: str, port: int, token: str | None) -> ThreadingHTTPServer:
+    _check_host(host)
     class _H(Handler):
         _token = token
     return ThreadingHTTPServer((host, port), _H)
@@ -203,7 +221,11 @@ def _arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
-    srv = make_server(args.host, args.port, args.token)
+    try:
+        srv = make_server(args.host, args.port, args.token)
+    except ValueError as exc:
+        print(f"conscio-hub: {exc}")
+        return 2
     print(f"conscio-hub on http://{args.host}:{args.port}")
     try:
         srv.serve_forever()
