@@ -97,3 +97,33 @@ def test_validate_rejects_raw_api_key_field():
     errs = config.validate(
         {"model": "m", "adapter": {"type": "openai", "api_key": "sk-live-x"}})
     assert errs
+
+
+def test_validate_rejects_file_scheme_base_url():
+    # file:// would let probe_models urlopen a local path — block at validate
+    errs = config.validate(
+        {"model": "m",
+         "adapter": {"type": "openai", "base_url": "file:///etc/passwd"}})
+    assert errs
+
+
+def test_validate_rejects_base_url_without_host():
+    errs = config.validate(
+        {"model": "m", "adapter": {"type": "openai", "base_url": "http:///models"}})
+    assert errs
+
+
+def test_validate_rejects_base_url_with_credentials():
+    errs = config.validate(
+        {"model": "m",
+         "adapter": {"type": "openai", "base_url": "http://user:pass@h/v1"}})
+    assert errs
+
+
+def test_validate_allows_http_and_https_base_url():
+    assert config.validate(
+        {"model": "m",
+         "adapter": {"type": "openai", "base_url": "http://localhost:1234/v1"}}) == []
+    assert config.validate(
+        {"model": "m",
+         "adapter": {"type": "openai", "base_url": "https://api.x/v1"}}) == []

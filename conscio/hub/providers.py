@@ -8,6 +8,7 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -105,16 +106,20 @@ def probe_models(provider_cfg: dict, *, refresh: bool = False) -> dict:
         hit = _CACHE.get(cache_key)
         if hit and (time.monotonic() - hit[0]) < _CACHE_TTL:
             return dict(hit[1])
+    env = provider_cfg.get("api_key_env")
+    key = (os.environ.get(env, "") if env else "")
+    headers: dict = {}
     try:
         if atype == "ollama":
             url = f"{base}/api/tags"
-        elif atype == "gemini":
-            env = provider_cfg.get("api_key_env")
-            key = (os.environ.get(env, "") if env else "")
-            url = f"{base}/v1beta/models" + (f"?key={key}" if key else "")
+        elif atype == "gemini":                        # key in query (API requires it)
+            url = f"{base}/v1beta/models" + (
+                f"?key={urllib.parse.quote(key, safe='')}" if key else "")
         else:                                          # openai / openai-compat / lmstudio
             url = f"{base}/models"
-        models = _parse(atype, _get_json(url))
+            if key:                                    # authed discovery (Bearer header)
+                headers["Authorization"] = f"Bearer {key}"
+        models = _parse(atype, _get_json(url, headers=headers))
     except (OSError, ValueError, urllib.error.URLError, KeyError, TypeError, AttributeError):
         return _fallback(atype)
     result = {"models": models, "source": "api", "probed": True}

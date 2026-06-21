@@ -192,3 +192,21 @@ def test_get_config_redacts_providers(tmp_path, monkeypatch):
     monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
     r = server.route("GET", "/api/config", {}, None, token=None, auth=None)
     assert "api_key" not in r.payload["providers"]["x"]
+
+
+def test_check_host_allows_loopback():
+    server._check_host("127.0.0.1")
+    server._check_host("::1")
+    server._check_host("localhost")             # no raise = pass
+
+
+def test_check_host_refuses_non_loopback():
+    for bad in ("0.0.0.0", "192.168.1.5", "10.0.0.1"):
+        with pytest.raises(ValueError):
+            server._check_host(bad)
+
+
+def test_token_gate_wrong_token_401():
+    r = server.route("GET", "/api/config", {}, None,
+                     token="secret", auth="Bearer wrong")
+    assert r.status == 401

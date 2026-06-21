@@ -143,3 +143,47 @@ def test_probe_gemini_injects_key(monkeypatch):
         {"type": "gemini", "base_url": "https://g", "api_key_env": "GEM_KEY"},
         refresh=True)
     assert seen["url"].endswith("?key=testkey")
+
+
+def test_probe_openai_compat_sends_auth_header(monkeypatch):
+    providers._CACHE.clear()
+    seen = {}
+
+    def capture(url, **k):
+        seen["headers"] = k.get("headers")
+        return {"data": [{"id": "m"}]}
+    monkeypatch.setattr(providers, "_get_json", capture)
+    monkeypatch.setenv("CUSTOM_KEY", "sk-xyz")
+    providers.probe_models(
+        {"type": "openai-compat", "base_url": "https://h/v1",
+         "api_key_env": "CUSTOM_KEY"}, refresh=True)
+    assert seen["headers"]["Authorization"] == "Bearer sk-xyz"
+
+
+def test_probe_openai_no_key_sends_no_auth_header(monkeypatch):
+    providers._CACHE.clear()
+    seen = {}
+
+    def capture(url, **k):
+        seen["headers"] = k.get("headers") or {}
+        return {"data": []}
+    monkeypatch.setattr(providers, "_get_json", capture)
+    providers.probe_models({"type": "openai", "base_url": "https://h/v1"},
+                           refresh=True)
+    assert "Authorization" not in seen["headers"]
+
+
+def test_probe_gemini_url_encodes_key(monkeypatch):
+    providers._CACHE.clear()
+    seen = {}
+
+    def capture(url, **k):
+        seen["url"] = url
+        return {"models": []}
+    monkeypatch.setattr(providers, "_get_json", capture)
+    monkeypatch.setenv("GEM_KEY2", "a/b+c")
+    providers.probe_models(
+        {"type": "gemini", "base_url": "https://g", "api_key_env": "GEM_KEY2"},
+        refresh=True)
+    assert "a/b+c" not in seen["url"]           # raw special chars never in the URL
+    assert "a%2Fb%2Bc" in seen["url"]           # url-encoded instead

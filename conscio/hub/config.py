@@ -8,6 +8,7 @@ import copy
 import json
 import os
 import re
+import urllib.parse
 from pathlib import Path
 
 from .. import adapter_config
@@ -35,14 +36,30 @@ def _valid_env_name(v) -> bool:
     return isinstance(v, str) and len(v) <= 128 and bool(_ENV_RE.match(v))
 
 
+def _check_base_url(bu: str, where: str) -> list[str]:
+    """Scheme/host allowlist: http(s) only, host required, no embedded creds.
+    Blocks file:// reads and credential-in-URL before probe_models urlopens it."""
+    parsed = urllib.parse.urlparse(bu)
+    if parsed.scheme not in ("http", "https"):
+        return [f"{where}.base_url must use http or https, got {parsed.scheme!r}"]
+    if not parsed.hostname:
+        return [f"{where}.base_url must include a host"]
+    if parsed.username or parsed.password:
+        return [f"{where}.base_url must not embed credentials"]
+    return []
+
+
 def _check_adapter(block: dict, where: str) -> list[str]:
     errs: list[str] = []
     atype = block.get("type")
     if atype not in KNOWN_TYPES:
         errs.append(f"{where}.type must be one of {KNOWN_TYPES}, got {atype!r}")
     bu = block.get("base_url")
-    if bu is not None and not isinstance(bu, str):
-        errs.append(f"{where}.base_url must be a string")
+    if bu is not None:
+        if not isinstance(bu, str):
+            errs.append(f"{where}.base_url must be a string")
+        else:
+            errs += _check_base_url(bu, where)
     env = block.get("api_key_env")
     if env is not None and not _valid_env_name(env):
         errs.append(f"{where}.api_key_env must be an ENV VAR NAME "
