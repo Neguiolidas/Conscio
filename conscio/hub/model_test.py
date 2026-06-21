@@ -32,4 +32,4 @@ def smoke_test(provider_cfg: dict, model: str,
                 "sample_output": "", "error": f"{type(exc).__name__}: {exc}"}
     return {"ok": True, "model": model,
             "latency_ms": int((time.monotonic() - start) * 1000),
-            "sample_output": result.text if hasattr(result, "text") else str(result)}
+            "sample_output": result.text[:200]}
