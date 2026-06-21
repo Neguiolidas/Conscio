@@ -88,3 +88,35 @@ def test_probe_network_error_falls_back(monkeypatch):
     out = providers.probe_models({"type": "openai", "base_url": "https://h/v1"},
                                  refresh=True)
     assert out["source"] == "fallback" and out["probed"] is False
+
+
+# ---------------------------------------------------------------------------
+# Task 9: probe cache behavior (lock characterization — PASS on first run)
+# ---------------------------------------------------------------------------
+
+def test_probe_cache_hit_avoids_second_call(monkeypatch):
+    providers._CACHE.clear()
+    calls = {"n": 0}
+
+    def once(url, **k):
+        calls["n"] += 1
+        return {"data": [{"id": "m"}]}
+    monkeypatch.setattr(providers, "_get_json", once)
+    pc = {"type": "openai", "base_url": "https://h/v1"}
+    providers.probe_models(pc)                 # miss -> call
+    providers.probe_models(pc)                 # hit  -> no call
+    assert calls["n"] == 1
+
+
+def test_probe_refresh_bypasses_cache(monkeypatch):
+    providers._CACHE.clear()
+    calls = {"n": 0}
+
+    def each(url, **k):
+        calls["n"] += 1
+        return {"data": [{"id": "m"}]}
+    monkeypatch.setattr(providers, "_get_json", each)
+    pc = {"type": "openai", "base_url": "https://h/v1"}
+    providers.probe_models(pc)
+    providers.probe_models(pc, refresh=True)
+    assert calls["n"] == 2
