@@ -24,3 +24,20 @@ def test_smoke_no_adapter(monkeypatch):
     monkeypatch.setattr(model_test, "_build", lambda pc, model: None)
     out = model_test.smoke_test({"type": "bogus"}, "m")
     assert out["ok"] is False
+
+
+def test_smoke_unexpected_error(monkeypatch):
+    class Boom:
+        def generate(self, *a, **k):
+            raise RuntimeError("oops")
+    monkeypatch.setattr(model_test, "_build", lambda pc, model: Boom())
+    out = model_test.smoke_test({"type": "openai"}, "m")
+    assert out["ok"] is False and "RuntimeError" in out["error"]
+
+
+def test_smoke_output_truncated(monkeypatch):
+    from conscio.agency import MockAdapter
+    monkeypatch.setattr(model_test, "_build",
+                        lambda pc, model: MockAdapter(script=["x" * 300]))
+    out = model_test.smoke_test({"type": "openai"}, "m")
+    assert len(out["sample_output"]) == 200
