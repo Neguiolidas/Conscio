@@ -4,6 +4,7 @@ Reuses conscio.adapter_config for the canonical config paths + loader. Writes
 are atomic (guards.atomic_write_text). Secrets are NEVER returned raw."""
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -86,7 +87,7 @@ def _redact_block(block: dict) -> dict:
 def redact(cfg: dict) -> dict:
     """Deep copy safe to return over the API: raw api_key dropped everywhere,
     api_key_env annotated with api_key_present."""
-    out = dict(cfg)
+    out = copy.deepcopy(cfg)
     if isinstance(cfg.get("adapter"), dict):
         out["adapter"] = _redact_block(cfg["adapter"])
     if isinstance(cfg.get("providers"), dict):
@@ -102,5 +103,7 @@ def save(cfg: dict) -> None:
         raise ValueError("; ".join(errs))
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    # config stores api_key_env (env var NAMES), never raw secrets, so the brief
+    # window between os.replace and chmod exposes no credentials.
     atomic_write_text(path, json.dumps(cfg, indent=2))
     os.chmod(path, 0o600)

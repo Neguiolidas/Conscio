@@ -84,3 +84,10 @@ def test_save_mode_0600(tmp_path, monkeypatch):
     monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
     config.save({"model": "m", "adapter": {"type": "openai"}})
     assert (p.stat().st_mode & 0o777) == 0o600
+
+
+def test_validate_and_redact_handle_null_providers():
+    cfg = {"model": "m", "adapter": {"type": "openai"}, "providers": None}
+    assert config.validate(cfg) == []          # null providers = no providers
+    out = config.redact(cfg)
+    assert out["providers"] is None            # passes through untouched, no crash
