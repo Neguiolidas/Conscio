@@ -1,1 +1,37 @@
-<!doctype html><title>Conscio Hub</title><h1>Conscio Hub</h1>
+<!doctype html>
+<meta charset="utf-8">
+<title>Conscio Hub</title>
+<link rel="stylesheet" href="/static/style.css">
+<main>
+  <h1>Conscio Hub <small id="status"></small></h1>
+
+  <section>
+    <h2>Active brain</h2>
+    <label>Provider
+      <select id="provider"></select>
+    </label>
+    <label>Model
+      <input id="model" list="models" autocomplete="off">
+      <datalist id="models"></datalist>
+    </label>
+    <button id="test">Test</button>
+    <span id="testResult"></span>
+    <button id="save">Save</button>
+    <span class="hint">↻ takes effect next session</span>
+  </section>
+
+  <section>
+    <h2>Providers</h2>
+    <ul id="providers"></ul>
+    <details>
+      <summary>+ Add provider</summary>
+      <input id="pName" placeholder="name (e.g. logfare)">
+      <input id="pType" placeholder="type (openai-compat)">
+      <input id="pUrl" placeholder="base_url">
+      <input id="pEnv" placeholder="api_key_env (e.g. LOGFARE_API_KEY)">
+      <button id="addProvider">Add</button>
+      <span id="addResult"></span>
+    </details>
+  </section>
+</main>
+<script src="/static/app.js"></script>
