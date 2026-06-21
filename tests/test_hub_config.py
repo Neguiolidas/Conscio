@@ -41,3 +41,22 @@ def test_validate_checks_provider_env_names():
         {"model": "m", "adapter": {"type": "openai"},
          "providers": {"x": {"type": "openai", "api_key_env": "bad-name"}}})
     assert errs
+
+
+def test_redact_drops_raw_key(monkeypatch):
+    out = config.redact({"adapter": {"type": "openai", "api_key": "raw-secret"}})
+    assert "api_key" not in out["adapter"]
+
+
+def test_redact_masks_env_with_presence(monkeypatch):
+    monkeypatch.setenv("PRESENT_KEY", "v")
+    out = config.redact({"adapter": {"type": "openai", "api_key_env": "PRESENT_KEY"}})
+    assert out["adapter"]["api_key_env"] == "PRESENT_KEY"
+    assert out["adapter"]["api_key_present"] is True
+
+
+def test_redact_recurses_providers():
+    out = config.redact(
+        {"adapter": {"type": "openai"},
+         "providers": {"x": {"type": "openai", "api_key": "leak"}}})
+    assert "api_key" not in out["providers"]["x"]
