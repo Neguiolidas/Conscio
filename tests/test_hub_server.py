@@ -1,6 +1,10 @@
 # tests/test_hub_server.py
+import json as _json
+
 import pytest
-from conscio.hub import server
+
+import conscio.adapter_config as ac
+from conscio.hub import model_test, providers, server
 
 
 def test_parse_json_body_ok():
@@ -21,11 +25,6 @@ def test_route_health():
     r = server.route("GET", "/api/health", {}, None, token=None, auth=None)
     assert r.status == 200 and r.payload["ok"] is True
     assert "version" in r.payload
-
-
-import conscio.adapter_config as ac
-import json as _json
-from conscio.hub import providers, model_test
 
 
 def test_get_config_redacts(tmp_path, monkeypatch):
@@ -149,3 +148,28 @@ def test_post_model_test(tmp_path, monkeypatch):
     body = {"provider": "ollama", "model": "llama3.1"}
     r = server.route("POST", "/api/model/test", {}, body, token=None, auth=None)
     assert r.status == 200 and r.payload["ok"] is True
+
+
+def test_token_gate_blocks_without_auth():
+    r = server.route("GET", "/api/config", {}, None, token="secret", auth=None)
+    assert r.status == 401
+
+
+def test_token_gate_allows_with_auth(tmp_path, monkeypatch):
+    p = tmp_path / "config.json"
+    p.write_text("{}")
+    monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
+    r = server.route("GET", "/api/config", {}, None,
+                     token="secret", auth="Bearer secret")
+    assert r.status == 200
+
+
+def test_static_index_served():
+    r = server.route("GET", "/", {}, None, token=None, auth=None)
+    assert r.status == 200 and r.content_type == "text/html"
+
+
+def test_static_traversal_blocked():
+    r = server.route("GET", "/static/../config.py", {}, None,
+                     token=None, auth=None)
+    assert r.status == 404
