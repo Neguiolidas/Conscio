@@ -26,3 +26,23 @@ def test_catalog_shape_and_redaction():
 def test_plugins_is_list(monkeypatch):
     monkeypatch.setattr("conscio.plugins.discover_adapters", lambda: {"my": object})
     assert providers.plugins() == ["my"]
+
+
+# ---------------------------------------------------------------------------
+# Task 7: resolve_provider()
+# ---------------------------------------------------------------------------
+
+def test_resolve_custom_name():
+    cfg = {"providers": {"logfare": {"type": "openai-compat",
+                                     "base_url": "https://x/v1"}}}
+    assert providers.resolve_provider(cfg, "logfare")["base_url"] == "https://x/v1"
+
+
+def test_resolve_builtin_type_uses_default_base_url():
+    pc = providers.resolve_provider({}, "ollama")
+    assert pc == {"type": "ollama", "base_url": "http://localhost:11434"}
+
+
+def test_resolve_unknown_raises():
+    with pytest.raises(KeyError):
+        providers.resolve_provider({}, "nope")
