@@ -46,3 +46,45 @@ def test_resolve_builtin_type_uses_default_base_url():
 def test_resolve_unknown_raises():
     with pytest.raises(KeyError):
         providers.resolve_provider({}, "nope")
+
+
+# ---------------------------------------------------------------------------
+# Task 8: _get_json() + probe_models() per-type dispatch + fallback
+# ---------------------------------------------------------------------------
+
+def test_probe_openai_compat(monkeypatch):
+    monkeypatch.setattr(providers, "_get_json",
+                        lambda url, **k: {"data": [{"id": "glm-5.1"}, {"id": "x"}]})
+    out = providers.probe_models({"type": "openai-compat", "base_url": "https://h/v1"},
+                                 refresh=True)
+    assert out["models"] == ["glm-5.1", "x"] and out["source"] == "api"
+
+
+def test_probe_ollama_tags(monkeypatch):
+    monkeypatch.setattr(providers, "_get_json",
+                        lambda url, **k: {"models": [{"name": "llama3.1"}]})
+    out = providers.probe_models({"type": "ollama", "base_url": "http://h:11434"},
+                                 refresh=True)
+    assert out["models"] == ["llama3.1"]
+
+
+def test_probe_gemini_strips_prefix(monkeypatch):
+    monkeypatch.setattr(providers, "_get_json",
+                        lambda url, **k: {"models": [{"name": "models/gemini-2.5-pro"}]})
+    out = providers.probe_models({"type": "gemini", "base_url": "https://g"},
+                                 refresh=True)
+    assert out["models"] == ["gemini-2.5-pro"]
+
+
+def test_probe_anthropic_is_fallback():
+    out = providers.probe_models({"type": "anthropic"}, refresh=True)
+    assert out["source"] == "fallback" and "claude-opus-4-8" in out["models"]
+
+
+def test_probe_network_error_falls_back(monkeypatch):
+    def boom(url, **k):
+        raise OSError("down")
+    monkeypatch.setattr(providers, "_get_json", boom)
+    out = providers.probe_models({"type": "openai", "base_url": "https://h/v1"},
+                                 refresh=True)
+    assert out["source"] == "fallback" and out["probed"] is False
