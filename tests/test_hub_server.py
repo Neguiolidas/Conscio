@@ -25,6 +25,7 @@ def test_route_health():
 
 import conscio.adapter_config as ac
 import json as _json
+from conscio.hub import providers, model_test
 
 
 def test_get_config_redacts(tmp_path, monkeypatch):
@@ -107,3 +108,44 @@ def test_post_provider_rejects_raw_key(tmp_path, monkeypatch):
     body = {"name": "x", "type": "openai", "api_key_env": "sk-raw-key"}
     r = server.route("POST", "/api/providers", {}, body, token=None, auth=None)
     assert r.status == 400
+
+
+def test_get_models_resolves_and_probes(tmp_path, monkeypatch):
+    p = tmp_path / "config.json"
+    p.write_text("{}")
+    monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
+    monkeypatch.setattr(providers, "probe_models",
+                        lambda pc, **k: {"models": ["m1"], "source": "api",
+                                         "probed": True})
+    r = server.route("GET", "/api/models", {"provider": "ollama"}, None,
+                     token=None, auth=None)
+    assert r.status == 200 and r.payload["models"] == ["m1"]
+
+
+def test_get_models_unknown_provider_404(tmp_path, monkeypatch):
+    p = tmp_path / "config.json"
+    p.write_text("{}")
+    monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
+    r = server.route("GET", "/api/models", {"provider": "nope"}, None,
+                     token=None, auth=None)
+    assert r.status == 404
+
+
+def test_get_models_missing_param_400(tmp_path, monkeypatch):
+    p = tmp_path / "config.json"
+    p.write_text("{}")
+    monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
+    r = server.route("GET", "/api/models", {}, None, token=None, auth=None)
+    assert r.status == 400
+
+
+def test_post_model_test(tmp_path, monkeypatch):
+    p = tmp_path / "config.json"
+    p.write_text("{}")
+    monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
+    monkeypatch.setattr(model_test, "smoke_test",
+                        lambda pc, model, **k: {"ok": True, "latency_ms": 5,
+                                                "sample_output": "OK", "model": model})
+    body = {"provider": "ollama", "model": "llama3.1"}
+    r = server.route("POST", "/api/model/test", {}, body, token=None, auth=None)
+    assert r.status == 200 and r.payload["ok"] is True
