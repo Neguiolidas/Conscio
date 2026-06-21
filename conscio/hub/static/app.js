@@ -27,6 +27,8 @@ function renderProviders(cat) {
   Object.entries(cat.custom || {}).forEach(([n, p]) =>
     li.push(`<li>● ${p.type} <b>${n}</b> ${p.base_url || ""} `
       + `key:${p.api_key_present ? "set" : "unset"}</li>`));
+  (cat.plugins || []).forEach((n) =>
+    li.push(`<li>● <b>${n}</b> <em>(plugin — listed, not selectable in v2.1)</em></li>`));
   $("providers").innerHTML = li.join("");
 }
 
