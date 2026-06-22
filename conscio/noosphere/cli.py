@@ -69,45 +69,45 @@ def _cmd_import(args) -> int:
 
 def _cmd_list(args) -> int:
     if args.catalog:
-        for r in catalog.read_all(resolve_noosphere(args.noosphere)):
-            print(f"{r.origin_label}  {r.content_sha256[:12]}  {r.goal_text}")
+        for cr in catalog.read_all(resolve_noosphere(args.noosphere)):
+            print(f"{cr.origin_label}  {cr.content_sha256[:12]}  {cr.goal_text}")
     else:
         qdb = quarantine_db_path(resolve_storage(args.storage))
-        for r in quarantine.list_rows(qdb):
-            print(f"#{r.id}  {r.origin_label}  [{r.import_status}/"
-                  f"{r.revalidation_result}]  {r.goal_text}")
+        for qr in quarantine.list_rows(qdb):
+            print(f"#{qr.id}  {qr.origin_label}  [{qr.import_status}/"
+                  f"{qr.revalidation_result}]  {qr.goal_text}")
     return 0
 
 
 def _cmd_show(args) -> int:
     if args.quarantine is not None:
         qdb = quarantine_db_path(resolve_storage(args.storage))
-        row = quarantine.get(qdb, int(args.quarantine))
-        if row is None:
+        qrow = quarantine.get(qdb, int(args.quarantine))
+        if qrow is None:
             print("not found")
             return 1
-        showable = row.revalidation_result in ("ok", "fp_mismatch", "malformed")
+        showable = qrow.revalidation_result in ("ok", "fp_mismatch", "malformed")
         print(json.dumps({
-            "id": row.id, "origin_instance_id": row.origin_instance_id,
-            "origin_label": row.origin_label, "imported_ts": row.imported_ts,
-            "import_status": row.import_status,
-            "revalidation_result": row.revalidation_result,
-            "revalidation_error": row.revalidation_error,
-            "goal_text": row.goal_text,
-            "artifact": json.loads(row.artifact_json.decode("utf-8"))
+            "id": qrow.id, "origin_instance_id": qrow.origin_instance_id,
+            "origin_label": qrow.origin_label, "imported_ts": qrow.imported_ts,
+            "import_status": qrow.import_status,
+            "revalidation_result": qrow.revalidation_result,
+            "revalidation_error": qrow.revalidation_error,
+            "goal_text": qrow.goal_text,
+            "artifact": json.loads(qrow.artifact_json.decode("utf-8"))
             if showable else "<unparseable>"}, indent=2))
         return 0
     if args.catalog is not None:
         origin, sha = args.catalog
-        row = catalog.get(resolve_noosphere(args.noosphere), origin, sha)
-        if row is None:
+        crow = catalog.get(resolve_noosphere(args.noosphere), origin, sha)
+        if crow is None:
             print("not found")
             return 1
         print(json.dumps({
-            "origin_instance_id": row.origin_instance_id,
-            "origin_label": row.origin_label, "published_ts": row.published_ts,
-            "content_sha256": row.content_sha256, "goal_text": row.goal_text,
-            "artifact": json.loads(row.artifact_json.decode("utf-8"))}, indent=2))
+            "origin_instance_id": crow.origin_instance_id,
+            "origin_label": crow.origin_label, "published_ts": crow.published_ts,
+            "content_sha256": crow.content_sha256, "goal_text": crow.goal_text,
+            "artifact": json.loads(crow.artifact_json.decode("utf-8"))}, indent=2))
         return 0
     print("show requires --quarantine ROWID or --catalog ORIGIN_ID SHA256")
     return 2
