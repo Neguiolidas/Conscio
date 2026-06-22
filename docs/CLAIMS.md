@@ -4,7 +4,7 @@ A framework about self-knowledge should know what it can and cannot prove
 about itself. Every load-bearing claim Conscio makes, mapped to evidence.
 
 **Status:** PROVEN (test) · MEASURED (real backend) · PARTIAL · UNPROVEN.
-Updated each phase. Current as of **v2.2.0** (2026-06-22).
+Updated each phase. Current as of **v2.2.1** (2026-06-22).
 
 | # | Claim | Evidence | Status |
 |---|-------|----------|--------|
@@ -57,6 +57,7 @@ Updated each phase. Current as of **v2.2.0** (2026-06-22).
 | 47 | The **noosphere is engine-free** — its source imports only the `goal_fingerprint` leaf from `conscio.agency`, never `engine`/`SkillLibrary`/`ToolRegistry` | `tests/test_noosphere_engine_free.py` (static AST scan of every `conscio/noosphere/*.py`) | PROVEN |
 | 48 | **Publishing never mutates the live DB** — `conscio.db` is opened read-only (`mode=ro`); an `INSERT` on that connection raises `OperationalError` | `tests/test_noosphere_publish.py::test_conscio_db_opened_read_only` | PROVEN |
 | 49 | **Imported skills are quarantined, never served/executed/promoted; trust is never inherited** — static revalidation rejects tampered (hash mismatch), corrupt, malformed, `fp_mismatch`, unknown-schema artifacts (recorded for audit) | `tests/test_noosphere_importer.py`, `tests/test_noosphere_integration.py::test_tampered_catalog_row_imports_as_rejected` | PROVEN |
+| 50 | **An instance audits a peer's published behavioral record with its own deterministic kernels and thresholds, read-only, inheriting no trust** — the bundle carries only `{seq,ts,goal_fp,tool,tier,status,ok,verdict}`; the auditor revalidates (tampered/corrupt/malformed) before trusting contents, re-derives accuracy/quarantines/foreign-trust + a discipline check, and persists nothing | `conscio/noosphere/audit.py`; `tests/test_noosphere_audit.py`, `tests/test_noosphere_audit_integration.py` (two-instance good-vs-bad, tamper-reject, skip-self), `tests/test_noosphere_parity.py` (kernels match engine constants) | PROVEN |
 
 ## Honest limits (what is NOT proven)
 

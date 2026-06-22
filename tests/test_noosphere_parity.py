@@ -11,3 +11,12 @@ def test_fingerprint_parity():
     from conscio.agency.act import goal_fingerprint as via_act
     from conscio.agency.fingerprint import goal_fingerprint as leaf
     assert via_act("deploy") == leaf("deploy")
+
+
+def test_audit_constants_match_engine_kernels():
+    from conscio.agency import breaker, trust
+    from conscio.noosphere import audit
+    assert audit.BREAKER_THRESHOLD == breaker.DEFAULT_MAX_RETRIES
+    assert audit.L2_ACCURACY == trust.L2_ACCURACY
+    assert audit.L3_ACCURACY == trust.L3_ACCURACY
+    assert audit.AUTONOMY_MIN_ROWS == trust.AUTONOMY_MIN_ROWS
