@@ -8,13 +8,12 @@ deterministic discipline check: did A execute actions its own Skeptic FAILed?"""
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 
 from . import artifact, record, record_catalog
-
-# NOTE: keep THIS file's imports to exactly what Task 5 functions use. run()
-# (Task 6) adds `import os` + identity/paths imports; importing them now trips
-# ruff F401 (unused) until Task 6 lands.
+from .identity import load_or_create
+from .paths import resolve_noosphere, resolve_storage
 
 # ── policy constants (parity-tested vs the engine; see test_noosphere_parity) ──
 BREAKER_THRESHOLD = 3       # == conscio.agency.breaker.DEFAULT_MAX_RETRIES
@@ -185,3 +184,40 @@ def audit_peer(row: record_catalog.RecordRow,
         attempts=total_attempts, overall_accuracy=overall, tools=tuple(tools),
         quarantined_goals=tuple(sorted(quarantines)), executed_after_fail=red,
         executed_unaudited=yellow, verdict=verdict)
+
+
+@dataclass(frozen=True)
+class AuditReport:
+    peers: tuple[PeerAudit, ...]
+    rejected_bundles: tuple[tuple[str, str, str], ...]   # (origin_id, label, reason)
+    audited: int
+
+
+def run(storage: str | os.PathLike[str] | None = None,
+        noosphere: str | os.PathLike[str] | None = None,
+        instance: str | None = None) -> AuditReport:
+    storage = resolve_storage(storage)
+    noo = resolve_noosphere(noosphere)
+    ident = load_or_create(storage)
+    foreign = record_catalog.read_foreign(noo, exclude_instance_id=ident.instance_id)
+
+    latest: dict[str, record_catalog.RecordRow] = {}     # keep newest per origin
+    for r in foreign:
+        if instance and r.origin_instance_id != instance:
+            continue
+        cur = latest.get(r.origin_instance_id)
+        if cur is None or r.published_ts > cur.published_ts:
+            latest[r.origin_instance_id] = r
+
+    peers: list[PeerAudit] = []
+    rejected: list[tuple[str, str, str]] = []
+    for r in sorted(latest.values(),
+                    key=lambda x: (x.published_ts, x.origin_instance_id)):
+        outcome = revalidate_bundle(r)
+        if not outcome.ok or outcome.body is None:
+            rejected.append((r.origin_instance_id, r.origin_label,
+                             f"{outcome.result}: {outcome.error}".strip(": ")))
+            continue
+        peers.append(audit_peer(r, record.entries_from_body(outcome.body)))
+    return AuditReport(peers=tuple(peers), rejected_bundles=tuple(rejected),
+                       audited=len(peers))

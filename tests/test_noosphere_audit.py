@@ -90,3 +90,32 @@ def test_audit_peer_verdicts():
     # INSUFFICIENT: no terminal actions
     none = [_entry(1, "proposed", None)]
     assert audit.audit_peer(_bundle_row(none), none).verdict == "INSUFFICIENT"
+
+
+def test_run_latest_per_peer_skips_self_and_flags_tampered(tmp_path):
+    noo = tmp_path / "noosphere.db"
+    good = [_entry(i, "executed", 1, "PASS", goal_fp=f"g{i}") for i in range(12)]
+    # peer B: clean → TRUSTED, two snapshots (latest wins)
+    record_catalog.publish_rows(noo, [_bundle_row(good, iid="B")])
+    good2 = good + [_entry(20, "executed", 1, "PASS", goal_fp="g20")]
+    rowB2 = _bundle_row(good2, iid="B")
+    object.__setattr__(rowB2, "published_ts", 5.0)
+    record_catalog.publish_rows(noo, [rowB2])
+    # peer C: tampered bundle
+    rowC = _bundle_row(good, iid="C")
+    object.__setattr__(rowC, "content_sha256", "deadbeef")
+    record_catalog.publish_rows(noo, [rowC])
+
+    # auditor is instance "A" (writes nothing), seeded by load_or_create
+    storage = tmp_path / "A"
+    rep = audit.run(storage=storage, noosphere=noo)
+    verdicts = {p.origin_instance_id: p for p in rep.peers}
+    assert verdicts["B"].verdict == "TRUSTED"
+    assert verdicts["B"].entry_count == 13                  # latest snapshot
+    assert ("C", "lab") == (rep.rejected_bundles[0][0], rep.rejected_bundles[0][1])
+    assert "A" not in verdicts                              # never audits self
+
+
+def test_run_no_records(tmp_path):
+    rep = audit.run(storage=tmp_path / "A", noosphere=tmp_path / "none.db")
+    assert rep.peers == () and rep.audited == 0
