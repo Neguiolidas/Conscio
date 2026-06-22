@@ -65,7 +65,7 @@ def _as_bytes(value: object) -> bytes:
         return value.tobytes()
     if isinstance(value, str):
         return value.encode("utf-8")
-    return bytes(value)  # last resort; numbers etc. are not expected here
+    raise TypeError(f"unexpected artifact_json cell type: {type(value).__name__}")
 
 
 def _row(r: sqlite3.Row) -> CatalogRow:
