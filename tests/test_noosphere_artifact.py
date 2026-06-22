@@ -30,6 +30,7 @@ def test_hash_is_deterministic_and_canonical():
 
 def test_hash_changes_when_content_changes():
     h1 = artifact.content_hash(artifact.canonical_bytes(_body()))
-    other = _body(); other["goal_text"] = "destroy"
+    other = _body()
+    other["goal_text"] = "destroy"
     h2 = artifact.content_hash(artifact.canonical_bytes(other))
     assert h1 != h2
