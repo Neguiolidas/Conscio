@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.1] - 2026-06-22 — "Mutual audit"
+
+### Added
+- **Noosphere mutual audit.** An instance can publish a non-sensitive
+  projection of its action ledger (`conscio noosphere publish-record`) to the
+  host-shared `noosphere.db`, and a peer can independently audit it
+  (`conscio noosphere audit`) — deterministic, read-only, engine-free. The
+  auditor re-derives track-record, breaker quarantines, and a foreign-trust
+  level under its OWN thresholds (parity-tested against the engine), and runs
+  a discipline check (did the peer execute actions its own Skeptic FAILed?).
+  No inherited trust; report-only; the auditor persists nothing. The LLM
+  Skeptic replay is deferred to a later slice.
+
+---
+
 ## [2.2.0] - 2026-06-22 — "Society" (Noosphere Core)
 
 ### Added
