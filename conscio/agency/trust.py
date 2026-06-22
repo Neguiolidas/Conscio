@@ -18,6 +18,9 @@ PROBATION_EPOCH = 25      # reflect() cycles between probation probes
 WARMUP_MIN_ROWS = 10      # below this many ledger rows the floor of 1 applies
 RETRY_CEILING = 4
 AUTONOMY_WINDOW = 50      # recent actions; zero trips inside it for L3
+L2_ACCURACY = 0.7         # autonomy_level L2 gate (mirrored by noosphere audit)
+L3_ACCURACY = 0.85        # autonomy_level L3 gate (mirrored by noosphere audit)
+AUTONOMY_MIN_ROWS = 10    # min per-task ledger rows for L2+ (≠ WARMUP_MIN_ROWS)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS trust_probation (
@@ -86,10 +89,10 @@ class TrustMatrix:
     def autonomy_level(self, task_type: str) -> int:
         calibration = self.meta.calibration_score()
         accuracy = self.meta.accuracy(task_type)
-        if not (calibration >= 0.6 and accuracy >= 0.7
-                and self.ledger.count(task_type) >= 10):
+        if not (calibration >= 0.6 and accuracy >= L2_ACCURACY
+                and self.ledger.count(task_type) >= AUTONOMY_MIN_ROWS):
             return 1
-        if (calibration >= 0.75 and accuracy >= 0.85
+        if (calibration >= 0.75 and accuracy >= L3_ACCURACY
                 and self._recent_trips() == 0):
             return 3
         return 2
