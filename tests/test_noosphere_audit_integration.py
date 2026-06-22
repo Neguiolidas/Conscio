@@ -1,7 +1,7 @@
 import sqlite3
 
 from conscio.agency.ledger import ActionLedger
-from conscio.noosphere import audit, record_catalog, record_publish
+from conscio.noosphere import audit, record_publish
 from conscio.noosphere.paths import conscio_db_path
 
 
