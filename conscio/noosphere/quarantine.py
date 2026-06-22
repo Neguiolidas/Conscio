@@ -64,6 +64,17 @@ def _connect(db: Path) -> sqlite3.Connection:
     return conn
 
 
+def _as_bytes(value: object) -> bytes:
+    """Coerce a stored BLOB cell to bytes (TEXT-coerced rows survive as bytes)."""
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+    if isinstance(value, memoryview):
+        return value.tobytes()
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    return bytes(value)
+
+
 def _row(r: sqlite3.Row) -> QuarantineRow:
     return QuarantineRow(
         id=r["id"], content_sha256=r["content_sha256"],
@@ -71,7 +82,7 @@ def _row(r: sqlite3.Row) -> QuarantineRow:
         published_ts=r["published_ts"], importer_instance_id=r["importer_instance_id"],
         imported_ts=r["imported_ts"], goal_fp=r["goal_fp"], goal_text=r["goal_text"],
         tool_seq=r["tool_seq"], plan_template=r["plan_template"],
-        artifact_json=bytes(r["artifact_json"]), import_status=r["import_status"],
+        artifact_json=_as_bytes(r["artifact_json"]), import_status=r["import_status"],
         revalidation_result=r["revalidation_result"],
         revalidation_error=r["revalidation_error"], schema_version=r["schema_version"])
 
