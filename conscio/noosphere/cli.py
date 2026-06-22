@@ -8,7 +8,8 @@ from __future__ import annotations
 import argparse
 import json
 
-from . import catalog, identity, importer, publish, quarantine
+from . import (audit, catalog, identity, importer, publish, quarantine,
+               record_publish)
 from .paths import quarantine_db_path, resolve_noosphere, resolve_storage
 
 
@@ -32,6 +33,18 @@ def _build_parser() -> argparse.ArgumentParser:
         sp = sub.add_parser(name, help=helptext)
         _storage_arg(sp)
         _noosphere_arg(sp)
+
+    pr = sub.add_parser("publish-record",
+                        help="publish this instance's behavioral record")
+    _storage_arg(pr)
+    _noosphere_arg(pr)
+
+    pa = sub.add_parser("audit",
+                        help="audit peers' behavioral records (read-only)")
+    _storage_arg(pa)
+    _noosphere_arg(pa)
+    pa.add_argument("--instance", default="",
+                    help="audit only this origin_instance_id")
 
     pl = sub.add_parser("list", help="list quarantined imports (or --catalog)")
     _storage_arg(pl)
@@ -122,6 +135,32 @@ def _cmd_id(args) -> int:
     return 0
 
 
+def _cmd_publish_record(args) -> int:
+    res = record_publish.run(storage=args.storage, noosphere=args.noosphere)
+    print(f"published {res.published} (skipped {res.skipped} already present, "
+          f"{res.entries} entries)")
+    return 0
+
+
+def _cmd_audit(args) -> int:
+    rep = audit.run(storage=args.storage, noosphere=args.noosphere,
+                    instance=(args.instance or None))
+    if not rep.peers and not rep.rejected_bundles:
+        print("no peer records found")
+        return 0
+    for p in rep.peers:
+        max_level = max((t.trust_level for t in p.tools), default=1)
+        print(f"{p.origin_label} [{p.origin_instance_id[:8]}]  {p.verdict}  "
+              f"acc {round(100 * p.overall_accuracy)}% over {p.attempts}  "
+              f"L{max_level}  quarantines {len(p.quarantined_goals)}  "
+              f"RED {p.executed_after_fail} / YELLOW {p.executed_unaudited}")
+    if rep.rejected_bundles:
+        print("rejected bundles:")
+        for origin, label, reason in rep.rejected_bundles:
+            print(f"  {label} [{origin[:8]}]  {reason}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     parser = _build_parser()
     try:                                  # argparse calls sys.exit on bad args
@@ -129,7 +168,8 @@ def main(argv: list[str]) -> int:
     except SystemExit as exc:
         return int(exc.code) if exc.code is not None else 0
     dispatch = {"publish": _cmd_publish, "import": _cmd_import,
-                "list": _cmd_list, "show": _cmd_show, "id": _cmd_id}
+                "list": _cmd_list, "show": _cmd_show, "id": _cmd_id,
+                "publish-record": _cmd_publish_record, "audit": _cmd_audit}
     handler = dispatch.get(args.cmd)
     if handler is None:
         parser.print_help()

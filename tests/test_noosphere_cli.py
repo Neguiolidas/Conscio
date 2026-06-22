@@ -78,3 +78,36 @@ def test_conscio_cli_routes_noosphere(monkeypatch):
                         lambda argv: called.update(argv=argv) or 0)
     assert top.main(["noosphere", "id", "--storage", "/tmp/x"]) == 0
     assert called["argv"] == ["id", "--storage", "/tmp/x"]
+
+
+def test_audit_empty_prints_no_records(capsys, tmp_path):
+    rc = cli.main(["audit", "--storage", str(tmp_path / "A"),
+                   "--noosphere", str(tmp_path / "none.db")])
+    assert rc == 0
+    assert "no peer records found" in capsys.readouterr().out
+
+
+def test_publish_record_then_audit_roundtrip(capsys, tmp_path):
+    from conscio.noosphere.paths import conscio_db_path
+    storage = tmp_path / "A"
+    noo = tmp_path / "noosphere.db"
+    db = conscio_db_path(storage)
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db))
+    conn.executescript("CREATE TABLE actions (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                       " ts REAL, goal_fp TEXT, tool TEXT, tier TEXT, status TEXT,"
+                       " ok INTEGER, verdict TEXT);")
+    for i in range(12):
+        conn.execute("INSERT INTO actions (ts, goal_fp, tool, tier, status, ok,"
+                     " verdict) VALUES (?,?,?,?,?,?,?)",
+                     (float(i), f"g{i}", "write", "low", "executed", 1, "PASS"))
+    conn.commit()
+    conn.close()
+
+    rc1 = cli.main(["publish-record", "--storage", str(storage),
+                    "--noosphere", str(noo)])
+    assert rc1 == 0 and "published 1" in capsys.readouterr().out
+    # audit from a DIFFERENT instance
+    rc2 = cli.main(["audit", "--storage", str(tmp_path / "B"),
+                    "--noosphere", str(noo)])
+    assert rc2 == 0 and "TRUSTED" in capsys.readouterr().out
