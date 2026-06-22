@@ -55,3 +55,6 @@ mempalace/
 # Graphify output — generated MIT input (graph.json etc.), not source; the
 # v1.7 distiller reads it as data. Regenerate with `graphify .`.
 graphify-out/
+
+# internal design docs (specs/plans) — never committed
+docs/superpowers/
