@@ -213,3 +213,14 @@ def test_fast_path_requires_high_calibration(tmp_path):
     assert trust.fast_path_ok() == (meta.calibration_score() >= 0.75)
     trust.close()
     led.close()
+
+
+def test_autonomy_constants_extracted_and_distinct():
+    from conscio.agency import trust
+    assert trust.L2_ACCURACY == 0.7
+    assert trust.L3_ACCURACY == 0.85
+    assert trust.AUTONOMY_MIN_ROWS == 10
+    # WARMUP_MIN_ROWS is a different concept (max_action_retries floor),
+    # equal to 10 only by coincidence — must remain its own constant.
+    assert trust.WARMUP_MIN_ROWS == 10
+    assert "AUTONOMY_MIN_ROWS" in dir(trust)
