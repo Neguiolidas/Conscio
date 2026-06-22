@@ -13,7 +13,8 @@ def _seed_skills(db_path, rows):
     conn.executemany(
         "INSERT INTO skills (goal_fp, goal_text, tool_seq, plan_template,"
         " successes, failures) VALUES (?,?,?,?,?,?)", rows)
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 
 def _fp(text):
