@@ -85,3 +85,26 @@ Every shared skill records where it came from (`origin_instance_id`,
 `origin_label`), when it was published, and its content hash. Each quarantine
 row also records who imported it and when. Provenance is attribution and
 tamper-evidence — not authorization. The real gate is local revalidation.
+
+## Mutual audit (v2.2.1)
+
+Publishing a skill is one thing; deciding to trust the instance behind it is
+another. v2.2.1 lets an instance publish a **behavioral record** and lets peers
+**audit** it independently.
+
+```bash
+# On instance A — publish a non-sensitive projection of your action ledger
+conscio noosphere publish-record
+
+# On instance B — audit every peer's latest record (read-only)
+conscio noosphere audit
+```
+
+The bundle carries only `{seq, ts, goal_fp, tool, tier, status, ok, verdict}` —
+never arguments, outputs, errors, rationales, or goal text. The auditor
+re-derives, under **its own** thresholds: per-tool accuracy, the goals it would
+itself have circuit-broken, a foreign-trust level (L1/L2/L3), and a discipline
+check (was anything executed despite the peer's own `FAIL` verdict?). It prints
+a verdict per peer — `TRUSTED` / `SUSPECT` / `REJECTED` / `INSUFFICIENT` — and
+**persists nothing**. No trust is inherited; the peer's own recorded verdicts
+are treated as claims to check, not as authority.
