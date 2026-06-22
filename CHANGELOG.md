@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.0] - 2026-06-22 — "Society" (Noosphere Core)
+
+### Added
+- `conscio noosphere`: share locally-proven skills across same-host instances as
+  data. `publish` copies proven skills (success rate ≥ 0.5, stats stripped) into
+  a host-shared `noosphere.db`; `import` pulls foreign skills into a per-instance
+  quarantine after execution-free static revalidation. Also `list`, `show`, `id`.
+- New engine-free package `conscio/noosphere/` (stdlib + sqlite3 only): it never
+  constructs a `ConsciousnessEngine` and never imports `SkillLibrary`/`ToolRegistry`.
+- Per-instance identity (`instance.json`: uuid4 + human label) as the provenance
+  root; every shared skill carries origin + content hash; quarantine rows also
+  record who imported it and when.
+- `conscio.agency.fingerprint.goal_fingerprint` leaf module (re-exported from
+  `conscio.agency.act`, behavior-identical) so non-act consumers can fingerprint
+  a goal without importing the act pipeline.
+
+### Security
+- The live `conscio.db` is opened **read-only** (`mode=ro`, no `PRAGMA`, `SELECT`
+  only) — the noosphere never mutates a running instance's database.
+- Imported skills are quarantined, never served/executed/promoted; trust is never
+  inherited. Static revalidation rejects tampered (hash mismatch), corrupt,
+  malformed, `fp_mismatch`, and unknown-schema artifacts (recorded for audit).
+- Zero network / socket / IPC / cross-host; the shared catalog is a local file.
+
+---
+
 ## [2.1.0] - 2026-06-21 — "Hub"
 
 ### Added
