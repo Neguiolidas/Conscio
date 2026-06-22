@@ -55,13 +55,26 @@ def _connect(db: Path) -> sqlite3.Connection:
     return conn
 
 
+def _as_bytes(value: object) -> bytes:
+    """Coerce a stored artifact_json cell to bytes. Normally it's a BLOB, but a
+    tampered/edited row may have been coerced to TEXT (e.g. via SQLite ||); we
+    return its bytes so revalidation can hash it and reject (rather than crash)."""
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+    if isinstance(value, memoryview):
+        return value.tobytes()
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    return bytes(value)  # last resort; numbers etc. are not expected here
+
+
 def _row(r: sqlite3.Row) -> CatalogRow:
     return CatalogRow(
         origin_instance_id=r["origin_instance_id"], origin_label=r["origin_label"],
         goal_fp=r["goal_fp"], goal_text=r["goal_text"], tool_seq=r["tool_seq"],
         plan_template=r["plan_template"], published_ts=r["published_ts"],
         content_sha256=r["content_sha256"],
-        artifact_json=bytes(r["artifact_json"]), schema_version=r["schema_version"])
+        artifact_json=_as_bytes(r["artifact_json"]), schema_version=r["schema_version"])
 
 
 def publish_rows(db: Path, rows: list[CatalogRow]) -> int:

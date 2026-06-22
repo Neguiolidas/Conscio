@@ -37,3 +37,18 @@ def test_publish_is_idempotent_and_preserves_published_ts(tmp_path):
 
 def test_read_foreign_missing_db_is_empty(tmp_path):
     assert catalog.read_foreign(tmp_path / "nope.db", exclude_instance_id="B") == []
+
+
+def test_text_coerced_artifact_reads_back_as_bytes(tmp_path):
+    # A tampered/edited row whose BLOB got coerced to TEXT (SQLite ||) must not
+    # crash the reader; it comes back as bytes so revalidation can reject it.
+    import sqlite3
+    db = tmp_path / "noosphere.db"
+    catalog.publish_rows(db, [_row("A", "h1")])
+    conn = sqlite3.connect(str(db))
+    conn.execute("UPDATE published_skills SET artifact_json = artifact_json || X'20'")
+    conn.commit()
+    conn.close()
+    rows = catalog.read_foreign(db, exclude_instance_id="B")
+    assert len(rows) == 1 and isinstance(rows[0].artifact_json, bytes)
+    assert rows[0].artifact_json == b'{"x":1} '
