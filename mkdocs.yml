@@ -45,6 +45,7 @@ nav:
       - Consuming awake output: guides/integration.md
       - MCP server (embodiment): guides/mcp.md
       - Hub: guides/hub.md
+      - Noosphere (society): guides/noosphere.md
   - Reference:
       - Public API: reference/public-api.md
   - Claims ledger: CLAIMS.md

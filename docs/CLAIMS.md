@@ -4,7 +4,7 @@ A framework about self-knowledge should know what it can and cannot prove
 about itself. Every load-bearing claim Conscio makes, mapped to evidence.
 
 **Status:** PROVEN (test) · MEASURED (real backend) · PARTIAL · UNPROVEN.
-Updated each phase. Current as of **v2.1.0** (2026-06-21).
+Updated each phase. Current as of **v2.2.0** (2026-06-22).
 
 | # | Claim | Evidence | Status |
 |---|-------|----------|--------|
@@ -54,6 +54,9 @@ Updated each phase. Current as of **v2.1.0** (2026-06-21).
 | 44 | The MCP surface is **propose-only — Conscio never executes** a tool over MCP; `propose_action`/`propose_plan` run the Skeptic/Actor and return a verdict, and fail closed without an adapter | `tests/test_engine_propose.py`, `tests/test_mcp_server.py`, `tests/test_mcp_battery.py` (`act` absent from `tools/list`; propose-without-adapter → `FAIL`) | PROVEN |
 | 45 | `feed`/`note` are **idempotent on `event.id`** — a duplicate returns the exact prior result, so host retries never inflate the world model or event log | `tests/test_mcp_server.py::test_feed_duplicate_returns_identical_prior_result`, `tests/test_mcp_battery.py::test_try_break_dup_event_no_world_inflation` | PROVEN |
 | 46 | The **Hub never returns a raw API key** — `redact()` drops `api_key` and masks `api_key_env` → `api_key_present`; `api_key_env` is validated as an env var NAME; Hub binds 127.0.0.1-only; optional `CONSCIO_HUB_TOKEN`; no exec / no SQLite write / no provider delete | `tests/test_hub_server.py` (redact, token auth, bind address, no-delete) | PROVEN |
+| 47 | The **noosphere is engine-free** — its source imports only the `goal_fingerprint` leaf from `conscio.agency`, never `engine`/`SkillLibrary`/`ToolRegistry` | `tests/test_noosphere_engine_free.py` (static AST scan of every `conscio/noosphere/*.py`) | PROVEN |
+| 48 | **Publishing never mutates the live DB** — `conscio.db` is opened read-only (`mode=ro`); an `INSERT` on that connection raises `OperationalError` | `tests/test_noosphere_publish.py::test_conscio_db_opened_read_only` | PROVEN |
+| 49 | **Imported skills are quarantined, never served/executed/promoted; trust is never inherited** — static revalidation rejects tampered (hash mismatch), corrupt, malformed, `fp_mismatch`, unknown-schema artifacts (recorded for audit) | `tests/test_noosphere_importer.py`, `tests/test_noosphere_integration.py::test_tampered_catalog_row_imports_as_rejected` | PROVEN |
 
 ## Honest limits (what is NOT proven)
 

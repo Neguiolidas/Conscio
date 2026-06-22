@@ -73,6 +73,9 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="measure an inference backend (see: conscio bench --help)")
     sub.add_parser("daemon", add_help=False,
                    help="run the live heartbeat (see: conscio-daemon --help)")
+    sub.add_parser("noosphere", add_help=False,
+                   help="share skills across same-host instances "
+                        "(see: conscio noosphere --help)")
     return parser
 
 
@@ -239,6 +242,9 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "daemon":
         from . import daemon
         return daemon.main(argv[1:])
+    if argv and argv[0] == "noosphere":
+        from .noosphere import cli as noosphere_cli
+        return noosphere_cli.main(argv[1:])
 
     parser = _build_parser()
     args = parser.parse_args(argv)

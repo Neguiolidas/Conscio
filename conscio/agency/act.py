@@ -14,7 +14,6 @@ profile-driven tool visibility (max_visible_tools).
 """
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from enum import Enum
@@ -27,6 +26,7 @@ from .adapter import InferenceAdapter
 from .breaker import CircuitBreaker
 from .contracts import (PROPOSAL_SCHEMA, ActionProposal, AuditVerdict,
                         ToolResult, validate)
+from .fingerprint import goal_fingerprint
 from .gateway import GatewayError, OutputGateway
 from .ledger import ActionLedger
 from .skeptic import Skeptic
@@ -51,10 +51,6 @@ class ActReport:
     ledger_id: int | None = None
     reason: str = ""
     lockdown: bool = False
-
-
-def goal_fingerprint(goal_text: str) -> str:
-    return hashlib.sha256(goal_text.encode("utf-8")).hexdigest()[:16]
 
 
 class ActPipeline:
