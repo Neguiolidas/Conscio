@@ -149,3 +149,31 @@ ACT_TOOL_DEFS: list[dict] = [
                                     "reason": {"type": "string"}},
                      "required": ["ledger_id"]}},
 ]
+
+# ── v2.6.0 Liaison tool defs (exposed only when --enable-hermes-review) ───
+_REVIEW_REJECT_INPUT = {"type": "object",
+                        "properties": {"fp": {"type": "string"},
+                                       "reason": {"type": "string"}},
+                        "required": ["fp", "reason"]}
+_FP_OPT_REASON = {"type": "object",
+                  "properties": {"fp": {"type": "string"},
+                                 "reason": {"type": "string"}},
+                  "required": ["fp"]}
+_LIMIT_ONLY = {"type": "object", "properties": {"limit": {"type": "integer"}}}
+
+LIAISON_TOOL_DEFS: list[dict] = [
+    {"name": "conscio.reviews",
+     "description": "List inbound cross-agent review requests directed here "
+                    "(reviewer role; deduped per fp).",
+     "inputSchema": _LIMIT_ONLY},
+    {"name": "conscio.review_approve",
+     "description": "Send an approve verdict for a review request by fp.",
+     "inputSchema": _FP_OPT_REASON},
+    {"name": "conscio.review_reject",
+     "description": "Send a reject verdict for a review request by fp.",
+     "inputSchema": _REVIEW_REJECT_INPUT},
+    {"name": "conscio.poll_reviews",
+     "description": "Apply inbound verdicts from allowlisted reviewers to local "
+                    "pending acts (proposer role); returns applied packets.",
+     "inputSchema": _LIMIT_ONLY},
+]
