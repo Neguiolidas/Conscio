@@ -68,6 +68,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p_sleep.add_argument("--model", default=DEFAULT_MODEL)
     p_sleep.add_argument("--storage", default="", help="storage dir (default: temp)")
 
+    p_trial = sub.add_parser(
+        "trial",
+        help="trial a quarantined imported skill in a throwaway sandbox")
+    p_trial.add_argument("--storage", default="",
+                         help="instance storage dir (default: ~/.hermes)")
+    p_trial.add_argument("--quarantine", type=int, required=True,
+                         metavar="ROWID", help="quarantine row id to trial")
+    p_trial.add_argument("--model", default=DEFAULT_MODEL)
+    p_trial.add_argument(
+        "--enable-trial", action="store_true",
+        help="required: actually run the sandboxed trial (off by default)")
+
     # Listed for discoverability; routed to conscio.{bench,daemon} before argparse.
     sub.add_parser("bench", add_help=False,
                    help="measure an inference backend (see: conscio bench --help)")
@@ -231,6 +243,55 @@ def _cmd_structure(storage: str) -> int:
     return 0
 
 
+def _run_trial(*, model: str, storage: str, quarantine_id: int,
+               enable_trial: bool):
+    """Build an engine with an adapter and run one trial. The single seam the
+    CLI tests monkeypatch (so they never build a real adapter)."""
+    from .adapter_config import build_adapter_from_config, load_config
+    from .engine import ConsciousnessEngine
+    eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage))
+    try:
+        adapter, _ = build_adapter_from_config(load_config(),
+                                               fallback_model=model)
+        eng.attach_adapter(adapter)
+        return eng.trial_quarantined(quarantine_id, enable_trial=enable_trial)
+    finally:
+        eng.close()
+
+
+def _cmd_trial(model: str, storage: str, quarantine_id: int,
+               enable_trial: bool) -> int:
+    from .agency.trial import TrialRefusal
+    try:
+        outcome = _run_trial(model=model, storage=storage,
+                             quarantine_id=quarantine_id,
+                             enable_trial=enable_trial)
+    except Exception as exc:               # adapter build / engine wiring failure
+        print(f"error: {exc}")
+        return 1
+    if isinstance(outcome, TrialRefusal):
+        print(f"error: {outcome.reason}")
+        return 1
+    if outcome.passed:
+        print(f"TRIAL PASSED (#{quarantine_id})")
+    else:
+        print(f"TRIAL FAILED (#{quarantine_id}): {outcome.result}")
+        if outcome.error:
+            print(f"  {outcome.error}")
+    # best-effort: show the running counts (skipped if the row can't be read)
+    try:
+        from .noosphere import quarantine
+        from .noosphere.paths import quarantine_db_path
+        row = quarantine.get(quarantine_db_path(Path(_storage(storage))),
+                             quarantine_id)
+        if row is not None:
+            print(f"  trials: {row.trial_successes} passed / "
+                  f"{row.trial_failures} failed")
+    except Exception:
+        pass
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -266,6 +327,9 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_set_awake(args.model, args.storage, awake=True)
     if args.command == "sleep":
         return _cmd_set_awake(args.model, args.storage, awake=False)
+    if args.command == "trial":
+        return _cmd_trial(args.model, args.storage, args.quarantine,
+                          args.enable_trial)
 
     parser.print_help()
     return 2
