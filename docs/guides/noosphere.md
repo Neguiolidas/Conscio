@@ -108,3 +108,41 @@ check (was anything executed despite the peer's own `FAIL` verdict?). It prints
 a verdict per peer — `TRUSTED` / `SUSPECT` / `REJECTED` / `INSUFFICIENT` — and
 **persists nothing**. No trust is inherited; the peer's own recorded verdicts
 are treated as claims to check, not as authority.
+
+## Trial (v2.2.2)
+
+Importing a skill leaves it inert — quarantined data with no local track
+record. v2.2.2 lets a quarantined skill **prove itself locally** before any
+promotion, by replaying its plan in a throwaway sandbox.
+
+```bash
+conscio trial --storage DIR --quarantine ROWID --model NAME --enable-trial
+```
+
+The foreign plan's **fixed** steps are replayed — no actor, no decode — through
+the full safety stack: argument validation, the sandbox precheck, a HIGH-risk
+block, the engine's **own** Skeptic (forced — foreign content gets no LOW-risk
+fast path), then dispatch. Dispatch runs against a registry confined to a
+**disposable directory** exposing only `fs_read`/`fs_write`; the directory is
+deleted afterwards, so a trial leaves no trace on disk. The run **stops at the
+first failing step** and records a binary outcome on the quarantine row
+(`trial_successes` / `trial_failures` + `last_trial_result` / `last_trial_error`).
+
+Guarantees:
+
+- **Isolated.** A trial never writes the live agent's action ledger, skill
+  library, trust matrix, or circuit breaker. A foreign skill failing its trial
+  cannot dent the local agent's reputation or autonomy.
+- **Opt-in, default off.** `--enable-trial` is required; it is **independent of**
+  `--enable-act` (a trial uses the local sandbox, never the host-executed `act`
+  channel).
+- **Tamper-safe.** Before spending an LLM call the artifact's content hash is
+  re-checked; a mismatch (or a corrupt plan) **refuses** and records a note
+  *without* bumping any counter.
+
+A trial only reaches as far as the tools you locally have: a plan that names a
+tool the sandbox doesn't expose fails at that step (recorded), and a plan that
+reads a file it didn't itself create fails in the empty sandbox — by design, a
+plan that needs a pre-existing environment can't be vouched for in isolation.
+The pass/fail counts this produces are exactly what a future **promotion** step
+(v2.3) will read before graduating a foreign skill into the live library.

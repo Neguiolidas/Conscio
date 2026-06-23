@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.2] - 2026-06-22 — "Trial / execution path"
+
+### Added
+- **Sandboxed trial of a quarantined skill.** A quarantined imported skill can
+  now be replayed in a **throwaway, fs-only sandbox** to earn local,
+  execution-grade pass/fail stats — `conscio trial --storage DIR --quarantine
+  ROWID --model NAME --enable-trial`. The foreign plan's fixed steps run through
+  the full safety stack (`validate → precheck → HIGH-block → Skeptic → dispatch`)
+  against a `make_default_registry` confined to a `mkdtemp` dir (`fs_read`/
+  `fs_write` only), stopping at the first failure. Binary outcome
+  (`trial_successes`/`trial_failures` + `last_trial_*`) is recorded on the
+  quarantine row; v2.3 promotion will read it.
+- **Trial isolation.** A trial never writes the agent's `ActionLedger`, `skills`
+  table, `TrustMatrix`, or trips the breaker — a foreign skill's failure cannot
+  dent the local agent. The sandbox dir is always removed; tamper / corrupt-plan
+  refuse **without** bumping any counter.
+- **Opt-in, default off.** `--enable-trial` is required to dispatch and is
+  independent of `--enable-act` (trial uses the local sandboxed registry, never
+  `host_act`). Skeptic always audits foreign content (no LOW-risk fast path).
+- New engine method `ConsciousnessEngine.trial_quarantined(rowid, *,
+  enable_trial=False)`; new `conscio/agency/trial.py` (engine-side mechanic,
+  imports nothing from `noosphere`); `noosphere/quarantine.py` gains 5 trial
+  columns + an idempotent `PRAGMA table_info` migration + `record_trial` /
+  `note_trial` (still engine-free). Purely additive; cognition untouched.
+
 ## [2.2.1] - 2026-06-22 — "Mutual audit"
 
 ### Added
