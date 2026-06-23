@@ -53,6 +53,7 @@ conscio-bench = "conscio.bench:main"
 conscio-daemon = "conscio.daemon:main"
 conscio-mcp = "conscio.mcp.server:main"
 conscio-hub = "conscio.hub.server:main"
+conscio-observatory = "conscio.observatory.server:main"
 
 [project.entry-points."conscio.sensors"]
 host = "conscio.perception.host_sensor:HostSensor"
