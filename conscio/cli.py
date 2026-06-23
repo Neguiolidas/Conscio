@@ -80,6 +80,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "--enable-trial", action="store_true",
         help="required: actually run the sandboxed trial (off by default)")
 
+    p_promote = sub.add_parser(
+        "promote",
+        help="promote a trialed quarantined skill into the live library")
+    p_promote.add_argument("--storage", default="",
+                           help="instance storage dir (default: ~/.hermes)")
+    p_promote.add_argument("--quarantine", type=int, required=True,
+                           metavar="ROWID",
+                           help="quarantine row id to promote")
+    p_promote.add_argument(
+        "--enable-promote", action="store_true",
+        help="required: actually write to the live library (off by default)")
+
     # Listed for discoverability; routed to conscio.{bench,daemon} before argparse.
     sub.add_parser("bench", add_help=False,
                    help="measure an inference backend (see: conscio bench --help)")
@@ -292,6 +304,36 @@ def _cmd_trial(model: str, storage: str, quarantine_id: int,
     return 0
 
 
+def _run_promote(*, storage: str, quarantine_id: int, enable_promote: bool):
+    """Build a bare engine (no adapter — promotion never decodes) and promote
+    one quarantined skill. The single seam the CLI tests monkeypatch."""
+    from .engine import ConsciousnessEngine
+    eng = ConsciousnessEngine(model_name=DEFAULT_MODEL,
+                              storage_path=_storage(storage))
+    try:
+        return eng.promote_quarantined(quarantine_id,
+                                       enable_promote=enable_promote)
+    finally:
+        eng.close()
+
+
+def _cmd_promote(storage: str, quarantine_id: int,
+                 enable_promote: bool) -> int:
+    from .agency.promote import PromoteResult
+    try:
+        outcome = _run_promote(storage=storage, quarantine_id=quarantine_id,
+                               enable_promote=enable_promote)
+    except Exception as exc:               # engine wiring failure
+        print(f"error: {exc}")
+        return 1
+    if isinstance(outcome, PromoteResult):
+        print(f"PROMOTED skill #{outcome.skill_id} "
+              f"(seeded {outcome.successes}/{outcome.failures})")
+        return 0
+    print(f"PROMOTE REFUSED: {outcome.reason}")
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -330,6 +372,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "trial":
         return _cmd_trial(args.model, args.storage, args.quarantine,
                           args.enable_trial)
+    if args.command == "promote":
+        return _cmd_promote(args.storage, args.quarantine,
+                            args.enable_promote)
 
     parser.print_help()
     return 2
