@@ -4,7 +4,7 @@ A framework about self-knowledge should know what it can and cannot prove
 about itself. Every load-bearing claim Conscio makes, mapped to evidence.
 
 **Status:** PROVEN (test) · MEASURED (real backend) · PARTIAL · UNPROVEN.
-Updated each phase. Current as of **v2.2.2** (2026-06-22).
+Updated each phase. Current as of **v2.3.0** (2026-06-23).
 
 | # | Claim | Evidence | Status |
 |---|-------|----------|--------|
@@ -59,6 +59,7 @@ Updated each phase. Current as of **v2.2.2** (2026-06-22).
 | 49 | **Imported skills are quarantined, never served/executed/promoted; trust is never inherited** — static revalidation rejects tampered (hash mismatch), corrupt, malformed, `fp_mismatch`, unknown-schema artifacts (recorded for audit) | `tests/test_noosphere_importer.py`, `tests/test_noosphere_integration.py::test_tampered_catalog_row_imports_as_rejected` | PROVEN |
 | 50 | **An instance audits a peer's published behavioral record with its own deterministic kernels and thresholds, read-only, inheriting no trust** — the bundle carries only `{seq,ts,goal_fp,tool,tier,status,ok,verdict}`; the auditor revalidates (tampered/corrupt/malformed) before trusting contents, re-derives accuracy/quarantines/foreign-trust + a discipline check, and persists nothing | `conscio/noosphere/audit.py`; `tests/test_noosphere_audit.py`, `tests/test_noosphere_audit_integration.py` (two-instance good-vs-bad, tamper-reject, skip-self), `tests/test_noosphere_parity.py` (kernels match engine constants) | PROVEN |
 | 51 | **A quarantined foreign skill earns local stats only via a sandboxed, Skeptic-audited, opt-in trial that never touches the live agent** — `conscio trial --enable-trial` replays the fixed plan in a throwaway fs-only `make_default_registry` (no `host_act`); binary pass/fail lands on the quarantine row; the agent's ledger/skills/trust/breaker are never written; tamper/corrupt refuse without counting | `conscio/agency/trial.py`, `conscio/engine.py::trial_quarantined`; `tests/test_engine_trial.py` (isolation: ledger+skills untouched; sandbox removed; tamper/corrupt no-count), `tests/test_agency_trial.py`, `tests/test_quarantine_trial.py` | PROVEN |
+| 52 | **Promotion graduates only a locally-proven foreign skill, and never inherits trust** — `conscio promote --enable-promote` grafts a quarantined skill into the live `SkillLibrary` only when it recorded `trial_successes ≥ 3` with zero failures **and** every tool in its plan exists in the live registry (tool-existence check); the row is seeded with the counters it earned **locally** (never the origin's), re-checks the content hash (tamper → refuse, no write), never overwrites a local skill (`ON CONFLICT DO NOTHING`), and is idempotent (`promoted_ts`). The write lives engine-side; the noosphere stays engine-free. | `conscio/agency/promote.py`, `conscio/engine.py::promote_quarantined`; `tests/test_engine_promote.py` (tamper/collision/insufficient/unknown-tool refuse with no skills row; happy-path seeded 3/0 + `promoted_ts`), `tests/test_agency_promote.py`, `tests/test_skills_graft.py`, `tests/test_quarantine_promote.py` | PROVEN |
 
 ## Honest limits (what is NOT proven)
 
