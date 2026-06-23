@@ -196,6 +196,70 @@ class Bindings:
         mailbox.mark_read(self.liaison_db, [m["id"] for m in match])  # all fp rows
         return {"ok": True, "fp": fp, "decision": decision, "to": proposer}
 
+    # ── v2.6.0 Liaison: proposer side ──
+    def _maybe_publish_review(self, result: dict) -> None:
+        if not (self.hermes_review and self.reviewers):
+            return
+        if result.get("status") != "pending_approval":
+            return
+        if result.get("approval_policy") != "hermes_review":
+            return
+        row = self.engine.host_act.ledger.get(result["ledger_id"])  # Hermet R1
+        if row is None:
+            return
+        args = self._row_args(row)
+        fp = review.fingerprint(self.self_instance_id, row["goal_fp"],
+                                row["tool"], args, row["id"])
+        payload = review.build_request(
+            fp=fp, tool=row["tool"], args=args,
+            goal=row.get("goal_text", ""), verdict=row.get("verdict", ""),
+            rationale=row.get("rationale", ""))
+        for r in self.reviewers:
+            mailbox.send(self.liaison_db, from_instance=self.self_instance_id,
+                         to_instance=r, type="review_request", payload=payload)
+
+    @staticmethod
+    def _row_args(row: dict) -> dict:
+        try:
+            args = json.loads(row.get("args_json") or "{}")
+        except (TypeError, ValueError):
+            return {}
+        return args if isinstance(args, dict) else {}
+
+    def _poll_reviews(self, args: dict) -> list[dict]:
+        limit = self._int_arg(args, "limit", 50)
+        ha = self.engine.host_act
+        verdicts = mailbox.inbox(self.liaison_db, self.self_instance_id,
+                                 types=["review_verdict"], unread_only=True,
+                                 limit=limit)
+        pend = ha.pending(200)
+        fp_to_id = {review.fingerprint(self.self_instance_id, r["goal_fp"],
+                                       r["tool"], self._row_args(r), r["id"]):
+                    r["id"] for r in pend}
+        applied: list[dict] = []
+        read_ids: list[int] = []
+        for m in verdicts:
+            read_ids.append(m["id"])                  # bound work: mark all polled
+            if m["from_instance"] not in self.reviewers:
+                continue                              # not allowlisted -> ignore
+            try:
+                v = review.parse_verdict(m["payload"])
+            except ValueError:
+                continue
+            lid = fp_to_id.get(v.fp)
+            if lid is None:
+                continue                              # stale / foreign / handled
+            if v.decision == "approve":
+                res = ha.approve(lid)
+            else:
+                res = ha.reject(lid, v.reason)
+            applied.append({"ledger_id": lid, "decision": v.decision,
+                            "status": res.get("status"),
+                            "packet": res.get("packet")})
+        if read_ids:
+            mailbox.mark_read(self.liaison_db, read_ids)
+        return applied
+
     @staticmethod
     def _require(args: dict, key: str):
         if key not in args:
@@ -255,6 +319,7 @@ class Bindings:
         result = self.engine.host_act.propose(intent)
         if skey is not None:
             self.seen.mark(skey, json.dumps(result), time.time())
+        self._maybe_publish_review(result)
         return result
 
     # ── read-only state payloads (shared by resources + tools, v2.4) ──
@@ -357,6 +422,13 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="enable opt-in host-executed audited act")
     parser.add_argument("--awake", action="store_true",
                         help="set the engine Awake at startup (act gate)")
+    parser.add_argument("--enable-hermes-review", action="store_true",
+                        help="enable opt-in cross-agent hermes_review comms")
+    parser.add_argument("--reviewer", action="append", default=[],
+                        metavar="INSTANCE_ID",
+                        help="trusted reviewer instance_id (repeatable)")
+    parser.add_argument("--liaison-db", default=None,
+                        help="mailbox db path (default $HERMES_HOME/liaison.db)")
     return parser
 
 
@@ -379,9 +451,25 @@ def main(argv: list[str] | None = None) -> int:
     workspace = WorkspaceContext().current()
     seen = SeenStore(Path(engine.storage) / "mcp_seen.db")
     seen.prune(args.seen_max_rows, args.seen_max_age_days)
+    self_instance_id = ""
+    liaison_db = None
+    if args.enable_hermes_review:
+        from conscio.noosphere.identity import load_or_create
+        self_instance_id = load_or_create(engine.storage).instance_id
+        liaison_db = (Path(args.liaison_db) if args.liaison_db
+                      else mailbox.default_db())
     bindings = Bindings(engine, seen, adapter_name=adapter_name,
-                        workspace_id=workspace.id, act_flag=args.enable_act)
+                        workspace_id=workspace.id, act_flag=args.enable_act,
+                        hermes_review=args.enable_hermes_review,
+                        reviewers=tuple(args.reviewer),
+                        self_instance_id=self_instance_id,
+                        liaison_db=liaison_db)
     mode = "act" if args.enable_act else "propose-only"
+    if args.enable_hermes_review:
+        if args.reviewer:
+            mode += f"+hermes-review(reviewers={len(args.reviewer)})"
+        else:                              # active but no recipients (Hermet)
+            mode += "+hermes-review(reviewers=0; no publish targets)"
     print(f"conscio-mcp {__version__} ready "
           f"(workspace={workspace.id}, mode={mode})", file=sys.stderr)
     try:
