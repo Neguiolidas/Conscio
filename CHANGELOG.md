@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.0] - 2026-06-23 — "Observatory"
+
+### Added
+- **Read-only Observatory.** `conscio-observatory --storage DIR [--token TOK]`
+  serves a **loopback-only** HTTP viewer of one instance's persisted state —
+  logs (events), goals, actions (ledger), skills, and the last state snapshot.
+  It is **engine-free** and **read-only**: a new `conscio/observatory/projection.py`
+  opens `conscio.db` with `mode=ro` (no `PRAGMA`, `SELECT` only) and parses
+  `goals.json` / `state_summary.json`. The server serves **GET only** — every
+  mutation verb returns **405**. It reads even a **cold** instance (no engine).
+- **MCP read-only state tools.** `conscio.state`, `conscio.events`,
+  `conscio.handoff` are now exposed as MCP `tools/call` entries (for hosts that
+  speak tools, not resources), delegating to the **same** helpers the
+  `conscio://` resources use. Always on, propose-only grade, independent of
+  `--enable-act`.
+- **No `--enable-observatory` flag.** The Observatory has no write/execute/
+  autonomy surface, so launching the command *is* the opt-in; it is independent
+  of `--enable-act` and `--awake`.
+
+### Notes
+- **Two freshness contracts:** the MCP tools read the **live** engine; the
+  viewer reads the **last-persisted** snapshot (may lag — the UI says so).
+- **Debt-zero:** the Hub (`conscio/hub/`) is untouched; the Observatory is a
+  separate, self-contained package. The shared **noosphere** view is deferred to
+  v2.5 (the projection is built source-pluggable for it).
+- **Multi-user hosts:** on a shared machine, pass `--token` — loopback blocks
+  remote access but not other local users.
+
 ## [2.3.0] - 2026-06-23 — "Promotion"
 
 ### Added
