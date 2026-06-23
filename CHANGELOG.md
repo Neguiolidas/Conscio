@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.0] - 2026-06-23 — "Promotion"
+
+### Added
+- **Promotion-to-live.** `conscio promote --storage DIR --quarantine ROWID
+  --enable-promote` graduates a quarantined foreign skill that has earned
+  **≥ 3 clean local trials** (v2.2.2) into the live `SkillLibrary`, seeded with
+  the counters it earned **locally** in the sandbox — never the origin's
+  (stripped) stats, so no trust is inherited. Engine-side
+  (`engine.promote_quarantined`); the noosphere package stays engine-free and
+  read-only on `conscio.db`.
+- **Tool-existence check** (deferred from v2.2). Promotion refuses a skill
+  whose plan names a tool this instance's live registry does not have.
+- `SkillLibrary.graft` — the single foreign-skill write seam
+  (`ON CONFLICT(goal_fp, tool_seq) DO NOTHING`; never overwrites a local skill).
+- Quarantine rows gain `promoted_ts` / `promoted_skill_id` (idempotency +
+  audit). Promotion re-checks the content hash (tamper → refuse, no write) and
+  is idempotent. `--enable-promote` is required, default off, and **independent
+  of** `--enable-trial` / `--enable-act`.
+
+---
+
 ## [2.2.2] - 2026-06-22 — "Trial / execution path"
 
 ### Added
