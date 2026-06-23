@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.0] - 2026-06-23 — "Society view"
+
+### Added
+- **Observatory Society view** — `conscio-observatory` gains read-only
+  `/api/society/{members,skills,records}` over the host-shared `noosphere.db`,
+  plus Society tabs in the viewer. Shows who published which skills / behavioral
+  records (metadata only — artifact/bundle BLOBs omitted).
+- `--noosphere` flag (default `$HERMES_HOME/noosphere.db`).
+
+### Fixed
+- `conscio-observatory` now answers `HEAD` requests (200, headers only) instead
+  of 501 (folds in a v2.4-deferred fix).
+
+### Notes
+- Engine-free, read-only (`mode=ro`, no `PRAGMA`, `SELECT` only), loopback-only,
+  GET-only (mutation → 405), no `--enable` flag (launch = opt-in). `immutable=1`
+  deliberately rejected (it drops uncheckpointed WAL data).
+
 ## [2.4.0] - 2026-06-23 — "Observatory"
 
 ### Added

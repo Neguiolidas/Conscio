@@ -41,13 +41,18 @@ conscio-observatory --storage DIR [--host 127.0.0.1] [--port 8788] [--token TOK]
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/health` | `{ok, version, storage, token_required}` |
+| `GET /api/health` | `{ok, version, storage, noosphere, token_required}` |
 | `GET /api/events?type=&category=&since=&limit=` | recent events (newest first) |
 | `GET /api/actions?status=&limit=` | ledger rows (newest first) |
 | `GET /api/skills?limit=` | learned skills |
 | `GET /api/goals` | active goals (from `goals.json`) |
 | `GET /api/state` | last state snapshot (from `state_summary.json`) |
+| `GET /api/society/members` | the noosphere census (see [Society view](#society-view-read-only)) |
+| `GET /api/society/skills?limit=` | published skills (metadata only) |
+| `GET /api/society/records?limit=` | published behavioral records (metadata only) |
 | `GET /` , `GET /static/*` | the viewer UI (whitelisted assets only) |
+
+`HEAD` is accepted on every GET path (headers only, no body).
 
 ## Security
 
@@ -66,8 +71,40 @@ write/execute/autonomy (`--enable-act`/`--enable-trial`/`--enable-promote`); the
 Observatory has none of those. Launching the command is the opt-in; it is
 independent of `--enable-act` and `--awake`.
 
+## Society view (read-only)
+
+The Observatory also projects the **host-shared noosphere** — the "society" of
+instances that have published into `noosphere.db` (v2.5). It is read-only,
+engine-free, and adds no new capability surface.
+
+- `GET /api/society/members` — the census: each publishing instance with its
+  `skills_count`, `records_count`, and `last_published_ts`.
+- `GET /api/society/skills?limit=` — published skills (metadata only:
+  `origin_label`, `goal_fp`, `goal_text`, `tool_seq`, `published_ts`,
+  `content_sha256`).
+- `GET /api/society/records?limit=` — published behavioral records (metadata
+  only: `origin_label`, `entry_count`, window range, `published_ts`,
+  `content_sha256`).
+
+Artifact and bundle BLOBs are deliberately omitted — this view is an
+at-a-glance census, not a content browser.
+
+**Source.** Defaults to `$HERMES_HOME/noosphere.db`; override with
+`conscio-observatory --noosphere /path/to/noosphere.db`.
+
+**Freshness.** Society tabs show *last-published* peer state and may lag live
+peers. The reader opens the db with `mode=ro` and sees the latest **committed**
+rows even while a peer is writing (WAL). `immutable=1` is deliberately **not**
+used — it ignores the `-wal` file and would silently return stale or empty data
+under a concurrent writer.
+
+**Read-only guarantee.** The Society reader issues no `PRAGMA`, no DDL, and no
+`INSERT`/`UPDATE`/`DELETE` — `SELECT` only. SQLite's `-shm`/`-wal` handling is
+an internal file-management side effect (read recovery), not a mutation of the
+published data.
+
 ## Not yet here
 
-The shared **noosphere** (cross-instance catalog, quarantine, published records)
-is **not** in the v2.4 Observatory — that "society view" is deferred to v2.5. The
-projection is built source-pluggable so it drops in then.
+The Liaison comms/control surface (relay/inbox and the `hermes_review`
+file-protocol) is a separate, write-capable subsystem with its own threat
+model — deferred to v2.6.
