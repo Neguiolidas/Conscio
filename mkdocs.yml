@@ -47,6 +47,7 @@ nav:
       - Hub: guides/hub.md
       - Noosphere (society): guides/noosphere.md
       - Observatory (read-only view): guides/observatory.md
+      - Liaison (cross-agent review): guides/liaison.md
   - Reference:
       - Public API: reference/public-api.md
   - Claims ledger: CLAIMS.md
