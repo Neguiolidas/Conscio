@@ -86,6 +86,19 @@ BASE_TOOL_DEFS: list[dict] = [
                      "properties": {"goal": {"type": "string"},
                                     "tools": {"type": "array"}},
                      "required": ["goal", "tools"]}},
+    {"name": "conscio.state",
+     "description": "ConsciousnessState snapshot (pure read).",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "conscio.events",
+     "description": "Recent events (pure read; type/category/since/limit).",
+     "inputSchema": {"type": "object",
+                     "properties": {"type": {"type": "string"},
+                                    "category": {"type": "string"},
+                                    "since": {"type": "string"},
+                                    "limit": {"type": "integer"}}}},
+    {"name": "conscio.handoff",
+     "description": "Latest session handoff (pure read, markdown).",
+     "inputSchema": {"type": "object", "properties": {}}},
 ]
 
 RESOURCE_DEFS: list[dict] = [
