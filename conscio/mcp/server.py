@@ -94,6 +94,9 @@ class Bindings:
                 self._require(a, "intent")),
             "conscio.propose_plan": lambda a: self.engine.propose_plan(
                 self._require(a, "goal"), a.get("tools")),
+            "conscio.state": lambda a: self._state_payload(),
+            "conscio.events": lambda a: self._events_payload(a),
+            "conscio.handoff": lambda a: self._handoff_payload(),
         }
         if self._act_enabled():
             tools.update({
@@ -187,6 +190,25 @@ class Bindings:
             self.seen.mark(skey, json.dumps(result), time.time())
         return result
 
+    # ── read-only state payloads (shared by resources + tools, v2.4) ──
+    def _state_payload(self) -> dict:
+        return self.engine.advisory().get("state", {})
+
+    def _events_payload(self, params: dict) -> list[dict]:
+        def s(key: str) -> str | None:
+            v = params.get(key)
+            return str(v) if v not in (None, "") else None
+        try:
+            limit = int(params.get("limit", 50))
+        except (TypeError, ValueError):
+            limit = 50
+        rows = self.engine.event_bus.query(
+            type=s("type"), category=s("category"), since=s("since"), limit=limit)
+        return [e.to_dict() for e in rows]
+
+    def _handoff_payload(self) -> str:
+        return self._handoff_text()
+
     # ── resources ──
     def read_resource(self, uri: str) -> dict:
         parsed = urlparse(uri)
@@ -194,24 +216,14 @@ class Bindings:
         if base == "conscio://advisory":
             return self._json_resource(uri, self.engine.advisory())
         if base == "conscio://state":
-            return self._json_resource(uri,
-                                       self.engine.advisory().get("state", {}))
+            return self._json_resource(uri, self._state_payload())
         if base == "conscio://events":
             q = parse_qs(parsed.query)
-
-            def first(key: str) -> str | None:
-                vals = q.get(key)
-                return vals[0] if vals else None
-
-            rows = self.engine.event_bus.query(
-                type=first("type"),
-                category=first("category"),
-                since=first("since"),
-                limit=int(first("limit") or "50"))
-            return self._json_resource(uri, [e.to_dict() for e in rows])
+            params = {k: (v[0] if v else None) for k, v in q.items()}
+            return self._json_resource(uri, self._events_payload(params))
         if base == "conscio://handoff":
             return {"contents": [{"uri": uri, "mimeType": "text/markdown",
-                                 "text": self._handoff_text()}]}
+                                 "text": self._handoff_payload()}]}
         raise j.InvalidParams(f"unknown resource '{uri}'")
 
     @staticmethod
