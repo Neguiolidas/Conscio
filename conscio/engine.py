@@ -1013,6 +1013,7 @@ class ConsciousnessEngine:
         import shutil
         import tempfile
         import time
+        from pathlib import Path
 
         from .agency import trial as trial_mod
         from .agency.tools import make_default_registry
@@ -1050,7 +1051,7 @@ class ConsciousnessEngine:
         tmp = tempfile.mkdtemp(prefix="conscio-trial-")
         try:
             reg = make_default_registry(
-                sandbox_root=tmp, content_store=None, event_bus=None,
+                sandbox_root=Path(tmp), content_store=None, event_bus=None,
                 goal_generator=None)
             outcome = trial_mod.run_trial(
                 steps, goal_text=row.goal_text, skeptic=pipe.skeptic,
