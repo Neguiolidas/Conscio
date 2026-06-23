@@ -144,5 +144,37 @@ A trial only reaches as far as the tools you locally have: a plan that names a
 tool the sandbox doesn't expose fails at that step (recorded), and a plan that
 reads a file it didn't itself create fails in the empty sandbox — by design, a
 plan that needs a pre-existing environment can't be vouched for in isolation.
-The pass/fail counts this produces are exactly what a future **promotion** step
-(v2.3) will read before graduating a foreign skill into the live library.
+The pass/fail counts this produces are exactly what the **promotion** step
+(v2.3, below) reads before graduating a foreign skill into the live library.
+
+## Promotion (v2.3)
+
+A trial earns a quarantined skill a local pass/fail record; it stays inert
+until **promotion** graduates it into the live `SkillLibrary`.
+
+```bash
+conscio promote --storage DIR --quarantine ROWID --enable-promote
+```
+
+Promotion is a pure data gate — no LLM, no sandbox, no execution. It graduates
+a row only when it has earned **≥ 3 clean local trials** (`trial_successes ≥ 3`,
+`trial_failures == 0`) **and** every tool its plan names exists in this
+instance's live registry. The grafted skill is seeded with the counters it
+earned locally in the sandbox — never the origin's (stripped) stats — so no
+trust is inherited; once live, the normal act/settle loop scores it and
+`MIN_SERVE_RATE` benches it if it drops below 0.5.
+
+Guarantees:
+
+- **Engine-free noosphere preserved.** The write lives engine-side
+  (`engine.promote_quarantined`); `conscio/noosphere/` stays read-only on
+  `conscio.db`.
+- **Never overwrites a local skill.** A `(goal_fp, tool_seq)` collision with an
+  existing skill is refused — foreign data never clobbers home-grown memory.
+- **Tamper-safe + idempotent.** The content hash is re-checked before any
+  write; an already-promoted row (`promoted_ts`) refuses. Unlike a trial, a
+  refused promotion records **nothing** on the quarantine row — promotion only
+  ever writes on a successful graft.
+- **Opt-in, default off.** `--enable-promote` is required and independent of
+  `--enable-trial` / `--enable-act` — promotion mutates the agent's live
+  procedural memory, the most consequential of the three writes.

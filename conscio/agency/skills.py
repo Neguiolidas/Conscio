@@ -166,6 +166,26 @@ class SkillLibrary:
             [(skill_id,) for skill_id in served])
         self._conn.commit()
 
+    # ── promotion (v2.3) ────────────────────────────────────────────────
+
+    def graft(self, goal_fp: str, goal_text: str, tool_seq: str,
+              plan_template: str, *, successes: int,
+              failures: int) -> int | None:
+        """Insert a promoted foreign skill as data, seeded with the trial
+        counters it earned locally. The single write seam for foreign skills.
+        Never overwrites a local skill sharing (goal_fp, tool_seq): a collision
+        returns None."""
+        cur = self._conn.execute(
+            "INSERT INTO skills (created_ts, goal_fp, goal_text, tool_seq,"
+            " plan_template, successes, failures) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(goal_fp, tool_seq) DO NOTHING",
+            (time.time(), goal_fp, goal_text, tool_seq, plan_template,
+             successes, failures))
+        self._conn.commit()
+        if cur.rowcount == 0 or cur.lastrowid is None:
+            return None
+        return int(cur.lastrowid)
+
     # ── rendering ──────────────────────────────────────────────────────
 
     @staticmethod

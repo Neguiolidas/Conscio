@@ -1064,6 +1064,79 @@ class ConsciousnessEngine:
                                 ts=time.time())
         return outcome
 
+    # --- v2.3 "Promotion": graduate a quarantined skill into the library ---
+
+    def promote_quarantined(self, rowid: int, *, enable_promote: bool = False):
+        """Graduate a quarantined foreign skill that has earned >= 3 clean
+        local trials into the live SkillLibrary, seeded with its trial
+        counters. No adapter, no sandbox, no execution: a data gate that reads
+        the trial evidence and writes one row. Default off.
+
+        Unlike trial (which records a tamper via note_trial), promotion refuses
+        a tampered/already-promoted/gate-failed row WITHOUT writing anything —
+        it only ever writes on a successful graft (the skills row + the
+        promoted-stamp). A refusal leaves the quarantine row untouched.
+
+        Returns a promote.PromoteResult (promoted) or promote.PromoteRefusal."""
+        import time
+
+        from .agency import promote as promote_mod
+        from .agency.skills import SkillLibrary
+        from .agency.tools import make_default_registry
+        from .noosphere import artifact, quarantine
+        from .noosphere.paths import quarantine_db_path
+
+        if not enable_promote:
+            return promote_mod.PromoteRefusal(
+                "promotion disabled; pass --enable-promote")
+
+        qdb = quarantine_db_path(self.storage)
+        row = quarantine.get(qdb, rowid)
+        if row is None:
+            return promote_mod.PromoteRefusal(f"no quarantine row #{rowid}")
+        if row.import_status != "quarantined":
+            return promote_mod.PromoteRefusal(
+                f"row #{rowid} is not quarantined "
+                f"(status={row.import_status})")
+        if row.promoted_ts > 0:
+            return promote_mod.PromoteRefusal(
+                f"row #{rowid} already promoted "
+                f"(skill #{row.promoted_skill_id})")
+        if artifact.content_hash(row.artifact_json) != row.content_sha256:
+            return promote_mod.PromoteRefusal(
+                f"row #{rowid} tampered (content_sha256 mismatch)")
+
+        # Live tool registry, real backends. Used ONLY for registry.get(tool)
+        # existence checks — nothing is dispatched, so no tmpdir is needed (the
+        # one structural difference from trial). make_default_registry mkdirs
+        # sandbox_root, so it points inside the instance storage (never real
+        # home), keeping promotion and its tests side-effect-clean.
+        reg = make_default_registry(
+            sandbox_root=self.storage / "sandbox",
+            content_store=self.content_store, event_bus=self.event_bus,
+            goal_generator=self.goals)
+        decision = promote_mod.evaluate_promotion(
+            trial_successes=row.trial_successes,
+            trial_failures=row.trial_failures,
+            tool_seq=row.tool_seq, registry=reg)
+        if not decision.ok:
+            return promote_mod.PromoteRefusal(decision.reason)
+
+        lib = SkillLibrary(self.storage / "conscio.db")
+        try:
+            sid = lib.graft(row.goal_fp, row.goal_text, row.tool_seq,
+                            row.plan_template, successes=row.trial_successes,
+                            failures=row.trial_failures)
+        finally:
+            lib.close()
+        if sid is None:
+            return promote_mod.PromoteRefusal(
+                "skill already present (goal_fp, tool_seq collision)")
+
+        quarantine.mark_promoted(qdb, rowid, ts=time.time(), skill_id=sid)
+        return promote_mod.PromoteResult(sid, row.trial_successes,
+                                         row.trial_failures)
+
     # --- v2.0 "Connect": propose-only cognition (never executes) ---
 
     def propose_action(self, intent: dict) -> dict:
