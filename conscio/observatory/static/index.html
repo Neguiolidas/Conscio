@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conscio Observatory</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>Conscio Observatory</h1>
+    <p class="note">Read-only. Shows last-persisted state (may lag the live engine).</p>
+    <label>Token <input id="token" type="password" placeholder="optional"></label>
+  </header>
+  <nav>
+    <button data-tab="events">Logs</button>
+    <button data-tab="goals">Goals</button>
+    <button data-tab="actions">Actions</button>
+    <button data-tab="skills">Skills</button>
+    <button data-tab="state">State</button>
+  </nav>
+  <main><pre id="out">loading…</pre></main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
