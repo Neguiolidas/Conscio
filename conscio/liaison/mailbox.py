@@ -44,11 +44,7 @@ def _connect(db: Path) -> sqlite3.Connection:
     return conn
 
 
-def _clamp(n: object) -> int:
-    try:
-        n = int(n)                                      # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return 50
+def _clamp(n: int) -> int:
     return max(1, min(n, 200))
 
 
@@ -64,7 +60,7 @@ def send(db: Path, *, from_instance: str, to_instance: str, type: str,
             (from_instance, to_instance, type, json.dumps(payload),
              time.time() if ts is None else ts))
         conn.commit()
-        return int(cur.lastrowid)
+        return cur.lastrowid or 0
     finally:
         conn.close()
 

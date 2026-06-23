@@ -41,7 +41,8 @@ class Bindings:
         self.hermes_review = hermes_review    # v2.6.0: --enable-hermes-review
         self.reviewers = tuple(reviewers)
         self.self_instance_id = self_instance_id
-        self.liaison_db = liaison_db
+        self.liaison_db: Path = (Path(liaison_db) if liaison_db is not None
+                                 else mailbox.default_db())
 
     # ── discovery ──
     def version(self) -> str:

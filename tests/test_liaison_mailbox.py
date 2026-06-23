@@ -1,6 +1,4 @@
 # tests/test_liaison_mailbox.py
-import sqlite3
-
 from conscio.liaison import mailbox
 
 

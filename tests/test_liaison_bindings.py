@@ -26,7 +26,8 @@ def test_liaison_tools_absent_without_flag(tmp_path):
         assert not any(n.startswith("conscio.review") for n in names)
         assert "conscio.reviews" not in names and "conscio.poll_reviews" not in names
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_reviewer_tools_present_without_act(tmp_path):
@@ -40,7 +41,8 @@ def test_reviewer_tools_present_without_act(tmp_path):
         meta = b.conscio_meta()
         assert meta["hermes_review_enabled"] is True
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_reviews_lists_and_dedups_by_fp(tmp_path):
@@ -63,7 +65,8 @@ def test_reviews_lists_and_dedups_by_fp(tmp_path):
         assert sorted(r["fp"] for r in rows) == ["fp1", "fp2"]   # deduped
         assert {r["from_instance"] for r in rows} == {"CLAUDE"}
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_review_approve_emits_verdict_and_marks_request_read(tmp_path):
@@ -83,7 +86,8 @@ def test_review_approve_emits_verdict_and_marks_request_read(tmp_path):
         # request marked read on HERMES side
         assert b._reviews({}) == []
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_review_reject_emits_reject_verdict(tmp_path):
@@ -101,7 +105,8 @@ def test_review_reject_emits_reject_verdict(tmp_path):
         assert v[0]["payload"] == {"fp": "fpz", "decision": "reject",
                                    "reason": "too risky"}
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_review_approve_unknown_fp(tmp_path):
@@ -110,7 +115,8 @@ def test_review_approve_unknown_fp(tmp_path):
         assert b._review_approve({"fp": "ghost"}) == {"ok": False,
                                                       "reason": "unknown_fp"}
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 # ── proposer side (auto-publish + poll) ──
@@ -154,7 +160,8 @@ def test_propose_hermes_review_publishes_one_request_per_reviewer(tmp_path):
         assert len(mailbox.inbox(db, "B", types=["review_request"])) == 1
         assert len(mailbox.inbox(db, "C", types=["review_request"])) == 1
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_flag_off_no_publish(tmp_path):
@@ -172,7 +179,8 @@ def test_flag_off_no_publish(tmp_path):
         b._act({"intent": _INTENT})
         assert mailbox.inbox(db, "B") == []           # nothing published
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_poll_applies_approve_and_returns_packet(tmp_path):
@@ -193,7 +201,8 @@ def test_poll_applies_approve_and_returns_packet(tmp_path):
         assert applied[0]["status"] == "executable"
         assert applied[0]["packet"]["tool"] == "echo"
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_poll_applies_reject(tmp_path):
@@ -211,7 +220,8 @@ def test_poll_applies_reject(tmp_path):
         assert applied[0]["decision"] == "reject"
         assert applied[0]["status"] == "rejected"
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_poll_ignores_non_allowlisted_verdict(tmp_path):
@@ -230,7 +240,8 @@ def test_poll_ignores_non_allowlisted_verdict(tmp_path):
         # the act is still pending (not released)
         assert b.engine.host_act.pending(10)[0]["status"] == "proposed"
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_poll_ignores_foreign_proposer_fp(tmp_path):
@@ -247,7 +258,8 @@ def test_poll_ignores_foreign_proposer_fp(tmp_path):
                                                   reason=""))
         assert b._poll_reviews({}) == []              # no local match
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_poll_replay_is_noop(tmp_path):
@@ -269,7 +281,8 @@ def test_poll_replay_is_noop(tmp_path):
                                                   reason=""))
         assert b._poll_reviews({}) == []              # row no longer 'proposed'
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_two_instance_end_to_end(tmp_path):
@@ -286,7 +299,10 @@ def test_two_instance_end_to_end(tmp_path):
         applied = A._poll_reviews({})                  # A applies
         assert applied[0]["status"] == "executable"
     finally:
-        seenA.close(); engA.close(); seenB.close(); engB.close()
+        seenA.close()
+        engA.close()
+        seenB.close()
+        engB.close()
 
 
 def test_argparser_accepts_liaison_flags():
