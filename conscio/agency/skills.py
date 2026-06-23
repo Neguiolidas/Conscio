@@ -182,7 +182,9 @@ class SkillLibrary:
             (time.time(), goal_fp, goal_text, tool_seq, plan_template,
              successes, failures))
         self._conn.commit()
-        return None if cur.rowcount == 0 else int(cur.lastrowid)
+        if cur.rowcount == 0 or cur.lastrowid is None:
+            return None
+        return int(cur.lastrowid)
 
     # ── rendering ──────────────────────────────────────────────────────
 
