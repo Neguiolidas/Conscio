@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.0] - 2026-06-23 — "Liaison"
+
+### Added
+- Cross-agent `hermes_review`: a different agent can approve/reject a gated act
+  over a shared SQLite mailbox (`$HERMES_HOME/liaison.db`). New engine-free
+  `conscio/liaison/` (mailbox + pure review protocol).
+- MCP tools behind `--enable-hermes-review`: `conscio.reviews`,
+  `conscio.review_approve`, `conscio.review_reject` (reviewer role), and
+  `conscio.poll_reviews` (proposer role; also needs `--enable-act`). A
+  `hermes_review` pending act auto-publishes a directed `review_request` to each
+  `--reviewer`.
+- New CLI flags: `--enable-hermes-review`, `--reviewer` (repeatable), `--liaison-db`.
+
+### Notes
+- A verdict is applied only from an allowlisted reviewer and only through the
+  unchanged local `host_act` gate. fp binds each verdict to one exact proposal
+  (proposer id + ledger id). No crypto (shared-filesystem trust domain).
+- Directed-only (no broadcast); noosphere / Observatory / Hub untouched.
+
 ## [2.5.0] - 2026-06-23 — "Society view"
 
 ### Added
