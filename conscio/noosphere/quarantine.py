@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS quarantine (
     last_trial_ts        REAL NOT NULL DEFAULT 0,
     last_trial_result    TEXT NOT NULL DEFAULT '',
     last_trial_error     TEXT NOT NULL DEFAULT '',
+    promoted_ts          REAL NOT NULL DEFAULT 0,
+    promoted_skill_id    INTEGER NOT NULL DEFAULT 0,
     UNIQUE(origin_instance_id, content_sha256)
 );
 """
@@ -46,12 +48,18 @@ _TRIAL_COLS = {
     "last_trial_error": "TEXT NOT NULL DEFAULT ''",
 }
 
+# v2.3: promotion-stats columns added to pre-existing DBs via _migrate.
+_PROMOTE_COLS = {
+    "promoted_ts": "REAL NOT NULL DEFAULT 0",
+    "promoted_skill_id": "INTEGER NOT NULL DEFAULT 0",
+}
+
 
 def _migrate(conn: sqlite3.Connection) -> None:
-    """Idempotent ADD COLUMN for pre-v2.2.2 DBs. SQLite has no ADD COLUMN IF
-    NOT EXISTS, so guard with PRAGMA table_info."""
+    """Idempotent ADD COLUMN for pre-v2.2.2/v2.3 DBs. SQLite has no ADD COLUMN
+    IF NOT EXISTS, so guard with PRAGMA table_info."""
     have = {r["name"] for r in conn.execute("PRAGMA table_info(quarantine)")}
-    for col, decl in _TRIAL_COLS.items():
+    for col, decl in {**_TRIAL_COLS, **_PROMOTE_COLS}.items():
         if col not in have:
             conn.execute(f"ALTER TABLE quarantine ADD COLUMN {col} {decl}")
 
@@ -78,6 +86,8 @@ class QuarantineRow:
     last_trial_ts: float = 0.0
     last_trial_result: str = ""
     last_trial_error: str = ""
+    promoted_ts: float = 0.0
+    promoted_skill_id: int = 0
     id: int | None = None
 
 
@@ -116,7 +126,8 @@ def _row(r: sqlite3.Row) -> QuarantineRow:
         revalidation_error=r["revalidation_error"], schema_version=r["schema_version"],
         trial_successes=r["trial_successes"], trial_failures=r["trial_failures"],
         last_trial_ts=r["last_trial_ts"], last_trial_result=r["last_trial_result"],
-        last_trial_error=r["last_trial_error"])
+        last_trial_error=r["last_trial_error"],
+        promoted_ts=r["promoted_ts"], promoted_skill_id=r["promoted_skill_id"])
 
 
 def insert(db: Path, row: QuarantineRow) -> bool:
@@ -192,6 +203,21 @@ def note_trial(db: Path, rowid: int, *, result: str, error: str,
             "UPDATE quarantine SET last_trial_ts = ?, last_trial_result = ?,"
             " last_trial_error = ? WHERE id = ?",
             (ts, result, error, rowid))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def mark_promoted(db: Path, rowid: int, *, ts: float, skill_id: int) -> bool:
+    """Stamp promoted_ts / promoted_skill_id after a successful graft into the
+    live library. Returns True iff a row was updated. Never touches the trial
+    counters or import_status."""
+    conn = _connect(db)
+    try:
+        cur = conn.execute(
+            "UPDATE quarantine SET promoted_ts = ?, promoted_skill_id = ?"
+            " WHERE id = ?", (ts, skill_id, rowid))
         conn.commit()
         return cur.rowcount > 0
     finally:
