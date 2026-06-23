@@ -127,8 +127,11 @@ class Handler(BaseHTTPRequestHandler):
     def _dispatch(self, method: str) -> None:
         parsed = urlparse(self.path)
         query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+        proj = self._projection
+        if proj is None:                       # always set by make_server
+            return self._send(_err(500, "internal error", "no projection"))
         try:
-            resp = route(method, parsed.path, query, projection=self._projection,
+            resp = route(method, parsed.path, query, projection=proj,
                          token=self._token, auth=self.headers.get("Authorization"))
         except Exception as exc:               # no traceback leak
             resp = _err(500, "internal error", type(exc).__name__)

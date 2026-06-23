@@ -19,7 +19,8 @@ def test_state_tools_present_without_act(tmp_path):
         deflist = {d["name"] for d in b.tool_defs()}
         assert {"conscio.state", "conscio.events", "conscio.handoff"} <= deflist
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_state_tool_matches_state_resource(tmp_path):
@@ -31,7 +32,8 @@ def test_state_tool_matches_state_resource(tmp_path):
         res_val = _j.loads(res["contents"][0]["text"])
         assert tool_val == res_val
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_events_tool_returns_list(tmp_path):
@@ -39,7 +41,8 @@ def test_events_tool_returns_list(tmp_path):
     try:
         assert isinstance(b._tools()["conscio.events"]({"limit": 5}), list)
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_handoff_tool_returns_str(tmp_path):
@@ -47,4 +50,5 @@ def test_handoff_tool_returns_str(tmp_path):
     try:
         assert isinstance(b._tools()["conscio.handoff"]({}), str)
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()

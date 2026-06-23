@@ -53,11 +53,14 @@ class Projection:
                since: str | None = None, limit: int = 50) -> list[dict]:
         conds, params = [], []
         if type:
-            conds.append("type = ?"); params.append(type)
+            conds.append("type = ?")
+            params.append(type)
         if category:
-            conds.append("category = ?"); params.append(category)
+            conds.append("category = ?")
+            params.append(category)
         if since:
-            conds.append("timestamp >= ?"); params.append(since)   # shares fate w/ event_bus.query
+            conds.append("timestamp >= ?")        # shares fate w/ event_bus.query
+            params.append(since)
         where = " AND ".join(conds) if conds else "1=1"
         rows = self._select(
             "SELECT id, type, category, data, priority, data_hash, project_dir,"
