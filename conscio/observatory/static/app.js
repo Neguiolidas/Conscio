@@ -7,6 +7,9 @@ const ENDPOINTS = {
   actions: "/api/actions",
   skills: "/api/skills",
   state: "/api/state",
+  society_members: "/api/society/members",
+  society_skills: "/api/society/skills",
+  society_records: "/api/society/records",
 };
 async function load(tab) {
   out.textContent = "loading…";

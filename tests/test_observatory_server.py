@@ -16,8 +16,19 @@ class FakeProjection:
 P = FakeProjection()
 
 
+class FakeSociety:
+    db = "/fake/noosphere.db"                   # real SocietyProjection exposes .db
+    def members(self): return [{"origin_instance_id": "i", "origin_label": "L"}]
+    def skills(self, **k): return [{"origin_label": "L", "goal_fp": "fp"}]
+    def records(self, **k): return [{"origin_label": "L", "entry_count": 3}]
+
+
+S = FakeSociety()
+
+
 def _route(method, path, query=None, *, token=None, auth=None):
-    return srv.route(method, path, query or {}, projection=P, token=token, auth=auth)
+    return srv.route(method, path, query or {}, projection=P, society=S,
+                     token=token, auth=auth)
 
 
 def test_check_host_refuses_non_loopback():
@@ -59,3 +70,27 @@ def test_static_whitelist_and_no_traversal():
 
 def test_unknown_path_404():
     assert _route("GET", "/api/nope").status == 404
+
+
+def test_society_endpoints_return_projection_shape():
+    assert _route("GET", "/api/society/members").payload == \
+        [{"origin_instance_id": "i", "origin_label": "L"}]
+    assert _route("GET", "/api/society/skills").payload == \
+        [{"origin_label": "L", "goal_fp": "fp"}]
+    assert _route("GET", "/api/society/records").payload == \
+        [{"origin_label": "L", "entry_count": 3}]
+
+
+def test_society_mutation_verbs_405():
+    for m in ("POST", "PUT", "PATCH", "DELETE"):
+        assert _route(m, "/api/society/members").status == 405
+
+
+def test_health_includes_noosphere():
+    assert _route("GET", "/api/health").payload["noosphere"] == "/fake/noosphere.db"
+
+
+def test_head_accepted_not_501():
+    # v2.4 deferred fix folded in: route() accepts HEAD; Handler.do_HEAD wires it.
+    assert _route("HEAD", "/api/events").status == 200
+    assert _route("HEAD", "/").status == 200
