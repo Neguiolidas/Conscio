@@ -305,6 +305,24 @@ def test_two_instance_end_to_end(tmp_path):
         engB.close()
 
 
+def test_publish_failure_is_best_effort(tmp_path, monkeypatch, capsys):
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _proposer(tmp_path, tmp_path / "A", instance_id="A",
+                             reviewers=("B",), liaison_db=db)
+    try:
+        import conscio.mcp.server as srv
+
+        def boom(*a, **k):
+            raise OSError("disk full")
+        monkeypatch.setattr(srv.mailbox, "send", boom)
+        res = b._act({"intent": _INTENT})             # publish raises internally
+        assert res["status"] == "pending_approval"    # act survives; ledgered
+        assert "publish failed" in capsys.readouterr().err
+    finally:
+        seen.close()
+        eng.close()
+
+
 def test_argparser_accepts_liaison_flags():
     from conscio.mcp.server import _arg_parser
     ns = _arg_parser().parse_args(

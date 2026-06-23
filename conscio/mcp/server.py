@@ -215,9 +215,13 @@ class Bindings:
             fp=fp, tool=row["tool"], args=args,
             goal=row.get("goal_text", ""), verdict=row.get("verdict", ""),
             rationale=row.get("rationale", ""))
-        for r in self.reviewers:
-            mailbox.send(self.liaison_db, from_instance=self.self_instance_id,
-                         to_instance=r, type="review_request", payload=payload)
+        try:                                       # best-effort: the act is already
+            for r in self.reviewers:               # ledgered pending; publish is 2nd
+                mailbox.send(self.liaison_db, from_instance=self.self_instance_id,
+                             to_instance=r, type="review_request", payload=payload)
+        except Exception as exc:                   # never break act on a bad mailbox
+            print(f"liaison: review_request publish failed: {exc}",
+                  file=sys.stderr)
 
     @staticmethod
     def _row_args(row: dict) -> dict:
