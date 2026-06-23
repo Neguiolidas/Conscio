@@ -1001,6 +1001,69 @@ class ConsciousnessEngine:
             return []
         return self._act_pipeline.ledger.pending(limit)
 
+    # --- v2.2.2 "Trial": sandboxed replay of a quarantined foreign skill ---
+
+    def trial_quarantined(self, rowid: int, *, enable_trial: bool = False):
+        """Replay a quarantined foreign skill in a throwaway fs-only sandbox
+        and record a binary pass/fail on its quarantine row. Fully isolated —
+        never writes the agent's ledger/skills/trust/breaker. Default off.
+
+        Returns a trial.TrialOutcome (ran) or trial.TrialRefusal (refused)."""
+        import json
+        import shutil
+        import tempfile
+        import time
+        from pathlib import Path
+
+        from .agency import trial as trial_mod
+        from .agency.tools import make_default_registry
+        from .noosphere import artifact, quarantine
+        from .noosphere.paths import quarantine_db_path
+
+        if not enable_trial:
+            return trial_mod.TrialRefusal("trial disabled; pass --enable-trial")
+        pipe = getattr(self, "_act_pipeline", None)
+        if pipe is None or getattr(pipe, "skeptic", None) is None:
+            return trial_mod.TrialRefusal("trial requires an adapter")
+
+        qdb = quarantine_db_path(self.storage)
+        row = quarantine.get(qdb, rowid)
+        if row is None:
+            return trial_mod.TrialRefusal(f"no quarantine row #{rowid}")
+        if row.import_status != "quarantined":
+            return trial_mod.TrialRefusal(
+                f"row #{rowid} is not quarantined (status={row.import_status})")
+        if artifact.content_hash(row.artifact_json) != row.content_sha256:
+            quarantine.note_trial(qdb, rowid, result="tampered",
+                                  error="content_sha256 mismatch",
+                                  ts=time.time())
+            return trial_mod.TrialRefusal(
+                f"row #{rowid} tampered (content_sha256 mismatch)")
+        try:
+            steps = json.loads(row.plan_template)
+            if not isinstance(steps, list):
+                raise ValueError("plan_template is not a list")
+        except (ValueError, TypeError) as exc:
+            quarantine.note_trial(qdb, rowid, result="corrupt_plan",
+                                  error=str(exc), ts=time.time())
+            return trial_mod.TrialRefusal(f"row #{rowid} has a corrupt plan")
+
+        tmp = tempfile.mkdtemp(prefix="conscio-trial-")
+        try:
+            reg = make_default_registry(
+                sandbox_root=Path(tmp), content_store=None, event_bus=None,
+                goal_generator=None)
+            outcome = trial_mod.run_trial(
+                steps, goal_text=row.goal_text, skeptic=pipe.skeptic,
+                registry=reg)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+        quarantine.record_trial(qdb, rowid, passed=outcome.passed,
+                                result=outcome.result, error=outcome.error,
+                                ts=time.time())
+        return outcome
+
     # --- v2.0 "Connect": propose-only cognition (never executes) ---
 
     def propose_action(self, intent: dict) -> dict:

@@ -28,9 +28,32 @@ CREATE TABLE IF NOT EXISTS quarantine (
     revalidation_result  TEXT NOT NULL,
     revalidation_error   TEXT NOT NULL DEFAULT '',
     schema_version       INTEGER NOT NULL DEFAULT 1,
+    trial_successes      INTEGER NOT NULL DEFAULT 0,
+    trial_failures       INTEGER NOT NULL DEFAULT 0,
+    last_trial_ts        REAL NOT NULL DEFAULT 0,
+    last_trial_result    TEXT NOT NULL DEFAULT '',
+    last_trial_error     TEXT NOT NULL DEFAULT '',
     UNIQUE(origin_instance_id, content_sha256)
 );
 """
+
+# v2.2.2: trial-stats columns added to pre-existing DBs via _migrate.
+_TRIAL_COLS = {
+    "trial_successes": "INTEGER NOT NULL DEFAULT 0",
+    "trial_failures": "INTEGER NOT NULL DEFAULT 0",
+    "last_trial_ts": "REAL NOT NULL DEFAULT 0",
+    "last_trial_result": "TEXT NOT NULL DEFAULT ''",
+    "last_trial_error": "TEXT NOT NULL DEFAULT ''",
+}
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Idempotent ADD COLUMN for pre-v2.2.2 DBs. SQLite has no ADD COLUMN IF
+    NOT EXISTS, so guard with PRAGMA table_info."""
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(quarantine)")}
+    for col, decl in _TRIAL_COLS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE quarantine ADD COLUMN {col} {decl}")
 
 
 @dataclass(frozen=True)
@@ -50,6 +73,11 @@ class QuarantineRow:
     revalidation_result: str
     revalidation_error: str
     schema_version: int
+    trial_successes: int = 0
+    trial_failures: int = 0
+    last_trial_ts: float = 0.0
+    last_trial_result: str = ""
+    last_trial_error: str = ""
     id: int | None = None
 
 
@@ -61,6 +89,7 @@ def _connect(db: Path) -> sqlite3.Connection:
     conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA)
+    _migrate(conn)
     return conn
 
 
@@ -84,7 +113,10 @@ def _row(r: sqlite3.Row) -> QuarantineRow:
         tool_seq=r["tool_seq"], plan_template=r["plan_template"],
         artifact_json=_as_bytes(r["artifact_json"]), import_status=r["import_status"],
         revalidation_result=r["revalidation_result"],
-        revalidation_error=r["revalidation_error"], schema_version=r["schema_version"])
+        revalidation_error=r["revalidation_error"], schema_version=r["schema_version"],
+        trial_successes=r["trial_successes"], trial_failures=r["trial_failures"],
+        last_trial_ts=r["last_trial_ts"], last_trial_result=r["last_trial_result"],
+        last_trial_error=r["last_trial_error"])
 
 
 def insert(db: Path, row: QuarantineRow) -> bool:
@@ -130,3 +162,37 @@ def get(db: Path, rowid: int) -> QuarantineRow | None:
     finally:
         conn.close()
     return _row(r) if r else None
+
+
+def record_trial(db: Path, rowid: int, *, passed: bool, result: str,
+                 error: str, ts: float) -> bool:
+    """Bump one trial counter and set the last_trial_* fields. Returns True
+    iff a row was updated. `col` is from a fixed internal set — never user
+    input — so the f-string carries no injection surface."""
+    col = "trial_successes" if passed else "trial_failures"
+    conn = _connect(db)
+    try:
+        cur = conn.execute(
+            f"UPDATE quarantine SET {col} = {col} + 1, last_trial_ts = ?,"
+            " last_trial_result = ?, last_trial_error = ? WHERE id = ?",
+            (ts, result, error, rowid))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def note_trial(db: Path, rowid: int, *, result: str, error: str,
+               ts: float) -> bool:
+    """Record a non-counting trial note (refusal / tamper). Returns True iff a
+    row was updated. Never touches the success/failure counters."""
+    conn = _connect(db)
+    try:
+        cur = conn.execute(
+            "UPDATE quarantine SET last_trial_ts = ?, last_trial_result = ?,"
+            " last_trial_error = ? WHERE id = ?",
+            (ts, result, error, rowid))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
