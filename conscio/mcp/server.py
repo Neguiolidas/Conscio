@@ -17,21 +17,31 @@ from conscio.workspace import WorkspaceContext
 
 from . import jsonrpc as j
 from .protocol import SUPPORTED_PROTOCOLS, Dispatcher
-from .schemas import (ACT_TOOL_DEFS, BASE_TOOL_DEFS, RESOURCE_DEFS,
-                      derive_event_id, event_to_frame, validate_event)
+from .schemas import (ACT_TOOL_DEFS, BASE_TOOL_DEFS, LIAISON_TOOL_DEFS,
+                      RESOURCE_DEFS, derive_event_id, event_to_frame,
+                      validate_event)
 from .seen import SeenStore
+from ..liaison import mailbox, review
 
 
 class Bindings:
     def __init__(self, engine: ConsciousnessEngine, seen: SeenStore, *,
                  adapter_name: str | None = None,
-                 workspace_id: str = "", act_flag: bool = False) -> None:
+                 workspace_id: str = "", act_flag: bool = False,
+                 hermes_review: bool = False,
+                 reviewers: tuple[str, ...] = (),
+                 self_instance_id: str = "",
+                 liaison_db: Path | None = None) -> None:
         self.engine = engine
         self.seen = seen
         self.adapter_name = adapter_name
         self.workspace_id = workspace_id
         self.act_flag = act_flag             # v2.0.1: --enable-act
         self._act_error = ""
+        self.hermes_review = hermes_review    # v2.6.0: --enable-hermes-review
+        self.reviewers = tuple(reviewers)
+        self.self_instance_id = self_instance_id
+        self.liaison_db = liaison_db
 
     # ── discovery ──
     def version(self) -> str:
@@ -64,12 +74,19 @@ class Bindings:
                 "adapter_ready": self.adapter_name is not None,
                 "manifest_hash": getattr(self.engine, "_host_act_hash", ""),
                 "adapter": self.adapter_name,
+                "hermes_review_enabled": self.hermes_review,
+                "reviewers_count": len(self.reviewers),
                 "supported_protocols": SUPPORTED_PROTOCOLS}
 
     def tool_defs(self) -> list[dict]:
         defs = list(BASE_TOOL_DEFS)
         if self._act_enabled():
             defs += list(ACT_TOOL_DEFS)
+        if self.hermes_review:
+            for d in LIAISON_TOOL_DEFS:
+                if d["name"] == "conscio.poll_reviews" and not self._act_enabled():
+                    continue                 # proposer tool needs act too
+                defs.append(d)
         return defs
 
     def resource_defs(self) -> list[dict]:
@@ -109,6 +126,12 @@ class Bindings:
                 "conscio.reject": lambda a: self.engine.host_act.reject(
                     self._int_arg(a, "ledger_id"), str(a.get("reason", ""))),
             })
+        if self.hermes_review:
+            tools["conscio.reviews"] = self._reviews
+            tools["conscio.review_approve"] = self._review_approve
+            tools["conscio.review_reject"] = self._review_reject
+            if self._act_enabled():
+                tools["conscio.poll_reviews"] = self._poll_reviews
         return tools
 
     def _int_arg(self, args: dict, key: str,
@@ -128,6 +151,50 @@ class Bindings:
         if not isinstance(result, dict):
             raise j.InvalidParams("result must be an object")
         return self.engine.host_act.report(ledger_id, result)
+
+    # ── v2.6.0 Liaison: reviewer side (pure mailbox; no host_act) ──
+    def _reviews(self, args: dict) -> list[dict]:
+        limit = self._int_arg(args, "limit", 50)
+        rows = mailbox.inbox(self.liaison_db, self.self_instance_id,
+                             types=["review_request"], unread_only=True,
+                             limit=limit)
+        out: list[dict] = []
+        seen_fp: set[str] = set()
+        for m in rows:                       # newest-first -> first per fp = latest
+            try:
+                rq = review.parse_request(m["payload"])
+            except ValueError:
+                continue
+            if rq.fp in seen_fp:
+                continue
+            seen_fp.add(rq.fp)
+            out.append({"fp": rq.fp, "from_instance": m["from_instance"],
+                        "tool": rq.tool, "args": rq.args, "goal": rq.goal,
+                        "verdict": rq.verdict, "ts": m["ts"]})
+        return out
+
+    def _review_approve(self, args: dict) -> dict:
+        return self._send_verdict(args, "approve")
+
+    def _review_reject(self, args: dict) -> dict:
+        return self._send_verdict(args, "reject")
+
+    def _send_verdict(self, args: dict, decision: str) -> dict:
+        fp = self._require(args, "fp")
+        reason = str(args.get("reason", ""))
+        rows = mailbox.inbox(self.liaison_db, self.self_instance_id,
+                             types=["review_request"], unread_only=True,
+                             limit=200)
+        match = [m for m in rows if (m["payload"] or {}).get("fp") == fp]
+        if not match:
+            return {"ok": False, "reason": "unknown_fp"}
+        proposer = match[0]["from_instance"]
+        mailbox.send(self.liaison_db, from_instance=self.self_instance_id,
+                     to_instance=proposer, type="review_verdict",
+                     payload=review.build_verdict(fp=fp, decision=decision,
+                                                  reason=reason))
+        mailbox.mark_read(self.liaison_db, [m["id"] for m in match])  # all fp rows
+        return {"ok": True, "fp": fp, "decision": decision, "to": proposer}
 
     @staticmethod
     def _require(args: dict, key: str):
