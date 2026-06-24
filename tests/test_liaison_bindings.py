@@ -492,3 +492,11 @@ def test_relay_read_filters_non_int_ids(tmp_path):
     finally:
         seen.close()
         eng.close()
+
+
+def test_argparser_accepts_relay_flags():
+    from conscio.mcp.server import _arg_parser
+    ns = _arg_parser().parse_args(
+        ["--enable-relay", "--relay-peer", "B", "--relay-peer", "C"])
+    assert ns.enable_relay is True
+    assert ns.relay_peer == ["B", "C"]

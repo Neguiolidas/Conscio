@@ -489,6 +489,11 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="trusted reviewer instance_id (repeatable)")
     parser.add_argument("--liaison-db", default=None,
                         help="mailbox db path (default $HERMES_HOME/liaison.db)")
+    parser.add_argument("--enable-relay", action="store_true",
+                        help="enable opt-in general cross-agent messaging")
+    parser.add_argument("--relay-peer", action="append", default=[],
+                        metavar="INSTANCE_ID",
+                        help="trusted relay peer instance_id (repeatable)")
     return parser
 
 
@@ -513,7 +518,7 @@ def main(argv: list[str] | None = None) -> int:
     seen.prune(args.seen_max_rows, args.seen_max_age_days)
     self_instance_id = ""
     liaison_db = None
-    if args.enable_hermes_review:
+    if args.enable_hermes_review or args.enable_relay:
         from conscio.noosphere.identity import load_or_create
         self_instance_id = load_or_create(engine.storage).instance_id
         liaison_db = (Path(args.liaison_db) if args.liaison_db
@@ -523,13 +528,20 @@ def main(argv: list[str] | None = None) -> int:
                         hermes_review=args.enable_hermes_review,
                         reviewers=tuple(args.reviewer),
                         self_instance_id=self_instance_id,
-                        liaison_db=liaison_db)
+                        liaison_db=liaison_db,
+                        relay=args.enable_relay,
+                        relay_peers=tuple(args.relay_peer))
     mode = "act" if args.enable_act else "propose-only"
     if args.enable_hermes_review:
         if args.reviewer:
             mode += f"+hermes-review(reviewers={len(args.reviewer)})"
         else:                              # active but no recipients (Hermet)
             mode += "+hermes-review(reviewers=0; no publish targets)"
+    if args.enable_relay:
+        if args.relay_peer:
+            mode += f"+relay(peers={len(args.relay_peer)})"
+        else:                              # active but no send/recv targets
+            mode += "+relay(peers=0; no send/recv targets)"
     print(f"conscio-mcp {__version__} ready "
           f"(workspace={workspace.id}, mode={mode})", file=sys.stderr)
     try:
