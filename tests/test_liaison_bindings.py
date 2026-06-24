@@ -9,13 +9,15 @@ from conscio.mcp.server import Bindings
 
 
 def _bind(tmp_path, *, instance_id, reviewers=(), hermes_review=True,
-          act_flag=False, liaison_db=None, storage=None):
+          act_flag=False, liaison_db=None, storage=None,
+          relay=False, relay_peers=()):
     eng = ConsciousnessEngine("glm-5.1", storage_path=storage or tmp_path)
     seen = SeenStore((storage or tmp_path) / "mcp_seen.db")
     b = Bindings(eng, seen, adapter_name=None, workspace_id="ws",
                  act_flag=act_flag, hermes_review=hermes_review,
                  reviewers=tuple(reviewers), self_instance_id=instance_id,
-                 liaison_db=liaison_db or (tmp_path / "liaison.db"))
+                 liaison_db=liaison_db or (tmp_path / "liaison.db"),
+                 relay=relay, relay_peers=tuple(relay_peers))
     return b, eng, seen
 
 
@@ -331,3 +333,162 @@ def test_argparser_accepts_liaison_flags():
     assert ns.enable_hermes_review is True
     assert ns.reviewer == ["B", "C"]
     assert ns.liaison_db == "/tmp/x.db"
+
+
+# ── v2.6.1 Relay ──
+
+def test_relay_tools_absent_without_flag(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="X", hermes_review=False,
+                         relay=False)
+    try:
+        names = {t["name"] for t in b.tool_defs()}
+        assert not any(n.startswith("conscio.relay") for n in names)
+        assert b.conscio_meta()["relay_enabled"] is False
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_tools_present_with_flag(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="X", hermes_review=False,
+                         relay=True, relay_peers=("B",))
+    try:
+        names = {t["name"] for t in b.tool_defs()}
+        assert {"conscio.relay_send", "conscio.relay_inbox",
+                "conscio.relay_read"} <= names
+        meta = b.conscio_meta()
+        assert meta["relay_enabled"] is True
+        assert meta["relay_peers_count"] == 1
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_send_rejects_non_peer(tmp_path):
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",), liaison_db=db)
+    try:
+        r = b._relay_send({"to": "Z", "type": "note", "payload": {}})
+        assert r["ok"] is False and "unknown peer" in r["reason"]
+        assert mailbox.inbox(db, "Z", unread_only=False) == []   # nothing sent
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_send_rejects_reserved_type(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",),
+                         liaison_db=tmp_path / "liaison.db")
+    try:
+        r = b._relay_send({"to": "B", "type": "review_request", "payload": {}})
+        assert r["ok"] is False and "reserved" in r["reason"]
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_send_rejects_oversize(tmp_path):
+    from conscio.liaison import relay as rl
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",),
+                         liaison_db=tmp_path / "liaison.db")
+    try:
+        big = {"x": "a" * (rl.MAX_PAYLOAD_BYTES + 1)}
+        r = b._relay_send({"to": "B", "type": "note", "payload": big})
+        assert r["ok"] is False and "exceeds" in r["reason"]
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_two_instance_end_to_end(tmp_path):
+    db = tmp_path / "liaison.db"
+    A, engA, seenA = _bind(tmp_path, instance_id="A", hermes_review=False,
+                           relay=True, relay_peers=("B",), liaison_db=db,
+                           storage=tmp_path / "A")
+    B, engB, seenB = _bind(tmp_path, instance_id="B", hermes_review=False,
+                           relay=True, relay_peers=("A",), liaison_db=db,
+                           storage=tmp_path / "B")
+    try:
+        r = A._relay_send({"to": "B", "type": "note", "payload": {"hi": 1}})
+        assert r["ok"] is True
+        msgs = B._relay_inbox({})["messages"]
+        assert len(msgs) == 1
+        assert msgs[0]["from_instance"] == "A"
+        assert msgs[0]["type"] == "note"
+        assert msgs[0]["payload"] == {"hi": 1}
+        assert B._relay_read({"ids": [msgs[0]["id"]]})["marked"] == 1
+        assert B._relay_inbox({})["messages"] == []           # consumed
+    finally:
+        seenA.close()
+        engA.close()
+        seenB.close()
+        engB.close()
+
+
+def test_relay_inbox_ignores_non_peer_and_marks_read(tmp_path):
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",), liaison_db=db)
+    try:
+        mailbox.send(db, from_instance="STRANGER", to_instance="A",
+                     type="note", payload={"x": 1})
+        assert b._relay_inbox({})["messages"] == []           # not surfaced
+        assert mailbox.inbox(db, "A", unread_only=True) == []  # marked read
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_inbox_excludes_reserved_and_leaves_untouched(tmp_path):
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",), liaison_db=db)
+    try:
+        mailbox.send(db, from_instance="B", to_instance="A",
+                     type="review_request", payload={"fp": "x"})
+        assert b._relay_inbox({})["messages"] == []           # excluded
+        # review channel still sees it UNREAD (relay never touched it)
+        assert len(mailbox.inbox(db, "A", types=["review_request"],
+                                 unread_only=True)) == 1
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_send_invokes_purge_best_effort(tmp_path, monkeypatch, capsys):
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",), liaison_db=db)
+    try:
+        import conscio.mcp.server as srv
+        calls = {"n": 0}
+
+        def boom(*a, **k):
+            calls["n"] += 1
+            raise OSError("disk full")
+        monkeypatch.setattr(srv.mailbox, "purge_read", boom)
+        r = b._relay_send({"to": "B", "type": "note", "payload": {}})
+        assert r["ok"] is True                # send survives a purge failure
+        assert calls["n"] == 1                # purge attempted
+        assert "purge failed" in capsys.readouterr().err
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_read_filters_non_int_ids(tmp_path):
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",), liaison_db=db)
+    try:
+        mid = mailbox.send(db, from_instance="B", to_instance="A",
+                           type="note", payload={})
+        # bools/floats/strings dropped; only the genuine int applies
+        res = b._relay_read({"ids": [True, 1.0, "x", mid]})
+        assert res["marked"] == 1
+    finally:
+        seen.close()
+        eng.close()
