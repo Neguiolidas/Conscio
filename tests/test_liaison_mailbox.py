@@ -72,3 +72,37 @@ def test_first_send_creates_db(tmp_path):
     mailbox.send(db, from_instance="A", to_instance="B", type="review_request",
                  payload={})
     assert db.exists()
+
+
+def test_purge_read_deletes_old_read(tmp_path):
+    import time
+    db = tmp_path / "liaison.db"
+    old = time.time() - 8 * 86400
+    mid = mailbox.send(db, from_instance="A", to_instance="B",
+                       type="note", payload={}, ts=old)
+    mailbox.mark_read(db, [mid], read_ts=old)
+    assert mailbox.purge_read(db, 7.0) == 1
+    assert mailbox.inbox(db, "B", unread_only=False) == []
+
+
+def test_purge_read_keeps_recent_read(tmp_path):
+    db = tmp_path / "liaison.db"
+    mid = mailbox.send(db, from_instance="A", to_instance="B",
+                       type="note", payload={})
+    mailbox.mark_read(db, [mid])
+    assert mailbox.purge_read(db, 7.0) == 0
+    assert len(mailbox.inbox(db, "B", unread_only=False)) == 1
+
+
+def test_purge_read_keeps_unread_old(tmp_path):
+    import time
+    db = tmp_path / "liaison.db"
+    old = time.time() - 30 * 86400
+    mailbox.send(db, from_instance="A", to_instance="B",
+                 type="note", payload={}, ts=old)
+    assert mailbox.purge_read(db, 7.0) == 0            # unread never deleted
+    assert len(mailbox.inbox(db, "B", unread_only=True)) == 1
+
+
+def test_purge_read_missing_db(tmp_path):
+    assert mailbox.purge_read(tmp_path / "nope.db", 7.0) == 0

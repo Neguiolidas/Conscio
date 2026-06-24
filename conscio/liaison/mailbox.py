@@ -120,3 +120,25 @@ def mark_read(db: Path, ids: list[int], read_ts: float | None = None) -> int:
         return cur.rowcount
     finally:
         conn.close()
+
+
+def purge_read(db: Path, older_than_days: float = 7.0) -> int:
+    """Delete READ messages older than the cutoff. Never deletes unread rows
+    (an offline peer still receives). Missing/corrupt/locked db -> 0. Additive
+    (v2.6.1): send/inbox/mark_read are unchanged; no schema change."""
+    db = Path(db)
+    if not db.exists():
+        return 0
+    try:
+        conn = _connect(db)
+    except sqlite3.Error:
+        return 0
+    cutoff = time.time() - older_than_days * 86400.0
+    try:
+        cur = conn.execute(
+            "DELETE FROM messages WHERE read_ts IS NOT NULL AND read_ts < ?",
+            (cutoff,))
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
