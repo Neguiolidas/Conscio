@@ -64,6 +64,16 @@ def test_non_peer_counted_not_detailed(tmp_path):
     assert any("non-peers (ignored)" in o for o in f.observations)
 
 
+def test_id_prefix_widened(tmp_path):
+    # v2.6.3 #4: 8-char prefix risks visual collision; show a wider prefix.
+    db = _db(tmp_path)
+    longpeer = "peerAAAABBBBCCCC"            # [:8] collides, [:12] distinguishes
+    mailbox.send(db, from_instance=longpeer, to_instance=ME, type="chat",
+                 payload={"body": "hi"})
+    f = RelaySensor(db, ME, [longpeer]).perceive()
+    assert any("peerAAAABBBB" in o for o in f.observations)
+
+
 def test_perceive_never_marks_read(tmp_path):
     db = _db(tmp_path)
     mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",

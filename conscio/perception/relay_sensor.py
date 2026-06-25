@@ -13,6 +13,8 @@ from ..liaison.relay import RESERVED_TYPES
 from ..risk import Risk
 from .sensor import PerceptionFrame, SensorAdapter
 
+_ID_DISPLAY = 12        # v2.6.3 #4: wider id prefix; 8 risked visual collision
+
 
 class RelaySensor(SensorAdapter):
     """Unread liaison inbox as a `PerceptionFrame` (source ``"relay"``)."""
@@ -46,9 +48,9 @@ class RelaySensor(SensorAdapter):
             else:
                 other_n += 1                   # non-peer: counted, not detailed
         for frm, n in sorted(relay_from.items()):
-            obs.append(f"relay: {n} unread from {frm[:8]}")
+            obs.append(f"relay: {n} unread from {frm[:_ID_DISPLAY]}")
         for frm, n in sorted(review_from.items()):
-            obs.append(f"review: {n} verdict(s) pending from {frm[:8]}")
+            obs.append(f"review: {n} verdict(s) pending from {frm[:_ID_DISPLAY]}")
         if other_n:
             obs.append(f"relay: {other_n} unread from non-peers (ignored)")
         if not obs:
