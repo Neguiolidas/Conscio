@@ -119,6 +119,12 @@ conscio-mcp --enable-act --enable-hermes-review --reviewer <id> \
 Inbound verdicts from allowlisted reviewers are applied to local pending acts
 on the next tool call — no explicit `conscio.poll_reviews`. The local
 `host_act` gate stays the authority. `--auto-review` is off by default and
-inert without act + hermes-review.
+inert without act + hermes-review. The poll is throttled to at most once per
+5 s (v2.6.3), so a chatty session does not open a liaison `SELECT` per request.
+
+> **Note (v2.6.3):** every polled verdict row is marked read as bound work,
+> including malformed or non-allowlisted ones. This is safe for the normal
+> flow (a `review_request` is published only after the act parks pending, so a
+> peer cannot verdict before the act exists; a corrected resend is a new row).
 
 General free-form auto-reply (LLM-generated) is a later phase.
