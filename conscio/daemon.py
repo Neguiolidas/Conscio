@@ -56,6 +56,7 @@ class Daemon:
     def __init__(self, engine: Any, sensors: Sequence[SensorAdapter], *,
                  interval: float = 5.0, budget: Optional[ActBudget] = None,
                  on_cycle: Optional[Callable[[list, RunReport], Any]] = None,
+                 responder: Optional[Callable[[], list]] = None,
                  workspace: Any = None,
                  consent: Any = None,
                  pidfile: Optional[str | Path] = None,
@@ -66,6 +67,7 @@ class Daemon:
         self.interval = interval
         self.budget = budget
         self.on_cycle = on_cycle or (lambda frames, result: None)
+        self.responder = responder                      # v2.7.0: relay auto-reply
         self.workspace = workspace
         self.consent = consent                          # v1.7.2: structural consent
         self._synced_ws_id: Optional[str] = None        # re-sync only on ws change
@@ -104,6 +106,11 @@ class Daemon:
         result = self.engine.run(self.budget, world_state=world_state)
         self.cycles += 1
         self._last_report = result
+        if self.responder is not None:                  # v2.7.0: awake auto-reply
+            try:
+                self.responder()
+            except Exception as exc:        # a bad responder never kills the loop
+                log.warning("relay responder failed: %s", exc)
         # Write heartbeat every cycle (not just on shutdown)
         self._write_heartbeat()
         try:
@@ -248,6 +255,14 @@ def _build_sensors(spec: str, *, agent_source: Optional[str],
     return sensors
 
 
+def _responder_armed(*, auto_respond: bool, relay_peer, has_adapter: bool,
+                     awake: bool, sensors_spec: str) -> bool:
+    """True iff --auto-respond should arm: needs a relay sensor + an adapter +
+    --awake + at least one --relay-peer (v2.7.0)."""
+    return bool(auto_respond and relay_peer and has_adapter and awake
+                and "relay" in [s.strip() for s in sensors_spec.split(",")])
+
+
 # ── config loader + adapter builder live in conscio/adapter_config.py now
 # (shared by the daemon and the MCP server; v2.0.1, no behavior change) ──
 
@@ -312,6 +327,12 @@ def _arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--relay-peer", action="append", default=[],
                         metavar="INSTANCE_ID",
                         help="trusted relay peer for the relay sensor (repeatable)")
+    parser.add_argument("--auto-respond", action="store_true",
+                        help="daemon auto-replies to unread relay peer messages "
+                             "via the adapter (OFF default; needs relay sensor + "
+                             "adapter + --awake + --relay-peer)")
+    parser.add_argument("--respond-limit", type=int, default=10,
+                        help="max relay auto-replies per cycle (token-burn cap)")
     return parser
 
 
@@ -370,8 +391,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
               if args.budget_cycles else None)
     workspace = WorkspaceContext(emit=engine.event_bus.emit)
     consent = StructuralConsent(consent_path(engine.storage))   # v1.7.2
+    responder = None                                            # v2.7.0
+    if args.auto_respond:
+        if _responder_armed(auto_respond=True, relay_peer=args.relay_peer,
+                            has_adapter=adapter is not None, awake=awake,
+                            sensors_spec=sensors_spec):
+            from .agency import relay_respond
+            _adapter = adapter                          # R1: bind LOCAL adapter
+            _peers = tuple(args.relay_peer)
+            responder = lambda: relay_respond.auto_respond(   # noqa: E731
+                _adapter, liaison_db, self_id, _peers,
+                limit=args.respond_limit)
+            log.info("relay auto-respond armed (peers=%d, limit=%d)",
+                     len(_peers), args.respond_limit)
+        else:
+            log.warning("--auto-respond inert: needs relay sensor + adapter + "
+                        "--awake + --relay-peer; skipping")
     daemon = Daemon(engine, sensors=sensors, interval=interval,
-                    budget=budget, workspace=workspace, consent=consent)
+                    budget=budget, workspace=workspace, consent=consent,
+                    responder=responder)
     daemon.run(once=args.once)
     return 0
 

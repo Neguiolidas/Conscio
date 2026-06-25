@@ -127,4 +127,23 @@ inert without act + hermes-review. The poll is throttled to at most once per
 > flow (a `review_request` is published only after the act parks pending, so a
 > peer cannot verdict before the act exists; a corrected resend is a new row).
 
-General free-form auto-reply (LLM-generated) is a later phase.
+**Auto-respond (daemon, v2.7.0).** An awake daemon can auto-reply to unread
+free-form peer messages instead of waiting for the host:
+
+```bash
+conscio-daemon --awake --sensors host,relay \
+               --relay-peer <peer_instance_id> \
+               --adapter anthropic --adapter-model claude-haiku-4-5-20251001 \
+               --auto-respond --respond-limit 10
+```
+
+Each cycle the daemon reads unread peer messages, generates one reply per message
+via its adapter (a thin call — no engine memory), and sends it back tagged
+`auto_reply: true` + `in_reply_to`. `--auto-respond` is OFF by default and inert
+without the `relay` sensor + an adapter + `--awake` + `--relay-peer`.
+`--respond-limit` (default 10) caps adapter calls per cycle.
+
+The loop is **1-turn bounded**: a peer's `auto_reply` message is consumed but
+never re-answered, so two auto-responders cannot ping-pong. In this mode the
+daemon owns consumption (it marks handled peer rows read); the host's
+`relay_inbox` no longer sees them. Multi-turn conversations are a later phase.

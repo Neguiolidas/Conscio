@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.7.0] - 2026-06-25 — "Phase 2: General Relay Auto-Respond"
+
+### Added
+- **Awake relay auto-respond (daemon).** A new `--auto-respond` flag lets an
+  awake daemon auto-reply to unread free-form relay messages from trusted peers,
+  generating one reply each via its LLM adapter and sending it back. OFF by
+  default; inert without the `relay` sensor + an adapter + `--awake` +
+  `--relay-peer`. `--respond-limit` (default 10) caps adapter calls per cycle.
+- Pure responder `conscio/agency/relay_respond.py` (engine-free; raw adapter
+  call, no engine memory). Replies carry `auto_reply: true` + `in_reply_to`.
+
+### Notes
+- **1-turn bounded.** A peer's auto-reply (`auto_reply: true`) is consumed but
+  never re-answered, so two auto-responders cannot ping-pong. Multi-turn is a
+  later phase.
+- **Daemon owns consumption in this mode.** The responder marks handled peer
+  rows read (per-row, after each send); the host's `relay_inbox` no longer sees
+  them. `RelaySensor` stays read-only.
+- Debt-zero: `conscio/liaison/`, `mcp/server.py`, `mcp/protocol.py`,
+  `agency/review_apply.py` unchanged. `relay_send` is a pure mailbox write, not
+  `host_act` — the server is untouched.
+
+---
+
 ## [2.6.3] - 2026-06-25 — "Ressalvas"
 
 Post-ship hardening of v2.6.2, addressing reviewer ressalvas.
