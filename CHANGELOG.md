@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.3] - 2026-06-25 — "Ressalvas"
+
+Post-ship hardening of v2.6.2, addressing reviewer ressalvas.
+
+### Changed
+- **Auto-review SQL is throttled.** `--auto-review` previously opened a liaison `SELECT` on every tool call; it now polls at most once per `AUTO_APPLY_THROTTLE_S` (5 s) per `Bindings`. The `host_act` gate remains the authority — this only paces the opportunistic poll.
+- **`RelaySensor` id prefix widened** 8 → 12 chars in observations, to reduce visual id collision in perception/logs.
+
+### Added
+- End-to-end integration test wiring a real liaison mailbox + real `HostActChannel`/ledger + the daemon `RelaySensor` + the server `--auto-review` apply, proving the perceive → verdict → `host_act.approve` loop (previously a manual smoke).
+
+### Notes
+- **Known limitation (verdict consumption).** `review_apply.apply_verdicts` marks every polled `review_verdict` row read as bound work — including corrupt-payload, non-allowlisted, and stale-fingerprint rows. This cannot affect the normal flow (a `review_request` is published only after the act parks pending, so a peer cannot verdict before the act exists), and a corrected resend is a new mailbox row that polls fresh. A malformed verdict's original row is not re-inspectable.
+- Inbox-flood backoff/stress signaling is deferred — `limit=50` already bounds per-cycle perception work.
+
 ## [2.6.2] - 2026-06-24 — "Awake Relay Sensor"
 
 ### Added
