@@ -18,10 +18,10 @@ from conscio.workspace import WorkspaceContext
 from . import jsonrpc as j
 from .protocol import SUPPORTED_PROTOCOLS, Dispatcher
 from .schemas import (ACT_TOOL_DEFS, BASE_TOOL_DEFS, LIAISON_TOOL_DEFS,
-                      RESOURCE_DEFS, derive_event_id, event_to_frame,
-                      validate_event)
+                      RELAY_TOOL_DEFS, RESOURCE_DEFS, derive_event_id,
+                      event_to_frame, validate_event)
 from .seen import SeenStore
-from ..liaison import mailbox, review
+from ..liaison import mailbox, relay, review
 
 
 class Bindings:
@@ -31,7 +31,9 @@ class Bindings:
                  hermes_review: bool = False,
                  reviewers: tuple[str, ...] = (),
                  self_instance_id: str = "",
-                 liaison_db: Path | None = None) -> None:
+                 liaison_db: Path | None = None,
+                 relay: bool = False,
+                 relay_peers: tuple[str, ...] = ()) -> None:
         self.engine = engine
         self.seen = seen
         self.adapter_name = adapter_name
@@ -43,6 +45,8 @@ class Bindings:
         self.self_instance_id = self_instance_id
         self.liaison_db: Path = (Path(liaison_db) if liaison_db is not None
                                  else mailbox.default_db())
+        self.relay = relay                   # v2.6.1: --enable-relay
+        self.relay_peers = tuple(relay_peers)
 
     # ── discovery ──
     def version(self) -> str:
@@ -77,6 +81,8 @@ class Bindings:
                 "adapter": self.adapter_name,
                 "hermes_review_enabled": self.hermes_review,
                 "reviewers_count": len(self.reviewers),
+                "relay_enabled": self.relay,
+                "relay_peers_count": len(self.relay_peers),
                 "supported_protocols": SUPPORTED_PROTOCOLS}
 
     def tool_defs(self) -> list[dict]:
@@ -88,6 +94,8 @@ class Bindings:
                 if d["name"] == "conscio.poll_reviews" and not self._act_enabled():
                     continue                 # proposer tool needs act too
                 defs.append(d)
+        if self.relay:
+            defs += list(RELAY_TOOL_DEFS)
         return defs
 
     def resource_defs(self) -> list[dict]:
@@ -133,6 +141,10 @@ class Bindings:
             tools["conscio.review_reject"] = self._review_reject
             if self._act_enabled():
                 tools["conscio.poll_reviews"] = self._poll_reviews
+        if self.relay:
+            tools["conscio.relay_send"] = self._relay_send
+            tools["conscio.relay_inbox"] = self._relay_inbox
+            tools["conscio.relay_read"] = self._relay_read
         return tools
 
     def _int_arg(self, args: dict, key: str,
@@ -264,6 +276,49 @@ class Bindings:
         if read_ids:
             mailbox.mark_read(self.liaison_db, read_ids)
         return applied
+
+    # ── v2.6.1 Relay: general cross-agent messaging (pure mailbox; no engine) ──
+    def _relay_send(self, args: dict) -> dict:
+        to = str(args.get("to", ""))
+        mtype = str(args.get("type", ""))
+        payload = args.get("payload", {})
+        try:
+            relay.validate_send(to=to, type=mtype, payload=payload,
+                                peers=set(self.relay_peers))
+        except ValueError as exc:
+            return {"ok": False, "reason": str(exc)}
+        mid = mailbox.send(self.liaison_db, from_instance=self.self_instance_id,
+                           to_instance=to, type=mtype, payload=payload)
+        try:                                      # R2 best-effort retention
+            mailbox.purge_read(self.liaison_db, relay.RETENTION_DAYS)
+        except Exception as exc:
+            print(f"liaison: relay purge failed: {exc}", file=sys.stderr)
+        return {"ok": True, "id": mid}
+
+    def _relay_inbox(self, args: dict) -> dict:
+        limit = self._int_arg(args, "limit", 50)
+        rows = mailbox.inbox(self.liaison_db, self.self_instance_id,
+                             types=None, unread_only=True, limit=limit)
+        peers = set(self.relay_peers)
+        out: list[dict] = []
+        junk: list[int] = []
+        for r in rows:
+            if r.get("type") in relay.RESERVED_TYPES:
+                continue                          # review channel owns it
+            if relay.is_relay_message(r, peers):
+                out.append({k: r[k] for k in
+                            ("id", "from_instance", "type", "payload", "ts")})
+            else:
+                junk.append(r["id"])              # non-peer / oversized
+        if junk:
+            mailbox.mark_read(self.liaison_db, junk)
+        return {"messages": out}
+
+    def _relay_read(self, args: dict) -> dict:
+        ids = [i for i in args.get("ids", [])
+               if isinstance(i, int) and not isinstance(i, bool)]  # R1-menor
+        n = mailbox.mark_read(self.liaison_db, ids)
+        return {"ok": True, "marked": n}
 
     @staticmethod
     def _require(args: dict, key: str):
@@ -434,6 +489,11 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="trusted reviewer instance_id (repeatable)")
     parser.add_argument("--liaison-db", default=None,
                         help="mailbox db path (default $HERMES_HOME/liaison.db)")
+    parser.add_argument("--enable-relay", action="store_true",
+                        help="enable opt-in general cross-agent messaging")
+    parser.add_argument("--relay-peer", action="append", default=[],
+                        metavar="INSTANCE_ID",
+                        help="trusted relay peer instance_id (repeatable)")
     return parser
 
 
@@ -458,7 +518,7 @@ def main(argv: list[str] | None = None) -> int:
     seen.prune(args.seen_max_rows, args.seen_max_age_days)
     self_instance_id = ""
     liaison_db = None
-    if args.enable_hermes_review:
+    if args.enable_hermes_review or args.enable_relay:
         from conscio.noosphere.identity import load_or_create
         self_instance_id = load_or_create(engine.storage).instance_id
         liaison_db = (Path(args.liaison_db) if args.liaison_db
@@ -468,13 +528,20 @@ def main(argv: list[str] | None = None) -> int:
                         hermes_review=args.enable_hermes_review,
                         reviewers=tuple(args.reviewer),
                         self_instance_id=self_instance_id,
-                        liaison_db=liaison_db)
+                        liaison_db=liaison_db,
+                        relay=args.enable_relay,
+                        relay_peers=tuple(args.relay_peer))
     mode = "act" if args.enable_act else "propose-only"
     if args.enable_hermes_review:
         if args.reviewer:
             mode += f"+hermes-review(reviewers={len(args.reviewer)})"
         else:                              # active but no recipients (Hermet)
             mode += "+hermes-review(reviewers=0; no publish targets)"
+    if args.enable_relay:
+        if args.relay_peer:
+            mode += f"+relay(peers={len(args.relay_peer)})"
+        else:                              # active but no send/recv targets
+            mode += "+relay(peers=0; no send/recv targets)"
     print(f"conscio-mcp {__version__} ready "
           f"(workspace={workspace.id}, mode={mode})", file=sys.stderr)
     try:

@@ -1,4 +1,4 @@
-# Liaison — cross-agent review (v2.6.0)
+# Liaison — cross-agent review & relay (v2.6.0–v2.6.1)
 
 Liaison lets one agent's gated action be approved by a **different** agent, over a
 file-mediated shared mailbox. It completes the `hermes_review` approval policy:
@@ -54,3 +54,43 @@ Find an instance_id in `<storage>/instance.json` (`instance_id`).
 
 `$HERMES_HOME/liaison.db` (separate from `noosphere.db`). One table, directed
 messages, per-row read state. Read-only tools tolerate a missing/corrupt db.
+
+## General relay (v2.6.1)
+
+The review channel above is one use of the mailbox. v2.6.1 adds **general
+free-form messaging** between agents on the same substrate — one agent asks
+another a question, hands off a note, or replies — behind its own flag,
+independent of act and hermes-review.
+
+```bash
+# Claude trusts Hermes as a relay peer (and vice-versa)
+conscio-mcp --enable-relay --relay-peer <hermes_instance_id>
+```
+
+Three tools (registered only with `--enable-relay`):
+
+- `conscio.relay_send {to, type, payload}` → `{ok, id}` — send a directed message
+  to a trusted peer. `to` must be in the `--relay-peer` allowlist; `type` is
+  free-form but the two review types (`review_request`/`review_verdict`) are
+  reserved; `payload` is a JSON object capped at 64 KB.
+- `conscio.relay_inbox {limit?}` → `{messages: [{id, from_instance, type, payload, ts}]}`
+  — peek unread messages from trusted peers. Review-channel rows are excluded;
+  rows from non-peers (or oversized) are skipped.
+- `conscio.relay_read {ids}` → `{ok, marked}` — mark messages consumed.
+
+Properties:
+
+- **Bidirectional allowlist.** `--relay-peer` gates both who you send to and who
+  you accept from. An empty roster makes relay inert (the launch banner says so).
+- **Reserved-type isolation.** Relay can never send or surface a review message,
+  and never marks review rows read — the two channels stay disjoint.
+- **Retention.** Read messages older than 7 days are purged opportunistically on
+  send; unread messages are never deleted.
+- **Same trust model** as the review channel: `from_instance` is self-asserted,
+  no crypto, shared-`$HERMES_HOME` domain. The allowlist guards honest peers and
+  accidental bloat, not a malicious co-tenant.
+- **Dumb pipe.** Relay never touches the engine or any act; de-duplication and
+  what-to-do-with-a-message are the host agent's responsibility (there is no `fp`).
+
+Poll-based. Broadcast (one→many) and live server→client push are deferred to a
+later rung (v2.6.2) if a need appears.

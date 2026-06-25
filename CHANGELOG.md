@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.1] - 2026-06-24 — "Relay"
+
+### Added
+- General cross-agent relay over the same Liaison mailbox: free-form directed
+  messages between agents, independent of the review channel. New pure
+  `conscio/liaison/relay.py` (sibling of `review.py`).
+- MCP tools behind `--enable-relay`: `conscio.relay_send`, `conscio.relay_inbox`,
+  `conscio.relay_read`. New CLI flags `--enable-relay`, `--relay-peer` (repeatable).
+- `mailbox.purge_read()` — additive retention (read messages older than 7 days
+  purged opportunistically on send; unread never deleted).
+
+### Notes
+- `--relay-peer` gates both send and receive. The two review types are reserved
+  (relay never sends/surfaces them, never marks review rows read). Payloads are
+  capped at 64 KB. No crypto (shared-filesystem trust domain); relay is a dumb
+  pipe — never touches the engine or any act (dedup is the host's job).
+- Debt-zero: no DB schema change, `send`/`inbox`/`mark_read` and the review path
+  byte-identical; noosphere / Observatory / Hub untouched. Broadcast and live
+  push deferred to v2.6.2 if needed.
+
 ## [2.6.0] - 2026-06-23 — "Liaison"
 
 ### Added

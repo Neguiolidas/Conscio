@@ -177,3 +177,26 @@ LIAISON_TOOL_DEFS: list[dict] = [
                     "pending acts (proposer role); returns applied packets.",
      "inputSchema": _LIMIT_ONLY},
 ]
+
+_RELAY_SEND_INPUT = {"type": "object",
+                     "properties": {"to": {"type": "string"},
+                                    "type": {"type": "string"},
+                                    "payload": {"type": "object"}},
+                     "required": ["to", "type", "payload"]}
+_IDS_INPUT = {"type": "object",
+              "properties": {"ids": {"type": "array",
+                                     "items": {"type": "integer"}}},
+              "required": ["ids"]}
+
+RELAY_TOOL_DEFS: list[dict] = [
+    {"name": "conscio.relay_send",
+     "description": "Send a directed free-form message to a trusted relay peer.",
+     "inputSchema": _RELAY_SEND_INPUT},
+    {"name": "conscio.relay_inbox",
+     "description": "Peek unread relay messages from trusted peers (review "
+                    "types excluded).",
+     "inputSchema": _LIMIT_ONLY},
+    {"name": "conscio.relay_read",
+     "description": "Mark relay messages consumed by id.",
+     "inputSchema": _IDS_INPUT},
+]
