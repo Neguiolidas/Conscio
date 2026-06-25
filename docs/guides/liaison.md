@@ -93,4 +93,32 @@ Properties:
   what-to-do-with-a-message are the host agent's responsibility (there is no `fp`).
 
 Poll-based. Broadcast (one→many) and live server→client push are deferred to a
-later rung (v2.6.2) if a need appears.
+later rung if a need appears.
+
+## Dynamic / Awake (v2.6.2)
+
+An Awake instance can react to peers instead of polling by hand.
+
+**Perceive the inbox (daemon).** Add the `relay` sensor:
+
+```bash
+conscio-daemon --sensors host,relay --relay-peer <peer_instance_id>
+```
+
+Each heartbeat the read-only `RelaySensor` reports unread peer messages
+(`relay_unread`, `review_pending`) into the engine's `world_state`. It never
+marks anything read — consume via `relay_inbox`/`relay_read` as usual.
+
+**Auto-apply review verdicts (server).** When the proposer is awake:
+
+```bash
+conscio-mcp --enable-act --enable-hermes-review --reviewer <id> \
+            --auto-review --awake
+```
+
+Inbound verdicts from allowlisted reviewers are applied to local pending acts
+on the next tool call — no explicit `conscio.poll_reviews`. The local
+`host_act` gate stays the authority. `--auto-review` is off by default and
+inert without act + hermes-review.
+
+General free-form auto-reply (LLM-generated) is a later phase.

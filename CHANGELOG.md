@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.2] - 2026-06-24 — "Awake Relay Sensor"
+
+### Added
+- **`RelaySensor` (daemon perception).** `conscio-daemon --sensors host,relay --relay-peer <id>` reads the liaison inbox read-only each cycle and reports unread peer messages as a `PerceptionFrame` (`relay_unread`/`review_pending` signals). It never marks messages read — consumption stays on the tool/act path.
+- **`--auto-review` (MCP server).** Off by default; when the engine is awake (and `--enable-act` + `--enable-hermes-review` are on), inbound allowlisted review verdicts are auto-applied to local pending acts on each tool call — no explicit `conscio.poll_reviews` needed. The `host_act` gate remains the authority.
+
+### Changed
+- The verdict-apply core is extracted into `conscio/agency/review_apply.py` and shared by `conscio.poll_reviews` and `--auto-review` (behavior-preserving).
+
+### Notes
+- Phase 1 of "Awake Relay Sensor"; general relay auto-respond (LLM adapter) is deferred to a later phase. `conscio/liaison/*.py` remains engine-free.
+
 ## [2.6.1] - 2026-06-24 — "Relay"
 
 ### Added
