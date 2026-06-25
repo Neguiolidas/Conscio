@@ -24,6 +24,11 @@ from .seen import SeenStore
 from ..agency import review_apply
 from ..liaison import mailbox, relay, review
 
+# v2.6.3 #2: floor between auto-review SQL polls so --auto-review does not open a
+# liaison SELECT on every single tool call in a chatty session. host_act.approve
+# remains the authority; this only paces the opportunistic poll.
+AUTO_APPLY_THROTTLE_S = 5.0
+
 
 class Bindings:
     def __init__(self, engine: ConsciousnessEngine, seen: SeenStore, *,
@@ -50,6 +55,7 @@ class Bindings:
         self.relay = relay                   # v2.6.1: --enable-relay
         self.relay_peers = tuple(relay_peers)
         self.auto_review = auto_review        # v2.6.2: --auto-review
+        self.last_auto_apply_ts = 0.0         # v2.6.3 #2: throttle clock
 
     # ── discovery ──
     def version(self) -> str:
@@ -262,6 +268,10 @@ class Bindings:
             return
         if self.engine.host_act is None or not self.reviewers:
             return
+        now = time.monotonic()               # v2.6.3 #2: pace the SQL poll
+        if now - self.last_auto_apply_ts < AUTO_APPLY_THROTTLE_S:
+            return
+        self.last_auto_apply_ts = now
         try:
             review_apply.apply_verdicts(self.engine.host_act, self.liaison_db,
                                         self.self_instance_id, self.reviewers)
