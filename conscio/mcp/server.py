@@ -34,7 +34,8 @@ class Bindings:
                  self_instance_id: str = "",
                  liaison_db: Path | None = None,
                  relay: bool = False,
-                 relay_peers: tuple[str, ...] = ()) -> None:
+                 relay_peers: tuple[str, ...] = (),
+                 auto_review: bool = False) -> None:
         self.engine = engine
         self.seen = seen
         self.adapter_name = adapter_name
@@ -48,6 +49,7 @@ class Bindings:
                                  else mailbox.default_db())
         self.relay = relay                   # v2.6.1: --enable-relay
         self.relay_peers = tuple(relay_peers)
+        self.auto_review = auto_review        # v2.6.2: --auto-review
 
     # ── discovery ──
     def version(self) -> str:
@@ -84,6 +86,7 @@ class Bindings:
                 "reviewers_count": len(self.reviewers),
                 "relay_enabled": self.relay,
                 "relay_peers_count": len(self.relay_peers),
+                "auto_review_enabled": self.auto_review,
                 "supported_protocols": SUPPORTED_PROTOCOLS}
 
     def tool_defs(self) -> list[dict]:
@@ -104,6 +107,7 @@ class Bindings:
 
     # ── tool dispatch ──
     def call_tool(self, name: str, args: dict) -> dict:
+        self._maybe_auto_apply()             # v2.6.2: opportunistic on dispatch
         fn = self._tools().get(name)
         if fn is None:
             raise j.MethodNotFound(f"tool '{name}' not available")
@@ -249,6 +253,20 @@ class Bindings:
         return review_apply.apply_verdicts(
             self.engine.host_act, self.liaison_db, self.self_instance_id,
             self.reviewers, limit=limit)
+
+    def _maybe_auto_apply(self) -> None:
+        """v2.6.2: when armed (--auto-review) and the engine is awake, apply
+        inbound allowlisted verdicts to pending acts. Inert without act/reviewers;
+        never raises into a request (a bad mailbox must not break a tool call)."""
+        if not (self.auto_review and getattr(self.engine, "awake", False)):
+            return
+        if self.engine.host_act is None or not self.reviewers:
+            return
+        try:
+            review_apply.apply_verdicts(self.engine.host_act, self.liaison_db,
+                                        self.self_instance_id, self.reviewers)
+        except Exception as exc:             # never break a request
+            print(f"auto-review apply failed: {exc}", file=sys.stderr)
 
     # ── v2.6.1 Relay: general cross-agent messaging (pure mailbox; no engine) ──
     def _relay_send(self, args: dict) -> dict:
@@ -467,6 +485,10 @@ def _arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--relay-peer", action="append", default=[],
                         metavar="INSTANCE_ID",
                         help="trusted relay peer instance_id (repeatable)")
+    parser.add_argument("--auto-review", action="store_true",
+                        help="auto-apply inbound review verdicts each request "
+                             "when awake (needs --enable-act + "
+                             "--enable-hermes-review)")
     return parser
 
 
@@ -503,7 +525,8 @@ def main(argv: list[str] | None = None) -> int:
                         self_instance_id=self_instance_id,
                         liaison_db=liaison_db,
                         relay=args.enable_relay,
-                        relay_peers=tuple(args.relay_peer))
+                        relay_peers=tuple(args.relay_peer),
+                        auto_review=args.auto_review)
     mode = "act" if args.enable_act else "propose-only"
     if args.enable_hermes_review:
         if args.reviewer:
@@ -515,6 +538,8 @@ def main(argv: list[str] | None = None) -> int:
             mode += f"+relay(peers={len(args.relay_peer)})"
         else:                              # active but no send/recv targets
             mode += "+relay(peers=0; no send/recv targets)"
+    if args.auto_review:
+        mode += "+auto-review"
     print(f"conscio-mcp {__version__} ready "
           f"(workspace={workspace.id}, mode={mode})", file=sys.stderr)
     try:
