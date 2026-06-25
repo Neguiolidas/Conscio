@@ -88,3 +88,28 @@ def test_call_tool_triggers_apply():
     b = _bind(awake=True, host_act=ha, reviewers=("r",), auto_review=True)
     b.call_tool("conscio.advisory", {})       # any tool; advisory needs no host
     assert ha.calls == 1
+
+
+# ── v2.6.3 #2: timestamp throttle (no SQL on every request) ──
+
+def test_throttle_skips_within_window(monkeypatch):
+    import conscio.mcp.server as srv
+    clock = [1000.0]
+    monkeypatch.setattr(srv.time, "monotonic", lambda: clock[0])
+    ha = _HA()
+    b = _bind(awake=True, host_act=ha, reviewers=("r",), auto_review=True)
+    b._maybe_auto_apply()
+    b._maybe_auto_apply()                      # same instant -> throttled, no SQL
+    assert ha.calls == 1
+
+
+def test_throttle_allows_after_window(monkeypatch):
+    import conscio.mcp.server as srv
+    clock = [1000.0]
+    monkeypatch.setattr(srv.time, "monotonic", lambda: clock[0])
+    ha = _HA()
+    b = _bind(awake=True, host_act=ha, reviewers=("r",), auto_review=True)
+    b._maybe_auto_apply()
+    clock[0] += srv.AUTO_APPLY_THROTTLE_S + 0.1
+    b._maybe_auto_apply()                      # window elapsed -> applies again
+    assert ha.calls == 2
