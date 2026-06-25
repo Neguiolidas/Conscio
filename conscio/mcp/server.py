@@ -21,6 +21,7 @@ from .schemas import (ACT_TOOL_DEFS, BASE_TOOL_DEFS, LIAISON_TOOL_DEFS,
                       RELAY_TOOL_DEFS, RESOURCE_DEFS, derive_event_id,
                       event_to_frame, validate_event)
 from .seen import SeenStore
+from ..agency import review_apply
 from ..liaison import mailbox, relay, review
 
 
@@ -245,37 +246,9 @@ class Bindings:
 
     def _poll_reviews(self, args: dict) -> list[dict]:
         limit = self._int_arg(args, "limit", 50)
-        ha = self.engine.host_act
-        verdicts = mailbox.inbox(self.liaison_db, self.self_instance_id,
-                                 types=["review_verdict"], unread_only=True,
-                                 limit=limit)
-        pend = ha.pending(200)
-        fp_to_id = {review.fingerprint(self.self_instance_id, r["goal_fp"],
-                                       r["tool"], self._row_args(r), r["id"]):
-                    r["id"] for r in pend}
-        applied: list[dict] = []
-        read_ids: list[int] = []
-        for m in verdicts:
-            read_ids.append(m["id"])                  # bound work: mark all polled
-            if m["from_instance"] not in self.reviewers:
-                continue                              # not allowlisted -> ignore
-            try:
-                v = review.parse_verdict(m["payload"])
-            except ValueError:
-                continue
-            lid = fp_to_id.get(v.fp)
-            if lid is None:
-                continue                              # stale / foreign / handled
-            if v.decision == "approve":
-                res = ha.approve(lid)
-            else:
-                res = ha.reject(lid, v.reason)
-            applied.append({"ledger_id": lid, "decision": v.decision,
-                            "status": res.get("status"),
-                            "packet": res.get("packet")})
-        if read_ids:
-            mailbox.mark_read(self.liaison_db, read_ids)
-        return applied
+        return review_apply.apply_verdicts(
+            self.engine.host_act, self.liaison_db, self.self_instance_id,
+            self.reviewers, limit=limit)
 
     # ── v2.6.1 Relay: general cross-agent messaging (pure mailbox; no engine) ──
     def _relay_send(self, args: dict) -> dict:
