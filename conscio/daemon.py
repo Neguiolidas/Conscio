@@ -221,8 +221,11 @@ class Daemon:
 
 # ── entry point (conscio-daemon) ───────────────────────────────────────────────
 
-def _build_sensors(spec: str, *, agent_source: Optional[str]) -> list[SensorAdapter]:
+def _build_sensors(spec: str, *, agent_source: Optional[str],
+                   liaison_db=None, self_id: str = "",
+                   relay_peers: Sequence[str] = ()) -> list[SensorAdapter]:
     from .perception import AgentSensor, HostSensor
+    from .perception.relay_sensor import RelaySensor
     sensors: list[SensorAdapter] = []
     for name in (s.strip() for s in spec.split(",") if s.strip()):
         if name == "host":
@@ -233,6 +236,13 @@ def _build_sensors(spec: str, *, agent_source: Optional[str]) -> list[SensorAdap
             else:
                 log.warning("--sensors includes 'agent' but no --agent-source; "
                             "skipping")
+        elif name == "relay":
+            if self_id:
+                sensors.append(RelaySensor(liaison_db, self_id,
+                                           tuple(relay_peers)))
+            else:
+                log.warning("--sensors includes 'relay' but no instance "
+                            "identity; skipping")
         else:
             log.warning("unknown sensor %r; skipping", name)
     return sensors
@@ -269,11 +279,7 @@ def _build_adapter_from_cli(args, fallback_model: str):
                                 base_url=args.base_url or "http://localhost:8000/v1")
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    from .engine import ConsciousnessEngine
-    from .workspace import WorkspaceContext
-    from .structural_consent import StructuralConsent, consent_path
-
+def _arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="conscio-daemon",
         description="Run Conscio as a living perceive→reflect→act heartbeat.")
@@ -283,7 +289,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--interval", type=float, default=None,
                         help="seconds between heartbeats (default: config or 5)")
     parser.add_argument("--sensors", default=None,
-                        help="comma list: host,agent (default: config or host)")
+                        help="comma list: host,agent,relay (default: config or host)")
     parser.add_argument("--agent-source", default=None,
                         help="peer state dir for the 'agent' sensor")
     parser.add_argument("--budget-cycles", type=int, default=None,
@@ -300,7 +306,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="adapter base URL (overrides config)")
     parser.add_argument("--adapter-model", default=None,
                         help="model name for the adapter (overrides config)")
-    args = parser.parse_args(argv)
+    parser.add_argument("--liaison-db", default=None,
+                        help="mailbox db for the relay sensor "
+                             "(default $HERMES_HOME/liaison.db)")
+    parser.add_argument("--relay-peer", action="append", default=[],
+                        metavar="INSTANCE_ID",
+                        help="trusted relay peer for the relay sensor (repeatable)")
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    from .engine import ConsciousnessEngine
+    from .workspace import WorkspaceContext
+    from .structural_consent import StructuralConsent, consent_path
+
+    args = _arg_parser().parse_args(argv)
 
     # ── merge config (config < env < CLI) ──
     from .adapter_config import build_adapter_from_config, load_config
@@ -336,7 +356,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if awake:
         engine.wake()
-    sensors = _build_sensors(sensors_spec, agent_source=args.agent_source)
+    self_id = ""
+    liaison_db = None
+    if "relay" in [s.strip() for s in sensors_spec.split(",")]:
+        from .noosphere.identity import load_or_create
+        from .liaison import mailbox
+        self_id = load_or_create(engine.storage).instance_id
+        liaison_db = args.liaison_db or mailbox.default_db()
+    sensors = _build_sensors(sensors_spec, agent_source=args.agent_source,
+                             liaison_db=liaison_db, self_id=self_id,
+                             relay_peers=tuple(args.relay_peer))
     budget = (ActBudget(max_cycles=args.budget_cycles)
               if args.budget_cycles else None)
     workspace = WorkspaceContext(emit=engine.event_bus.emit)
