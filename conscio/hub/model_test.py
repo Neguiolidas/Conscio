@@ -3,6 +3,7 @@ Never raises — failures come back as {"ok": False, "error": ...}. The API key 
 resolved from the environment in-process and never returned."""
 from __future__ import annotations
 
+import os
 import time
 
 from ..adapter_config import build_adapter_from_config
@@ -10,6 +11,11 @@ from ..agency.adapter import AdapterError
 
 
 def _build(provider_cfg: dict, model: str):
+    # Ensure vault keys are loaded into os.environ before building adapter
+    env = provider_cfg.get("api_key_env")
+    if env and not os.environ.get(env):
+        from . import config as _cfg
+        _cfg.vault_load(env)
     adapter, _ = build_adapter_from_config(
         {"adapter": {**provider_cfg, "model": model}}, fallback_model=model)
     return adapter

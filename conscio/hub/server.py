@@ -2,7 +2,11 @@
 
 `route()` is a pure dispatch function (unit-tested without a socket). `Handler`
 is the thin BaseHTTPRequestHandler adapter. Binds 127.0.0.1 by default; never
-0.0.0.0. Serves a fixed static whitelist — no path traversal."""
+0.0.0.0. Serves a fixed static whitelist — no path traversal.
+
+v2.7.1: API-key vault (raw keys -> ~/.config/conscio/keys, 0600) + provider
+resolve merge.
+"""
 from __future__ import annotations
 
 import argparse
@@ -48,6 +52,8 @@ def _err(status: int, error: str, detail: Any = None) -> Resp:
     return Resp(status, {"error": error, "detail": detail})
 
 
+# ── Route dispatch ───────────────────────────────────────────────────
+
 def route(method: str, path: str, query: dict, body: dict | None,
           *, token: str | None, auth: str | None) -> Resp:
     if path.startswith("/api/") and token:
@@ -71,8 +77,8 @@ def route(method: str, path: str, query: dict, body: dict | None,
             return _err(400, "model required")
         cfg = config.load()
         if isinstance(body.get("adapter"), dict):
-            adapter = dict(body["adapter"])            # explicit adapter (API form)
-        else:                                          # resolve provider (name|type)
+            adapter = dict(body["adapter"])
+        else:
             try:
                 pc = providers.resolve_provider(cfg, body.get("provider", ""))
             except KeyError:
@@ -82,6 +88,20 @@ def route(method: str, path: str, query: dict, body: dict | None,
                 adapter["base_url"] = pc["base_url"]
             if pc.get("api_key_env"):
                 adapter["api_key_env"] = pc["api_key_env"]
+        # Top-level overrides from UI fields always win over resolved defaults
+        if body.get("base_url"):
+            adapter["base_url"] = body["base_url"]
+        # Handle raw API key: store in vault, replace with api_key_env reference
+        raw_key = body.get("api_key") or adapter.pop("api_key", None)
+        if raw_key:
+            env_name = config._env_name_for(adapter.get("type", ""), body.get("model", ""))
+            config.vault_store(env_name, raw_key)
+            adapter["api_key_env"] = env_name
+        # Preserve existing api_key_env if no new key provided
+        elif "api_key_env" not in adapter:
+            existing = (cfg.get("adapter") or {}).get("api_key_env")
+            if existing:
+                adapter["api_key_env"] = existing
         adapter["model"] = body["model"]
         cfg["model"] = body["model"]
         cfg["adapter"] = adapter
