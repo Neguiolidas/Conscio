@@ -31,6 +31,7 @@ function typeLabel(t) { return TYPE_LABELS[t] || t; }
 let _providerList = [];
 let _initialLoadDone = false;  // Only set select from config on first load
 let _userEditing = false;       // True while user is actively changing fields
+let _daemonWired = false;       // wire the awake toggle once
 
 // ── Brain / Config ─────────────────────────────────────────────────
 
@@ -49,6 +50,20 @@ function findProviderOf(cfg) {
 async function loadBrain() {
   const h = await api("GET", "/api/health");
   $("version").textContent = h.data.version ? `v${h.data.version}` : "";
+
+  if (h.data.daemon_control) {
+    $("sec-daemon").style.display = "";
+    if (!_daemonWired) {
+      const ctl = await api("GET", "/api/daemon/control");
+      $("awake").checked = !!(ctl.data && ctl.data.awake);
+      $("awake").onchange = async (e) => {
+        const r = await api("PUT", "/api/daemon/awake", { awake: e.target.checked });
+        $("awakeResult").textContent = r.status === 200
+          ? `awake → ${r.data.awake} ↻ next cycle` : `error: ${r.status}`;
+      };
+      _daemonWired = true;
+    }
+  }
 
   const [catRes, cfgRes] = await Promise.all([
     api("GET", "/api/providers"),
