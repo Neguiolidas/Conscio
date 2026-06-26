@@ -33,7 +33,8 @@ jobs:
           set -euo pipefail
           for f in tests/test_*.py; do
             echo "── $f"
-            python -m pytest "$f" -q --tb=short --cov=conscio --cov-append -p no:cacheprovider
+            python -m pytest "$f" -q --tb=short --cov=conscio --cov-append -p no:cacheprovider \
+              || { rc=$?; [ "$rc" -eq 5 ] && echo "  (no tests collected — ok)" || exit "$rc"; }
           done
           python -m coverage report --skip-covered
 
