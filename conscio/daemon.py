@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Sequence
 
 from .agency.loop import ActBudget, RunReport
+from .guards import safe_read_json
 from .perception import PerceptionFrame, SensorAdapter
 from .structural_consent import sync_structure
 
@@ -61,6 +62,7 @@ class Daemon:
                  consent: Any = None,
                  pidfile: Optional[str | Path] = None,
                  heartbeat_path: Optional[str | Path] = None,
+                 control_path: Optional[str | Path] = None,
                  close_engine_on_shutdown: bool = True) -> None:
         self.engine = engine
         self.sensors = list(sensors)
@@ -75,6 +77,7 @@ class Daemon:
         self.pidfile = Path(pidfile) if pidfile else storage / "daemon.pid"
         self.heartbeat_path = (Path(heartbeat_path) if heartbeat_path
                                else storage / "daemon_heartbeat.json")
+        self.control_path = Path(control_path) if control_path else None
         self.close_engine_on_shutdown = close_engine_on_shutdown
         self.cycles = 0
         self._last_report: Optional[RunReport] = None   # v1.6: last-cycle summary
@@ -83,6 +86,15 @@ class Daemon:
 
     # ── one cycle ─────────────────────────────────────────────────────────────
     def cycle(self) -> RunReport:
+        # v2.8.1: honor the Hub's awake control file (off unless --watch-control).
+        # File contract only — never imports conscio.hub. wake()/sleep() because
+        # engine.awake is a read-only property.
+        if self.control_path is not None:
+            ctrl = safe_read_json(self.control_path) or {}
+            desired = ctrl.get("awake")
+            if isinstance(desired, bool) and desired != self.engine.awake:
+                self.engine.wake() if desired else self.engine.sleep()
+                log.warning("daemon awake -> %s (control file)", desired)
         frames: list[PerceptionFrame] = []
         for sensor in self.sensors:
             try:
@@ -333,6 +345,10 @@ def _arg_parser() -> argparse.ArgumentParser:
                              "adapter + --awake + --relay-peer)")
     parser.add_argument("--respond-limit", type=int, default=10,
                         help="max relay auto-replies per cycle (token-burn cap)")
+    parser.add_argument("--watch-control", action="store_true",
+                        help="honor daemon_control.json in the storage dir "
+                             "(the Hub awake toggle); OFF default. Awake makes "
+                             "an act-capable daemon autonomous.")
     return parser
 
 
@@ -407,9 +423,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         else:
             log.warning("--auto-respond inert: needs relay sensor + adapter + "
                         "--awake + --relay-peer; skipping")
+    control_path = (engine.storage / "daemon_control.json"
+                    if args.watch_control else None)
     daemon = Daemon(engine, sensors=sensors, interval=interval,
                     budget=budget, workspace=workspace, consent=consent,
-                    responder=responder)
+                    responder=responder, control_path=control_path)
     daemon.run(once=args.once)
     return 0
 
