@@ -4,6 +4,7 @@ import json as _json
 import pytest
 
 import conscio.adapter_config as ac
+from conscio.hub import control as _control
 from conscio.hub import model_test, providers, server
 
 
@@ -241,9 +242,6 @@ def test_put_config_raw_key_goes_to_vault(tmp_path, monkeypatch):
 
 
 # ── v2.8.1: Hub awake control (gated) ──────────────────────────────
-from conscio.hub import control as _control
-
-
 def test_daemon_awake_404_when_flag_off(tmp_path):
     # flag off (default) -> route not exposed
     r = server.route("PUT", "/api/daemon/awake", {}, {"awake": True},
