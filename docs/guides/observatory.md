@@ -41,12 +41,15 @@ conscio-observatory --storage DIR [--host 127.0.0.1] [--port 8788] [--token TOK]
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/health` | `{ok, version, storage, noosphere, token_required}` |
+| `GET /api/health` | `{ok, version, storage, noosphere, liaison, token_required}` |
 | `GET /api/events?type=&category=&since=&limit=` | recent events (newest first) |
 | `GET /api/actions?status=&limit=` | ledger rows (newest first) |
 | `GET /api/skills?limit=` | learned skills |
 | `GET /api/goals` | active goals (from `goals.json`) |
 | `GET /api/state` | last state snapshot (from `state_summary.json`) |
+| `GET /api/daemon` | daemon liveness (from `daemon_heartbeat.json`) — see [panels](#daemon-relay-identity-panels-read-only) |
+| `GET /api/relay/inbox?limit=` | this instance's liaison inbox (full payload) |
+| `GET /api/identity` | this instance's identity (from `instance.json`) |
 | `GET /api/society/members` | the noosphere census (see [Society view](#society-view-read-only)) |
 | `GET /api/society/skills?limit=` | published skills (metadata only) |
 | `GET /api/society/records?limit=` | published behavioral records (metadata only) |
@@ -103,8 +106,35 @@ under a concurrent writer.
 an internal file-management side effect (read recovery), not a mutation of the
 published data.
 
+## Daemon, Relay & Identity panels (read-only)
+
+Three more read-only panels (v2.8.0), all engine-free and GET-only:
+
+- `GET /api/daemon` — the daemon's last **heartbeat** (`daemon_heartbeat.json`,
+  written atomically every cycle): `ts`, `cycles`, `awake`, `pid`, `last_run`,
+  `advisory`. Absent → `{"running": false}`. The UI derives staleness from `ts`.
+- `GET /api/relay/inbox?limit=` — this instance's **liaison inbox**: the rows
+  addressed `to_instance = <self>` in `liaison.db`, read **and** unread, newest
+  first, with the **full payload**. It opens `liaison.db` with `mode=ro`
+  (`SELECT` only, no `PRAGMA`) and **never marks anything read** — it is a
+  viewer, not a consumer. It cannot reuse `mailbox.inbox()`, which opens the db
+  read-write. Self is resolved from `instance.json`; unparseable rows are logged
+  and skipped.
+- `GET /api/identity` — this instance's identity from `instance.json`
+  (`instance_id`, `label`, `created_ts`). Read **only** — it never calls
+  `load_or_create`, so the viewer cannot mint a new identity. Absent → `{}`.
+
+**Source.** The inbox defaults to `$HERMES_HOME/liaison.db`; override with
+`conscio-observatory --liaison-db /path/to/liaison.db`. The daemon/identity reads
+come from the `--storage` dir.
+
+**Full payload, not metadata-only.** Unlike the Society view (public, BLOBs
+omitted), the inbox is the operator's **private** mailbox on their own loopback
+host — showing the message body is the point of an inbox viewer.
+
 ## Not yet here
 
-The Liaison comms/control surface (relay/inbox and the `hermes_review`
-file-protocol) is a separate, write-capable subsystem with its own threat
-model — deferred to v2.6.
+The Liaison **control** surface — toggling the daemon's awake state from the Hub
+— is write-capable with its own threat model and ships as the next slice
+(v2.8.1, via a control file the daemon applies next-cycle; never signals). The
+relay **inbox view** above is read-only and already here.
