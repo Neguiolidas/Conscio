@@ -156,6 +156,7 @@ class Bindings:
             tools["conscio.relay_send"] = self._relay_send
             tools["conscio.relay_inbox"] = self._relay_inbox
             tools["conscio.relay_read"] = self._relay_read
+            tools["conscio.relay_broadcast"] = self._relay_broadcast
         return tools
 
     def _int_arg(self, args: dict, key: str,
@@ -295,6 +296,33 @@ class Bindings:
         except Exception as exc:
             print(f"liaison: relay purge failed: {exc}", file=sys.stderr)
         return {"ok": True, "id": mid}
+
+    def _relay_broadcast(self, args: dict) -> dict:
+        """v2.8.2: fan-out a relay message to ALL allowlisted peers. Best-effort
+        per peer (a failing peer never aborts the rest); a mailbox write, never
+        host_act -> daemon-perceives/server-acts holds."""
+        mtype = str(args.get("type", ""))
+        payload = args.get("payload", {})
+        peers = set(self.relay_peers)
+        sent: list[dict] = []
+        errors: list[dict] = []
+        for peer in self.relay_peers:
+            try:
+                relay.validate_send(to=peer, type=mtype, payload=payload,
+                                    peers=peers)
+            except ValueError as exc:
+                errors.append({"to": peer, "reason": str(exc)})
+                continue
+            mid = mailbox.send(self.liaison_db,
+                               from_instance=self.self_instance_id,
+                               to_instance=peer, type=mtype, payload=payload)
+            sent.append({"to": peer, "id": mid})
+        if sent:                                  # best-effort retention, once
+            try:
+                mailbox.purge_read(self.liaison_db, relay.RETENTION_DAYS)
+            except Exception as exc:
+                print(f"liaison: relay purge failed: {exc}", file=sys.stderr)
+        return {"ok": True, "sent": sent, "errors": errors}
 
     def _relay_inbox(self, args: dict) -> dict:
         limit = self._int_arg(args, "limit", 50)
