@@ -45,8 +45,24 @@ def _fit(reply: dict) -> dict:
     return dict(reply, text=text[:lo])
 
 
+def _transcript(rows: list[dict], self_id: str, max_chars: int) -> str:
+    """Render a two-party thread as a labelled transcript, reserved-type rows
+    excluded (the review channel never enters chat context). R1: clamp to
+    max_chars by dropping OLDEST lines, always keeping the newest."""
+    lines: list[str] = []
+    for m in rows:
+        if m.get("type") in relay.RESERVED_TYPES:
+            continue
+        who = "me" if m.get("from_instance") == self_id else "peer"
+        lines.append(f"{who}: {_msg_text(m.get('payload'))}")
+    while len(lines) > 1 and len("\n".join(lines)) > max_chars:
+        lines.pop(0)
+    return "\n".join(lines)
+
+
 def auto_respond(adapter, liaison_db, self_id, peers, *, limit: int = 10,
-                 max_reply_tokens: int = 512, system: str = DEFAULT_SYSTEM
+                 max_reply_tokens: int = 512, system: str = DEFAULT_SYSTEM,
+                 thread_limit: int = 20, max_prompt_chars: int = 8000
                  ) -> list[dict]:
     """Auto-reply to unread peer relay messages. Returns sent packets.
     No-op ([]) when adapter is None, liaison_db/self_id falsy, or peers empty."""
@@ -67,7 +83,9 @@ def auto_respond(adapter, liaison_db, self_id, peers, *, limit: int = 10,
         if isinstance(payload, dict) and payload.get("auto_reply") is True:
             mailbox.mark_read(liaison_db, [m["id"]])  # R2: consume, don't answer
             continue
-        prompt = system + "\n\nPeer message:\n" + _msg_text(payload)
+        rows = mailbox.thread(liaison_db, self_id, frm, limit=thread_limit)
+        transcript = _transcript(rows, self_id, max_prompt_chars)
+        prompt = system + "\n\nConversation so far:\n" + transcript
         try:
             text = adapter.generate(prompt, max_tokens=max_reply_tokens).text
         except Exception:                            # fork 4: leave UNREAD, retry

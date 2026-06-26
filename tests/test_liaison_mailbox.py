@@ -106,3 +106,58 @@ def test_purge_read_keeps_unread_old(tmp_path):
 
 def test_purge_read_missing_db(tmp_path):
     assert mailbox.purge_read(tmp_path / "nope.db", 7.0) == 0
+
+
+# ── v2.8.2 "Conversation": pure two-party thread() history reader ──────────────
+
+def test_thread_both_directions_chronological(tmp_path):
+    db = tmp_path / "liaison.db"
+    mailbox.send(db, from_instance="A", to_instance="B", type="note",
+                 payload={"t": "1"}, ts=100.0)
+    mailbox.send(db, from_instance="B", to_instance="A", type="note",
+                 payload={"t": "2"}, ts=200.0)
+    mailbox.send(db, from_instance="A", to_instance="B", type="note",
+                 payload={"t": "3"}, ts=300.0)
+    rows = mailbox.thread(db, "A", "B")
+    assert [r["payload"]["t"] for r in rows] == ["1", "2", "3"]   # oldest-first
+    assert {r["from_instance"] for r in rows} == {"A", "B"}       # both dirs
+
+
+def test_thread_is_symmetric(tmp_path):
+    db = tmp_path / "liaison.db"
+    mailbox.send(db, from_instance="A", to_instance="B", type="note",
+                 payload={"t": "1"}, ts=100.0)
+    mailbox.send(db, from_instance="B", to_instance="A", type="note",
+                 payload={"t": "2"}, ts=200.0)
+    assert mailbox.thread(db, "A", "B") == mailbox.thread(db, "B", "A")
+
+
+def test_thread_excludes_third_party(tmp_path):
+    db = tmp_path / "liaison.db"
+    mailbox.send(db, from_instance="A", to_instance="B", type="note",
+                 payload={"t": "ab"}, ts=100.0)
+    mailbox.send(db, from_instance="A", to_instance="C", type="note",
+                 payload={"t": "ac"}, ts=200.0)
+    mailbox.send(db, from_instance="C", to_instance="B", type="note",
+                 payload={"t": "cb"}, ts=300.0)
+    assert [r["payload"]["t"] for r in mailbox.thread(db, "A", "B")] == ["ab"]
+
+
+def test_thread_limit_keeps_newest(tmp_path):
+    db = tmp_path / "liaison.db"
+    for i in range(5):
+        mailbox.send(db, from_instance="A", to_instance="B", type="note",
+                     payload={"i": i}, ts=float(i))
+    rows = mailbox.thread(db, "A", "B", limit=2)
+    assert [r["payload"]["i"] for r in rows] == [3, 4]            # newest 2, asc
+
+
+def test_thread_missing_db_returns_empty(tmp_path):
+    assert mailbox.thread(tmp_path / "nope.db", "A", "B") == []
+
+
+def test_thread_payload_parsed(tmp_path):
+    db = tmp_path / "liaison.db"
+    mailbox.send(db, from_instance="A", to_instance="B", type="note",
+                 payload={"x": 1}, ts=1.0)
+    assert mailbox.thread(db, "A", "B")[0]["payload"] == {"x": 1}  # dict not str

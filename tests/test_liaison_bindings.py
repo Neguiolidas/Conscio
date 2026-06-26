@@ -494,6 +494,71 @@ def test_relay_read_filters_non_int_ids(tmp_path):
         eng.close()
 
 
+# ── v2.8.2 "Conversation": relay_broadcast fan-out tool ───────────────────────
+
+def test_relay_broadcast_tool_present_with_flag(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B", "C"))
+    try:
+        names = {t["name"] for t in b.tool_defs()}
+        assert "conscio.relay_broadcast" in names
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_broadcast_absent_without_flag(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=False)
+    try:
+        names = {t["name"] for t in b.tool_defs()}
+        assert "conscio.relay_broadcast" not in names
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_broadcast_fans_out_to_all_peers(tmp_path):
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B", "C"), liaison_db=db)
+    try:
+        r = b._relay_broadcast({"type": "note", "payload": {"hi": 1}})
+        assert r["ok"] is True
+        assert {s["to"] for s in r["sent"]} == {"B", "C"}
+        assert r["errors"] == []
+        assert mailbox.inbox(db, "B")[0]["payload"] == {"hi": 1}
+        assert mailbox.inbox(db, "C")[0]["payload"] == {"hi": 1}
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_broadcast_rejects_reserved_type_for_all(tmp_path):
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B", "C"), liaison_db=db)
+    try:
+        r = b._relay_broadcast({"type": "review_request", "payload": {}})
+        assert r["sent"] == []
+        assert {e["to"] for e in r["errors"]} == {"B", "C"}
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_broadcast_empty_allowlist(tmp_path):
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=(), liaison_db=db)
+    try:
+        r = b._relay_broadcast({"type": "note", "payload": {"x": 1}})
+        assert r == {"ok": True, "sent": [], "errors": []}
+    finally:
+        seen.close()
+        eng.close()
+
+
 def test_argparser_accepts_relay_flags():
     from conscio.mcp.server import _arg_parser
     ns = _arg_parser().parse_args(
