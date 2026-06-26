@@ -187,6 +187,10 @@ _IDS_INPUT = {"type": "object",
               "properties": {"ids": {"type": "array",
                                      "items": {"type": "integer"}}},
               "required": ["ids"]}
+_RELAY_BROADCAST_INPUT = {"type": "object",
+                          "properties": {"type": {"type": "string"},
+                                         "payload": {"type": "object"}},
+                          "required": ["type", "payload"]}
 
 RELAY_TOOL_DEFS: list[dict] = [
     {"name": "conscio.relay_send",
@@ -199,4 +203,8 @@ RELAY_TOOL_DEFS: list[dict] = [
     {"name": "conscio.relay_read",
      "description": "Mark relay messages consumed by id.",
      "inputSchema": _IDS_INPUT},
+    {"name": "conscio.relay_broadcast",
+     "description": "Send a free-form message to ALL trusted relay peers "
+                    "(fan-out; review types excluded).",
+     "inputSchema": _RELAY_BROADCAST_INPUT},
 ]
