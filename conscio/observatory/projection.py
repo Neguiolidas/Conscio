@@ -95,3 +95,17 @@ class Projection:
 
     def state(self) -> dict:
         return safe_read_json(self.storage / "state_summary.json") or {}
+
+    # ── daemon liveness + identity (storage-local files) ──
+    def daemon(self) -> dict:
+        """Read the daemon's last heartbeat (daemon_heartbeat.json, written
+        atomically every cycle). Absent/corrupt -> {"running": False}. Pure file
+        read; the UI derives staleness from `ts`."""
+        hb = safe_read_json(self.storage / "daemon_heartbeat.json")
+        return {"running": True, **hb} if hb else {"running": False}
+
+    def identity(self) -> dict:
+        """Read instance.json read-only — NEVER load_or_create (which writes a
+        new UUID). Absent/corrupt -> {}. Filename mirrors
+        noosphere.paths.instance_path (kept in sync)."""
+        return safe_read_json(self.storage / "instance.json") or {}
