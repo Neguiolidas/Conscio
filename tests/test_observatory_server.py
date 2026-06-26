@@ -11,6 +11,8 @@ class FakeProjection:
     def skills(self, **k): return [{"id": 1, "goal_fp": "fp"}]
     def goals(self): return [{"description": "x"}]
     def state(self): return {"awake": True}
+    def daemon(self): return {"running": True, "awake": True, "cycles": 7}
+    def identity(self): return {"instance_id": "me-123", "label": "host-me"}
 
 
 P = FakeProjection()
@@ -26,9 +28,18 @@ class FakeSociety:
 S = FakeSociety()
 
 
+class FakeLiaison:
+    db = "/fake/liaison.db"                      # real LiaisonProjection exposes .db
+    def inbox(self, self_id, **k):
+        return [{"id": 9, "from_instance": "peer", "payload": {"text": "hi"}}]
+
+
+L = FakeLiaison()
+
+
 def _route(method, path, query=None, *, token=None, auth=None):
     return srv.route(method, path, query or {}, projection=P, society=S,
-                     token=token, auth=auth)
+                     liaison=L, token=token, auth=auth)
 
 
 def test_check_host_refuses_non_loopback():
@@ -88,6 +99,28 @@ def test_society_mutation_verbs_405():
 
 def test_health_includes_noosphere():
     assert _route("GET", "/api/health").payload["noosphere"] == "/fake/noosphere.db"
+
+
+def test_daemon_and_identity_routes():
+    assert _route("GET", "/api/daemon").payload == {"running": True,
+                                                    "awake": True, "cycles": 7}
+    assert _route("GET", "/api/identity").payload["instance_id"] == "me-123"
+
+
+def test_relay_inbox_route_resolves_self_from_identity():
+    r = _route("GET", "/api/relay/inbox")
+    assert r.status == 200
+    assert r.payload[0]["from_instance"] == "peer"
+
+
+def test_new_read_routes_405_on_mutation():
+    for path in ("/api/daemon", "/api/identity", "/api/relay/inbox"):
+        for m in ("POST", "PUT", "PATCH", "DELETE"):
+            assert _route(m, path).status == 405
+
+
+def test_health_includes_liaison():
+    assert _route("GET", "/api/health").payload["liaison"] == "/fake/liaison.db"
 
 
 def test_head_accepted_not_501():
