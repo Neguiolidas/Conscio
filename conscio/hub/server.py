@@ -21,7 +21,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .. import __version__
-from . import config, model_test, providers
+from . import config, control, model_test, providers
 
 MAX_BODY_BYTES = 65536
 _STATIC = Path(__file__).parent / "static"
@@ -55,7 +55,8 @@ def _err(status: int, error: str, detail: Any = None) -> Resp:
 # ── Route dispatch ───────────────────────────────────────────────────
 
 def route(method: str, path: str, query: dict, body: dict | None,
-          *, token: str | None, auth: str | None) -> Resp:
+          *, token: str | None, auth: str | None,
+          storage: Path | None = None, daemon_control: bool = False) -> Resp:
     if path.startswith("/api/") and token:
         expected = f"Bearer {token}"
         if not (auth and hmac.compare_digest(auth, expected)):
@@ -64,6 +65,7 @@ def route(method: str, path: str, query: dict, body: dict | None,
     if path == "/api/health" and method == "GET":
         return Resp(200, {"ok": True, "version": __version__,
                           "config_path": str(config.config_path()),
+                          "daemon_control": bool(daemon_control),
                           "token_required": bool(token)})
 
     if path == "/api/config" and method == "GET":
@@ -145,6 +147,22 @@ def route(method: str, path: str, query: dict, body: dict | None,
             return _err(404, "unknown provider", body.get("provider"))
         return Resp(200, model_test.smoke_test(pc, body["model"]))
 
+    if path == "/api/daemon/awake" and method == "PUT":
+        if not daemon_control:
+            return _err(404, "not found", path)
+        if not isinstance(body, dict) or not isinstance(body.get("awake"), bool):
+            return _err(400, "awake (bool) required")
+        sdir = Path(storage) if storage else config.config_path().parent
+        if not sdir.is_dir():                       # reserva: no silent write
+            return _err(500, "storage dir does not exist", str(sdir))
+        return Resp(200, control.write_control(sdir, body["awake"]))
+
+    if path == "/api/daemon/control" and method == "GET":
+        if not daemon_control:
+            return _err(404, "not found", path)
+        sdir = Path(storage) if storage else config.config_path().parent
+        return Resp(200, control.read_control(sdir))
+
     if method == "GET" and (path == "/" or path.startswith("/static/")):
         name = "index.html" if path == "/" else path.rsplit("/", 1)[-1]
         if name not in _STATIC_WHITELIST:
@@ -174,15 +192,21 @@ def _check_host(host: str) -> None:
         f"refusing non-loopback host {host!r}: Conscio Hub binds loopback only")
 
 
-def make_server(host: str, port: int, token: str | None) -> ThreadingHTTPServer:
+def make_server(host: str, port: int, token: str | None, *,
+                storage: Path | None = None,
+                daemon_control: bool = False) -> ThreadingHTTPServer:
     _check_host(host)
     class _H(Handler):
         _token = token
+        _storage = storage
+        _daemon_control = daemon_control
     return ThreadingHTTPServer((host, port), _H)
 
 
 class Handler(BaseHTTPRequestHandler):
     _token: str | None = None
+    _storage: Path | None = None
+    _daemon_control: bool = False
 
     def log_message(self, *a):                     # never log (urls may carry keys)
         pass
@@ -202,7 +226,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             resp = route(method, parsed.path, query, body,
                          token=self._token,
-                         auth=self.headers.get("Authorization"))
+                         auth=self.headers.get("Authorization"),
+                         storage=self._storage,
+                         daemon_control=self._daemon_control)
         except Exception as exc:                    # no traceback leak
             resp = _err(500, "internal error", type(exc).__name__)
         self._send(resp)
@@ -236,13 +262,25 @@ def _arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8787)
     p.add_argument("--token", default=os.environ.get("CONSCIO_HUB_TOKEN") or None)
+    p.add_argument("--storage", default=None,
+                   help="instance storage dir (default ~/.hermes/consciousness); "
+                        "where the daemon control file is written")
+    p.add_argument("--enable-daemon-control", action="store_true",
+                   help="expose the awake toggle (writes daemon_control.json; "
+                        "the daemon must run with --watch-control to honor it)")
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
+    # Default matches ConsciousnessEngine.DEFAULT_STORAGE (engine.py:133); kept as
+    # a literal so the Hub stays engine-free (no engine import at launch).
+    storage = (Path(args.storage) if args.storage
+               else Path.home() / ".hermes" / "consciousness")
     try:
-        srv = make_server(args.host, args.port, args.token)
+        srv = make_server(args.host, args.port, args.token,
+                          storage=storage,
+                          daemon_control=args.enable_daemon_control)
     except ValueError as exc:
         print(f"conscio-hub: {exc}")
         return 2
