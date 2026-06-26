@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.1] - 2026-06-26 — "Reins" (slice 2: Hub awake control + close-out)
+
+### Added
+- **Hub awake control (gated).** `conscio-hub --enable-daemon-control` exposes
+  `PUT /api/daemon/awake {awake}` and `GET /api/daemon/control`, writing
+  `daemon_control.json` to the storage dir (atomic, via a new pure
+  `conscio/hub/control.py`). A daemon run with `conscio-daemon --watch-control`
+  reads that file at the top of each cycle and applies it via `engine.wake()` /
+  `engine.sleep()`. **No signals, no PID, no `os.kill`** — the v2.7.1 C1 class
+  (a toggle that killed the daemon) is structurally impossible. Double opt-in,
+  both flags off by default; flag off → routes 404 and the daemon branch is
+  skipped entirely (byte-identical behavior). The Hub refuses to write into a
+  non-existent storage dir (500, no silent file).
+
+### Fixed / Closed
+- **install docs** now list all **six** console scripts (added `conscio-hub`,
+  `conscio-observatory`).
+- **CI / Release** now test the full claimed Python range (**3.10–3.13**), not
+  just 3.11–3.12 — verified free of 3.11+ stdlib/syntax.
+
+### Notes
+- Debt-zero: `liaison`/`mcp`/`agency`/`noosphere`/`observatory`/`engine.py`
+  byte-identical. The daemon reads the control file by name (`safe_read_json`)
+  and never imports `conscio.hub` (layering).
+
+---
+
 ## [2.8.0] - 2026-06-26 — "Reins" (slice 1: Observatory read panels)
 
 ### Added

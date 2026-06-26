@@ -132,9 +132,12 @@ come from the `--storage` dir.
 omitted), the inbox is the operator's **private** mailbox on their own loopback
 host — showing the message body is the point of an inbox viewer.
 
-## Not yet here
+## The write counterpart (the Hub)
 
-The Liaison **control** surface — toggling the daemon's awake state from the Hub
-— is write-capable with its own threat model and ships as the next slice
-(v2.8.1, via a control file the daemon applies next-cycle; never signals). The
-relay **inbox view** above is read-only and already here.
+The Liaison **control** surface — toggling the daemon's awake state — is
+write-capable, so it lives in the **Hub**, not here (v2.8.1). The Hub
+(`--enable-daemon-control`) writes `daemon_control.json`; a daemon run with
+`conscio-daemon --watch-control` applies it next-cycle via `engine.wake()` /
+`engine.sleep()` — never signals, never `os.kill`. See the
+[Hub guide](hub.md#daemon-control-opt-in-v28). The relay **inbox view** above is
+read-only and stays in the Observatory.
