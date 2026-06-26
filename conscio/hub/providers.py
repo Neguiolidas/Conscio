@@ -62,12 +62,25 @@ def catalog(cfg: dict) -> dict:
 
 def resolve_provider(cfg: dict, provider: str) -> dict:
     """Turn a ?provider= param (custom NAME or builtin TYPE) into a provider_cfg.
-    Raises KeyError if neither."""
+    Raises KeyError if neither.
+
+    For builtin types, merges the active adapter config (base_url, api_key_env)
+    when its type matches, so the Hub UI doesn't silently drop the configured
+    endpoint when a user selects "openai-compat" or another builtin name.
+    """
     custom = cfg.get("providers", {})
     if isinstance(custom, dict) and provider in custom:
         return dict(custom[provider])
     if provider in _DEFAULT_BASE_URL:
-        return {"type": provider, "base_url": _DEFAULT_BASE_URL[provider]}
+        out = {"type": provider, "base_url": _DEFAULT_BASE_URL[provider]}
+        # Merge active adapter fields when the type matches
+        adapter = cfg.get("adapter")
+        if isinstance(adapter, dict) and adapter.get("type") == provider:
+            if adapter.get("base_url"):
+                out["base_url"] = adapter["base_url"]
+            if adapter.get("api_key_env"):
+                out["api_key_env"] = adapter["api_key_env"]
+        return out
     raise KeyError(provider)
 
 
@@ -107,7 +120,12 @@ def probe_models(provider_cfg: dict, *, refresh: bool = False) -> dict:
         if hit and (time.monotonic() - hit[0]) < _CACHE_TTL:
             return dict(hit[1])
     env = provider_cfg.get("api_key_env")
-    key = (os.environ.get(env, "") if env else "")
+    key = ""
+    if env:
+        key = os.environ.get(env, "")
+        if not key:
+            from . import config as _cfg
+            key = _cfg.vault_load(env) or ""
     headers: dict = {}
     try:
         if atype == "ollama":
