@@ -1,6 +1,5 @@
 # tests/test_hub_control.py
 import json
-from pathlib import Path
 
 from conscio.hub import control
 
