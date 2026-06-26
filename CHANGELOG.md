@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.0] - 2026-06-26 — "Reins" (slice 1: Observatory read panels)
+
+### Added
+- Observatory **Daemon** panel (`GET /api/daemon`) — reads the daemon's last
+  atomic `daemon_heartbeat.json` (ts / cycles / awake / pid / last_run / advisory);
+  absent → `{"running": false}`.
+- Observatory **Relay** panel (`GET /api/relay/inbox`) — read-only view of this
+  instance's liaison inbox via a new `LiaisonProjection` that opens `liaison.db`
+  with `mode=ro` (NO PRAGMA, SELECT only, full payload, never marks read). It
+  cannot reuse `mailbox.inbox()` (which opens read-write). Unparseable rows are
+  logged and skipped.
+- Observatory **Identity** panel (`GET /api/identity`) — reads `instance.json`
+  read-only (never `load_or_create`, which would write a new UUID).
+- `conscio-observatory --liaison-db` (default `$HERMES_HOME/liaison.db`).
+
+### Notes
+- Still GET-only (every mutation verb → 405), loopback-only, **engine-free**, and
+  with **no `--enable` flag** — launching the viewer is the opt-in.
+- The Hub awake control + daemon `--watch-control` ship as the next slice (v2.8.1).
+
+---
+
 ## [2.7.1] - 2026-06-25 — "Hub: key vault + provider fix"
 
 ### Added
