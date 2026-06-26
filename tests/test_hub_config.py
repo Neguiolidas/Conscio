@@ -1,4 +1,9 @@
 import json
+import os
+import stat
+
+import pytest
+
 import conscio.adapter_config as ac
 from conscio.hub import config
 
@@ -130,12 +135,6 @@ def test_validate_allows_http_and_https_base_url():
 
 
 # ── Key vault (v2.7.1) ─────────────────────────────────────────────
-import os
-import stat
-
-import pytest
-
-
 def test_env_name_for_sanitizes_traversal():
     n = config._env_name_for("../../etc", "gpt/4o..x")
     assert "/" not in n and ".." not in n
