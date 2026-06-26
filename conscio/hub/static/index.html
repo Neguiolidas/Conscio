@@ -1,37 +1,43 @@
 <!doctype html>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Conscio Hub</title>
 <link rel="stylesheet" href="/static/style.css">
 <main>
-  <h1>Conscio Hub <small id="status"></small></h1>
+  <h1>🧠 Conscio Hub <small id="version"></small></h1>
 
-  <section>
-    <h2>Active brain</h2>
-    <label>Provider
+  <!-- Brain Config -->
+  <section id="sec-brain">
+    <h2>Active Brain</h2>
+    <label><span>Provider</span>
       <select id="provider"></select>
     </label>
-    <label>Model
-      <input id="model" list="models" autocomplete="off">
-      <datalist id="models"></datalist>
+    <label><span>API Key</span>
+      <input id="api-key" type="password" autocomplete="off" placeholder="sk-… or your provider key">
+      <span class="hint">Stored as environment variable on save — never echoed back</span>
     </label>
-    <button id="test">Test</button>
-    <span id="testResult"></span>
-    <button id="save">Save</button>
-    <span class="hint">↻ takes effect next session</span>
+    <label id="base-url-row" style="display:none"><span>Base URL</span>
+      <input id="base-url" type="url" autocomplete="off" placeholder="https://api.example.com/v1">
+    </label>
+    <label><span>Model</span>
+      <div style="position:relative">
+        <input id="model" list="models" autocomplete="off">
+        <datalist id="models"></datalist>
+      </div>
+      <span class="hint" id="models-indicator"></span>
+    </label>
+    <div style="display:flex;gap:8px;margin-top:4px;align-items:center">
+      <button id="test">Test Connection</button>
+      <span id="testResult"></span>
+      <button id="save">Save</button>
+      <span class="hint">↻ takes effect next session</span>
+    </div>
   </section>
 
-  <section>
+  <!-- Providers -->
+  <section id="sec-providers">
     <h2>Providers</h2>
-    <ul id="providers"></ul>
-    <details>
-      <summary>+ Add provider</summary>
-      <input id="pName" placeholder="name (e.g. logfare)">
-      <input id="pType" placeholder="type (openai-compat)">
-      <input id="pUrl" placeholder="base_url">
-      <input id="pEnv" placeholder="api_key_env (e.g. LOGFARE_API_KEY)">
-      <button id="addProvider">Add</button>
-      <span id="addResult"></span>
-    </details>
+    <ul id="providers" style="list-style:none;font-size:.85rem"></ul>
   </section>
 </main>
 <script src="/static/app.js"></script>
