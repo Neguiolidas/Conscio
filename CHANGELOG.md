@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.2] - 2026-06-26 — "Conversation" (Relay Phase 3, slice 1)
+
+### Added
+- **`mailbox.thread(db, a, b, *, limit=20)`** — pure two-party history reader
+  (both directions, chronological; engine-free, additive, no schema change).
+- **Multi-turn relay auto-respond.** `conscio-daemon --auto-respond` now prompts
+  the adapter with the conversation transcript (a `peer:`/`me:` thread, review
+  rows excluded) instead of a single inbound message, char-budget clamped (the
+  reader stays pure — the budget lives in the wiring).
+- **`conscio.relay_broadcast`** MCP tool (under `--enable-relay`) — fan-out a
+  relay message to every `--relay-peer`, best-effort per-peer result.
+
+### Unchanged (debt-zero)
+- liaison `relay.py` / `review.py`, `agency/review_apply.py`,
+  `perception/relay_sensor.py`, and `mailbox.send/inbox/mark_read/purge_read`
+  byte-identical. No schema change.
+- daemon-perceives / server-acts boundary intact (broadcast is a mailbox write,
+  never `host_act`).
+
+---
+
 ## [2.8.1] - 2026-06-26 — "Reins" (slice 2: Hub awake control + close-out)
 
 ### Added
