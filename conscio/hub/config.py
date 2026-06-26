@@ -18,6 +18,71 @@ KNOWN_TYPES = ("lmstudio", "ollama", "openai", "anthropic", "gemini",
                "openai-compat")
 _ENV_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
+# ── Key vault: stores raw API keys in ~/.config/conscio/keys/ ──────
+_VAULT_DIR = adapter_config._CONFIG_PATHS[0].parent / "keys"
+
+
+def _valid_env_name(env_name: str) -> bool:
+    return bool(_ENV_RE.match(env_name)) and len(env_name) <= 128
+
+
+def _env_name_for(provider_type: str, model: str = "") -> str:
+    """Stable, path-safe env var name for a provider type + optional model.
+
+    Both inputs are sanitised to ``[a-z0-9]`` runs so a hostile ``type`` or
+    ``model`` can never inject path separators into the vault filename (I1)."""
+    base = re.sub(r"[^a-z0-9]", "_", provider_type.lower())
+    if model:
+        slug = re.sub(r"[^a-z0-9]", "_", model.lower())[:24]
+        base += f"_{slug}"
+    return f"CONSCIO_KEY_{base.upper()}"
+
+
+def vault_store(env_name: str, raw_key: str) -> None:
+    """Store a raw API key in the vault. Refuses unsafe names (I1).
+
+    The file is created 0600 *before* any content is written (I2 — no
+    chmod-after-rename window) and the vault dir is 0700 (M1)."""
+    if not _valid_env_name(env_name):
+        raise ValueError(f"invalid vault key name: {env_name!r}")
+    _VAULT_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(_VAULT_DIR, 0o700)
+    path = _VAULT_DIR / env_name
+    val = raw_key.strip()
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)            # robust even if file pre-existed
+        os.write(fd, val.encode())
+    finally:
+        os.close(fd)
+    os.environ[env_name] = val          # so model_test works immediately
+
+
+def vault_load(env_name: str) -> str | None:
+    """Load a raw API key from env (preferred) or vault. None on bad name."""
+    if not _valid_env_name(env_name):
+        return None
+    cur = os.environ.get(env_name)
+    if cur:
+        return cur
+    try:
+        val = (_VAULT_DIR / env_name).read_text().strip()
+    except OSError:
+        return None
+    if val:
+        os.environ[env_name] = val      # cache in env
+        return val
+    return None
+
+
+def vault_has(env_name: str) -> bool:
+    """True if a key exists in env or vault — WITHOUT mutating os.environ (M2)."""
+    if not _valid_env_name(env_name):
+        return False
+    if os.environ.get(env_name):
+        return True
+    return (_VAULT_DIR / env_name).is_file()
+
 
 def load() -> dict:
     """Current config (or {} if none/corrupt)."""
@@ -65,8 +130,9 @@ def _check_adapter(block: dict, where: str) -> list[str]:
         errs.append(f"{where}.api_key_env must be an ENV VAR NAME "
                     f"(^[A-Z_][A-Z0-9_]*$, <=128), not a key")
     if "api_key" in block:
-        errs.append(f"{where}.api_key is not allowed; use api_key_env "
-                    f"(the NAME of an environment variable)")
+        errs.append(f"{where}.api_key is not allowed in config; "
+                    f"use api_key_env (the NAME of an environment variable) "
+                    f"— raw keys go through the vault on save")
     return errs
 
 
@@ -100,7 +166,7 @@ def _redact_block(block: dict) -> dict:
     out.pop("api_key", None)                       # never echo a raw key
     env = out.get("api_key_env")
     if env is not None:
-        out["api_key_present"] = bool(os.environ.get(env))
+        out["api_key_present"] = vault_has(env)    # M2: no os.environ mutation
     return out
 
 
