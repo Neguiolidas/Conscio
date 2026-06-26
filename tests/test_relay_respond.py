@@ -127,6 +127,81 @@ def test_oversized_output_truncated_to_cap(tmp_path):
     assert relay.payload_size(box[0]["payload"]) <= relay.MAX_PAYLOAD_BYTES
 
 
+# ── v2.8.2 "Conversation": multi-turn transcript prompt + R1 budget clamp ─────
+
+def test_multiturn_prompt_includes_history(tmp_path):
+    db = _db(tmp_path)
+    # history: peer asked, we answered (auto_reply), then peer asks again (unread)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "what is 2+2"}, ts=100.0)
+    mailbox.send(db, from_instance=ME, to_instance=PEER, type="chat",
+                 payload={"text": "4", "auto_reply": True}, ts=200.0)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "and 3+3"}, ts=300.0)
+    captured = {}
+
+    def gen(prompt):
+        captured["p"] = prompt
+        return "6"
+
+    a = MockAdapter(script=[gen])
+    sent = relay_respond.auto_respond(a, db, ME, [PEER])
+    assert len(sent) == 1
+    assert "what is 2+2" in captured["p"]          # history present
+    assert "and 3+3" in captured["p"]              # trigger present
+    assert "peer:" in captured["p"] and "me:" in captured["p"]   # labels
+
+
+def test_single_message_thread_behaves_like_singleshot(tmp_path):
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "hello"}, ts=1.0)
+    captured = {}
+    a = MockAdapter(script=[lambda p: captured.setdefault("p", p) or "hi"])
+    sent = relay_respond.auto_respond(a, db, ME, [PEER])
+    assert len(sent) == 1
+    assert "peer: hello" in captured["p"]
+    assert "me:" not in captured["p"]              # no prior turns
+
+
+def test_budget_clamp_drops_oldest_keeps_newest(tmp_path):
+    db = _db(tmp_path)
+    for i in range(6):
+        mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                     payload={"text": f"OLD{i} " + "x" * 200}, ts=float(i))
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "NEWEST"}, ts=999.0)
+    captured = {}
+    a = MockAdapter(script=[lambda p: captured.setdefault("p", p) or "ok"])
+    relay_respond.auto_respond(a, db, ME, [PEER], max_prompt_chars=300)
+    assert "NEWEST" in captured["p"]               # newest always kept
+    assert "OLD0" not in captured["p"]             # oldest dropped under budget
+
+
+def test_reserved_rows_excluded_from_transcript(tmp_path):
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="review_request",
+                 payload={"text": "SECRET_REVIEW"}, ts=50.0)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "hi there"}, ts=100.0)
+    captured = {}
+    a = MockAdapter(script=[lambda p: captured.setdefault("p", p) or "yo"])
+    relay_respond.auto_respond(a, db, ME, [PEER])
+    assert "SECRET_REVIEW" not in captured["p"]    # review channel never in chat
+    assert "hi there" in captured["p"]
+
+
+def test_loop_breaker_consumes_own_auto_reply_unanswered(tmp_path):
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "echo", "auto_reply": True}, ts=1.0)
+    a = MockAdapter(script=["should-not-be-used"])
+    sent = relay_respond.auto_respond(a, db, ME, [PEER])
+    assert sent == []                              # not answered
+    assert a.calls == []                           # adapter never called
+    assert _unread(db) == 0                        # but consumed
+
+
 def test_relay_respond_imports_no_engine():
     tree = ast.parse(pathlib.Path(relay_respond.__file__).read_text())
     mods = set()
