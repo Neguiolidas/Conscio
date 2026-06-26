@@ -127,3 +127,52 @@ def test_validate_allows_http_and_https_base_url():
     assert config.validate(
         {"model": "m",
          "adapter": {"type": "openai", "base_url": "https://api.x/v1"}}) == []
+
+
+# ── Key vault (v2.7.1) ─────────────────────────────────────────────
+import os
+import stat
+
+import pytest
+
+
+def test_env_name_for_sanitizes_traversal():
+    n = config._env_name_for("../../etc", "gpt/4o..x")
+    assert "/" not in n and ".." not in n
+    assert config._valid_env_name(n)
+
+
+def test_vault_store_load_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "_VAULT_DIR", tmp_path / "keys")
+    monkeypatch.delenv("CONSCIO_KEY_OPENAI", raising=False)
+    config.vault_store("CONSCIO_KEY_OPENAI", "sk-secret")
+    assert config.vault_load("CONSCIO_KEY_OPENAI") == "sk-secret"
+
+
+def test_vault_file_is_0600(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "_VAULT_DIR", tmp_path / "keys")
+    config.vault_store("CONSCIO_KEY_X", "k")
+    mode = stat.S_IMODE((tmp_path / "keys" / "CONSCIO_KEY_X").stat().st_mode)
+    assert mode == 0o600
+
+
+def test_vault_dir_is_0700(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "_VAULT_DIR", tmp_path / "keys")
+    config.vault_store("CONSCIO_KEY_X", "k")
+    mode = stat.S_IMODE((tmp_path / "keys").stat().st_mode)
+    assert mode == 0o700
+
+
+def test_vault_store_rejects_bad_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "_VAULT_DIR", tmp_path / "keys")
+    with pytest.raises(ValueError):
+        config.vault_store("../escape", "k")
+
+
+def test_vault_has_no_env_mutation(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "_VAULT_DIR", tmp_path / "keys")
+    monkeypatch.delenv("CONSCIO_KEY_Y", raising=False)
+    (tmp_path / "keys").mkdir()
+    (tmp_path / "keys" / "CONSCIO_KEY_Y").write_text("v")
+    assert config.vault_has("CONSCIO_KEY_Y") is True
+    assert "CONSCIO_KEY_Y" not in os.environ   # presence check must not cache
