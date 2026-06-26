@@ -39,5 +39,17 @@
     <h2>Providers</h2>
     <ul id="providers" style="list-style:none;font-size:.85rem"></ul>
   </section>
+
+  <!-- Daemon control (only when --enable-daemon-control) -->
+  <section id="sec-daemon" style="display:none">
+    <h2>Daemon</h2>
+    <label style="display:flex;gap:8px;align-items:center">
+      <input id="awake" type="checkbox">
+      <span>Awake (autonomous) — applied next daemon cycle</span>
+    </label>
+    <span class="hint">Requires <code>conscio-daemon --watch-control</code>.
+      Awake makes an act-capable daemon autonomous.</span>
+    <span id="awakeResult" class="hint"></span>
+  </section>
 </main>
 <script src="/static/app.js"></script>
