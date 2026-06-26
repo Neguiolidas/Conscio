@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.7.1] - 2026-06-25 — "Hub: key vault + provider fix"
+
+### Added
+- **Hub API-Key field + key vault.** The Hub's Active Brain page now has an
+  **API Key** input. On Save the raw key is written to a per-provider file under
+  `~/.config/conscio/keys/` (created **0600**, dir **0700**) and the config keeps
+  only an `api_key_env` reference — `validate()` still rejects a raw `api_key` in
+  `config.json`, and the key is never echoed back over the API.
+
+### Fixed
+- **Provider select no longer reverts.** `resolve_provider` merges the active
+  adapter's `base_url`/`api_key_env` when its type matches a builtin, so the Hub
+  stops dropping a configured endpoint; the UI only seeds the form on first load
+  (`_initialLoadDone`), so 3 s polls no longer clobber edits. **Test** now runs a
+  parallel model probe and shows latency + a sample + detected models.
+
+### Security
+- Vault filenames are derived from sanitised inputs and validated against the
+  env-var-name regex before any filesystem op (no path traversal via `type`).
+- Vault files are created `0600` at open (no chmod-after-rename window); the
+  presence check used by config redaction no longer mutates `os.environ`.
+
+### Notes
+- Live daemon/relay/identity **control** surface (awake toggle, relay inbox
+  viewer, identity panel) is **deferred** to a later phase with its own design
+  gate — it is not part of this release.
+
 ## [2.7.0] - 2026-06-25 — "Phase 2: General Relay Auto-Respond"
 
 ### Added
