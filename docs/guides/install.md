@@ -13,7 +13,7 @@ Requires Python ≥ 3.10.
 
 ## Console scripts
 
-The wheel ships four commands:
+The wheel ships six commands:
 
 | command | purpose |
 |---|---|
@@ -21,6 +21,8 @@ The wheel ships four commands:
 | `conscio-bench` | measure an inference backend against the agency pipeline |
 | `conscio-daemon` | run Conscio as a living process (sensors → reflect → act) |
 | `conscio-mcp` | stdlib-only MCP stdio server — embed Conscio in any MCP host (v2.0) |
+| `conscio-hub` | localhost config/control plane — swap model/provider, toggle daemon awake (v2.1/v2.8) |
+| `conscio-observatory` | read-only loopback viewer of one instance's persisted state (v2.4) |
 
 ```bash
 conscio version

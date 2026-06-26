@@ -4,6 +4,7 @@ import json as _json
 import pytest
 
 import conscio.adapter_config as ac
+from conscio.hub import control as _control
 from conscio.hub import model_test, providers, server
 
 
@@ -214,12 +215,10 @@ def test_token_gate_wrong_token_401():
 
 # ── v2.7.1: dropped control endpoints + vault wiring ───────────────
 def test_dropped_endpoints_404():
+    # these live in the Observatory (v2.8.0), never on the Hub
     for p in ("/api/daemon/status", "/api/identity", "/api/relay/inbox"):
         r = server.route("GET", p, {}, None, token=None, auth=None)
         assert r.status == 404
-    r = server.route("PUT", "/api/daemon/awake", {}, {"awake": True},
-                     token=None, auth=None)
-    assert r.status == 404
 
 
 def test_put_config_raw_key_goes_to_vault(tmp_path, monkeypatch):
@@ -240,3 +239,55 @@ def test_put_config_raw_key_goes_to_vault(tmp_path, monkeypatch):
     g = server.route("GET", "/api/config", {}, None, token=None, auth=None)
     assert g.payload["adapter"]["api_key_present"] is True
     assert "api_key" not in g.payload["adapter"]
+
+
+# ── v2.8.1: Hub awake control (gated) ──────────────────────────────
+def test_daemon_awake_404_when_flag_off(tmp_path):
+    # flag off (default) -> route not exposed
+    r = server.route("PUT", "/api/daemon/awake", {}, {"awake": True},
+                     token=None, auth=None)
+    assert r.status == 404
+    r = server.route("GET", "/api/daemon/control", {}, None,
+                     token=None, auth=None)
+    assert r.status == 404
+
+
+def test_put_awake_writes_control_when_enabled(tmp_path):
+    r = server.route("PUT", "/api/daemon/awake", {}, {"awake": True},
+                     token=None, auth=None,
+                     storage=tmp_path, daemon_control=True)
+    assert r.status == 200 and r.payload["awake"] is True
+    assert _control.read_control(tmp_path)["awake"] is True
+
+
+def test_put_awake_requires_bool(tmp_path):
+    r = server.route("PUT", "/api/daemon/awake", {}, {"awake": "yes"},
+                     token=None, auth=None,
+                     storage=tmp_path, daemon_control=True)
+    assert r.status == 400
+
+
+def test_put_awake_missing_storage_dir_500(tmp_path):
+    # Hermet reserva: refuse to write into a non-existent storage dir
+    ghost = tmp_path / "does-not-exist"
+    r = server.route("PUT", "/api/daemon/awake", {}, {"awake": True},
+                     token=None, auth=None,
+                     storage=ghost, daemon_control=True)
+    assert r.status == 500
+    assert not (ghost / _control.CONTROL_FILENAME).exists()
+
+
+def test_get_control_reads_back(tmp_path):
+    server.route("PUT", "/api/daemon/awake", {}, {"awake": False},
+                 token=None, auth=None, storage=tmp_path, daemon_control=True)
+    r = server.route("GET", "/api/daemon/control", {}, None,
+                     token=None, auth=None, storage=tmp_path, daemon_control=True)
+    assert r.status == 200 and r.payload["awake"] is False
+
+
+def test_health_advertises_daemon_control():
+    off = server.route("GET", "/api/health", {}, None, token=None, auth=None)
+    assert off.payload["daemon_control"] is False
+    on = server.route("GET", "/api/health", {}, None, token=None, auth=None,
+                      daemon_control=True)
+    assert on.payload["daemon_control"] is True
