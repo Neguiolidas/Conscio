@@ -77,6 +77,11 @@ Three tools (registered only with `--enable-relay`):
   — peek unread messages from trusted peers. Review-channel rows are excluded;
   rows from non-peers (or oversized) are skipped.
 - `conscio.relay_read {ids}` → `{ok, marked}` — mark messages consumed.
+- `conscio.relay_broadcast {type, payload}` → `{ok, sent: [{to, id}], errors: [{to, reason}]}`
+  (v2.8.2) — fan a message out to **every** `--relay-peer`. Same contract as
+  `relay_send` applied per peer (reserved types / oversized payloads rejected);
+  best-effort — a failing peer lands in `errors`, never aborting the rest. A
+  mailbox write, never an act.
 
 Properties:
 
@@ -92,8 +97,8 @@ Properties:
 - **Dumb pipe.** Relay never touches the engine or any act; de-duplication and
   what-to-do-with-a-message are the host agent's responsibility (there is no `fp`).
 
-Poll-based. Broadcast (one→many) and live server→client push are deferred to a
-later rung if a need appears.
+Poll-based. One→many fan-out is `conscio.relay_broadcast` (v2.8.2, above); live
+server→client push is deferred to a later rung if a need appears.
 
 ## Dynamic / Awake (v2.6.2)
 
@@ -143,7 +148,13 @@ via its adapter (a thin call — no engine memory), and sends it back tagged
 without the `relay` sensor + an adapter + `--awake` + `--relay-peer`.
 `--respond-limit` (default 10) caps adapter calls per cycle.
 
+Since v2.8.2 the reply is **multi-turn**: the adapter prompt is the conversation
+transcript (a `peer:`/`me:` thread from `mailbox.thread`, review-channel rows
+excluded) rather than the single inbound message, char-budget clamped so a long
+history can't blow the token budget. Routing replies through the engine's own
+cognition (memory/world-model) is the next phase ("Mind in the loop").
+
 The loop is **1-turn bounded**: a peer's `auto_reply` message is consumed but
 never re-answered, so two auto-responders cannot ping-pong. In this mode the
 daemon owns consumption (it marks handled peer rows read); the host's
-`relay_inbox` no longer sees them. Multi-turn conversations are a later phase.
+`relay_inbox` no longer sees them.
