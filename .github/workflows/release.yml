@@ -29,7 +29,8 @@ jobs:
           set -euo pipefail
           for f in tests/test_*.py; do
             echo "── $f"
-            python -m pytest "$f" -q --tb=short -p no:cacheprovider
+            python -m pytest "$f" -q --tb=short -p no:cacheprovider \
+              || { rc=$?; [ "$rc" -eq 5 ] && echo "  (no tests collected — ok)" || exit "$rc"; }
           done
       - name: Lint + types
         run: |
