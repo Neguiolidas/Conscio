@@ -97,3 +97,30 @@ def test_since_filters_lexically(tmp_path):
     p = Projection(tmp_path)
     assert len(p.events(since="2024-01-01 00:00:00")) == 1
     assert len(p.events(since="2024-12-01 00:00:00")) == 0
+
+
+# ── daemon() + identity() (v2.8.0) ──
+def test_daemon_absent_returns_not_running(tmp_path):
+    assert Projection(tmp_path).daemon() == {"running": False}
+
+
+def test_daemon_reads_heartbeat(tmp_path):
+    (tmp_path / "daemon_heartbeat.json").write_text(
+        json.dumps({"ts": 100.0, "cycles": 3, "awake": True, "pid": 42}))
+    d = Projection(tmp_path).daemon()
+    assert d["running"] is True and d["awake"] is True and d["cycles"] == 3
+
+
+def test_daemon_corrupt_heartbeat_returns_not_running(tmp_path):
+    (tmp_path / "daemon_heartbeat.json").write_text("{not json")
+    assert Projection(tmp_path).daemon() == {"running": False}
+
+
+def test_identity_absent_returns_empty(tmp_path):
+    assert Projection(tmp_path).identity() == {}
+
+
+def test_identity_reads_instance_json(tmp_path):
+    (tmp_path / "instance.json").write_text(
+        json.dumps({"instance_id": "abc", "label": "host-abc", "created_ts": 1.0}))
+    assert Projection(tmp_path).identity()["instance_id"] == "abc"
