@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .. import __version__
+from .liaison_view import LiaisonProjection
 from .projection import Projection
 from .society import SocietyProjection
 
@@ -30,6 +31,8 @@ _DEFAULT_STORAGE = Path.home() / ".hermes" / "consciousness"
 # Reference: conscio/noosphere/paths.py:default_noosphere_db — keep in sync.
 _DEFAULT_NOOSPHERE = Path(
     os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "noosphere.db"
+_DEFAULT_LIAISON = Path(
+    os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "liaison.db"
 
 
 @dataclass
@@ -53,7 +56,8 @@ def _int(query: dict, key: str, default: int) -> int:
 
 
 def route(method: str, path: str, query: dict, *, projection: Projection,
-          society: SocietyProjection, token: str | None, auth: str | None) -> Resp:
+          society: SocietyProjection, liaison: LiaisonProjection,
+          token: str | None, auth: str | None) -> Resp:
     # read-only: no mutation verb is ever served
     if method not in ("GET", "HEAD"):
         return _err(405, "method not allowed", method)
@@ -67,6 +71,7 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
         return Resp(200, {"ok": True, "version": __version__,
                           "storage": str(projection.storage),
                           "noosphere": str(society.db),
+                          "liaison": str(liaison.db),
                           "token_required": bool(token)})
     if path == "/api/events":
         return Resp(200, projection.events(
@@ -87,6 +92,13 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
         return Resp(200, society.skills(limit=_int(query, "limit", 100)))
     if path == "/api/society/records":
         return Resp(200, society.records(limit=_int(query, "limit", 100)))
+    if path == "/api/daemon":
+        return Resp(200, projection.daemon())
+    if path == "/api/identity":
+        return Resp(200, projection.identity())
+    if path == "/api/relay/inbox":
+        self_id = str(projection.identity().get("instance_id") or "")
+        return Resp(200, liaison.inbox(self_id, limit=_int(query, "limit", 50)))
 
     if path == "/" or path.startswith("/static/"):
         name = "index.html" if path == "/" else path.rsplit("/", 1)[-1]
@@ -117,15 +129,18 @@ def _check_host(host: str) -> None:
 
 
 def make_server(host: str, port: int, token: str | None,
-                storage: Path, noosphere: Path) -> ThreadingHTTPServer:
+                storage: Path, noosphere: Path,
+                liaison: Path) -> ThreadingHTTPServer:
     _check_host(host)
     projection = Projection(storage)
     society = SocietyProjection(noosphere)
+    liaison_proj = LiaisonProjection(liaison)
 
     class _H(Handler):
         _token = token
         _projection = projection
         _society = society
+        _liaison = liaison_proj
 
     return ThreadingHTTPServer((host, port), _H)
 
@@ -134,6 +149,7 @@ class Handler(BaseHTTPRequestHandler):
     _token: str | None = None
     _projection: Projection | None = None
     _society: SocietyProjection | None = None
+    _liaison: LiaisonProjection | None = None
 
     def log_message(self, *a):                 # never log (urls may carry tokens)
         pass
@@ -143,11 +159,12 @@ class Handler(BaseHTTPRequestHandler):
         query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
         proj = self._projection
         soc = self._society
-        if proj is None or soc is None:        # always set by make_server
+        liai = self._liaison
+        if proj is None or soc is None or liai is None:   # always set by make_server
             return self._send(_err(500, "internal error", "no projection"))
         try:
             resp = route(method, parsed.path, query, projection=proj,
-                         society=soc, token=self._token,
+                         society=soc, liaison=liai, token=self._token,
                          auth=self.headers.get("Authorization"))
         except Exception as exc:               # no traceback leak
             resp = _err(500, "internal error", type(exc).__name__)
@@ -190,6 +207,8 @@ def _arg_parser() -> argparse.ArgumentParser:
                    help="instance storage dir (default: ~/.hermes/consciousness)")
     p.add_argument("--noosphere", default=str(_DEFAULT_NOOSPHERE),
                    help="host-shared noosphere.db (default: $HERMES_HOME/noosphere.db)")
+    p.add_argument("--liaison-db", default=str(_DEFAULT_LIAISON),
+                   help="host-shared liaison.db (default: $HERMES_HOME/liaison.db)")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8788)
     p.add_argument("--token",
@@ -201,7 +220,8 @@ def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
     try:
         server = make_server(args.host, args.port, args.token,
-                             Path(args.storage), Path(args.noosphere))
+                             Path(args.storage), Path(args.noosphere),
+                             Path(args.liaison_db))
     except ValueError as exc:
         print(f"conscio-observatory: {exc}")
         return 2
