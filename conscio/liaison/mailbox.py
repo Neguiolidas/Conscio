@@ -101,6 +101,41 @@ def inbox(db: Path, to_instance: str, *, types: list[str] | None = None,
     return out
 
 
+def thread(db: Path, a: str, b: str, *, limit: int = 20) -> list[dict]:
+    """Last-N messages exchanged between instances a and b (BOTH directions),
+    returned chronologically (oldest-first). Pure read; missing/corrupt/locked
+    db -> []. payload JSON-parsed like inbox(); unparseable rows skipped. Never
+    imports conscio.engine. Additive (v2.8.2): send/inbox/mark_read/purge_read
+    unchanged; no schema change."""
+    db = Path(db)
+    if not db.exists():
+        return []
+    try:
+        conn = _connect(db)
+    except sqlite3.Error:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT id, from_instance, to_instance, type, payload, ts, read_ts"
+            " FROM messages WHERE (from_instance=? AND to_instance=?)"
+            " OR (from_instance=? AND to_instance=?)"
+            " ORDER BY ts DESC, id DESC LIMIT ?",
+            (a, b, b, a, _clamp(limit))).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    out: list[dict] = []
+    for r in reversed(rows):              # newest-first query -> chronological
+        d = dict(r)
+        try:
+            d["payload"] = json.loads(d["payload"])
+        except (TypeError, ValueError):
+            continue                      # unparseable row -> skip
+        out.append(d)
+    return out
+
+
 def mark_read(db: Path, ids: list[int], read_ts: float | None = None) -> int:
     if not ids:
         return 0
