@@ -210,3 +210,33 @@ def test_token_gate_wrong_token_401():
     r = server.route("GET", "/api/config", {}, None,
                      token="secret", auth="Bearer wrong")
     assert r.status == 401
+
+
+# ── v2.7.1: dropped control endpoints + vault wiring ───────────────
+def test_dropped_endpoints_404():
+    for p in ("/api/daemon/status", "/api/identity", "/api/relay/inbox"):
+        r = server.route("GET", p, {}, None, token=None, auth=None)
+        assert r.status == 404
+    r = server.route("PUT", "/api/daemon/awake", {}, {"awake": True},
+                     token=None, auth=None)
+    assert r.status == 404
+
+
+def test_put_config_raw_key_goes_to_vault(tmp_path, monkeypatch):
+    from conscio.hub import config
+    p = tmp_path / "config.json"
+    monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
+    monkeypatch.setattr(config, "_VAULT_DIR", tmp_path / "keys")
+    body = {"model": "gpt-4o",
+            "adapter": {"type": "openai", "api_key": "sk-raw"}}
+    r = server.route("PUT", "/api/config", {}, body, token=None, auth=None)
+    assert r.status == 200
+    saved = config.load()
+    assert "api_key" not in saved["adapter"]
+    env = saved["adapter"]["api_key_env"]
+    assert env.startswith("CONSCIO_KEY_")
+    assert config.vault_load(env) == "sk-raw"
+    # GET must report presence without echoing the raw key
+    g = server.route("GET", "/api/config", {}, None, token=None, auth=None)
+    assert g.payload["adapter"]["api_key_present"] is True
+    assert "api_key" not in g.payload["adapter"]

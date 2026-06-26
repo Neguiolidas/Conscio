@@ -19,11 +19,8 @@ KNOWN_TYPES = ("lmstudio", "ollama", "openai", "anthropic", "gemini",
 _ENV_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 # ── Key vault: stores raw API keys in ~/.config/conscio/keys/ ──────
+# (env-name safety uses _valid_env_name, defined below alongside _check_adapter)
 _VAULT_DIR = adapter_config._CONFIG_PATHS[0].parent / "keys"
-
-
-def _valid_env_name(env_name: str) -> bool:
-    return bool(_ENV_RE.match(env_name)) and len(env_name) <= 128
 
 
 def _env_name_for(provider_type: str, model: str = "") -> str:
