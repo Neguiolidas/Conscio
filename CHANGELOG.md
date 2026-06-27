@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.0] - 2026-06-27 — "Mind in the loop" (Relay Phase 3, slice 2)
+
+### Added
+- `conscio/agency/relay_cognize.py` — `cognize_respond`, an engine-cognition-routed
+  relay auto-responder. The reply is generated from the agent's identity
+  (`get_state_for_injection`), recalled memory (`recall`, peer text as query only),
+  and advisory signal (`advisory`) plus the multi-turn transcript — its own mind,
+  not a thin adapter fork.
+- Daemon `--cognize` flag — rides on `--auto-respond` to select the cognition path
+  (off by default; inert without `--auto-respond` + relay sensor + adapter + awake
+  + `--relay-peer`).
+
+### Integrity boundary
+- Peer text NEVER enters episodic memory / the world-model / goals. `relay_cognize`
+  calls only the engine read-trio; a spy-engine test (mutators raise) plus an
+  import-shape test prove no mutator (`perceive`/`reflect`/`run`/`remember`) is
+  ever called and the module never imports `conscio.engine`.
+- Reply text capped at `max_reply_chars` (default 2000) before the 64 KB `_fit` cap,
+  damping reflexive long replies between cognize peers; loop-breaker unchanged.
+
+### Unchanged (debt-zero)
+- `relay_respond.py`, all of `conscio/liaison/`, `mcp/server.py`, `mcp/protocol.py`,
+  `agency/review_apply.py`, `perception/relay_sensor.py` byte-identical. No schema
+  change. Liaison engine-free invariant intact (relay_cognize is *agency*).
+
+---
+
 ## [2.8.2] - 2026-06-26 — "Conversation" (Relay Phase 3, slice 1)
 
 ### Added

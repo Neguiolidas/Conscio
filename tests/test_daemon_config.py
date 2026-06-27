@@ -89,3 +89,25 @@ class TestBuildAdapterFromCli:
         a = daemon._build_adapter_from_cli(
             self._args(adapter="openai-compat", base_url="http://x/v1"), "fb")
         assert a.base_url == "http://x/v1"
+
+
+class TestCognizeFlag:
+    """v2.9.0 --cognize: route relay auto-replies through engine cognition."""
+
+    def test_cognize_flag_parses(self):
+        args = daemon._arg_parser().parse_args(["--cognize"])
+        assert args.cognize is True
+
+    def test_cognize_defaults_off(self):
+        args = daemon._arg_parser().parse_args([])
+        assert args.cognize is False
+
+    def test_cognize_composes_with_auto_respond(self):
+        args = daemon._arg_parser().parse_args(
+            ["--auto-respond", "--cognize", "--awake",
+             "--sensors", "host,relay", "--relay-peer", "p1"])
+        assert args.auto_respond is True and args.cognize is True
+        # arming predicate is unchanged: cognize rides on the same gate
+        assert daemon._responder_armed(
+            auto_respond=args.auto_respond, relay_peer=args.relay_peer,
+            has_adapter=True, awake=True, sensors_spec="host,relay") is True
