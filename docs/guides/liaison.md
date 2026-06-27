@@ -151,10 +151,37 @@ without the `relay` sensor + an adapter + `--awake` + `--relay-peer`.
 Since v2.8.2 the reply is **multi-turn**: the adapter prompt is the conversation
 transcript (a `peer:`/`me:` thread from `mailbox.thread`, review-channel rows
 excluded) rather than the single inbound message, char-budget clamped so a long
-history can't blow the token budget. Routing replies through the engine's own
-cognition (memory/world-model) is the next phase ("Mind in the loop").
+history can't blow the token budget.
 
 The loop is **1-turn bounded**: a peer's `auto_reply` message is consumed but
 never re-answered, so two auto-responders cannot ping-pong. In this mode the
 daemon owns consumption (it marks handled peer rows read); the host's
 `relay_inbox` no longer sees them.
+
+## Mind in the loop (v2.9.0)
+
+By default the auto-reply is a **thin** adapter call — no engine memory. Add
+`--cognize` to route the reply through the agent's **own cognition** instead:
+
+```bash
+conscio-daemon --awake --sensors host,relay \
+               --relay-peer <peer_instance_id> \
+               --adapter anthropic --adapter-model claude-haiku-4-5-20251001 \
+               --auto-respond --cognize
+```
+
+With `--cognize` the prompt is built from three **read-only** engine surfaces —
+identity (`get_state_for_injection`), recalled memory (`recall`, with the peer's
+text used only as the retrieval *query*), and the advisory signal (`advisory`,
+coherence/goals/status) — plus the same multi-turn transcript. The reply reflects
+the agent's actual state, not a stateless fork. `--cognize` rides on
+`--auto-respond` (inert on its own) and is OFF by default.
+
+**Integrity boundary.** Peer text NEVER enters episodic memory, the world-model,
+or goals. `relay_cognize` calls only the engine read-trio — never `perceive`,
+`reflect`, `run`, or `remember` — enforced by construction and proven by a
+spy-engine test (every mutator raises) plus an import-shape test (the module
+never imports `conscio.engine`; it is *agency*, so the liaison engine-free
+invariant is untouched). Cognized replies are richer, so the reply text is capped
+at `max_reply_chars` (default 2000) before the 64 KB payload cap, damping
+reflexive long replies between cognize peers. The 1-turn loop-breaker is unchanged.
