@@ -345,6 +345,10 @@ def _arg_parser() -> argparse.ArgumentParser:
                              "adapter + --awake + --relay-peer)")
     parser.add_argument("--respond-limit", type=int, default=10,
                         help="max relay auto-replies per cycle (token-burn cap)")
+    parser.add_argument("--cognize", action="store_true",
+                        help="route relay auto-replies through engine cognition "
+                             "(identity+memory+advisory, read-only) instead of a "
+                             "thin adapter call; rides on --auto-respond (v2.9.0)")
     parser.add_argument("--watch-control", action="store_true",
                         help="honor daemon_control.json in the storage dir "
                              "(the Hub awake toggle); OFF default. Awake makes "
@@ -412,17 +416,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if _responder_armed(auto_respond=True, relay_peer=args.relay_peer,
                             has_adapter=adapter is not None, awake=awake,
                             sensors_spec=sensors_spec):
-            from .agency import relay_respond
             _adapter = adapter                          # R1: bind LOCAL adapter
             _peers = tuple(args.relay_peer)
-            responder = lambda: relay_respond.auto_respond(   # noqa: E731
-                _adapter, liaison_db, self_id, _peers,
-                limit=args.respond_limit)
-            log.info("relay auto-respond armed (peers=%d, limit=%d)",
-                     len(_peers), args.respond_limit)
+            if args.cognize:
+                from .agency import relay_cognize
+                _engine = engine                        # R1: bind LOCAL engine
+                responder = lambda: relay_cognize.cognize_respond(  # noqa: E731
+                    _engine, _adapter, liaison_db, self_id, _peers,
+                    limit=args.respond_limit)
+                log.info("relay cognize-respond armed (peers=%d, limit=%d)",
+                         len(_peers), args.respond_limit)
+            else:
+                from .agency import relay_respond
+                responder = lambda: relay_respond.auto_respond(   # noqa: E731
+                    _adapter, liaison_db, self_id, _peers,
+                    limit=args.respond_limit)
+                log.info("relay auto-respond armed (peers=%d, limit=%d)",
+                         len(_peers), args.respond_limit)
         else:
             log.warning("--auto-respond inert: needs relay sensor + adapter + "
                         "--awake + --relay-peer; skipping")
+    elif args.cognize:
+        log.warning("--cognize inert without --auto-respond; skipping")
     control_path = (engine.storage / "daemon_control.json"
                     if args.watch_control else None)
     daemon = Daemon(engine, sensors=sensors, interval=interval,
