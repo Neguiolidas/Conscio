@@ -111,3 +111,19 @@ class TestCognizeFlag:
         assert daemon._responder_armed(
             auto_respond=args.auto_respond, relay_peer=args.relay_peer,
             has_adapter=True, awake=True, sensors_spec="host,relay") is True
+
+
+class TestCognizeRememberFlag:
+    """v2.9.1 --cognize-remember: also write each cognized exchange to memory."""
+
+    def test_parses(self):
+        a = daemon._arg_parser().parse_args(["--cognize", "--cognize-remember"])
+        assert a.cognize_remember is True
+
+    def test_defaults_off(self):
+        a = daemon._arg_parser().parse_args(["--cognize"])
+        assert a.cognize_remember is False
+
+    def test_independent_of_cognize_parse(self):
+        a = daemon._arg_parser().parse_args(["--cognize-remember"])
+        assert a.cognize_remember is True        # parses; inert without --cognize
