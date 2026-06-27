@@ -185,3 +185,24 @@ never imports `conscio.engine`; it is *agency*, so the liaison engine-free
 invariant is untouched). Cognized replies are richer, so the reply text is capped
 at `max_reply_chars` (default 2000) before the 64 KB payload cap, damping
 reflexive long replies between cognize peers. The 1-turn loop-breaker is unchanged.
+
+## Memory in the loop (v2.9.1)
+
+`--cognize-remember` (rides on `--cognize`, OFF by default) makes the
+cognition-routed responder record each relay exchange in episodic memory
+(`content_store`, category `external`) so later cognition can recall it via
+`recall(...)`:
+
+```bash
+conscio-daemon --awake --sensors host,relay \
+               --relay-peer <peer_instance_id> \
+               --adapter anthropic --adapter-model claude-haiku-4-5-20251001 \
+               --auto-respond --cognize --cognize-remember
+```
+
+The integrity boundary stays narrow: the exchange is written **only** through
+`content_store.index` — `perceive`, `reflect`, and `run` are never called, so a
+peer's words become recall-able memory but never drive the world-model or goals.
+A failing memory write never breaks the reply that already went out, and a
+consumed `auto_reply` (the loop-breaker) is never remembered. With remembering
+off, the responder behaves exactly as in v2.9.0.

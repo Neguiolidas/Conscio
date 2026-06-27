@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.1] - 2026-06-27 — "Memory in the loop" (Relay Phase 3, slice 3)
+
+### Fixed
+- **Adapter vault key:** `build_adapter_from_config` resolved the API key only
+  from `os.environ`; the Hub key vault (v2.7.1) stores keys in files and never
+  exports them, so the daemon/MCP/CLI built a keyless adapter → HTTP 401 on
+  every authed provider. It now falls back to the Hub vault. Bug present since
+  v2.7.1.
+
+### Added
+- **`--cognize-remember`** (daemon, rides on `--cognize`, OFF default): the
+  cognition-routed relay responder writes each exchange to episodic memory
+  (`content_store`, category `external`) so future cognition can recall it.
+
+### Integrity boundary
+- Even when remembering, peer text enters episodic memory ONLY —
+  `perceive`/`reflect`/`run` are never called, so the peer never drives the
+  world-model or goals. With `remember=False`, `cognize_respond` is
+  byte-equivalent to v2.9.0.
+
+### Unchanged (debt-zero)
+- `conscio/liaison/*.py`, `mcp/server.py`, `mcp/protocol.py`,
+  `agency/review_apply.py`, `agency/relay_respond.py`,
+  `perception/relay_sensor.py` byte-identical; no schema change.
+
+---
+
 ## [2.9.0] - 2026-06-27 — "Mind in the loop" (Relay Phase 3, slice 2)
 
 ### Added
