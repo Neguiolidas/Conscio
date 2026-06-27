@@ -349,6 +349,10 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="route relay auto-replies through engine cognition "
                              "(identity+memory+advisory, read-only) instead of a "
                              "thin adapter call; rides on --auto-respond (v2.9.0)")
+    parser.add_argument("--cognize-remember", action="store_true",
+                        help="when cognize-responding, also WRITE the exchange "
+                             "to episodic memory (content_store; recall-able "
+                             "later). Rides on --cognize; OFF default (v2.9.1)")
     parser.add_argument("--watch-control", action="store_true",
                         help="honor daemon_control.json in the storage dir "
                              "(the Hub awake toggle); OFF default. Awake makes "
@@ -421,11 +425,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if args.cognize:
                 from .agency import relay_cognize
                 _engine = engine                        # R1: bind LOCAL engine
+                _remember = args.cognize_remember       # v2.9.1
                 responder = lambda: relay_cognize.cognize_respond(  # noqa: E731
                     _engine, _adapter, liaison_db, self_id, _peers,
-                    limit=args.respond_limit)
-                log.info("relay cognize-respond armed (peers=%d, limit=%d)",
-                         len(_peers), args.respond_limit)
+                    limit=args.respond_limit, remember=_remember)
+                log.info("relay cognize-respond armed (peers=%d, limit=%d, "
+                         "remember=%s)", len(_peers), args.respond_limit,
+                         _remember)
             else:
                 from .agency import relay_respond
                 responder = lambda: relay_respond.auto_respond(   # noqa: E731
