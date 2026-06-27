@@ -17,6 +17,22 @@ def _db(tmp_path):
     return tmp_path / "liaison.db"
 
 
+class StoreSpy:
+    """Records content_store.index calls; optionally raises to test that a
+    failing write never breaks the reply."""
+
+    def __init__(self, *, fail=False):
+        self.calls = []
+        self.fail = fail
+
+    def index(self, label, content, category, **kw):
+        self.calls.append({"label": label, "content": content,
+                           "category": category})
+        if self.fail:
+            raise RuntimeError("store down")
+        return 1
+
+
 class SpyEngine:
     """Engine double: read-trio returns canned data and is recorded; every
     mutator RAISES — so a single accidental mutator call fails the run."""
@@ -32,6 +48,7 @@ class SpyEngine:
                        "executable": True}],
             "status": {"action_lockdown": False, "brake": None}}
         self.calls = []
+        self.content_store = StoreSpy()
 
     def get_state_for_injection(self):
         self.calls.append("get_state_for_injection")
@@ -208,3 +225,67 @@ def test_no_engine_import_in_module_source():
         if isinstance(node, ast.Import):
             for n in node.names:
                 assert "engine" not in n.name.split("."), n.name
+
+
+def test_remember_false_does_not_write(tmp_path):
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "hi"})
+    spy = SpyEngine()
+    relay_cognize.cognize_respond(spy, MockAdapter(script=["yo"]), db, ME,
+                                  [PEER])                      # remember default
+    assert spy.content_store.calls == []                      # no episodic write
+
+
+def test_remember_true_writes_episodic(tmp_path):
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "how is the cache?"})
+    spy = SpyEngine()
+    relay_cognize.cognize_respond(spy, MockAdapter(script=["cache is warm"]),
+                                  db, ME, [PEER], remember=True)
+    assert len(spy.content_store.calls) == 1
+    c = spy.content_store.calls[0]
+    assert c["category"] == "external"
+    assert "how is the cache?" in c["content"]                # peer text
+    assert "cache is warm" in c["content"]                    # own reply
+    assert PEER[:12] in c["label"]
+
+
+def test_remember_true_still_forbids_mutators(tmp_path):
+    """F4: even when remembering, perceive/reflect/run are never called (they
+    RAISE in SpyEngine). The run completes and writes only via content_store."""
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "ping"})
+    spy = SpyEngine()
+    relay_cognize.cognize_respond(spy, MockAdapter(script=["pong"]), db, ME,
+                                  [PEER], remember=True)       # no AssertionError
+    names = {c if isinstance(c, str) else c[0] for c in spy.calls}
+    assert names <= {"get_state_for_injection", "recall", "advisory"}
+    assert len(spy.content_store.calls) == 1
+
+
+def test_remember_write_failure_does_not_break_reply(tmp_path):
+    db = _db(tmp_path)
+    mid = mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                       payload={"text": "ping"})
+    spy = SpyEngine()
+    spy.content_store = StoreSpy(fail=True)                    # store is down
+    sent = relay_cognize.cognize_respond(spy, MockAdapter(script=["pong"]),
+                                         db, ME, [PEER], remember=True)
+    assert len(sent) == 1                                      # reply still sent
+    r = mailbox.inbox(db, PEER, unread_only=True)[0]
+    assert r["payload"]["text"] == "pong"
+    assert r["payload"]["in_reply_to"] == mid
+
+
+def test_remember_true_skips_consumed_auto_reply(tmp_path):
+    """A loop-breaker auto_reply is consumed, never answered -> never remembered."""
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "auto", "auto_reply": True})
+    spy = SpyEngine()
+    relay_cognize.cognize_respond(spy, MockAdapter(script=["x"]), db, ME,
+                                  [PEER], remember=True)
+    assert spy.content_store.calls == []
