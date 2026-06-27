@@ -73,10 +73,26 @@ def _mind_block(engine, query: str, *, recall_k: int) -> str:
     return "\n\n".join(parts)
 
 
+def _remember_exchange(engine, peer_id: str, peer_text: str,
+                       reply_text: str) -> None:
+    """F4 boundary: write the exchange to EPISODIC memory ONLY
+    (content_store.index, category 'external') — never perceive/reflect/run, so
+    peer text becomes recall-able but never drives the world-model or goals.
+    Defensive: a failing store never breaks the reply that already went out."""
+    try:
+        engine.content_store.index(
+            f"relay exchange with {peer_id[:12]}",
+            f"peer: {peer_text}\nme: {reply_text}",
+            category="external")
+    except Exception:
+        pass
+
+
 def cognize_respond(engine, adapter, liaison_db, self_id, peers, *,
                     limit: int = 10, max_reply_tokens: int = 512,
                     thread_limit: int = 20, max_prompt_chars: int = 8000,
                     recall_k: int = 3, max_reply_chars: int = 2000,
+                    remember: bool = False,
                     system: str = DEFAULT_SYSTEM) -> list[dict]:
     """Auto-reply to unread peer relay messages, routed through engine cognition.
     Returns sent packets. No-op ([]) when engine/adapter is None, liaison_db/
@@ -118,4 +134,6 @@ def cognize_respond(engine, adapter, liaison_db, self_id, peers, *,
                            type=typ, payload=reply)      # type echoed
         mailbox.mark_read(liaison_db, [m["id"]])         # R2: per-row, post-send
         sent.append({"to": frm, "in_reply_to": m["id"], "reply_id": rid})
+        if remember:                                     # slice 3: opt-in F1/F4
+            _remember_exchange(engine, frm, peer_text, text)
     return sent

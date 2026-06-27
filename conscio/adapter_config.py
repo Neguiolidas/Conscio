@@ -61,6 +61,15 @@ def build_adapter_from_config(cfg: dict, *,
         env_name = adapter_cfg.get("api_key_env")
         if env_name:
             api_key = os.environ.get(env_name, "")
+            if not api_key:
+                # The Hub stores keys in its vault file, not the environment.
+                # Fall back to it so the daemon/MCP/CLI don't build a keyless
+                # adapter (-> 401). Lazy import: hub.config imports this module.
+                try:
+                    from .hub.config import vault_load
+                    api_key = vault_load(env_name) or ""
+                except Exception:               # hub optional; never break build
+                    api_key = ""
     base_url = adapter_cfg.get("base_url")
 
     if atype == "lmstudio":
