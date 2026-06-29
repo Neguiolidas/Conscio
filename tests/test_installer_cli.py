@@ -11,7 +11,9 @@ def _base(monkeypatch, tmp_path):
 
 class ScriptIO:
     def __init__(self, answers, confirms):
-        self._a = list(answers); self._c = list(confirms); self.out = []
+        self._a = list(answers)
+        self._c = list(confirms)
+        self.out = []
 
     def ask(self, prompt, default=""):
         return self._a.pop(0) if self._a else default

@@ -64,7 +64,9 @@ def test_backup_pruning_keeps_30(tmp_path):
     def mut(o):
         o.setdefault("mcpServers", {})["conscio"] = {"command": "conscio-mcp"}
 
-    verify = lambda o: "conscio" in o.get("mcpServers", {})
+    def verify(o):
+        return "conscio" in o.get("mcpServers", {})
+
     for i in range(40):
         hostcfg.backup_then_write_json(cfgp, mutate=mut, verify=verify,
                                        ts=f"{i:04d}")
