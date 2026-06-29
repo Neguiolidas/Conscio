@@ -253,3 +253,13 @@ engine read-trio (`get_state_for_injection`/`recall`/`advisory`) and writes
 nothing to episodic memory, the world-model, or goals. A relay message is a
 mailbox write, never `host_act` — the daemon-perceives / server-acts boundary
 holds.
+
+## Shared society DB under multiple hosts (v2.11.0 "Reach")
+
+With one global Conscio install bound to many per-host spaces, several hosts may
+write to the **same** `~/.hermes/liaison.db` (relay sends, review verdicts).
+SQLite handles this safely: `mailbox._connect` opens the db in **WAL** mode with
+`busy_timeout=5000`, so concurrent writers serialize — a write waits up to 5 s
+for the lock rather than erroring with `SQLITE_BUSY`. Relay/publish write volume
+is low (human-paced messages, not a hot loop), so this is sufficient; no file
+lock is layered on top.
