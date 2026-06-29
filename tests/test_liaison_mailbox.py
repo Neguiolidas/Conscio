@@ -161,3 +161,34 @@ def test_thread_payload_parsed(tmp_path):
     mailbox.send(db, from_instance="A", to_instance="B", type="note",
                  payload={"x": 1}, ts=1.0)
     assert mailbox.thread(db, "A", "B")[0]["payload"] == {"x": 1}  # dict not str
+
+
+# ── v2.10.0 "Initiative": broadcast outstanding-guard reader ──────────────────
+
+def test_last_broadcast_ts_none_when_no_broadcast(tmp_path):
+    db = tmp_path / "m.db"
+    mailbox.send(db, from_instance="A", to_instance="B", type="chat",
+                 payload={"text": "hi"})
+    assert mailbox.last_broadcast_ts(db, "A") is None
+
+
+def test_last_broadcast_ts_returns_newest_broadcast(tmp_path):
+    db = tmp_path / "m.db"
+    mailbox.send(db, from_instance="A", to_instance="B", type="chat",
+                 payload={"text": "x", "broadcast": True}, ts=100.0)
+    mailbox.send(db, from_instance="A", to_instance="C", type="chat",
+                 payload={"text": "y", "broadcast": True}, ts=200.0)
+    mailbox.send(db, from_instance="A", to_instance="B", type="chat",
+                 payload={"text": "z"}, ts=300.0)          # not a broadcast
+    assert mailbox.last_broadcast_ts(db, "A") == 200.0
+
+
+def test_last_broadcast_ts_filters_by_sender(tmp_path):
+    db = tmp_path / "m.db"
+    mailbox.send(db, from_instance="OTHER", to_instance="B", type="chat",
+                 payload={"text": "x", "broadcast": True}, ts=500.0)
+    assert mailbox.last_broadcast_ts(db, "A") is None
+
+
+def test_last_broadcast_ts_missing_db_is_none(tmp_path):
+    assert mailbox.last_broadcast_ts(tmp_path / "nope.db", "A") is None
