@@ -400,6 +400,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     from .structural_consent import StructuralConsent, consent_path
 
     args = _arg_parser().parse_args(argv)
+    from .installer.binding import validate_binding          # R6
+    validate_binding(args.storage)
 
     # ── merge config (config < env < CLI) ──
     from .adapter_config import build_adapter_from_config, load_config

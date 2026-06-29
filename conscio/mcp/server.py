@@ -532,6 +532,8 @@ def _arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
+    from conscio.installer.binding import validate_binding   # R6
+    validate_binding(args.storage)
     engine = ConsciousnessEngine(args.model, storage_path=args.storage)
     from conscio.adapter_config import build_adapter_from_config, load_config
     adapter_name = None
