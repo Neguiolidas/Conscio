@@ -46,4 +46,14 @@ def test_generic_host_writes_space_and_prints_snippet(tmp_path):
     from conscio.installer import spaces
     assert (spaces.space_dir("antigravity-test") / "instance.json").exists()
     assert any("mcpServers" in o for o in io.out)        # snippet printed
-    # (the claude-code host path is covered in Plan 2 once materialize exists)
+
+
+def test_claude_code_host_materializes(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
+    io = ScriptIO(answers=["cc"], confirms=[False] * 6)
+    assert wizard.run_with(io, host="claude-code", repair=False,
+                           model="glm-5.1", ts="T9") == 0
+    import json
+    data = json.loads((tmp_path / "claude.json").read_text())
+    assert "conscio" in data["mcpServers"]
