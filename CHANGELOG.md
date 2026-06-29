@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.0] - 2026-06-29 — "Reach" (one global install, per-host minds, native Claude Code integration)
+
+### Added
+- **One global install, per-host spaces.** A single `conscio` install serves many
+  agentic hosts (Claude Code, Antigravity, any MCP host) on one machine; each host
+  binds to its own space `~/.conscio/instances/<slug>/` (its own identity, memory,
+  ledger, sandbox) while sharing one society (`~/.hermes/{noosphere,liaison}.db`).
+- **`conscio init` — interactive installer.** A pure-stdlib wizard that creates a
+  per-host space, emits + read-back-verifies the host's MCP launch config
+  (`--storage <space>` + `env CONSCIO_VAULT_DIR=<space>/keys`), enables extras
+  (Graphify), and can start the Awake daemon. `--repair` revalidates a binding;
+  dangerous flags (act/relay/initiate) stay off and are explained inline.
+  - New `conscio/installer/` package: `spaces` (binding), `hostcfg` (config
+    emission, `.bak.<ts>` backups capped at 30, read-back verify), `extras`
+    (declarative registry, Graphify only), `daemonctl` (PID lifecycle,
+    cmdline-verified liveness, `start_new_session=True`), `binding` (R6 startup
+    validation), `wizard` + `cli`.
+- **Per-host secret vault (R2).** API keys live in a per-host vault selected by
+  `CONSCIO_VAULT_DIR`; unset → the legacy global vault (backward-compat). No
+  per-host→global fallback. (Logical least-privilege, not same-user OS isolation —
+  see CLAIMS.)
+- **Native Claude Code integration (`conscio/integrations/claude_code/`).** 10
+  `/conscio:*` slash commands, a `conscio` skill (proactive/automatic face), and a
+  defensive SessionStart awareness hook (always exits 0), materialized into
+  `~/.claude/` by `conscio init` and bound to the host's space — idempotent,
+  corrupt-config-safe, with backups. Shipped as package data.
+- **R6 startup binding validation.** `conscio-mcp` / `conscio-daemon` warn (and
+  suggest `conscio init --repair`) when `--storage` points at a missing/blank space
+  instead of silently creating one.
+
+### Fixed / Hardened (Hermet gate ressalvas)
+- Daemon background launch uses `start_new_session=True` so Awake survives logout
+  SIGHUP (R4); PID liveness matches the real `conscio-daemon` cmdline.
+- Host-config writes are backed up and read-back-verified — never fail silently.
+
+### Unchanged (debt-zero)
+- Cognitive core + wire protocol byte-identical: `engine.py`, `liaison/*`,
+  `noosphere/*`, `mcp/protocol.py`, `adapter_config.py`. `mcp/server.py` +
+  `daemon.py` gained only the R6 validation call; `hub/config.py` gained only the
+  env-aware `_vault_dir()` + optional `vault_dir` params.
+
+### Note — shared society DB under multiple hosts (R1)
+- Multiple hosts may write to the shared `~/.hermes/liaison.db`. Writers serialize
+  under SQLite WAL + `busy_timeout=5000`; relay/publish write volume is low, so no
+  file-lock is needed.
+
 ## [2.10.0] - 2026-06-29 — "Initiative" (Relay Phase 3, proactive cognition)
 
 ### Added
