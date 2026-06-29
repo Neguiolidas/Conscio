@@ -74,7 +74,7 @@ class Daemon:
         self.responder = responder                      # v2.7.0: relay auto-reply
         self.initiator = initiator                      # v2.10.0: proactive init
         self.initiate_interval = float(initiate_interval)
-        self._last_initiate = 0.0                        # monotonic cadence clock
+        self._last_initiate: Optional[float] = None       # None = never initiated
         self.workspace = workspace
         self.consent = consent                          # v1.7.2: structural consent
         self._synced_ws_id: Optional[str] = None        # re-sync only on ws change
@@ -130,7 +130,8 @@ class Daemon:
                 log.warning("relay responder failed: %s", exc)
         if self.initiator is not None and self.engine.awake:   # v2.10.0: proactive
             now = time.monotonic()
-            if now - self._last_initiate >= self.initiate_interval:  # cadence
+            if (self._last_initiate is None                 # first cycle: fire
+                    or now - self._last_initiate >= self.initiate_interval):
                 self._last_initiate = now               # consume window pre-call
                 try:
                     self.initiator()
