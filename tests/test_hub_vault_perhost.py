@@ -1,6 +1,4 @@
 import importlib
-import os
-import pathlib
 
 
 def _fresh(monkeypatch, env_val):
