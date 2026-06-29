@@ -18,9 +18,21 @@ KNOWN_TYPES = ("lmstudio", "ollama", "openai", "anthropic", "gemini",
                "openai-compat")
 _ENV_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
-# ── Key vault: stores raw API keys in ~/.config/conscio/keys/ ──────
+# ── Key vault: stores raw API keys in the per-host vault dir ──────
 # (env-name safety uses _valid_env_name, defined below alongside _check_adapter)
-_VAULT_DIR = adapter_config._CONFIG_PATHS[0].parent / "keys"
+def _vault_dir(override: "str | os.PathLike[str] | None" = None) -> Path:
+    """Resolve the key-vault directory.
+
+    Precedence: explicit override > CONSCIO_VAULT_DIR env (per-host, set by the
+    installer in each host's MCP launch config) > legacy global vault. The
+    legacy default is byte-identical to the pre-v2.11 behavior, so existing
+    single-host installs and the Hub keep working unchanged."""
+    if override is not None:
+        return Path(override)
+    env = os.environ.get("CONSCIO_VAULT_DIR")
+    if env:
+        return Path(env)
+    return adapter_config._CONFIG_PATHS[0].parent / "keys"
 
 
 def _env_name_for(provider_type: str, model: str = "") -> str:
@@ -35,16 +47,19 @@ def _env_name_for(provider_type: str, model: str = "") -> str:
     return f"CONSCIO_KEY_{base.upper()}"
 
 
-def vault_store(env_name: str, raw_key: str) -> None:
+def vault_store(env_name: str, raw_key: str, *,
+                vault_dir: "str | os.PathLike[str] | None" = None) -> None:
     """Store a raw API key in the vault. Refuses unsafe names (I1).
 
     The file is created 0600 *before* any content is written (I2 — no
-    chmod-after-rename window) and the vault dir is 0700 (M1)."""
+    chmod-after-rename window) and the vault dir is 0700 (M1). ``vault_dir``
+    selects a per-host vault (R2); None resolves via CONSCIO_VAULT_DIR/global."""
     if not _valid_env_name(env_name):
         raise ValueError(f"invalid vault key name: {env_name!r}")
-    _VAULT_DIR.mkdir(parents=True, exist_ok=True)
-    os.chmod(_VAULT_DIR, 0o700)
-    path = _VAULT_DIR / env_name
+    vdir = _vault_dir(vault_dir)
+    vdir.mkdir(parents=True, exist_ok=True)
+    os.chmod(vdir, 0o700)
+    path = vdir / env_name
     val = raw_key.strip()
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
@@ -55,15 +70,19 @@ def vault_store(env_name: str, raw_key: str) -> None:
     os.environ[env_name] = val          # so model_test works immediately
 
 
-def vault_load(env_name: str) -> str | None:
-    """Load a raw API key from env (preferred) or vault. None on bad name."""
+def vault_load(env_name: str, *,
+               vault_dir: "str | os.PathLike[str] | None" = None) -> str | None:
+    """Load a raw API key from env (preferred) or vault. None on bad name.
+
+    ``vault_dir`` selects a per-host vault (R2). When a per-host dir is in
+    effect there is NO fallback to the global vault (that would defeat R2)."""
     if not _valid_env_name(env_name):
         return None
     cur = os.environ.get(env_name)
     if cur:
         return cur
     try:
-        val = (_VAULT_DIR / env_name).read_text().strip()
+        val = (_vault_dir(vault_dir) / env_name).read_text().strip()
     except OSError:
         return None
     if val:
@@ -72,13 +91,14 @@ def vault_load(env_name: str) -> str | None:
     return None
 
 
-def vault_has(env_name: str) -> bool:
+def vault_has(env_name: str, *,
+              vault_dir: "str | os.PathLike[str] | None" = None) -> bool:
     """True if a key exists in env or vault — WITHOUT mutating os.environ (M2)."""
     if not _valid_env_name(env_name):
         return False
     if os.environ.get(env_name):
         return True
-    return (_VAULT_DIR / env_name).is_file()
+    return (_vault_dir(vault_dir) / env_name).is_file()
 
 
 def load() -> dict:

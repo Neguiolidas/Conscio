@@ -31,8 +31,7 @@ def test_api_key_falls_back_to_vault(tmp_path, monkeypatch):
     never in the environment. When the env var is unset, the adapter builder
     MUST read the vault — otherwise the daemon/MCP/CLI build a keyless adapter
     and every authed provider returns 401."""
-    from conscio.hub import config as hubcfg
-    monkeypatch.setattr(hubcfg, "_VAULT_DIR", tmp_path)
+    monkeypatch.setenv("CONSCIO_VAULT_DIR", str(tmp_path))
     monkeypatch.delenv("VAULT_ONLY_KEY", raising=False)
     (tmp_path / "VAULT_ONLY_KEY").write_text("vault-secret-xyz\n")
     a, t = ac.build_adapter_from_config(
@@ -45,8 +44,7 @@ def test_api_key_falls_back_to_vault(tmp_path, monkeypatch):
 
 def test_env_still_wins_over_vault(tmp_path, monkeypatch):
     """Env var present -> used directly; the vault is only a fallback."""
-    from conscio.hub import config as hubcfg
-    monkeypatch.setattr(hubcfg, "_VAULT_DIR", tmp_path)
+    monkeypatch.setenv("CONSCIO_VAULT_DIR", str(tmp_path))
     monkeypatch.setenv("BOTH_KEY", "env-wins")
     (tmp_path / "BOTH_KEY").write_text("vault-loses\n")
     a, _ = ac.build_adapter_from_config(
