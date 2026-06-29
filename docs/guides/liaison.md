@@ -206,3 +206,50 @@ peer's words become recall-able memory but never drive the world-model or goals.
 A failing memory write never breaks the reply that already went out, and a
 consumed `auto_reply` (the loop-breaker) is never remembered. With remembering
 off, the responder behaves exactly as in v2.9.0.
+
+## Proactive initiation (v2.10.0 "Initiative")
+
+Everything above is **reactive** — the daemon replies to messages it receives.
+With `--initiate`, an **Awake** daemon can also **speak first**: each cadence it
+generates an opener through the engine's read-only cognition and, if it genuinely
+has something to say, sends it.
+
+```bash
+conscio-daemon --awake --sensors host,relay \
+               --relay-peer <peer-id> \
+               --adapter openai --adapter-model <model> \
+               --initiate --initiate-interval 600       # directed, every 10 min
+# add --initiate-broadcast to also announce to all peers (fan-out)
+```
+
+Two modes:
+
+- **Directed** (`--initiate`): for each `--relay-peer`, the agent is asked whether
+  it genuinely needs to say something now; it sends an opener (`type="chat"`,
+  `payload.initiated=true`, never `auto_reply`) or stays silent (`NOTHING`).
+- **Broadcast** (`--initiate-broadcast`, requires `--initiate`): one cognitive
+  announcement fanned out to every peer.
+
+It is **OFF by default** and inert without a relay sensor + an adapter + `--awake`
++ at least one `--relay-peer`. Safety gates, all enforced:
+
+- **Awake Mode** — armed only with `--awake`, AND re-checked against
+  `engine.awake` every cycle, so a runtime sleep (e.g. the Hub control toggle)
+  stops initiation immediately. (The same runtime re-check now also gates the
+  reactive responder.)
+- **Two-stage** — a cheap `advisory()` precondition runs before any adapter call.
+- **Cadence** — at most one initiation cycle per `--initiate-interval` (default
+  300s).
+- **No-storm (directed)** — never re-opens with a peer while awaiting their reply
+  (the thread's last message is the agent's own).
+- **Outstanding-guard (broadcast)** — never re-broadcasts until a peer has engaged
+  since the last broadcast.
+- **Suppression** — an empty or `NOTHING` reply is never sent.
+- **Fail-closed** — `action_lockdown` or a tripped brake suppresses initiation;
+  an unavailable advisory also suppresses.
+
+Like the reactive cognition path, initiation is **read-only**: it calls only the
+engine read-trio (`get_state_for_injection`/`recall`/`advisory`) and writes
+nothing to episodic memory, the world-model, or goals. A relay message is a
+mailbox write, never `host_act` — the daemon-perceives / server-acts boundary
+holds.

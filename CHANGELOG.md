@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.10.0] - 2026-06-29 — "Initiative" (Relay Phase 3, proactive cognition)
+
+### Added
+- **Proactive cognition.** An Awake daemon can now *initiate* relay messages on
+  its own, generated through read-only cognition (identity + memory + advisory):
+  - `conscio-daemon --initiate` opens directed conversations with peers; for each
+    peer the agent is asked whether it genuinely has something to say and stays
+    silent (`NOTHING`) otherwise.
+  - `--initiate-broadcast` additionally announces to all peers (fan-out).
+  - `--initiate-interval` (default 300s) caps how often initiation runs.
+  - New pure module `conscio/agency/relay_initiate.py` and additive mailbox reader
+    `mailbox.last_broadcast_ts`.
+- Safety gates: requires Awake Mode (arm-time AND each cycle at runtime); a cheap
+  `advisory()` precondition gates the expensive adapter call; cadence cap; directed
+  no-storm (never re-open while awaiting a reply); broadcast outstanding-guard
+  (never re-broadcast with zero peer engagement); `NOTHING`/empty suppression;
+  `action_lockdown`/brake fail-closed suppression. Proactivity is read-only — the
+  peer-facing text never enters episodic memory, the world-model, or goals.
+
+### Fixed
+- The relay `responder` (v2.7.0 auto-respond / cognize) is now re-checked against
+  `engine.awake` each cycle, not only at startup — a daemon put to sleep at runtime
+  (e.g. via the Hub control file) stops auto-responding, matching the awake-gated
+  contract.
+
+### Unchanged (debt-zero)
+- `relay_cognize.py`, `relay_respond.py`, `conscio/mcp/`, `conscio/observatory/`,
+  `conscio/hub/`, `agency/review_apply.py`, `perception/relay_sensor.py`
+  byte-identical; `mailbox` gains one additive reader (`last_broadcast_ts`); no
+  schema change.
+
+---
+
 ## [2.9.1] - 2026-06-27 — "Memory in the loop" (Relay Phase 3, slice 3)
 
 ### Fixed
