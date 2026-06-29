@@ -348,6 +348,9 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "noosphere":
         from .noosphere import cli as noosphere_cli
         return noosphere_cli.main(argv[1:])
+    if argv and argv[0] == "init":
+        from .installer import cli as installer_cli
+        return installer_cli.main(argv[1:])
 
     parser = _build_parser()
     args = parser.parse_args(argv)
