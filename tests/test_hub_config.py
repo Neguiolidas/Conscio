@@ -142,34 +142,34 @@ def test_env_name_for_sanitizes_traversal():
 
 
 def test_vault_store_load_roundtrip(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "_VAULT_DIR", tmp_path / "keys")
+    monkeypatch.setenv("CONSCIO_VAULT_DIR", str(tmp_path / "keys"))
     monkeypatch.delenv("CONSCIO_KEY_OPENAI", raising=False)
     config.vault_store("CONSCIO_KEY_OPENAI", "sk-secret")
     assert config.vault_load("CONSCIO_KEY_OPENAI") == "sk-secret"
 
 
 def test_vault_file_is_0600(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "_VAULT_DIR", tmp_path / "keys")
+    monkeypatch.setenv("CONSCIO_VAULT_DIR", str(tmp_path / "keys"))
     config.vault_store("CONSCIO_KEY_X", "k")
     mode = stat.S_IMODE((tmp_path / "keys" / "CONSCIO_KEY_X").stat().st_mode)
     assert mode == 0o600
 
 
 def test_vault_dir_is_0700(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "_VAULT_DIR", tmp_path / "keys")
+    monkeypatch.setenv("CONSCIO_VAULT_DIR", str(tmp_path / "keys"))
     config.vault_store("CONSCIO_KEY_X", "k")
     mode = stat.S_IMODE((tmp_path / "keys").stat().st_mode)
     assert mode == 0o700
 
 
 def test_vault_store_rejects_bad_name(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "_VAULT_DIR", tmp_path / "keys")
+    monkeypatch.setenv("CONSCIO_VAULT_DIR", str(tmp_path / "keys"))
     with pytest.raises(ValueError):
         config.vault_store("../escape", "k")
 
 
 def test_vault_has_no_env_mutation(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "_VAULT_DIR", tmp_path / "keys")
+    monkeypatch.setenv("CONSCIO_VAULT_DIR", str(tmp_path / "keys"))
     monkeypatch.delenv("CONSCIO_KEY_Y", raising=False)
     (tmp_path / "keys").mkdir()
     (tmp_path / "keys" / "CONSCIO_KEY_Y").write_text("v")

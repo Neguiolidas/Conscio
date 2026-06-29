@@ -225,7 +225,7 @@ def test_put_config_raw_key_goes_to_vault(tmp_path, monkeypatch):
     from conscio.hub import config
     p = tmp_path / "config.json"
     monkeypatch.setattr(ac, "_CONFIG_PATHS", [p])
-    monkeypatch.setattr(config, "_VAULT_DIR", tmp_path / "keys")
+    monkeypatch.setenv("CONSCIO_VAULT_DIR", str(tmp_path / "keys"))
     body = {"model": "gpt-4o",
             "adapter": {"type": "openai", "api_key": "sk-raw"}}
     r = server.route("PUT", "/api/config", {}, body, token=None, auth=None)
