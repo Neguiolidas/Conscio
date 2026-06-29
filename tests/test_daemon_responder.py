@@ -15,7 +15,8 @@ def _frame():
 
 def test_responder_called_after_run(tmp_path):
     eng = _engine(tmp_path)
-    calls = {"n": 0}
+    eng.wake()                                       # v2.10.0: responder is now
+    calls = {"n": 0}                                 # runtime-awake-gated
     d = Daemon(eng, sensors=[MockSensor([_frame()])],
                responder=lambda: calls.__setitem__("n", calls["n"] + 1))
     try:
@@ -27,6 +28,7 @@ def test_responder_called_after_run(tmp_path):
 
 def test_responder_raise_survives_cycle(tmp_path):
     eng = _engine(tmp_path)
+    eng.wake()                                       # v2.10.0: needs awake to fire
 
     def boom():
         raise RuntimeError("responder down")
@@ -34,6 +36,18 @@ def test_responder_raise_survives_cycle(tmp_path):
     d = Daemon(eng, sensors=[MockSensor([_frame()])], responder=boom)
     try:
         d.cycle()                                    # must not raise
+    finally:
+        eng.close()
+
+
+def test_responder_not_called_when_asleep(tmp_path):
+    eng = _engine(tmp_path)                          # asleep by default
+    calls = {"n": 0}
+    d = Daemon(eng, sensors=[MockSensor([_frame()])],
+               responder=lambda: calls.__setitem__("n", calls["n"] + 1))
+    try:
+        d.cycle()
+        assert calls["n"] == 0                       # runtime awake gate (fix)
     finally:
         eng.close()
 
