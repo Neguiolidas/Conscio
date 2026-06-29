@@ -58,6 +58,8 @@ class Daemon:
                  interval: float = 5.0, budget: Optional[ActBudget] = None,
                  on_cycle: Optional[Callable[[list, RunReport], Any]] = None,
                  responder: Optional[Callable[[], list]] = None,
+                 initiator: Optional[Callable[[], list]] = None,
+                 initiate_interval: float = 300.0,
                  workspace: Any = None,
                  consent: Any = None,
                  pidfile: Optional[str | Path] = None,
@@ -70,6 +72,9 @@ class Daemon:
         self.budget = budget
         self.on_cycle = on_cycle or (lambda frames, result: None)
         self.responder = responder                      # v2.7.0: relay auto-reply
+        self.initiator = initiator                      # v2.10.0: proactive init
+        self.initiate_interval = float(initiate_interval)
+        self._last_initiate = 0.0                        # monotonic cadence clock
         self.workspace = workspace
         self.consent = consent                          # v1.7.2: structural consent
         self._synced_ws_id: Optional[str] = None        # re-sync only on ws change
@@ -118,11 +123,19 @@ class Daemon:
         result = self.engine.run(self.budget, world_state=world_state)
         self.cycles += 1
         self._last_report = result
-        if self.responder is not None:                  # v2.7.0: awake auto-reply
+        if self.responder is not None and self.engine.awake:   # v2.10.0: runtime
             try:
                 self.responder()
             except Exception as exc:        # a bad responder never kills the loop
                 log.warning("relay responder failed: %s", exc)
+        if self.initiator is not None and self.engine.awake:   # v2.10.0: proactive
+            now = time.monotonic()
+            if now - self._last_initiate >= self.initiate_interval:  # cadence
+                self._last_initiate = now               # consume window pre-call
+                try:
+                    self.initiator()
+                except Exception as exc:    # a bad initiator never kills the loop
+                    log.warning("relay initiator failed: %s", exc)
         # Write heartbeat every cycle (not just on shutdown)
         self._write_heartbeat()
         try:
@@ -275,6 +288,15 @@ def _responder_armed(*, auto_respond: bool, relay_peer, has_adapter: bool,
                 and "relay" in [s.strip() for s in sensors_spec.split(",")])
 
 
+def _initiator_armed(*, initiate: bool, relay_peer, has_adapter: bool,
+                     awake: bool, sensors_spec: str) -> bool:
+    """True iff --initiate should arm: needs a relay sensor + an adapter +
+    --awake + at least one --relay-peer (v2.10.0). This is the startup arm gate;
+    runtime awake is re-checked each cycle in Daemon.cycle()."""
+    return bool(initiate and relay_peer and has_adapter and awake
+                and "relay" in [s.strip() for s in sensors_spec.split(",")])
+
+
 # ── config loader + adapter builder live in conscio/adapter_config.py now
 # (shared by the daemon and the MCP server; v2.0.1, no behavior change) ──
 
@@ -353,6 +375,17 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="when cognize-responding, also WRITE the exchange "
                              "to episodic memory (content_store; recall-able "
                              "later). Rides on --cognize; OFF default (v2.9.1)")
+    parser.add_argument("--initiate", action="store_true",
+                        help="awake daemon proactively OPENS directed relay "
+                             "conversations with peers via engine cognition "
+                             "(read-only); OFF default, needs relay sensor + "
+                             "adapter + --awake + --relay-peer (v2.10.0)")
+    parser.add_argument("--initiate-broadcast", action="store_true",
+                        help="additionally BROADCAST proactive announcements to "
+                             "all peers; requires --initiate (v2.10.0)")
+    parser.add_argument("--initiate-interval", type=float, default=300.0,
+                        help="min seconds between proactive initiation cycles "
+                             "(cadence cap; default 300)")
     parser.add_argument("--watch-control", action="store_true",
                         help="honor daemon_control.json in the storage dir "
                              "(the Hub awake toggle); OFF default. Awake makes "
@@ -444,11 +477,40 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         "--awake + --relay-peer; skipping")
     elif args.cognize:
         log.warning("--cognize inert without --auto-respond; skipping")
+    initiator = None                                            # v2.10.0
+    if args.initiate:
+        if _initiator_armed(initiate=True, relay_peer=args.relay_peer,
+                            has_adapter=adapter is not None, awake=awake,
+                            sensors_spec=sensors_spec):
+            from .agency import relay_initiate
+            _i_engine = engine                          # R1: bind LOCAL engine
+            _i_adapter = adapter                         # R1: bind LOCAL adapter
+            _i_peers = tuple(args.relay_peer)
+            _i_broadcast = args.initiate_broadcast
+
+            def _initiator() -> list:
+                out = relay_initiate.initiate(_i_engine, _i_adapter, liaison_db,
+                                              self_id, _i_peers)
+                if _i_broadcast:
+                    out += relay_initiate.initiate(_i_engine, _i_adapter,
+                                                   liaison_db, self_id, _i_peers,
+                                                   broadcast=True)
+                return out
+
+            initiator = _initiator
+            log.info("relay initiator armed (peers=%d, broadcast=%s, "
+                     "interval=%ss)", len(_i_peers), _i_broadcast,
+                     args.initiate_interval)
+        else:
+            log.warning("--initiate inert: needs relay sensor + adapter + "
+                        "--awake + --relay-peer; skipping")
     control_path = (engine.storage / "daemon_control.json"
                     if args.watch_control else None)
     daemon = Daemon(engine, sensors=sensors, interval=interval,
                     budget=budget, workspace=workspace, consent=consent,
-                    responder=responder, control_path=control_path)
+                    responder=responder, initiator=initiator,
+                    initiate_interval=args.initiate_interval,
+                    control_path=control_path)
     daemon.run(once=args.once)
     return 0
 

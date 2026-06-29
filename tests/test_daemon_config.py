@@ -127,3 +127,20 @@ class TestCognizeRememberFlag:
     def test_independent_of_cognize_parse(self):
         a = daemon._arg_parser().parse_args(["--cognize-remember"])
         assert a.cognize_remember is True        # parses; inert without --cognize
+
+
+class TestInitiateFlags:
+    """v2.10.0 --initiate / --initiate-broadcast / --initiate-interval."""
+
+    def test_initiate_parses_and_defaults_off(self):
+        ns = daemon._arg_parser().parse_args([])
+        assert ns.initiate is False
+        assert ns.initiate_broadcast is False
+        assert ns.initiate_interval == 300.0
+
+    def test_initiate_flags_set(self):
+        ns = daemon._arg_parser().parse_args(
+            ["--initiate", "--initiate-broadcast", "--initiate-interval", "60"])
+        assert ns.initiate is True
+        assert ns.initiate_broadcast is True
+        assert ns.initiate_interval == 60.0

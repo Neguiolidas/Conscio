@@ -136,6 +136,38 @@ def thread(db: Path, a: str, b: str, *, limit: int = 20) -> list[dict]:
     return out
 
 
+def last_broadcast_ts(db: Path, from_instance: str) -> float | None:
+    """ts of the newest message sent by `from_instance` whose payload carries a
+    truthy `broadcast` flag, else None. Pure read; missing/corrupt/locked db ->
+    None; rows whose payload won't parse are skipped (mirrors inbox/thread). Backs
+    the proactive broadcast outstanding-guard (v2.10.0). Additive: send/inbox/
+    thread/mark_read/purge_read unchanged; no schema change."""
+    db = Path(db)
+    if not db.exists():
+        return None
+    try:
+        conn = _connect(db)
+    except sqlite3.Error:
+        return None
+    try:
+        rows = conn.execute(
+            "SELECT ts, payload FROM messages WHERE from_instance=?"
+            " ORDER BY ts DESC, id DESC", (from_instance,)).fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    for r in rows:
+        d = dict(r)
+        try:
+            payload = json.loads(d["payload"])
+        except (TypeError, ValueError):
+            continue                          # unparseable row -> skip
+        if isinstance(payload, dict) and payload.get("broadcast"):
+            return float(d["ts"])
+    return None
+
+
 def mark_read(db: Path, ids: list[int], read_ts: float | None = None) -> int:
     if not ids:
         return 0
