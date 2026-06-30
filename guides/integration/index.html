@@ -1,0 +1,1331 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Self-awareness framework for AI agents — reflect (passive) + act (audited).">
+      
+      
+      
+      
+        <link rel="prev" href="../safety-rules/">
+      
+      
+        <link rel="next" href="../mcp/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Consuming awake output - Conscio</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#consuming-awake-output" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Conscio" class="md-header__button md-logo" aria-label="Conscio" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Conscio
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Consuming awake output
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="indigo"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="indigo"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Neguiolidas/Conscio" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Neguiolidas/Conscio
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Conscio" class="md-nav__button md-logo" aria-label="Conscio" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Conscio
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Neguiolidas/Conscio" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Neguiolidas/Conscio
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins & extension points
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../safety-rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Safety rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Consuming awake output
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Consuming awake output
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The contract
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pull-engineadvisory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pull: engine.advisory()
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pull: engine.advisory()">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shape
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#goal-origins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goal origins
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tail-daemon_heartbeatjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tail: daemon_heartbeat.json
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#structural-cognition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Structural cognition
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Structural cognition">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#drift-freshness-v18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Drift &amp; freshness (v1.8)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consent-workspace-scoped" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consent (workspace-scoped)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#full-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Full example
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP server (embodiment)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../noosphere/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Noosphere (society)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../observatory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observatory (read-only view)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../liaison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Liaison (cross-agent review)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/public-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../CLAIMS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims ledger
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bench
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Bench
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../bench/v1.0.0-bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v1.0.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../bench/v1.2-campaign/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v1.2 campaign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../bench/v1.2-skill-curve/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v1.2 skill curve
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="consuming-awake-output">Consuming awake output<a class="headerlink" href="#consuming-awake-output" title="Permanent link">&para;</a></h1>
+<p>Running Conscio in <a href="../safety-rules/">Awake Mode</a> only pays off if your host
+agent reads what it concluded. v1.6 makes that a documented contract with two
+surfaces — <strong>pull</strong> and <strong>tail</strong> — and a provenance gate that decides which
+goals a host may auto-execute.</p>
+<h2 id="the-contract">The contract<a class="headerlink" href="#the-contract" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>The host auto-executes <strong>only</strong> goals tagged <code>executable: true</code>. Goals tagged
+<code>executable: false</code> are <em>diagnostic</em> — surface them to the operator, never run
+them automatically.</p>
+</blockquote>
+<p>This is what stops a context-compaction artifact (or a self-referential
+introspection goal) from running without consent — the v1.6 <code>#7</code> gate.</p>
+<h2 id="pull-engineadvisory">Pull: <code>engine.advisory()</code><a class="headerlink" href="#pull-engineadvisory" title="Permanent link">&para;</a></h2>
+<p>Call it each turn. It is cheap, <strong>read-only</strong>, makes <strong>no inference call</strong>, and
+mutates nothing — safe to call on every host turn, even with no adapter attached.</p>
+<div class="highlight"><pre><span></span><code><span class="n">adv</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">advisory</span><span class="p">()</span>
+
+<span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">adv</span><span class="p">[</span><span class="s2">&quot;goals&quot;</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="n">g</span><span class="p">[</span><span class="s2">&quot;executable&quot;</span><span class="p">]:</span>
+        <span class="n">inject_into_context</span><span class="p">(</span><span class="n">g</span><span class="p">[</span><span class="s2">&quot;description&quot;</span><span class="p">])</span>   <span class="c1"># host may act on these</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">notify_operator</span><span class="p">(</span><span class="n">g</span><span class="p">[</span><span class="s2">&quot;description&quot;</span><span class="p">],</span> <span class="n">origin</span><span class="o">=</span><span class="n">g</span><span class="p">[</span><span class="s2">&quot;origin&quot;</span><span class="p">])</span>  <span class="c1"># show, don&#39;t run</span>
+
+<span class="k">if</span> <span class="n">adv</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">][</span><span class="s2">&quot;action_lockdown&quot;</span><span class="p">]:</span>
+    <span class="n">pause_autonomy</span><span class="p">()</span>
+<span class="k">if</span> <span class="n">adv</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">][</span><span class="s2">&quot;brake&quot;</span><span class="p">]:</span>
+    <span class="n">alert</span><span class="p">(</span><span class="n">adv</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">][</span><span class="s2">&quot;brake&quot;</span><span class="p">])</span>               <span class="c1"># failure-rate brake tripped (#8)</span>
+</code></pre></div>
+<h3 id="shape">Shape<a class="headerlink" href="#shape" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>awake</code></td>
+<td>Awake Mode gate (R9) — autonomy allowed only when <code>true</code>.</td>
+</tr>
+<tr>
+<td><code>reflection</code></td>
+<td>Latest inner-monologue insight.</td>
+</tr>
+<tr>
+<td><code>meta</code></td>
+<td>Confidence / self-assessment summary.</td>
+</tr>
+<tr>
+<td><code>goals</code></td>
+<td>List of <code>{description, origin, executable}</code>.</td>
+</tr>
+<tr>
+<td><code>coherence</code></td>
+<td><code>{score, dominant}</code> — aggregate coherence + dominant dissonance.</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td><code>{action_lockdown, dream_recommended, brake}</code>.</td>
+</tr>
+<tr>
+<td><code>structural</code></td>
+<td><code>{loaded, commit, hash, nodes, hyperedges, communities, drift, freshness}</code> or <code>null</code> — the loaded code graph; <code>drift</code>/<code>freshness</code> are <code>null</code> unless loaded with a workspace identity. See <a href="#structural-cognition">Structural cognition</a>.</td>
+</tr>
+<tr>
+<td><code>recommendations</code></td>
+<td>Derived hints, e.g. "N diagnostic goal(s) pending review".</td>
+</tr>
+</tbody>
+</table>
+<h3 id="goal-origins">Goal origins<a class="headerlink" href="#goal-origins" title="Permanent link">&para;</a></h3>
+<p><code>origin</code> is the goal's provenance. Executable origins are externally or
+environmentally grounded; diagnostic origins are self-referential / error /
+compaction-derived.</p>
+<table>
+<thead>
+<tr>
+<th>Origin</th>
+<th style="text-align: center;">Executable?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user</code>, <code>internal</code>, <code>curiosity</code>, <code>anomaly</code>, <code>maintenance</code></td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td><code>meta_error</code>, <code>self_prompt</code>, <code>compaction</code></td>
+<td style="text-align: center;">✗ (diagnostic)</td>
+</tr>
+</tbody>
+</table>
+<p>If your host derives a task from a compaction artifact, tag its provenance so the
+gate can do its job:</p>
+<div class="highlight"><pre><span></span><code><span class="n">engine</span><span class="o">.</span><span class="n">goals</span><span class="o">.</span><span class="n">add_user_goal</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="n">GoalOrigin</span><span class="o">.</span><span class="n">COMPACTION</span><span class="p">)</span>  <span class="c1"># -&gt; diagnostic</span>
+</code></pre></div>
+<h2 id="tail-daemon_heartbeatjson">Tail: <code>daemon_heartbeat.json</code><a class="headerlink" href="#tail-daemon_heartbeatjson" title="Permanent link">&para;</a></h2>
+<p>When the daemon runs out-of-process, you don't need to import Conscio — every
+cycle it writes <code>&lt;storage&gt;/daemon_heartbeat.json</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;ts&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1781740000.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;cycles&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">12</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;awake&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;pid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4242</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;last_run&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;cycles&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;failures&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;stopped&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;max_cycles&quot;</span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;advisory&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;...&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;same shape as engine.advisory()&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><code>tail -f</code> it, or poll on your own cadence. The <code>last_run</code> block is the previous
+heartbeat's <a href="../../reference/public-api/"><code>RunReport</code></a> summary; <code>advisory</code> is the
+full snapshot above.</p>
+<h2 id="structural-cognition">Structural cognition<a class="headerlink" href="#structural-cognition" title="Permanent link">&para;</a></h2>
+<p>Conscio can give the refined model <strong>structural awareness of the codebase it is
+working in</strong>, distilled from a <a href="https://github.com/">Graphify</a>-format
+<code>graph.json</code>. The graph is consumed as <strong>data, never code</strong> (R10): parsed with
+<code>json</code> only, no <code>networkx</code>, no Graphify runtime dependency. It is <strong>opt-in</strong> —
+nothing is injected until you load a graph.</p>
+<div class="highlight"><pre><span></span><code><span class="n">sig</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">load_structure</span><span class="p">(</span><span class="s2">&quot;graphify-out/graph.json&quot;</span><span class="p">)</span>   <span class="c1"># distils once</span>
+<span class="c1"># from here, get_state_for_injection() appends a budget-adaptive structure block</span>
+</code></pre></div>
+<p>The distilled signal is the graph's <strong>curated hyperedges + per-community
+summaries</strong>, not its thousands of raw nodes. Injection is sized to the model's
+context window (scales from ~120 tokens at small contexts up to ~1200), and
+renders <strong>labels only</strong> — never raw node-ids — so it stays compact and safe.</p>
+<p>Drill down on demand with the pull surface (an <code>advisory()</code> sibling — read-only,
+no inference):</p>
+<div class="highlight"><pre><span></span><code><span class="n">engine</span><span class="o">.</span><span class="n">structural_lookup</span><span class="p">(</span><span class="s2">&quot;conscio_engine_reflect&quot;</span><span class="p">)</span>
+<span class="c1"># -&gt; {&quot;kind&quot;: &quot;node&quot;, &quot;label&quot;: &quot;ConsciousnessEngine.reflect&quot;,</span>
+<span class="c1">#     &quot;source_file&quot;: &quot;conscio/engine.py&quot;, &quot;source_location&quot;: &quot;187&quot;, ...}</span>
+<span class="n">engine</span><span class="o">.</span><span class="n">structural_lookup</span><span class="p">(</span><span class="s2">&quot;agency_act_cycle_pipeline&quot;</span><span class="p">)</span>   <span class="c1"># -&gt; {&quot;kind&quot;: &quot;hyperedge&quot;, ...}</span>
+<span class="n">engine</span><span class="o">.</span><span class="n">structural_lookup</span><span class="p">(</span><span class="s2">&quot;0&quot;</span><span class="p">)</span>                            <span class="c1"># -&gt; {&quot;kind&quot;: &quot;community&quot;, ...}</span>
+<span class="n">engine</span><span class="o">.</span><span class="n">structural_lookup</span><span class="p">(</span><span class="s2">&quot;unknown&quot;</span><span class="p">)</span>                      <span class="c1"># -&gt; None (always graceful)</span>
+</code></pre></div>
+<h3 id="drift-freshness-v18">Drift &amp; freshness (v1.8)<a class="headerlink" href="#drift-freshness-v18" title="Permanent link">&para;</a></h3>
+<p>The ingested graph is a snapshot; v1.8 makes it <strong>temporal</strong>. When you load with a
+workspace identity (the daemon does this automatically), the engine persists a
+small baseline per <code>Workspace.id</code> under <code>&lt;storage&gt;/structural_drift.json</code> and
+reports two signals:</p>
+<ul>
+<li><strong>Drift</strong> — what changed since the last load: commit moved, <code>content_hash</code>
+  changed, communities / hyperedges added·removed·resized, node/link count
+  deltas. A passive <code>structure:changed</code> event fires on real drift.</li>
+<li><strong>Freshness</strong> — whether the graph is behind the repo <em>right now</em>: the graph's
+  <code>built_at_commit</code> is compared against the repo <code>HEAD</code>, read <strong>purely from
+  <code>.git</code></strong> (no <code>git</code> subprocess). <code>is_stale</code> ⇒ regenerate the graph. Conscio
+  never runs Graphify itself.</li>
+</ul>
+<p>Both appear in <code>advisory()["structural"]</code> as <code>drift</code> / <code>freshness</code>, and as pull
+surfaces:</p>
+<div class="highlight"><pre><span></span><code><span class="n">sig</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">load_structure</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">workspace_id</span><span class="o">=</span><span class="n">ws</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">ws</span><span class="o">.</span><span class="n">root</span><span class="p">)</span>
+<span class="n">engine</span><span class="o">.</span><span class="n">structural_delta</span><span class="p">()</span>       <span class="c1"># -&gt; StructuralDelta | None</span>
+<span class="n">engine</span><span class="o">.</span><span class="n">structural_freshness</span><span class="p">()</span>   <span class="c1"># -&gt; StructuralFreshness | None</span>
+</code></pre></div>
+<p>Inspect the current workspace from the CLI (read-only — never advances the
+baseline, so it cannot mask drift from a running daemon):</p>
+<div class="highlight"><pre><span></span><code>conscio<span class="w"> </span>structure
+</code></pre></div>
+<h3 id="consent-workspace-scoped">Consent (workspace-scoped)<a class="headerlink" href="#consent-workspace-scoped" title="Permanent link">&para;</a></h3>
+<p>Ingestion is <strong>consent-gated and defaults OFF</strong> — nothing is read until an
+operator grants consent for a workspace. Consent is per-<code>Workspace.id</code>, persisted
+under <code>&lt;storage&gt;/structural_consent.json</code>:</p>
+<div class="highlight"><pre><span></span><code>conscio<span class="w"> </span>consent<span class="w"> </span>project<span class="w">   </span><span class="c1"># ingest THIS workspace&#39;s graphify-out/graph.json</span>
+conscio<span class="w"> </span>consent<span class="w"> </span>parent<span class="w">    </span><span class="c1"># ingest the PARENT multi-project folder&#39;s graph</span>
+conscio<span class="w"> </span>consent<span class="w"> </span>off<span class="w">       </span><span class="c1"># revoke</span>
+conscio<span class="w"> </span>consent<span class="w">           </span><span class="c1"># show the current workspace&#39;s scope</span>
+</code></pre></div>
+<p>When run under the daemon, this is <strong>switch-safe</strong>: an agent that changes
+workspace mid-run only ingests a workspace it has consented to, and any
+previously loaded graph is <strong>unloaded on switch-away</strong> — one project's structure
+never leaks into another's context. Reading the parent folder happens only with
+explicit <code>parent</code> consent.</p>
+<p>In-process hosts can drive the same policy directly:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">conscio</span><span class="w"> </span><span class="kn">import</span> <span class="n">StructuralConsent</span><span class="p">,</span> <span class="n">ConsentScope</span><span class="p">,</span> <span class="n">sync_structure</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">conscio.structural_consent</span><span class="w"> </span><span class="kn">import</span> <span class="n">consent_path</span>
+
+<span class="n">consent</span> <span class="o">=</span> <span class="n">StructuralConsent</span><span class="p">(</span><span class="n">consent_path</span><span class="p">(</span><span class="n">engine</span><span class="o">.</span><span class="n">storage</span><span class="p">))</span>
+<span class="n">consent</span><span class="o">.</span><span class="n">grant</span><span class="p">(</span><span class="n">workspace</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">ConsentScope</span><span class="o">.</span><span class="n">PROJECT</span><span class="p">)</span>
+<span class="n">sync_structure</span><span class="p">(</span><span class="n">engine</span><span class="p">,</span> <span class="n">workspace</span><span class="p">,</span> <span class="n">consent</span><span class="p">)</span>   <span class="c1"># auto-loads, or unloads if revoked</span>
+</code></pre></div>
+<h2 id="full-example">Full example<a class="headerlink" href="#full-example" title="Permanent link">&para;</a></h2>
+<p>See <a href="https://github.com/Neguiolidas/Conscio/blob/main/examples/host_consumer.py"><code>examples/host_consumer.py</code></a>
+for a runnable, offline end-to-end host that pulls the advisory, splits
+executable from diagnostic goals, and prints the operator-facing decision.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
