@@ -28,6 +28,29 @@ def _msg_text(payload) -> str:
     return json.dumps(payload, separators=(",", ":"))
 
 
+def _is_auto_reply(payload) -> bool:
+    """The loop-breaker marker — a machine-generated auto reply's payload.
+    Single definition; relay_cognize/relay_initiate import it (the marker is a
+    cross-module contract)."""
+    return isinstance(payload, dict) and payload.get("auto_reply") is True
+
+
+def _pending_counts(rows: list[dict], peers: set) -> dict:
+    """Candidate unread rows per peer in this batch. Used to WIDEN the thread
+    window so the single reply per peer is built over a transcript that covers
+    every row later consumed as answered — a burst larger than the default
+    window must not be marked read unseen."""
+    counts: dict[str, int] = {}
+    for m in rows:
+        if m.get("type") in relay.RESERVED_TYPES:
+            continue
+        if not relay.is_relay_message(m, peers):
+            continue
+        frm = m.get("from_instance", "")
+        counts[frm] = counts.get(frm, 0) + 1
+    return counts
+
+
 def _fit(reply: dict) -> dict:
     """Shrink reply['text'] until the compact-JSON payload fits the relay cap.
     UTF-8-safe (slices code points, re-encodes via payload_size)."""
@@ -69,10 +92,12 @@ def auto_respond(adapter, liaison_db, self_id, peers, *, limit: int = 10,
     if adapter is None or not liaison_db or not self_id or not peers:
         return []
     peers = set(peers)
-    rows = mailbox.inbox(liaison_db, self_id, types=None,
-                         unread_only=True, limit=limit)   # newest-first, capped
+    inbox_rows = mailbox.inbox(liaison_db, self_id, types=None,
+                               unread_only=True, limit=limit)  # newest-first
     sent: list[dict] = []
-    for m in rows:
+    replied: set[str] = set()
+    pending = _pending_counts(inbox_rows, peers)
+    for m in inbox_rows:
         typ = m.get("type", "")
         frm = m.get("from_instance", "")
         payload = m.get("payload")
@@ -80,11 +105,19 @@ def auto_respond(adapter, liaison_db, self_id, peers, *, limit: int = 10,
             continue                                 # review channel owns it
         if not relay.is_relay_message(m, peers):
             continue                                 # non-peer/oversized: not ours
-        if isinstance(payload, dict) and payload.get("auto_reply") is True:
+        if _is_auto_reply(payload):
             mailbox.mark_read(liaison_db, [m["id"]])  # R2: consume, don't answer
             continue
-        rows = mailbox.thread(liaison_db, self_id, frm, limit=thread_limit)
-        transcript = _transcript(rows, self_id, max_prompt_chars)
+        if frm in replied:
+            # newest-first: this peer's newest message was already answered
+            # with the full transcript — consume, don't send a duplicate
+            mailbox.mark_read(liaison_db, [m["id"]])
+            continue
+        # window covers the whole pending burst (2x: our replies interleave)
+        thread_rows = mailbox.thread(liaison_db, self_id, frm,
+                                     limit=thread_limit
+                                     + 2 * pending.get(frm, 0))
+        transcript = _transcript(thread_rows, self_id, max_prompt_chars)
         prompt = system + "\n\nConversation so far:\n" + transcript
         try:
             text = adapter.generate(prompt, max_tokens=max_reply_tokens).text
@@ -96,4 +129,5 @@ def auto_respond(adapter, liaison_db, self_id, peers, *, limit: int = 10,
                            type=typ, payload=reply)   # type echoed
         mailbox.mark_read(liaison_db, [m["id"]])      # R2: per-row, post-send
         sent.append({"to": frm, "in_reply_to": m["id"], "reply_id": rid})
+        replied.add(frm)
     return sent

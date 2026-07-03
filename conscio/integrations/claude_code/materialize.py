@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 from pathlib import Path
 
@@ -23,18 +24,22 @@ def _claude_dir(override) -> Path:
     return Path(os.environ.get("CLAUDE_DIR", str(Path.home() / ".claude")))
 
 
-def _claude_json(override) -> Path:
+def claude_json_path(override=None) -> Path:
+    """Public: the wizard's --repair path reads existing flags from here."""
     if override is not None:
         return Path(override)
     return Path(os.environ.get("CLAUDE_JSON", str(Path.home() / ".claude.json")))
 
 
 def _copy_tree(src: Path, dst: Path) -> int:
+    # recursive: nested asset dirs (e.g. a skill's references/) must ship too
     dst.mkdir(parents=True, exist_ok=True)
     n = 0
-    for p in sorted(src.glob("*")):
-        if p.is_file():
-            shutil.copy2(p, dst / p.name)
+    for p in sorted(src.rglob("*")):
+        if p.is_file() and "__pycache__" not in p.parts:
+            target = dst / p.relative_to(src)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, target)
             n += 1
     return n
 
@@ -43,7 +48,7 @@ def materialize(slug: str, *, flags: dict, model, ts: str, io=None,
                 claude_dir: "Path | None" = None,
                 claude_json: "Path | None" = None) -> dict:
     cdir = _claude_dir(claude_dir)
-    cjson = _claude_json(claude_json)
+    cjson = claude_json_path(claude_json)
     a = assets_root()
 
     n_cmds = _copy_tree(a / "commands", cdir / "commands" / "conscio")
@@ -55,8 +60,7 @@ def materialize(slug: str, *, flags: dict, model, ts: str, io=None,
     backups = []
     # 1) MCP registration (reuse hostcfg entry + backup/verify)
     def mut_mcp(o: dict) -> None:
-        o.setdefault("mcpServers", {})["conscio"] = hostcfg.mcp_server_entry(
-            slug, flags=flags, model=model)
+        hostcfg.upsert_conscio_entry(o, slug, flags=flags, model=model)
     b = hostcfg.backup_then_write_json(
         cjson, mutate=mut_mcp,
         verify=lambda o: "conscio" in o.get("mcpServers", {}), ts=ts)
@@ -66,7 +70,7 @@ def materialize(slug: str, *, flags: dict, model, ts: str, io=None,
     # 2) SessionStart hook registration (idempotent: replace any prior conscio
     #    entry, then append fresh)
     settings = cdir / "settings.json"
-    cmd = f"python3 {hook_dst}"
+    cmd = f"python3 {shlex.quote(str(hook_dst))}"       # path may carry spaces
 
     def mut_hook(o: dict) -> None:
         hooks = o.setdefault("hooks", {})

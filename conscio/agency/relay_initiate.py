@@ -18,9 +18,16 @@ engagement). Cadence + runtime-awake gating live in the daemon caller.
 """
 from __future__ import annotations
 
+import time
+
 from ..liaison import mailbox
 from .relay_cognize import _mind_block
-from .relay_respond import _fit, _msg_text, _transcript
+from .relay_respond import _fit, _is_auto_reply, _msg_text, _transcript
+
+# Loop-breaker decay: gates 4b / 4' (auto-reply tail, unengaged broadcast) are
+# ping-pong bounds, not tombstones — after a day of silence a pair/society is
+# eligible again (worst case: one machine exchange per window, still bounded).
+STALE_AFTER_S = 24 * 3600.0
 
 DEFAULT_INITIATE_SYSTEM = (
     "You are an autonomous agent that may proactively reach out to a peer agent "
@@ -90,8 +97,18 @@ def _directed(engine, adapter, liaison_db, self_id, peers, *, recall_k,
     sent: list[dict] = []
     for peer in peers:
         thread = mailbox.thread(liaison_db, self_id, peer, limit=thread_limit)
-        if thread and thread[-1].get("from_instance") == self_id:
-            continue                                     # gate 4: awaiting reply
+        if thread:
+            last = thread[-1]
+            if last.get("from_instance") == self_id:
+                continue                                 # gate 4: awaiting reply
+            if (_is_auto_reply(last.get("payload"))
+                    and time.time() - float(last.get("ts", 0.0))
+                    < STALE_AFTER_S):
+                # gate 4b: a peer's machine auto-reply is not an invitation —
+                # without this, initiator<->responder pairs chat forever.
+                # Decays after STALE_AFTER_S so an auto-responder-only peer
+                # is not silenced permanently.
+                continue
         query = ""
         for m in reversed(thread):
             if m.get("from_instance") == peer:
@@ -119,9 +136,18 @@ def _directed(engine, adapter, liaison_db, self_id, peers, *, recall_k,
 def _broadcast(engine, adapter, liaison_db, self_id, peers, *, recall_k,
                max_reply_tokens, max_reply_chars, system) -> list[dict]:
     lb = mailbox.last_broadcast_ts(liaison_db, self_id)
-    if lb is not None:                                   # gate 4' outstanding-guard
+    if lb is not None and time.time() - lb < STALE_AFTER_S:
+        # gate 4' outstanding-guard — decays after STALE_AFTER_S so a void of
+        # machine acks blocks re-broadcast for a window, not forever
         rows = mailbox.inbox(liaison_db, self_id, unread_only=False, limit=50)
-        if not any(float(r.get("ts", 0.0)) > lb for r in rows):
+
+        def _real_engagement(r: dict) -> bool:
+            # machine auto-replies are not engagement (see gate 4b)
+            if _is_auto_reply(r.get("payload")):
+                return False
+            return float(r.get("ts", 0.0)) > lb
+
+        if not any(_real_engagement(r) for r in rows):
             return []                                    # no engagement since
     mind = _mind_block(engine, "", recall_k=recall_k)
     prompt = system + "\n\n" + mind + _BROADCAST_SALIENCE

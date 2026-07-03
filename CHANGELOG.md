@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.11.1] - 2026-07-03 — hostile-review fix pass on "Reach"
+
+### Fixed
+- **Installer `--repair` orphaned pre-Reach installs.** A pre-Reach wizard run
+  produced doubled-slug space labels (`f"{host}-{spaces.slugify(host)}"`, e.g.
+  `claude-code-claude-code`); `--repair` didn't recover that binding, so it
+  silently created a NEW empty space instead of rebinding the existing one, and
+  dropped the host's `--model` and MCP flags in the process. `hostcfg.existing_slug`
+  / `existing_model` / `existing_flags` now read back the current config and
+  `--repair` rebinds the SAME space, preserving model and flags.
+- **Legacy `--initiate` consent silently dropped.** Old MCP launch configs
+  carrying `--initiate` (a daemon-only flag, never valid for `conscio-mcp`) lost
+  that consent on `--repair` with no explanation. It's now recovered via
+  `_LEGACY_ARG_FLAG` and surfaced as a note pointing at
+  `conscio daemon --awake --initiate` — never re-emitted on the MCP entry itself.
+- **Relay initiator↔responder infinite ping-pong.** Gate 4b (auto-reply tail)
+  and the broadcast outstanding-guard (gate 4') were permanent tombstones — an
+  auto-responder-only peer, or a broadcast with zero engagement, silenced that
+  channel forever. Both now decay after `relay_initiate.STALE_AFTER_S` (24h): a
+  loop-breaker bound, not a one-way lock.
+- **Relay burst thread-window truncation.** A same-peer message burst larger
+  than `thread_limit` could push the oldest, still-unread messages out of the
+  fetched window before the responder ever saw them. `_pending_counts` widens
+  the `mailbox.thread()` fetch to cover the whole outstanding burst (mailbox
+  still clamps the window to 200).
+- **`conscio-hub --enable-daemon-control` without `--storage`.** Previously
+  built a server that 500'd on every daemon-control request; `make_server` now
+  raises `ValueError` at construction so the failure is immediate and legible.
+- **Daemon spawn-crash detection race.** The grace window between `Popen` and
+  the immediate-crash check was too tight on slower interpreter starts
+  (0.2s → 0.5s), so a fast-failing daemon could be reported as started.
+
+### Unchanged (debt-zero)
+- No schema change; no new public API. `agency/relay_respond.py` gains shared
+  helpers (`_is_auto_reply`, `_pending_counts`) reused by `relay_cognize.py` /
+  `relay_initiate.py` — behavior of the unmodified paths is byte-equivalent.
+
+---
+
 ## [2.11.0] - 2026-06-29 — "Reach" (one global install, per-host minds, native Claude Code integration)
 
 ### Added

@@ -15,7 +15,8 @@ is untouched. Loop-breaker, _fit cap, per-row mark_read all match relay_respond.
 from __future__ import annotations
 
 from ..liaison import mailbox, relay
-from .relay_respond import _fit, _msg_text, _transcript
+from .relay_respond import (_fit, _is_auto_reply, _msg_text, _pending_counts,
+                            _transcript)
 
 DEFAULT_SYSTEM = (
     "You are an autonomous agent replying to a peer agent over a relay "
@@ -104,6 +105,8 @@ def cognize_respond(engine, adapter, liaison_db, self_id, peers, *,
     inbox_rows = mailbox.inbox(liaison_db, self_id, types=None,
                                unread_only=True, limit=limit)   # newest-first
     sent: list[dict] = []
+    replied: set[str] = set()
+    pending = _pending_counts(inbox_rows, peers)
     for m in inbox_rows:
         typ = m.get("type", "")
         frm = m.get("from_instance", "")
@@ -112,12 +115,19 @@ def cognize_respond(engine, adapter, liaison_db, self_id, peers, *,
             continue                                     # review channel owns it
         if not relay.is_relay_message(m, peers):
             continue                                     # non-peer/oversized
-        if isinstance(payload, dict) and payload.get("auto_reply") is True:
+        if _is_auto_reply(payload):
             mailbox.mark_read(liaison_db, [m["id"]])     # R2: consume, not answer
             continue
+        if frm in replied:
+            # newest-first: already answered this peer with the full
+            # transcript this cycle — consume, don't duplicate
+            mailbox.mark_read(liaison_db, [m["id"]])
+            continue
         peer_text = _msg_text(payload)
+        # window covers the whole pending burst (2x: our replies interleave)
         thread_rows = mailbox.thread(liaison_db, self_id, frm,
-                                     limit=thread_limit)
+                                     limit=thread_limit
+                                     + 2 * pending.get(frm, 0))
         transcript = _transcript(thread_rows, self_id, max_prompt_chars)
         mind = _mind_block(engine, peer_text, recall_k=recall_k)
         prompt = (system + "\n\n" + mind
@@ -134,6 +144,7 @@ def cognize_respond(engine, adapter, liaison_db, self_id, peers, *,
                            type=typ, payload=reply)      # type echoed
         mailbox.mark_read(liaison_db, [m["id"]])         # R2: per-row, post-send
         sent.append({"to": frm, "in_reply_to": m["id"], "reply_id": rid})
+        replied.add(frm)
         if remember:                                     # slice 3: opt-in F1/F4
             _remember_exchange(engine, frm, peer_text, text)
     return sent

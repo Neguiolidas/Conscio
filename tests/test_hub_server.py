@@ -291,3 +291,35 @@ def test_health_advertises_daemon_control():
     on = server.route("GET", "/api/health", {}, None, token=None, auth=None,
                       daemon_control=True)
     assert on.payload["daemon_control"] is True
+
+
+def test_daemon_control_without_storage_500():
+    # storage=None must be an explicit error — the old fallback silently wrote
+    # daemon_control.json into the CONFIG dir, where no daemon ever reads it
+    r = server.route("PUT", "/api/daemon/awake", {}, {"awake": True},
+                     token=None, auth=None, storage=None, daemon_control=True)
+    assert r.status == 500
+    r = server.route("GET", "/api/daemon/control", {}, None,
+                     token=None, auth=None, storage=None, daemon_control=True)
+    assert r.status == 500
+
+
+def test_vault_dir_flag_binds_process_vault(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSCIO_VAULT_DIR", raising=False)
+    from conscio.hub import config
+    server._bind_vault_dir(str(tmp_path / "vk"))
+    config.vault_store("CONSCIO_KEY_TEST", "sekret")
+    assert (tmp_path / "vk" / "CONSCIO_KEY_TEST").is_file()   # per-host vault
+    assert config.vault_load("CONSCIO_KEY_TEST") == "sekret"
+
+
+def test_arg_parser_accepts_vault_dir():
+    ns = server._arg_parser().parse_args(["--vault-dir", "/x"])
+    assert ns.vault_dir == "/x"
+
+
+def test_make_server_refuses_daemon_control_without_storage():
+    # fail at construction, not per-request: an embedder that enables the
+    # awake toggle without a storage dir would serve nothing but 500s
+    with pytest.raises(ValueError):
+        server.make_server("127.0.0.1", 0, "tok", daemon_control=True)

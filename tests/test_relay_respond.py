@@ -91,12 +91,15 @@ def test_non_peer_untouched(tmp_path):
 
 
 def test_limit_caps_adapter_calls(tmp_path):
+    # 15 distinct peers, limit=10 -> at most 10 rows processed / replies sent
+    # (same-peer floods collapse to one reply; see one_reply_per_peer test)
     db = _db(tmp_path)
-    for i in range(15):
-        mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
-                     payload={"text": f"m{i}"})
+    everyone = [f"peer-{i:04d}" for i in range(15)]
+    for p in everyone:
+        mailbox.send(db, from_instance=p, to_instance=ME, type="chat",
+                     payload={"text": f"hi from {p}"})
     a = MockAdapter(script=["r"] * 100)
-    sent = relay_respond.auto_respond(a, db, ME, [PEER], limit=10)
+    sent = relay_respond.auto_respond(a, db, ME, everyone, limit=10)
     assert len(sent) == 10
     assert len(a.calls) == 10
 
@@ -212,3 +215,32 @@ def test_relay_respond_imports_no_engine():
             mods.add(n.module)
     assert not any(m == "conscio.engine" or m.startswith("conscio.engine.")
                    for m in mods)
+
+
+def test_burst_wider_than_thread_window_fully_covered(tmp_path):
+    # 30 unread from one peer, limit 50: the ONE reply's transcript must cover
+    # every row consumed as answered — including the oldest of the burst
+    db = _db(tmp_path)
+    for i in range(30):
+        mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                     payload={"text": f"burst-{i:02d}"}, ts=float(i))
+    captured = {}
+    a = MockAdapter(script=[lambda p: captured.setdefault("p", p) or "ok"])
+    sent = relay_respond.auto_respond(a, db, ME, [PEER], limit=50)
+    assert len(sent) == 1
+    assert "burst-00" in captured["p"]         # oldest reached the adapter
+    assert _unread(db) == 1                    # all 30 consumed; reply unread
+
+
+def test_one_reply_per_peer_per_cycle(tmp_path):
+    # two unread from the same peer -> ONE reply (the transcript already
+    # covers both); the second inbound is consumed as answered
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "q1"})
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "q2"})
+    a = MockAdapter(script=["one answer", "must not fire"])
+    sent = relay_respond.auto_respond(a, db, ME, [PEER])
+    assert len(sent) == 1 and len(a.calls) == 1
+    assert _unread(db) == 1                    # both inbound read; reply unread

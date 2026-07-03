@@ -9,11 +9,20 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import time
 from pathlib import Path
 
 from . import spaces
 
 _MARKERS = ("conscio-daemon", "conscio daemon", "conscio.daemon")
+# Instant-crash window checked before trusting the pid. Best-effort: 0.5s
+# covers interpreter startup + argparse rejection on typical machines; a
+# slower crash still surfaces on the next is_running() (cmdline markers).
+_SPAWN_GRACE_S = 0.5
+
+
+class DaemonStartError(RuntimeError):
+    pass
 
 
 def pid_file(slug: str) -> Path:
@@ -58,11 +67,23 @@ def start(slug: str, *, extra_args: "list[str]") -> int:
         return _read_pid(slug) or -1
     pf = pid_file(slug)
     pf.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.Popen(
-        ["conscio", "daemon", "--storage", str(spaces.space_dir(slug)),
-         *extra_args],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        start_new_session=True)              # R4: survive SIGHUP on logout
+    env = dict(os.environ)
+    # Same per-host binding the MCP launch entry gets (hostcfg.mcp_server_entry)
+    # — daemon and server of one space must resolve the SAME key vault.
+    env["CONSCIO_VAULT_DIR"] = str(spaces.vault_dir(slug))
+    try:
+        proc = subprocess.Popen(
+            ["conscio", "daemon", "--storage", str(spaces.space_dir(slug)),
+             *extra_args],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True, env=env)  # R4: survive SIGHUP on logout
+    except OSError as exc:                    # e.g. conscio not on PATH
+        raise DaemonStartError(f"cannot launch conscio daemon: {exc}") from exc
+    time.sleep(_SPAWN_GRACE_S)
+    if proc.poll() is not None:
+        raise DaemonStartError(
+            f"daemon exited immediately (code {proc.returncode}); "
+            f"args: {extra_args}")
     pf.write_text(str(proc.pid))
     return proc.pid
 
@@ -75,7 +96,14 @@ def stop(slug: str) -> bool:
     if pid is not None:
         try:
             os.kill(pid, signal.SIGTERM)
+        except PermissionError:
+            # A marker-matched conscio daemon we cannot signal = another
+            # user's daemon on a shared base. Keeping the pidfile refuses to
+            # double-spawn onto its storage; the escape hatch is deleting the
+            # pidfile by hand. (A recycled PID without markers never gets
+            # here — is_running() already unlinked above.)
+            return False                     # not ours to kill; keep the pidfile
         except OSError:
-            pass
+            pass                             # already gone
     pid_file(slug).unlink(missing_ok=True)
     return True

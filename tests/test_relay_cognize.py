@@ -289,3 +289,30 @@ def test_remember_true_skips_consumed_auto_reply(tmp_path):
     relay_cognize.cognize_respond(spy, MockAdapter(script=["x"]), db, ME,
                                   [PEER], remember=True)
     assert spy.content_store.calls == []
+
+
+def test_one_reply_per_peer_per_cycle(tmp_path):
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "q1"})
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "q2"})
+    a = MockAdapter(script=["one answer", "must not fire"])
+    sent = relay_cognize.cognize_respond(SpyEngine(), a, db, ME, [PEER])
+    assert len(sent) == 1 and len(a.calls) == 1
+
+
+def test_burst_wider_than_thread_window_fully_covered(tmp_path):
+    # same coverage contract as relay_respond: the one reply per peer must be
+    # built over a window that includes EVERY row consumed as answered
+    db = _db(tmp_path)
+    for i in range(30):
+        mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                     payload={"text": f"burst-{i:02d}"}, ts=float(i))
+    captured = {}
+    a = MockAdapter(script=[lambda p: captured.setdefault("p", p) or "ok"])
+    sent = relay_cognize.cognize_respond(SpyEngine(), a, db, ME, [PEER],
+                                         limit=50)
+    assert len(sent) == 1
+    assert "burst-00" in captured["p"]         # oldest reached the adapter
+    assert mailbox.inbox(db, ME, unread_only=True) == []   # all consumed

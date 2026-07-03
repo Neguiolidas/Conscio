@@ -83,6 +83,64 @@ def test_noop_without_peers(tmp_path):
                                    _db(tmp_path), ME, []) == []
 
 
+# ---- machine auto-replies must not fuel initiation --------------------------
+def test_peer_auto_reply_does_not_invite_directed(tmp_path):
+    import time as _t
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=ME, to_instance=PEER, type="chat",
+                 payload={"text": "hi", "initiated": True})
+    _t.sleep(0.01)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "ack", "auto_reply": True})
+    a = MockAdapter(script=["more talk"])
+    sent = relay_initiate.initiate(SpyEngine(), a, db, ME, [PEER])
+    assert sent == [] and a.calls == []      # auto-reply is not an invitation
+
+
+def test_broadcast_autoreply_engagement_does_not_count(tmp_path):
+    import time as _t
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=ME, to_instance=PEER, type="chat",
+                 payload={"text": "announce", "initiated": True,
+                          "broadcast": True})
+    _t.sleep(0.01)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "ack", "auto_reply": True})
+    a = MockAdapter(script=["another announcement"])
+    sent = relay_initiate.initiate(SpyEngine(), a, db, ME, [PEER],
+                                   broadcast=True)
+    assert sent == [] and a.calls == []      # zero REAL engagement -> hold
+
+
+def test_stale_auto_reply_no_longer_blocks_directed(tmp_path):
+    # gate 4b is a loop-breaker, not a tombstone: a machine ack older than
+    # STALE_AFTER_S releases the pair (bounds ping-pong to 1 exchange/window
+    # instead of silencing an auto-responder-only peer forever)
+    import time as _t
+    db = _db(tmp_path)
+    old = _t.time() - relay_initiate.STALE_AFTER_S - 60
+    mailbox.send(db, from_instance=ME, to_instance=PEER, type="chat",
+                 payload={"text": "hi", "initiated": True}, ts=old - 1)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "ack", "auto_reply": True}, ts=old)
+    sent = relay_initiate.initiate(SpyEngine(), MockAdapter(script=["news!"]),
+                                   db, ME, [PEER])
+    assert len(sent) == 1
+
+
+def test_stale_unengaged_broadcast_releases(tmp_path):
+    # outstanding-guard decays too: a void of machine acks blocks re-broadcast
+    # for STALE_AFTER_S, not forever
+    import time as _t
+    db = _db(tmp_path)
+    old = _t.time() - relay_initiate.STALE_AFTER_S - 60
+    mailbox.send(db, from_instance=ME, to_instance=PEER, type="chat",
+                 payload={"text": "old", "broadcast": True}, ts=old)
+    sent = relay_initiate.initiate(SpyEngine(), MockAdapter(script=["again"]),
+                                   db, ME, [PEER], broadcast=True)
+    assert len(sent) == 1
+
+
 # ---- stage-1 gates (gate 6 / fail-closed) -----------------------------------
 def test_lockdown_suppresses(tmp_path):
     a = MockAdapter(script=["should not fire"])
@@ -200,10 +258,12 @@ def test_broadcast_first_time_allowed(tmp_path):
 
 
 def test_broadcast_outstanding_guard_blocks(tmp_path):
+    import time as _t
     db = _db(tmp_path)
-    # a prior broadcast with NO peer engagement since
+    # a RECENT prior broadcast with NO peer engagement since (recent: an
+    # ancient one would decay via STALE_AFTER_S — tested separately)
     mailbox.send(db, from_instance=ME, to_instance=PEER, type="chat",
-                 payload={"text": "old", "broadcast": True}, ts=100.0)
+                 payload={"text": "old", "broadcast": True}, ts=_t.time() - 60)
     a = MockAdapter(script=["should not fire"])
     sent = relay_initiate.initiate(SpyEngine(), a, db, ME, [PEER],
                                    broadcast=True)
@@ -211,22 +271,26 @@ def test_broadcast_outstanding_guard_blocks(tmp_path):
 
 
 def test_broadcast_outstanding_guard_allows_after_engagement(tmp_path):
+    import time as _t
     db = _db(tmp_path)
+    now = _t.time()
     mailbox.send(db, from_instance=ME, to_instance=PEER, type="chat",
-                 payload={"text": "old", "broadcast": True}, ts=100.0)
+                 payload={"text": "old", "broadcast": True}, ts=now - 60)
     mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
-                 payload={"text": "a peer replied"}, ts=200.0)   # engagement
+                 payload={"text": "a peer replied"}, ts=now - 30)  # engagement
     sent = relay_initiate.initiate(SpyEngine(), MockAdapter(script=["again!"]),
                                    db, ME, [PEER], broadcast=True)
     assert len(sent) == 1
 
 
 def test_broadcast_outstanding_guard_counts_read_engagement(tmp_path):
+    import time as _t
     db = _db(tmp_path)
+    now = _t.time()
     mailbox.send(db, from_instance=ME, to_instance=PEER, type="chat",
-                 payload={"text": "old", "broadcast": True}, ts=100.0)
+                 payload={"text": "old", "broadcast": True}, ts=now - 60)
     rid = mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
-                       payload={"text": "replied then read"}, ts=200.0)
+                       payload={"text": "replied then read"}, ts=now - 30)
     mailbox.mark_read(db, [rid])                         # reactive responder ate it
     sent = relay_initiate.initiate(SpyEngine(), MockAdapter(script=["again!"]),
                                    db, ME, [PEER], broadcast=True)

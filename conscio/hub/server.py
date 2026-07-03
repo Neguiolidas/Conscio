@@ -152,7 +152,9 @@ def route(method: str, path: str, query: dict, body: dict | None,
             return _err(404, "not found", path)
         if not isinstance(body, dict) or not isinstance(body.get("awake"), bool):
             return _err(400, "awake (bool) required")
-        sdir = Path(storage) if storage else config.config_path().parent
+        if storage is None:       # never fall back to the config dir — no daemon
+            return _err(500, "daemon control enabled but no storage configured")
+        sdir = Path(storage)
         if not sdir.is_dir():                       # reserva: no silent write
             return _err(500, "storage dir does not exist", str(sdir))
         return Resp(200, control.write_control(sdir, body["awake"]))
@@ -160,8 +162,9 @@ def route(method: str, path: str, query: dict, body: dict | None,
     if path == "/api/daemon/control" and method == "GET":
         if not daemon_control:
             return _err(404, "not found", path)
-        sdir = Path(storage) if storage else config.config_path().parent
-        return Resp(200, control.read_control(sdir))
+        if storage is None:
+            return _err(500, "daemon control enabled but no storage configured")
+        return Resp(200, control.read_control(Path(storage)))
 
     if method == "GET" and (path == "/" or path.startswith("/static/")):
         name = "index.html" if path == "/" else path.rsplit("/", 1)[-1]
@@ -176,6 +179,15 @@ def route(method: str, path: str, query: dict, body: dict | None,
         return Resp(200, body=data, content_type=ct)
 
     return _err(404, "not found", path)
+
+
+def _bind_vault_dir(vault_dir: "str | None") -> None:
+    """Point every vault_* call in this process at a per-host vault (R2).
+    The installer binds each host's MCP/daemon to a space vault via
+    CONSCIO_VAULT_DIR; a Hub managing that space's keys must be launched with
+    the SAME dir, or its keys land in the global vault the space never reads."""
+    if vault_dir:
+        os.environ["CONSCIO_VAULT_DIR"] = str(Path(vault_dir))
 
 
 def _check_host(host: str) -> None:
@@ -196,6 +208,12 @@ def make_server(host: str, port: int, token: str | None, *,
                 storage: Path | None = None,
                 daemon_control: bool = False) -> ThreadingHTTPServer:
     _check_host(host)
+    if daemon_control and storage is None:
+        # fail at construction, not per-request — without a storage dir the
+        # awake toggle would serve nothing but 500s (there is deliberately no
+        # config-dir fallback: the daemon only reads control from storage)
+        raise ValueError("daemon control requires a storage dir "
+                         "(pass --storage matching the daemon's)")
     class _H(Handler):
         _token = token
         _storage = storage
@@ -264,7 +282,11 @@ def _arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--token", default=os.environ.get("CONSCIO_HUB_TOKEN") or None)
     p.add_argument("--storage", default=None,
                    help="instance storage dir (default ~/.hermes/consciousness); "
-                        "where the daemon control file is written")
+                        "where the daemon control file is written — must match "
+                        "the daemon's --storage or the awake toggle is a no-op")
+    p.add_argument("--vault-dir", default=None,
+                   help="per-host key vault dir (a space's <storage>/keys); "
+                        "default: $CONSCIO_VAULT_DIR or the global vault")
     p.add_argument("--enable-daemon-control", action="store_true",
                    help="expose the awake toggle (writes daemon_control.json; "
                         "the daemon must run with --watch-control to honor it)")
@@ -273,6 +295,7 @@ def _arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
+    _bind_vault_dir(args.vault_dir)
     # Default matches ConsciousnessEngine.DEFAULT_STORAGE (engine.py:133); kept as
     # a literal so the Hub stays engine-free (no engine import at launch).
     storage = (Path(args.storage) if args.storage
