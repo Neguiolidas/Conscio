@@ -313,9 +313,15 @@ class Bindings:
             except ValueError as exc:
                 errors.append({"to": peer, "reason": str(exc)})
                 continue
-            mid = mailbox.send(self.liaison_db,
-                               from_instance=self.self_instance_id,
-                               to_instance=peer, type=mtype, payload=payload)
+            try:
+                mid = mailbox.send(self.liaison_db,
+                                   from_instance=self.self_instance_id,
+                                   to_instance=peer, type=mtype,
+                                   payload=payload)
+            except Exception as exc:      # per-peer isolation: keep fanning out
+                errors.append({"to": peer,
+                               "reason": f"send failed: {type(exc).__name__}"})
+                continue
             sent.append({"to": peer, "id": mid})
         if sent:                                  # best-effort retention, once
             try:

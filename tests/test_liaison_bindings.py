@@ -565,3 +565,28 @@ def test_argparser_accepts_relay_flags():
         ["--enable-relay", "--relay-peer", "B", "--relay-peer", "C"])
     assert ns.enable_relay is True
     assert ns.relay_peer == ["B", "C"]
+
+
+def test_relay_broadcast_send_failure_isolated(tmp_path, monkeypatch):
+    # docstring contract: a failing peer never aborts the rest
+    import sqlite3 as _sq
+    import conscio.mcp.server as srv
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B", "C"), liaison_db=db)
+    try:
+        real = srv.mailbox.send
+
+        def flaky(dbp, *, from_instance, to_instance, type, payload):
+            if to_instance == "B":
+                raise _sq.OperationalError("database is locked")
+            return real(dbp, from_instance=from_instance,
+                        to_instance=to_instance, type=type, payload=payload)
+
+        monkeypatch.setattr(srv.mailbox, "send", flaky)
+        r = b._relay_broadcast({"type": "note", "payload": {"hi": 1}})
+        assert {s["to"] for s in r["sent"]} == {"C"}     # C still delivered
+        assert {e["to"] for e in r["errors"]} == {"B"}   # B reported, not fatal
+    finally:
+        seen.close()
+        eng.close()

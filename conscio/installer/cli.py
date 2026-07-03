@@ -11,11 +11,13 @@ from . import wizard
 
 
 class _TerminalIO:
+    # OSError included: a captured/closed stdin can raise it instead of
+    # EOFError (e.g. under pytest) — unattended runs must never crash (R7)
     def ask(self, prompt: str, default: str = "") -> str:
         suffix = f" [{default}]" if default else ""
         try:
             ans = input(f"{prompt}{suffix}: ").strip()
-        except EOFError:
+        except (EOFError, OSError):
             return default
         return ans or default
 
@@ -23,7 +25,7 @@ class _TerminalIO:
         d = "Y/n" if default else "y/N"
         try:
             ans = input(f"{prompt} ({d}): ").strip().lower()
-        except EOFError:
+        except (EOFError, OSError):
             return default
         if not ans:
             return default
@@ -44,4 +46,4 @@ def main(argv: "list[str] | None" = None) -> int:
     args = p.parse_args(argv)
     ts = time.strftime("%Y%m%d-%H%M%S")
     return wizard.run_with(_TerminalIO(), host=args.host, repair=args.repair,
-                           model=args.model, ts=ts)
+                           model=args.model, ts=ts, label=args.label)

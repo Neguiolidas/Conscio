@@ -67,6 +67,30 @@ def test_materialize_preserves_existing_mcp_and_hooks(tmp_path):
     assert "echo hi" in blob and "conscio_awareness.py" in blob
 
 
+def test_hook_command_survives_spaces_in_path(tmp_path):
+    spaces.ensure_space("host-a")
+    cdir = tmp_path / "my claude"                        # path with a space
+    materialize.materialize(
+        "host-a", flags={}, model=None, ts="T1",
+        claude_dir=cdir, claude_json=tmp_path / "claude.json")
+    settings = json.loads((cdir / "settings.json").read_text())
+    cmd = settings["hooks"]["SessionStart"][-1]["hooks"][0]["command"]
+    import shlex
+    parts = shlex.split(cmd)                             # must parse cleanly
+    assert parts[0] == "python3"
+    assert parts[1].endswith("conscio_awareness.py")     # ONE arg, not split
+
+
+def test_copy_tree_is_recursive(tmp_path):
+    src = tmp_path / "src"
+    (src / "sub").mkdir(parents=True)
+    (src / "top.md").write_text("t")
+    (src / "sub" / "deep.md").write_text("d")
+    n = materialize._copy_tree(src, tmp_path / "dst")
+    assert n == 2
+    assert (tmp_path / "dst" / "sub" / "deep.md").read_text() == "d"
+
+
 def test_materialize_recovers_from_corrupt_claude_json(tmp_path):
     (tmp_path / "claude.json").write_text("{ this is not valid json ")
     _run(tmp_path)
@@ -75,3 +99,13 @@ def test_materialize_recovers_from_corrupt_claude_json(tmp_path):
     # ...and a fresh, valid config with the conscio entry was written
     data = json.loads((tmp_path / "claude.json").read_text())
     assert "conscio" in data["mcpServers"]
+
+
+def test_copy_tree_skips_pycache(tmp_path):
+    src = tmp_path / "src"
+    (src / "__pycache__").mkdir(parents=True)
+    (src / "__pycache__" / "junk.pyc").write_text("x")
+    (src / "real.md").write_text("r")
+    n = materialize._copy_tree(src, tmp_path / "dst")
+    assert n == 1
+    assert not (tmp_path / "dst" / "__pycache__").exists()

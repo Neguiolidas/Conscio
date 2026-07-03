@@ -151,7 +151,11 @@ def last_broadcast_ts(db: Path, from_instance: str) -> float | None:
         return None
     try:
         rows = conn.execute(
+            # LIKE prefilter: without it a broadcast-free mailbox is fully
+            # scanned+JSON-parsed on every initiate cycle. May over-match
+            # (any payload containing '"broadcast"'); the parse below decides.
             "SELECT ts, payload FROM messages WHERE from_instance=?"
+            " AND payload LIKE '%\"broadcast\"%'"
             " ORDER BY ts DESC, id DESC", (from_instance,)).fetchall()
     except sqlite3.Error:
         return None
