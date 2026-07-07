@@ -15,4 +15,4 @@ def test_six_provider_types_build():
 
 def test_mcp_main_is_importable():
     from conscio.mcp.server import _arg_parser, main
-    assert callable(main) and _arg_parser().parse_args([]).model
+    assert callable(main) and _arg_parser().parse_args(["--model", "glm-5.1"]).model

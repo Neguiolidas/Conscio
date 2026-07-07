@@ -36,7 +36,7 @@ def test_known_model_default_is_offline_and_registry_truth(monkeypatch):
     """A known model, no override → registry value, no host-state probe called."""
     _arm_tripwires(monkeypatch)
     info = m.ModelRegistry.detect("glm-5.1")
-    assert info.context_window == 131_000          # curated registry, deterministic
+    assert info.context_window == 200_000          # curated registry, deterministic
 
 
 def test_unknown_model_default_is_offline_heuristic(monkeypatch):

@@ -21,7 +21,7 @@ from pathlib import Path
 
 from . import __version__
 
-DEFAULT_MODEL = "glm-5.1"
+DEFAULT_MODEL = os.environ.get("CONSCIO_MODEL", "")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -35,12 +35,20 @@ def _build_parser() -> argparse.ArgumentParser:
     p_info = sub.add_parser("info", help="show model context window / mode / budget")
     p_info.add_argument("model", nargs="?", default=DEFAULT_MODEL)
     p_info.add_argument("--storage", default="", help="storage dir (default: temp)")
+    p_info.add_argument("--base-url", default=None,
+                        help="OpenAI-compatible endpoint to probe (e.g. http://localhost:1234/v1)")
+    p_info.add_argument("--autodetect", action="store_true",
+                        help="enable host-state auto-detection (config, LM Studio, GGUF)")
 
     p_reflect = sub.add_parser("reflect", help="run one offline reflection cycle")
     p_reflect.add_argument("world_state", help="the world-state string to reflect on")
     p_reflect.add_argument("--model", default=DEFAULT_MODEL)
     p_reflect.add_argument("--confidence", type=float, default=0.8)
     p_reflect.add_argument("--storage", default="", help="storage dir (default: temp)")
+    p_reflect.add_argument("--base-url", default=None,
+                           help="OpenAI-compatible endpoint to probe")
+    p_reflect.add_argument("--autodetect", action="store_true",
+                           help="enable host-state auto-detection")
 
     sub.add_parser("plugins", help="list discovered adapter/sensor/tool plugins")
 
@@ -129,9 +137,11 @@ def _cmd_version() -> int:
     return 0
 
 
-def _cmd_info(model: str, storage: str) -> int:
+def _cmd_info(model: str, storage: str,
+              base_url: str | None = None, autodetect: bool = False) -> int:
     from .engine import ConsciousnessEngine
-    eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage))
+    eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage),
+                               base_url=base_url, autodetect=autodetect)
     try:
         _note_if_unknown(model, eng.model_info)
         print(f"Model:   {eng.model_info.name}")
@@ -145,9 +155,11 @@ def _cmd_info(model: str, storage: str) -> int:
 
 
 def _cmd_reflect(world_state: str, model: str, confidence: float,
-                 storage: str) -> int:
+                 storage: str,
+                 base_url: str | None = None, autodetect: bool = False) -> int:
     from .engine import ConsciousnessEngine
-    eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage))
+    eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage),
+                               base_url=base_url, autodetect=autodetect)
     try:
         _note_if_unknown(model, eng.model_info)
         result = eng.reflect(world_state=world_state, confidence=confidence)
@@ -358,10 +370,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "version":
         return _cmd_version()
     if args.command == "info":
-        return _cmd_info(args.model, args.storage)
+        return _cmd_info(args.model, args.storage,
+                         base_url=args.base_url, autodetect=args.autodetect)
     if args.command == "reflect":
         return _cmd_reflect(args.world_state, args.model, args.confidence,
-                            args.storage)
+                            args.storage,
+                            base_url=args.base_url, autodetect=args.autodetect)
     if args.command == "plugins":
         return _cmd_plugins()
     if args.command == "consent":

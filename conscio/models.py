@@ -63,10 +63,10 @@ class ModelRegistry:
     # Known models with their context windows
     _known_models: dict[str, ModelInfo] = {
         # Primary
-        "glm-5.1": ModelInfo("glm-5.1", 131_000, ContextMode.COMPACT,
+        "glm-5.1": ModelInfo("glm-5.1", 200_000, ContextMode.STANDARD,
                              ["complex_reasoning", "coding", "analysis"],
-                             "Superior in complex tasks. 131k ctx baseline constraint."),
-        "glm-5": ModelInfo("glm-5", 131_000, ContextMode.COMPACT,
+                             "Superior in complex tasks. 200k ctx."),
+        "glm-5": ModelInfo("glm-5", 200_000, ContextMode.STANDARD,
                            ["complex_reasoning", "coding", "analysis"]),
         "kimi-k2.6": ModelInfo("kimi-k2.6", 256_000, ContextMode.STANDARD,
                                ["reasoning", "long_context"],
@@ -76,6 +76,9 @@ class ModelRegistry:
         "minimax-m2.7": ModelInfo("minimax-m2.7", 260_000, ContextMode.STANDARD,
                                   ["long_context"],
                                   "Large ctx but weaker on complex tasks."),
+        "minimax-m3": ModelInfo("minimax-m3", 1_000_000, ContextMode.STANDARD,
+                                 ["long_context", "reasoning"],
+                                 "1M ctx. Hae runtime model."),
         "step-flash-3.7": ModelInfo("step-flash-3.7", 260_000, ContextMode.STANDARD,
                                     ["speed", "long_context"],
                                     "Fast but inconsistent on complex tasks."),
@@ -88,7 +91,11 @@ class ModelRegistry:
         "nemotron-3-super-120b": ModelInfo("nemotron-3-super-120b", 1_000_000,
                                            ContextMode.STANDARD,
                                            ["long_context"],
-                                           "1M ctx but HALLUCINATES easily. Use with caution."),
+                                           "1M ctx. Adapter model — HALLUCINATES easily. Use with caution."),
+        "nemotron-3-ultra-253b": ModelInfo("nemotron-3-ultra-253b", 1_000_000,
+                                            ContextMode.STANDARD,
+                                            ["long_context"],
+                                            "1M ctx. Adapter model — HALLUCINATES easily. Use with caution."),
         # Premium
         "claude-sonnet-4": ModelInfo("claude-sonnet-4", 200_000, ContextMode.STANDARD,
                                      ["complex_reasoning", "coding", "analysis"]),
@@ -121,10 +128,12 @@ class ModelRegistry:
         "glm5": "glm-5.1",
         "kimi": "kimi-k2.6",
         "minimax": "minimax-m2.7",
+        "minimax-m3": "minimax-m3",
         "step": "step-flash-3.7",
         "step-flash": "step-flash-3.7",
         "deepseek": "deepseek-v4-pro",
         "nemotron": "nemotron-3-super-120b",
+        "nemotron-ultra": "nemotron-3-ultra-253b",
         "claude": "claude-sonnet-4",
         "sonnet": "claude-sonnet-4",
         "opus": "claude-opus-4",
@@ -574,9 +583,15 @@ class ModelRegistry:
 
     @classmethod
     def _extract_context_from_name(cls, name: str) -> int:
-        """Try to extract context window size from model name."""
-        # Look for patterns like "128k", "256k", "1m"
-        match = re.search(r'(\d+)([km])', name.lower())
+        """Try to extract context window size from model name.
+
+        Handles patterns like \"128k\", \"1m\", \"256k\", and size suffixes
+        like \"-70b\", \"-550b\" (billion params — not context, but useful
+        as a heuristic signal for large models).
+        """
+        low = name.lower()
+        # Explicit context suffix: "128k", "1m", "256k"
+        match = re.search(r'(\d+)([km])', low)
         if match:
             num = int(match.group(1))
             unit = match.group(2)
@@ -584,6 +599,18 @@ class ModelRegistry:
                 return num * 1_000
             elif unit == 'm':
                 return num * 1_000_000
+
+        # Param-count suffix heuristic: "-70b", "-550b", "-0.8b"
+        # Large param count → likely 128k+ context; small → 32k
+        param_match = re.search(r'[-_](\d+(?:\.\d+)?)b$', low)
+        if param_match:
+            params_b = float(param_match.group(1))
+            if params_b >= 100:
+                return 128_000    # 100B+ → assume 128k
+            elif params_b >= 30:
+                return 128_000    # 30B+ → assume 128k
+            else:
+                return 32_000     # <30B → small context
 
         # Default: assume compact (128k) for safety
         return 128_000
@@ -608,3 +635,29 @@ class ModelRegistry:
     def all_models(cls) -> dict[str, ModelInfo]:
         """Return all registered models."""
         return dict(cls._known_models)
+
+
+def resolve_model_name(*, cli_arg: str | None = None,
+                       config_model: str | None = None) -> str:
+    """Resolve the active model name without any hardcoded fallback.
+
+    Resolution order:
+        1. Explicit CLI argument
+        2. Config file value
+        3. ``CONSCIO_MODEL`` environment variable
+        4. ``CONSCIO_CONTEXT_WINDOW`` env → ModelRegistry heuristic
+
+    Raises ``ValueError`` if no model can be determined — the caller MUST
+    specify a model via one of the above channels.
+    """
+    if cli_arg:
+        return cli_arg
+    if config_model:
+        return config_model
+    env = os.environ.get("CONSCIO_MODEL")
+    if env:
+        return env
+    raise ValueError(
+        "No model specified. Set CONSCIO_MODEL, configure 'model' in "
+        "config.json, or pass --model on the command line."
+    )

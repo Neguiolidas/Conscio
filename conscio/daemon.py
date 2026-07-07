@@ -334,7 +334,7 @@ def _arg_parser() -> argparse.ArgumentParser:
         prog="conscio-daemon",
         description="Run Conscio as a living perceive→reflect→act heartbeat.")
     parser.add_argument("--model", default=None,
-                        help="model name (default: config or CONSCIO_MODEL env or glm-5.1)")
+                        help="model name (default: config or CONSCIO_MODEL env)")
     parser.add_argument("--storage", default=None)
     parser.add_argument("--interval", type=float, default=None,
                         help="seconds between heartbeats (default: config or 5)")
@@ -412,7 +412,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     model = (args.model
              or cfg.get("model")
-             or os.environ.get("CONSCIO_MODEL", "glm-5.1"))
+             or os.environ.get("CONSCIO_MODEL", ""))
+    if not model:
+        log.error("No model specified. Set CONSCIO_MODEL, configure 'model' "
+                  "in config.json, or pass --model.")
+        return 1
     interval = (args.interval
                 if args.interval is not None
                 else cfg.get("interval", 5.0))

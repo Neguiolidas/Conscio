@@ -50,12 +50,12 @@ def test_tier_action_is_nonempty_advisory_text():
 
 def test_context_manager_metabolic_state(tmp_path):
     # No config/host-state isolation needed: detect() is offline-by-default, so a
-    # known model resolves to the registry (131k) regardless of the dev's machine.
+    # known model resolves to the registry (200k) regardless of the dev's machine.
     from conscio.context_manager import ContextManager
-    cm = ContextManager("glm-5.1", storage_path=tmp_path)  # 131k window
-    # 80k of 131k ≈ 61% → FATIGUE
-    assert cm.metabolic_state(80_000) is MetabolicState.FATIGUE
-    # 10k of 131k ≈ 7.6% → VITAL
+    cm = ContextManager("glm-5.1", storage_path=tmp_path)  # 200k window
+    # 110k of 200k = 55% → FATIGUE (50-69%)
+    assert cm.metabolic_state(110_000) is MetabolicState.FATIGUE
+    # 10k of 200k = 5% → VITAL
     assert cm.metabolic_state(10_000) is MetabolicState.VITAL
 
 
