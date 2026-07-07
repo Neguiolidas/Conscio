@@ -8,9 +8,6 @@ import pytest
 
 from conscio.agency.intercepter import (
     Intercepter,
-    InterceptError,
-    InterceptResult,
-    _scan_tags,
 )
 
 
@@ -265,8 +262,8 @@ class TestRegisterFunction:
 
 # ── Task 6: InterceptionLoop ──
 
-from conscio.agency.adapter import MockAdapter, AdapterCaps
-from conscio.agency.intercepter import InterceptionLoop
+from conscio.agency.adapter import MockAdapter  # noqa: E402
+from conscio.agency.intercepter import InterceptionLoop  # noqa: E402
 
 
 class TestInterceptionLoop:
@@ -295,7 +292,7 @@ class TestInterceptionLoop:
             "[INTERCEPT: 4+4]",
         ])
         loop = InterceptionLoop(adapter, Intercepter(), max_iterations=3)
-        result = loop.generate("test")
+        loop.generate("test")
         assert len(adapter.calls) == 3
 
     def test_reinjection_format(self):
