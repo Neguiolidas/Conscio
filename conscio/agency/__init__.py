@@ -15,6 +15,7 @@ from .adapters import (AnthropicAdapter, GeminiAdapter, LlamaCppAdapter,
                        OllamaAdapter, OpenAIAdapter, OpenAICompatAdapter)
 from .breaker import DEFAULT_MAX_RETRIES, CircuitBreaker
 from .contracts import ActionProposal, AuditVerdict, ToolResult, validate
+from .fingerprint import goal_fingerprint
 from .gateway import GatewayError, OutputGateway
 from .grammar import compile_proposal_grammar, compile_schema_grammar
 from .ledger import ActionLedger
@@ -39,4 +40,5 @@ __all__ = [
     "RunReport", "ModelProfile", "ProbeSuite", "choose_tier",
     "max_visible_tools", "skeptic_mode", "Skeptic", "SkillLibrary", "Risk",
     "ToolRegistry", "TrustMatrix", "make_default_registry",
+    "goal_fingerprint",
 ]

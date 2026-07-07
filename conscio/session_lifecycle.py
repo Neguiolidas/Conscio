@@ -497,7 +497,7 @@ def _active_shard_value(engine) -> str:
         if shard_engine is not None and shard_engine.current is not None:
             return shard_engine.current.value
     except Exception as e:
-        logger.debug("shard_engine.current.value failed: %s", e)
+        logger.warning("shard_engine.current.value failed: %s", e)
     return ""
 
 
@@ -508,22 +508,22 @@ def enrich_with_conscio(summary: SessionSummary, engine) -> SessionSummary:
             f"{e['name']}:{e.get('state', '?')}" for e in entities
         ]
     except Exception as e:
-        logger.debug("world.list_entities failed: %s", e)
+        logger.warning("world.list_entities failed: %s", e)
 
     try:
         summary.active_goals = [g.description for g in engine.goals.active_goals()[:3]]
     except Exception as e:
-        logger.debug("goals.active_goals failed: %s", e)
+        logger.warning("goals.active_goals failed: %s", e)
 
     try:
         summary.meta_confidence = engine.meta.average_confidence()
     except Exception as e:
-        logger.debug("meta.average_confidence failed: %s", e)
+        logger.warning("meta.average_confidence failed: %s", e)
 
     try:
         summary.stale_entities = engine.world.stale_entities()[:3]
     except Exception as e:
-        logger.debug("world.stale_entities failed: %s", e)
+        logger.warning("world.stale_entities failed: %s", e)
 
     try:
         shard_val = _active_shard_value(engine)
@@ -533,7 +533,7 @@ def enrich_with_conscio(summary: SessionSummary, engine) -> SessionSummary:
         elif shard_val or top_goal:
             summary.trajectory = shard_val or top_goal
     except Exception as e:
-        logger.debug("trajectory enrichment failed: %s", e)
+        logger.warning("trajectory enrichment failed: %s", e)
 
     try:
         rep = getattr(engine, "last_coherence", None)
@@ -541,24 +541,24 @@ def enrich_with_conscio(summary: SessionSummary, engine) -> SessionSummary:
             summary.coherence = rep.score
             summary.coherence_note = rep.dominant.dimension if rep.dominant else ""
     except Exception as e:
-        logger.debug("coherence read failed: %s", e)
+        logger.warning("coherence read failed: %s", e)
 
     try:
         summary.voice = getattr(engine, "voice_preset", "")
     except Exception as e:
-        logger.debug("voice_preset read failed: %s", e)
+        logger.warning("voice_preset read failed: %s", e)
 
     try:
         prompts = getattr(engine, "last_self_prompts", None)
         summary.self_prompt = prompts[0].question if prompts else ""
     except Exception as e:
-        logger.debug("last_self_prompts read failed: %s", e)
+        logger.warning("last_self_prompts read failed: %s", e)
 
     try:
         rec = getattr(engine, "dream_recommended", None)
         summary.dream_recommended = rec.marker() if rec is not None else ""
     except Exception as e:
-        logger.debug("dream_recommended.marker failed: %s", e)
+        logger.warning("dream_recommended.marker failed: %s", e)
 
     return summary
 
@@ -837,13 +837,13 @@ def record_session_lifecycle(
             )
 
     except Exception as e:
-        logger.debug("session enrichment/indexing failed: %s", e)
+        logger.warning("session enrichment/indexing failed: %s", e)
 
     # Dream — always attempt, outside the enrichment try block
     try:
         engine.dream()
     except Exception as e:
-        logger.debug("engine.dream() failed: %s", e)
+        logger.warning("engine.dream() failed: %s", e)
 
     finally:
         if own_engine:

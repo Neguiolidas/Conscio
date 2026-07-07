@@ -116,7 +116,7 @@ class SkillLibrary:
                  k: int = MAX_EXEMPLARS) -> list[str]:
         """Best skills for this goal, rendered for the decode tier.
         Serving records a single-slot attribution consumed by settle()."""
-        from .act import goal_fingerprint
+        from . import goal_fingerprint
         goal_fp = goal_fingerprint(goal_text)
         candidates: list[tuple[float, float, int, float, sqlite3.Row]] = []
         for row in self._conn.execute("SELECT * FROM skills").fetchall():

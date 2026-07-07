@@ -54,6 +54,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Output-filter pipeline limits (engine instance defaults).
+_OUTPUT_MAX_LINES = 200
+_OUTPUT_MAX_WIDTH = 8000
+
+# Reflection-query cap used by the trust matrix reflect_count_fn.
+_REFLECT_COUNT_LIMIT = 100_000
+
 
 def _quarantine_if_corrupt(db_path: Path) -> Optional[Path]:
     """If ``db_path`` exists but is not a usable sqlite DB, move it aside so a fresh
@@ -204,8 +211,8 @@ class ConsciousnessEngine:
                 {"strip_ansi": None},
                 {"secret_mask": None},
                 {"dedup_blocks": {"min_run": 3}},
-                {"max_lines": {"max_lines": 200}},
-                {"truncate_lines": {"max_width": 8000}},
+                {"max_lines": {"max_lines": _OUTPUT_MAX_LINES}},
+                {"truncate_lines": {"max_width": _OUTPUT_MAX_WIDTH}},
             ]
         })
 
@@ -935,7 +942,7 @@ class ConsciousnessEngine:
         trust = TrustMatrix(
             self.meta, ledger, db,
             reflect_count_fn=lambda: len(self.event_bus.query(
-                type="reflection", limit=100000)),
+                type="reflection", limit=_REFLECT_COUNT_LIMIT)),
             trips_since_fn=self._trips_since)
         skeptic = Skeptic(metered_skeptic, mode=skeptic_mode or "checklist",
                           facts_fn=self.world.query)
@@ -1180,7 +1187,7 @@ class ConsciousnessEngine:
                      tools: Optional[list[dict]] = None) -> dict:
         """Generate ONE audited action from a goal (Actor), constrained to the
         host's declared tool vocabulary. Never executes; not free-form."""
-        from .agency.act import goal_fingerprint
+        from .agency import goal_fingerprint
         from .agency.actor import build_actor_prompt
         from .agency.contracts import PROPOSAL_SCHEMA
         from .agency.gateway import GatewayError

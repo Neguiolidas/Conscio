@@ -45,7 +45,7 @@ class TrustMatrix:
     # ── core formula (blueprint §6) ──
 
     def max_action_retries(self, task_type: str) -> int:
-        penalty = min(len(self.meta.frequent_errors(min_count=3)), 2)
+        penalty = min(len(self.meta.frequent_errors(min_count=2)), 2)
         raw = (1 + round(2 * self.meta.calibration_score()
                          * self.meta.accuracy(task_type)) - penalty)
         result = max(0, min(RETRY_CEILING, raw))

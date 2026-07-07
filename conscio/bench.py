@@ -26,7 +26,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable
 
-from .agency.act import goal_fingerprint
+from .agency import goal_fingerprint
 from .agency.actor import build_actor_prompt
 from .agency.adapter import (AdapterCaps, AdapterError, Meter, MeteredAdapter,
                              MockAdapter)
