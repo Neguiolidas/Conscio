@@ -891,7 +891,7 @@ class ConsciousnessEngine:
 
     def attach_adapter(self, adapter, *, sandbox_root=None, registry=None,
                        skeptic_adapter=None, skeptic_mode=None,
-                       autonomy_cap=1):
+                       autonomy_cap=1, intercept_enabled=False):
         """Wire the agentic pipeline. reflect() is unaffected.
 
         skeptic_adapter: optional second cortex for the audit
@@ -940,7 +940,17 @@ class ConsciousnessEngine:
             autonomy_cap=autonomy_cap,
             recall_fn=lambda q: self.recall(q, k=3),
             emit_fn=self.event_bus.emit,
-            executable_fn=self.goals.is_executable)   # #7 provenance gate
+            executable_fn=self.goals.is_executable,   # #7 provenance gate
+            intercept_enabled=intercept_enabled)
+        # v2.7: wire Intercepter into the gateway if enabled
+        if intercept_enabled:
+            from .agency.intercepter import Intercepter, InterceptionLoop
+            gw = self._act_pipeline.gateway
+            gw._loop = InterceptionLoop(
+                gw.adapter, Intercepter(),
+                max_iterations=3,
+                emit_fn=self.event_bus.emit,
+            )
         # v1.1: procedural memory — distilled by the dream, served to the
         # actor as few-shot rendered for the gateway's effective tier.
         skills = SkillLibrary(db)

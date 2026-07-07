@@ -22,7 +22,8 @@ ACTOR_PERSONA = (
 
 def build_actor_prompt(*, state: ConsciousnessState, goal_text: str,
                        catalog_text: str, recall_snippets: list[str],
-                       few_shot: list[str]) -> str:
+                       few_shot: list[str],
+                       intercept_enabled: bool = False) -> str:
     sections = [ACTOR_PERSONA, "", state.to_injection()]
     if state.coherence_note:
         sections.append(f"Dominant dissonance: {state.coherence_note}")
@@ -36,4 +37,15 @@ def build_actor_prompt(*, state: ConsciousnessState, goal_text: str,
     if catalog_text:
         sections.append("Available tools:")
         sections.append(catalog_text)
+    if intercept_enabled:
+        sections.append("")
+        sections.append(
+            "## Deterministic Computation\n"
+            "You may use [INTERCEPT: <expr>] tags for safe deterministic "
+            "computation. The system will evaluate these before your next "
+            "turn. Available: arithmetic (+, -, *, /, **, //, %), "
+            "comparisons (>, <, >=, <=, ==, !=), and functions "
+            "(abs, round, min, max, sum, pow, sqrt, floor, ceil, log, "
+            "sin, cos, tan). Example: [INTERCEPT: 2**10] -> [RESULT: 1024]"
+        )
     return "\n".join(sections)

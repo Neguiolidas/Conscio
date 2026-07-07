@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.12.0] - 2026-07-06 — Intercepter (TV-DSL integration)
+
+### Added
+- **Intercepter** — safe AST evaluator for `[INTERCEPT: expr]` tags in LLM output.
+  Allows the model to emit deterministic computation tags that are evaluated
+  before the next generation cycle. Origin: Think-Vetor DSL concept, reimplemented
+  from scratch with zero dependencies (stdlib only).
+  - Bracket-scanning parser (handles arbitrary nesting depth, no regex)
+  - AST whitelist: arithmetic (+, -, *, /, **, //, %), comparisons (>, <, >=, <=, ==, !=),
+    unary minus/plus, built-in functions (abs, round, min, max, sum, pow, len),
+    math functions (sqrt, floor, ceil, log, sin, cos, tan)
+  - 10 security guards: no eval, no import, no attribute access, no subscript,
+    no list/dict/set literals, no variables, no boolean ops, no conditionals,
+    expression length limit (500 chars), AST depth limit (50)
+  - `register_function()` with 4-layer guard: module blocklist, type annotation
+    enforcement, dry-run return type check, name collision detection
+- **InterceptionLoop** — orchestrates generate→intercept→reinject up to
+  `max_iterations` (default 3). Returns `InferenceResult` (drop-in replacement
+  for `adapter.generate()`). Observation truncation at 2000 chars.
+- **OutputGateway integration** — `_generate()` helper routes through the loop
+  when an intercepter is present. T1 (GBNF) bypasses the loop entirely.
+- **Engine wiring** — `attach_adapter(intercept_enabled=True)` creates the
+  intercepter, wires the loop into the gateway, and adds the "Deterministic
+  Computation" section to the actor prompt via `build_actor_prompt()`.
+
+### Changed
+- **License: MIT → AGPL-3.0-or-later.** All future releases ship under AGPL.
+  Previous MIT releases remain MIT.
+- `build_actor_prompt()` — new `intercept_enabled: bool = False` parameter.
+- `ActPipeline.__init__()` — new `intercept_enabled: bool = False` parameter.
+- `OutputGateway.__init__()` — new `intercepter` and `max_intercept_iterations` parameters.
+- `ConsciousnessEngine.attach_adapter()` — new `intercept_enabled: bool = False` parameter.
+
+### Fixed
+- `process()` duplicate-tag bug — `text.replace(original, replacement, 1)` replaced
+  the wrong occurrence when the same expression appeared twice. Switched to
+  positional replacement (right-to-left slicing).
+
+### Tests
+- 55 new tests in `tests/test_agency_intercepter.py` (Intercepter + InterceptionLoop)
+- 5 new integration tests in `tests/test_agency_gateway.py`
+- 2 new prompt tests in `tests/test_agency_actor.py`
+- Full suite: 2093 passed, 0 failed
+- Smoke test: qwen3.5-0.8b via LM Studio validated end-to-end
+
+---
+
 ## [2.11.1] - 2026-07-03 — hostile-review fix pass on "Reach"
 
 ### Fixed

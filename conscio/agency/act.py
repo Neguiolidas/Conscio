@@ -65,7 +65,8 @@ class ActPipeline:
                  emit_fn: Callable[..., Any] | None = None,
                  few_shot_provider: Callable[[str], list[str]] | None = None,
                  arbiter: Any = None,
-                 executable_fn: Callable[[str], bool] | None = None):
+                 executable_fn: Callable[[str], bool] | None = None,
+                 intercept_enabled: bool = False):
         from .loop import GoalArbiter      # runtime: loop imports this module
 
         self.adapter = adapter
@@ -83,6 +84,7 @@ class ActPipeline:
         self.arbiter = arbiter or GoalArbiter(breaker,
                                               executable_fn=executable_fn)
         self.max_visible_tools: int | None = None    # set by engine.probe()
+        self.intercept_enabled = intercept_enabled
 
     # ── act cycle (spec §6) ──
 
@@ -109,7 +111,8 @@ class ActPipeline:
         prompt = build_actor_prompt(
             state=state, goal_text=goal_text,
             catalog_text=self.registry.catalog_text(self.max_visible_tools),
-            recall_snippets=recall, few_shot=few_shot)
+            recall_snippets=recall, few_shot=few_shot,
+            intercept_enabled=self.intercept_enabled)
         self.emit_fn(type="tool_call", category="external",
                      data={"action": "cycle_start", "goal_fp": goal_fp})
 
