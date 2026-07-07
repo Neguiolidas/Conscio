@@ -133,7 +133,14 @@ class ConsciousnessState:
         return "\n".join(lines)
 
     def total_tokens_approx(self) -> int:
-        """Approximate token count of the injection (rough: chars/4)."""
+        """Approximate token count of the consciousness state injection (chars/4).
+
+        NOTE: This returns the size of the *injection string* that Conscio embeds
+        into the LLM context, NOT the total tokens consumed in the live session.
+        For metabolic assessment, this means FATIGUE/CRITICAL tiers will not
+        trigger from this value alone — real session token usage must be supplied
+        by the caller (adapter/gateway) via ``engine.session_tokens_used``.
+        """
         return len(self.to_injection()) // 4
 
 

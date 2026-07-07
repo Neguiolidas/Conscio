@@ -129,7 +129,9 @@ class AutonomyLoop:
                 self.engine.reflect(world_state=world_state)
                 state = self.engine.state
                 tier = MetabolicContext.assess(
-                    state.total_tokens_approx(),
+                    self.engine.session_tokens_used
+                    if self.engine.session_tokens_used is not None
+                    else state.total_tokens_approx(),
                     self.engine.model_info.context_window)
                 if tier is MetabolicState.FATIGUE:
                     max_cycles = min(max_cycles,

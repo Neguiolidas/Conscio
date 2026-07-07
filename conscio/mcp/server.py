@@ -509,6 +509,8 @@ def _arg_parser() -> argparse.ArgumentParser:
                                      description="Conscio MCP stdio server")
     parser.add_argument("--storage", default=None)
     parser.add_argument("--model", default=None)
+    parser.add_argument("--base-url", default=None,
+                        help="OpenAI-compatible endpoint to probe")
     parser.add_argument("--adapter", default=None)
     parser.add_argument("--max-frame-bytes", type=int,
                         default=j.DEFAULT_MAX_FRAME_BYTES)
@@ -546,7 +548,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: no model specified. Set CONSCIO_MODEL, configure 'model' "
               "in config.json, or pass --model.", file=sys.stderr)
         return 1
-    engine = ConsciousnessEngine(model_name, storage_path=args.storage)
+    engine = ConsciousnessEngine(model_name, storage_path=args.storage,
+                                  base_url=args.base_url)
     from conscio.adapter_config import build_adapter_from_config, load_config
     adapter_name = None
     if args.adapter:                               # CLI wins (mock | ollama:..)

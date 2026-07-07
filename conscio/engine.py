@@ -115,7 +115,7 @@ class ConsciousnessEngine:
     The main orchestrator for the consciousness framework.
     
     Usage:
-        engine = ConsciousnessEngine(model_name=os.environ.get("CONSCIO_MODEL", "glm-5.1"))
+        engine = ConsciousnessEngine(model_name=os.environ.get("CONSCIO_MODEL", ""))
 
         # Run a reflection cycle
         result = engine.reflect(
@@ -226,6 +226,11 @@ class ConsciousnessEngine:
         self.session_lifecycle = SessionLifecycle(engine=self)
 
         self._state = self.ctx.load_state()
+
+        # v0.9+: External token usage tracking — set by the adapter/gateway
+        # to report real session token consumption. Falls back to injection
+        # size when unset (see context_manager.total_tokens_approx docstring).
+        self.session_tokens_used: Optional[int] = None
 
         # v1.7: structural cognition — optional, opt-in. No graph is loaded by
         # default, so injection/lookup/advisory stay inert until the host calls
@@ -466,7 +471,9 @@ class ConsciousnessEngine:
         )
 
         # v0.9: Metabolic wiring — assess context health and inject tier_action
-        used_tokens = self._state.total_tokens_approx()
+        used_tokens = (self.session_tokens_used
+                       if self.session_tokens_used is not None
+                       else self._state.total_tokens_approx())
         total_window = self.model_info.context_window
         metabolic_state = MetabolicContext.assess(used_tokens, total_window)
         metabolic_note = f"{metabolic_state.value} {MetabolicContext.usage_pct(used_tokens, total_window):.0f}%"

@@ -424,7 +424,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     or cfg.get("sensors", "host"))
     awake = args.awake if args.awake is not None else cfg.get("awake", False)
 
-    engine = ConsciousnessEngine(model, storage_path=args.storage)
+    engine = ConsciousnessEngine(model, storage_path=args.storage,
+                                  base_url=args.base_url)
 
     # ── attach adapter (CLI overrides config) ──
     if args.adapter:
