@@ -25,6 +25,10 @@ import math
 
 from .axis_pack import load_axes
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 AXIS_THRESHOLD = 0.62        # projection onto a pole counts as "on that pole"
 AXIS_MARGIN = 0.05           # a term must beat the OPPOSITE pole by this much
 
@@ -63,7 +67,8 @@ class SemanticEngine:
             try:
                 from .session_rag import OllamaEmbedder
                 self._embedder = OllamaEmbedder()
-            except Exception:
+            except Exception as e:
+                logger.debug("semantic: embedder import failed: %s", e)
                 self._embedder = None
         return self._embedder
 
@@ -77,7 +82,8 @@ class SemanticEngine:
             return False
         try:
             self._available = bool(emb.embed("ping"))
-        except Exception:
+        except Exception as e:
+            logger.debug("semantic: availability check failed: %s", e)
             self._available = False
         return self._available
 
@@ -91,7 +97,8 @@ class SemanticEngine:
             return []
         try:
             vec = emb.embed(key)
-        except Exception:
+        except Exception as e:
+            logger.debug("semantic: embed failed for text: %s", e)
             vec = []
         # A failed embed caches [] deliberately: this engine is dream-scoped
         # (short-lived, off the hot path), so the empty result is sticky for the

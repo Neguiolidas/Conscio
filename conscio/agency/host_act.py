@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 from ..guards import clamp_int
 from ..risk import Risk
-from .act import goal_fingerprint
+from . import goal_fingerprint
 from .contracts import PROPOSAL_SCHEMA, proposal_from_dict, validate
 
 _PENDING_POLICIES = {"require_approval", "hermes_review"}

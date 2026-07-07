@@ -19,11 +19,10 @@ from datetime import timedelta
 from pathlib import Path
 
 from .timeutil import naive_utcnow
+from .constants import DEFAULT_DB_PATH
 
 
 # ─── Constants ──────────────────────────────────────────────────────────
-
-DEFAULT_DB_PATH = Path.home() / ".hermes" / "consciousness" / "conscio.db"
 
 # Token estimation: ~4 chars per token for English/mixed content
 CHARS_PER_TOKEN = 4

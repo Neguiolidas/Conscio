@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from .timeutil import naive_utcnow
+from .constants import DEFAULT_DB_PATH
 
 
 # ─── Data Classes ───────────────────────────────────────────────────────
@@ -55,8 +56,6 @@ class Event:
 
 
 # ─── Constants ──────────────────────────────────────────────────────────
-
-DEFAULT_DB_PATH = Path.home() / ".hermes" / "consciousness" / "conscio.db"
 
 VALID_TYPES = {
  "tool_call", "reflection", "trade", "error", "anomaly",

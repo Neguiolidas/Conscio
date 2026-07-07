@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from .timeutil import naive_utcnow
+from .constants import DEFAULT_DB_PATH
 
 
 # ─── Data Classes ───────────────────────────────────────────────────────
@@ -64,8 +65,6 @@ class SourceInfo:
 
 
 # ─── Constants ──────────────────────────────────────────────────────────
-
-DEFAULT_DB_PATH = Path.home() / ".hermes" / "consciousness" / "conscio.db"
 
 VALID_CATEGORIES = {"reflection", "perception", "trading", "system", "error", "consciousness", "external", "session"}
 VALID_CONTENT_TYPES = {"prose", "code", "metric", "log"}

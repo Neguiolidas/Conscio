@@ -27,6 +27,9 @@ W_REL = 0.3
 PREDICTION_LOG_RETENTION_HOURS = 168   # 7 days
 PREDICTION_LOG_MAX = 500               # hard cap backstop
 
+# Relevance decay (v0.4): exponential memory decay per hour since last update.
+RELEVANCE_DECAY_LAMBDA = 0.05          # lambda in exp(-lambda*hours) — half-life ~14h
+
 # Per-entity state history (v0.8): bounded log for state-contradiction scans.
 STATE_LOG_MAX = 5
 
@@ -308,7 +311,7 @@ class WorldModel:
         Formula: relevance * exp(-lambda * hours)
         Lambda = 0.05 → half-life ~14 hours
         """
-        decay = math.exp(-0.05 * hours_since_update)
+        decay = math.exp(-RELEVANCE_DECAY_LAMBDA * hours_since_update)
         return current_relevance * decay
 
     def entropy(self, name: str, _relevance: Optional[float] = None) -> float:
