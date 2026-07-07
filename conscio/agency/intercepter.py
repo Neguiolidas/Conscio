@@ -232,7 +232,7 @@ class Intercepter:
 
         # Binary ops
         if isinstance(node, ast.BinOp):
-            op_type = type(node.op)
+            op_type: type[Any] = type(node.op)
             if op_type not in self._ALLOWED_OPS:
                 raise InterceptError(
                     f"operator {op_type.__name__} not allowed"
