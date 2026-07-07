@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -507,7 +508,7 @@ def _arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="conscio-mcp",
                                      description="Conscio MCP stdio server")
     parser.add_argument("--storage", default=None)
-    parser.add_argument("--model", default="glm-5.1")
+    parser.add_argument("--model", default=None)
     parser.add_argument("--adapter", default=None)
     parser.add_argument("--max-frame-bytes", type=int,
                         default=j.DEFAULT_MAX_FRAME_BYTES)
@@ -540,7 +541,12 @@ def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
     from conscio.installer.binding import validate_binding   # R6
     validate_binding(args.storage)
-    engine = ConsciousnessEngine(args.model, storage_path=args.storage)
+    model_name = args.model or os.environ.get("CONSCIO_MODEL", "")
+    if not model_name:
+        print("Error: no model specified. Set CONSCIO_MODEL, configure 'model' "
+              "in config.json, or pass --model.", file=sys.stderr)
+        return 1
+    engine = ConsciousnessEngine(model_name, storage_path=args.storage)
     from conscio.adapter_config import build_adapter_from_config, load_config
     adapter_name = None
     if args.adapter:                               # CLI wins (mock | ollama:..)
@@ -548,7 +554,7 @@ def main(argv: list[str] | None = None) -> int:
         adapter_name = args.adapter
     else:
         adapter, atype = build_adapter_from_config(load_config(),
-                                                   fallback_model=args.model)
+                                                   fallback_model=model_name)
         if adapter is not None:
             engine.attach_adapter(adapter)
             adapter_name = atype

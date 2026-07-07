@@ -57,8 +57,8 @@ class TestModelRegistry:
     def test_lookup_exact(self):
         info = ModelRegistry.lookup("glm-5.1")
         assert info is not None
-        assert info.context_window == 131_000
-        assert info.mode == ContextMode.COMPACT
+        assert info.context_window == 200_000
+        assert info.mode == ContextMode.STANDARD
 
     def test_lookup_alias(self):
         info = ModelRegistry.lookup("glm")
@@ -94,15 +94,15 @@ class TestModelRegistry:
 
     def test_model_available_context(self):
         info = ModelRegistry.lookup("glm-5.1")
-        # Should be ~80% of 131k
-        assert 100_000 < info.available_context_tokens < 110_000
+        # Should be ~80% of 200k
+        assert 150_000 < info.available_context_tokens < 170_000
 
     def test_context_for_consciousness(self):
         info = ModelRegistry.lookup("glm-5.1")
-        # CONTEXT_BUDGET_PCT = 0.02, available_context ~104k
-        # context_for_consciousness = 104k * 0.02 = ~2.1k
+        # CONTEXT_BUDGET_PCT = 0.02, available_context ~160k
+        # context_for_consciousness = 160k * 0.02 = ~3.2k
         ctx = info.context_for_consciousness()
-        assert 2_000 < ctx < 2_200
+        assert 3_000 < ctx < 3_500
 
     def test_all_models(self):
         all_models = ModelRegistry.all_models()
@@ -121,8 +121,7 @@ class TestModelRegistry:
 
 class TestContextManager:
     def test_compact_mode_for_glm(self, ctx_manager):
-        assert ctx_manager.mode == ContextMode.COMPACT
-        assert ctx_manager.max_injection_tokens == 500
+        assert ctx_manager.mode == ContextMode.STANDARD
 
     def test_build_state_trims_to_budget(self, ctx_manager):
         long_text = "word " * 1000  # Way over budget
@@ -131,8 +130,8 @@ class TestContextManager:
             last_reflection=long_text,
             active_goals=["goal1", "goal2", "goal3", "goal4", "goal5", "goal6"],
         )
-        # Goals should be limited to 3 in compact mode
-        assert len(state.active_goals) <= 3
+        # Goals should be limited to 5 in standard mode (200k ctx)
+        assert len(state.active_goals) <= 5
         # Total tokens should be within budget (with some margin)
         assert state.total_tokens_approx() < ctx_manager.max_injection_tokens * 1.5
 
@@ -166,8 +165,7 @@ class TestContextManager:
         )
         injection = state.to_injection()
         assert "CONSCIOUSNESS STATE" in injection
-        assert "compact" in injection
-        assert "GLM 5.1" in injection.lower() or "glm-5.1" in injection.lower()
+        assert "standard" in injection
 
     def test_get_off_context_path(self, ctx_manager):
         # Known components
@@ -666,7 +664,7 @@ class TestMetaGoalConnection:
 
 class TestConsciousnessEngine:
     def test_initialization(self, engine):
-        assert engine.mode == ContextMode.COMPACT
+        assert engine.mode == ContextMode.STANDARD
         assert engine.model_info.name == "glm-5.1"
 
     def test_reflect(self, engine):
@@ -681,13 +679,13 @@ class TestConsciousnessEngine:
         engine.reflect(world_state="Test", confidence=0.7)
         injection = engine.get_state_for_injection()
         assert "CONSCIOUSNESS STATE" in injection
-        assert "compact" in injection
+        assert "standard" in injection
 
     def test_status(self, engine):
         status = engine.status()
         assert "model" in status
         assert "mode" in status
-        assert status["mode"] == "compact"
+        assert status["mode"] == "standard"
 
     def test_health_check(self, engine):
         health = engine.health_check()

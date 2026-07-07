@@ -66,7 +66,7 @@ class ConsciousnessState:
     meta_cognition: str = ""          # Confidence + self-assessment
     model_name: str = ""              # Which model I'm running on
     context_mode: ContextMode = ContextMode.COMPACT
-    context_window: int = 131000      # Available context in tokens
+    context_window: int = 128_000      # Default MINIMAL threshold; overridden at init
     metabolic: str = ""               # Optional metabolic tier note, e.g. "FATIGUE 61%"
     reflection_quality: str = ""      # Optional meta-reflect label: HIGH/MEDIUM/LOW
     shard: str = ""                   # Optional active cognitive mode, e.g. "ENGINEER"

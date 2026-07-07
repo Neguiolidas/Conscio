@@ -115,8 +115,8 @@ class ConsciousnessEngine:
     The main orchestrator for the consciousness framework.
     
     Usage:
-        engine = ConsciousnessEngine(model_name="glm-5.1")
-        
+        engine = ConsciousnessEngine(model_name=os.environ.get("CONSCIO_MODEL", "glm-5.1"))
+
         # Run a reflection cycle
         result = engine.reflect(
             world_state="Trading bot operational, 3 active positions",
@@ -139,12 +139,15 @@ class ConsciousnessEngine:
         storage_path: Optional[str | Path] = None,
         drive_strengths: Optional[dict[str, float]] = None,
         voice_preset: Optional[str] = None,
+        base_url: Optional[str] = None,
+        autodetect: bool = False,
     ):
         self.storage = Path(storage_path) if storage_path else self.DEFAULT_STORAGE
         self.storage.mkdir(parents=True, exist_ok=True)
 
         # Detect model and set up context management
-        self.ctx = ContextManager(model_name, context_window, self.storage)
+        self.ctx = ContextManager(model_name, context_window, self.storage,
+                                    base_url=base_url, autodetect=autodetect)
         self.model_info = self.ctx.model_info
         self.mode = self.ctx.mode
 

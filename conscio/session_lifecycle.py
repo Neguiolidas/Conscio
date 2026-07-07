@@ -769,7 +769,7 @@ def record_session_lifecycle(
     own_engine = engine is None
     if own_engine:
         from .engine import ConsciousnessEngine
-        engine = ConsciousnessEngine(model_name=summary.model or "glm-5.1")
+        engine = ConsciousnessEngine(model_name=summary.model or os.environ.get("CONSCIO_MODEL", ""))
 
     heartbeat = ""
     handoff = ""

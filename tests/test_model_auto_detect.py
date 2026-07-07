@@ -79,9 +79,9 @@ class TestAutoDetectContext:
         assert info.mode == ContextMode.COMPACT
 
     def test_detect_known_model_uses_registry(self):
-        """Known models use hardcoded values."""
+        """Known models use registry values."""
         info = ModelRegistry.detect("glm-5.1")
-        assert info.context_window == 131_000
+        assert info.context_window == 200_000
 
     def test_auto_detect_from_endpoint_returns_context(self):
         """When endpoint returns context_length, use it."""
