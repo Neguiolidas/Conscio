@@ -183,7 +183,7 @@ class Intercepter:
 
         for start, end, expr in reversed(tags):
             count += 1
-            original = text[start:end]
+            # original tag text, replaced positionally (right-to-left)
             try:
                 value = self._eval(expr)
                 replacement = f"[INTERCEPT: {expr}] -> [RESULT: {value}]"
