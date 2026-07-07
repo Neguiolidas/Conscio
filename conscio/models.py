@@ -116,7 +116,7 @@ class ModelRegistry:
         # Open Source
         "llama-3.1-70b": ModelInfo("llama-3.1-70b", 128_000, ContextMode.COMPACT,
                                    ["general"]),
-        "qwen-2.5-72b": ModelInfo("qwen-2.5-72b", 131_000, ContextMode.COMPACT,
+        "qwen-2.5-72b": ModelInfo("qwen-2.5-72b", 128_000, ContextMode.COMPACT,
                                   ["multilingual", "reasoning"]),
         "mistral-large": ModelInfo("mistral-large", 128_000, ContextMode.COMPACT,
                                    ["reasoning", "coding"]),

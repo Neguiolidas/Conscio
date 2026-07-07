@@ -52,6 +52,7 @@ class _FakeEngine:
         self._i = 0
         self.state = _FakeState()
         self.model_info = _FakeModelInfo()
+        self.session_tokens_used = None
         self.dream_recommended = _FakeDream()
         self.event_bus = _FakeBus()
         self.reflections = 0

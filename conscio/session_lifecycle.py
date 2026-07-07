@@ -757,7 +757,7 @@ def record_session_lifecycle(
     chunks = extract_chunks(messages)
     summary = SessionSummary(
         session_id=session.get("id", "?"),
-        model=session.get("model", "?"),
+        model=session.get("model") or "",
         started_at=session.get("started_at", "unknown"),
         message_count=session.get("message_count", 0),
         title=session.get("title", "N/A"),

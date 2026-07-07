@@ -99,6 +99,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_promote.add_argument(
         "--enable-promote", action="store_true",
         help="required: actually write to the live library (off by default)")
+    p_promote.add_argument("--model", default=DEFAULT_MODEL,
+                           help="model name for engine init")
 
     # Listed for discoverability; routed to conscio.{bench,daemon} before argparse.
     sub.add_parser("bench", add_help=False,
@@ -316,11 +318,12 @@ def _cmd_trial(model: str, storage: str, quarantine_id: int,
     return 0
 
 
-def _run_promote(*, storage: str, quarantine_id: int, enable_promote: bool):
+def _run_promote(*, model: str, storage: str, quarantine_id: int,
+                 enable_promote: bool):
     """Build a bare engine (no adapter — promotion never decodes) and promote
     one quarantined skill. The single seam the CLI tests monkeypatch."""
     from .engine import ConsciousnessEngine
-    eng = ConsciousnessEngine(model_name=DEFAULT_MODEL,
+    eng = ConsciousnessEngine(model_name=model,
                               storage_path=_storage(storage))
     try:
         return eng.promote_quarantined(quarantine_id,
@@ -329,11 +332,12 @@ def _run_promote(*, storage: str, quarantine_id: int, enable_promote: bool):
         eng.close()
 
 
-def _cmd_promote(storage: str, quarantine_id: int,
+def _cmd_promote(model: str, storage: str, quarantine_id: int,
                  enable_promote: bool) -> int:
     from .agency.promote import PromoteResult
     try:
-        outcome = _run_promote(storage=storage, quarantine_id=quarantine_id,
+        outcome = _run_promote(model=model, storage=storage,
+                               quarantine_id=quarantine_id,
                                enable_promote=enable_promote)
     except Exception as exc:               # engine wiring failure
         print(f"error: {exc}")
@@ -390,7 +394,7 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_trial(args.model, args.storage, args.quarantine,
                           args.enable_trial)
     if args.command == "promote":
-        return _cmd_promote(args.storage, args.quarantine,
+        return _cmd_promote(args.model, args.storage, args.quarantine,
                             args.enable_promote)
 
     parser.print_help()

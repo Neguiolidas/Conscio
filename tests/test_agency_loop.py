@@ -18,6 +18,7 @@ class _FakeEngine:
     def __init__(self, *, lockdown_after=None, recommend_dream=False):
         self.state = ConsciousnessState(active_goals=["g"])
         self.model_info = ModelInfo("m", 131_000, ContextMode.COMPACT)
+        self.session_tokens_used = None
         self.dream_recommended = DreamRecommendation(recommend_dream,
                                                      None, None)
         self.reflects = 0
