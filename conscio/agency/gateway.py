@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .adapter import AdapterError, InferenceAdapter
 from .contracts import ActionProposal, proposal_from_dict, validate
+
+if TYPE_CHECKING:
+    from .intercepter import Intercepter, InterceptionLoop
 
 
 class GatewayError(Exception):
@@ -90,7 +93,9 @@ class OutputGateway:
     """Decode tier selection + retry loop. One gateway per adapter."""
 
     def __init__(self, adapter: InferenceAdapter, *, max_retries: int = 2,
-                 tier: str | None = None):
+                 tier: str | None = None,
+                 intercepter: Intercepter | None = None,
+                 max_intercept_iterations: int = 3):
         self.adapter = adapter
         self.max_retries = max_retries
         self.tier = tier         # explicit "T1"/"T2"/"T3"; None = caps auto
@@ -101,6 +106,14 @@ class OutputGateway:
         # flow: a GatewayError is still raised in both cases (the act path
         # relies on that). Reset at the start of every request_action().
         self.last_adapter_error: AdapterError | None = None
+        # Intercepter integration (v2.7)
+        self._loop: InterceptionLoop | None = None
+        if intercepter is not None:
+            from .intercepter import InterceptionLoop
+            self._loop = InterceptionLoop(
+                adapter, intercepter,
+                max_iterations=max_intercept_iterations,
+            )
 
     def effective_tier(self) -> str:
         """Tier request_action will use: explicit, else adapter caps."""
@@ -108,6 +121,16 @@ class OutputGateway:
             return self.tier
         caps = self.adapter.capabilities()
         return "T1" if caps.grammar else "T2" if caps.json_mode else "T3"
+
+    def _generate(self, prompt: str, **kwargs: Any) -> Any:
+        """Route through InterceptionLoop if present, else call adapter directly.
+
+        T1 (GBNF) always bypasses the loop because the grammar forces JSON
+        output — the LLM cannot emit [INTERCEPT: ...] tags under GBNF.
+        """
+        if self._loop is not None and self.effective_tier() != "T1":
+            return self._loop.generate(prompt, **kwargs)
+        return self.adapter.generate(prompt, **kwargs)
 
     def request_action(self, base_prompt: str, schema: dict,
                        *, goal_id: str = "",
@@ -150,7 +173,7 @@ class OutputGateway:
         feedback = ""
         for _ in range(1 + self.max_retries):
             try:
-                raw = self.adapter.generate(prompt + feedback, schema=schema,
+                raw = self._generate(prompt + feedback, schema=schema,
                                             grammar=grammar).text
             except AdapterError as exc:
                 self.last_adapter_error = exc
@@ -172,7 +195,7 @@ class OutputGateway:
         feedback = ""
         for _ in range(1 + self.max_retries):
             try:
-                raw = self.adapter.generate(prompt + feedback,
+                raw = self._generate(prompt + feedback,
                                             schema=schema).text
             except AdapterError as exc:
                 self.last_adapter_error = exc
@@ -195,7 +218,7 @@ class OutputGateway:
         feedback = ""
         for _ in range(attempts):
             try:
-                raw = self.adapter.generate(prompt + feedback).text
+                raw = self._generate(prompt + feedback).text
             except AdapterError as exc:
                 self.last_adapter_error = exc
                 return None

@@ -11,6 +11,67 @@ from conscio.agency.gateway import (
     parse_kv,
     repair_json,
 )
+from conscio.agency.intercepter import Intercepter
+
+
+class TestGatewayIntercepterIntegration:
+    """Task 7: OutputGateway + Intercepter integration."""
+
+    def test_gateway_without_intercepter(self):
+        """Existing behavior: no intercepter → adapter.generate() called directly."""
+        adapter = MockAdapter(script=['{"tool": "think", "args": {}, '
+                                      '"rationale": "test", '
+                                      '"expected_outcome": "ok"}'])
+        gw = OutputGateway(adapter)
+        result = gw.request_action("prompt", PROPOSAL_SCHEMA)
+        assert isinstance(result, ActionProposal)
+
+    def test_gateway_with_intercepter_no_tags(self):
+        """Intercepter present but no tags → single generate, clean pass-through."""
+        adapter = MockAdapter(script=['{"tool": "think", "args": {}, '
+                                      '"rationale": "test", '
+                                      '"expected_outcome": "ok"}'])
+        gw = OutputGateway(adapter, intercepter=Intercepter())
+        result = gw.request_action("prompt", PROPOSAL_SCHEMA)
+        assert isinstance(result, ActionProposal)
+
+    def test_gateway_intercepter_resolves_tags(self):
+        """Tags in output get resolved by the loop (2 iterations)."""
+        # First generate: output has a tag.
+        # Second generate (after intercept+reinject): clean JSON.
+        adapter = MockAdapter(script=[
+            '{"tool": "calc", "args": {"result": "[INTERCEPT: 2+2]"}, '
+            '"rationale": "test", "expected_outcome": "ok"}',
+            '{"tool": "calc", "args": {"result": 4}, '
+            '"rationale": "test", "expected_outcome": "ok"}',
+        ])
+        gw = OutputGateway(adapter, intercepter=Intercepter())
+        result = gw.request_action("prompt", PROPOSAL_SCHEMA)
+        assert isinstance(result, ActionProposal)
+
+    def test_t1_skips_intercepter(self):
+        """T1 (grammar/GBNF) bypasses intercepter entirely."""
+        adapter = MockAdapter(script=[
+            '{"tool": "think", "args": {}, '
+            '"rationale": "test", "expected_outcome": "ok"}',
+        ])
+        intercepter = Intercepter()
+        gw = OutputGateway(adapter, intercepter=intercepter, tier="T1")
+        # If intercepter were called, it would try to parse the JSON as
+        # an INTERCEPT expression and fail. T1 skip means it passes.
+        result = gw.request_action("prompt", PROPOSAL_SCHEMA,
+                                   tool_names=["think"])
+        assert isinstance(result, ActionProposal)
+
+    def test_max_intercept_iterations_param(self):
+        """max_intercept_iterations flows to InterceptionLoop."""
+        adapter = MockAdapter(script=[
+            '{"tool": "think", "args": {}, '
+            '"rationale": "test", "expected_outcome": "ok"}',
+        ])
+        gw = OutputGateway(adapter, intercepter=Intercepter(),
+                           max_intercept_iterations=5)
+        assert gw._loop.max_iterations == 5
 
 
 class TestEffectiveTier:

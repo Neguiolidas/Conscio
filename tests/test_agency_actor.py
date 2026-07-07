@@ -43,3 +43,19 @@ class TestBuildActorPrompt:
                                     catalog_text="", recall_snippets=[],
                                     few_shot=[])
         assert "Relevant memories" not in prompt
+
+    def test_intercept_enabled_adds_section(self):
+        prompt = build_actor_prompt(
+            state=_state(), goal_text="g", catalog_text="",
+            recall_snippets=[], few_shot=[],
+            intercept_enabled=True)
+        assert "[INTERCEPT:" in prompt
+        assert "Deterministic Computation" in prompt
+
+    def test_intercept_disabled_omits_section(self):
+        prompt = build_actor_prompt(
+            state=_state(), goal_text="g", catalog_text="",
+            recall_snippets=[], few_shot=[],
+            intercept_enabled=False)
+        assert "[INTERCEPT:" not in prompt
+        assert "Deterministic Computation" not in prompt

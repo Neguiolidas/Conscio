@@ -279,4 +279,4 @@ statement so WAL checkpoints flush. Session continuity writes a compact heartbea
 
 ## License
 
-MIT — Neguiolidas / Neguitech
+AGPL-3.0-or-later — Neguiolidas / Neguitech
