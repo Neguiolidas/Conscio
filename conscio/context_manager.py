@@ -162,11 +162,11 @@ class ContextManager:
         context_window: Optional[int] = None,
         storage_path: Optional[str | Path] = None,
         base_url: Optional[str] = None,
-        autodetect: bool = False,
+        autodetect: bool = True,
     ):
-        # Offline & deterministic by default: host-state auto-detection (config,
-        # LM Studio, GGUF) only runs when explicitly opted in via autodetect /
-        # CONSCIO_AUTODETECT, or when a base_url is given for a targeted probe.
+        # Auto-detect context by default: host-state reads (config, LM Studio,
+        # GGUF) run automatically. Can be disabled with autodetect=False or
+        # CONSCIO_AUTODETECT=0.
         self.model_info = ModelRegistry.detect(
             model_name, context_window, base_url=base_url, autodetect=autodetect
         )

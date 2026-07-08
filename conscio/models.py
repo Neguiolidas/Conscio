@@ -63,6 +63,9 @@ class ModelRegistry:
     # Known models with their context windows
     _known_models: dict[str, ModelInfo] = {
         # Primary
+        "glm-5.2": ModelInfo("glm-5.2", 1_000_000, ContextMode.STANDARD,
+                             ["complex_reasoning", "coding", "analysis", "long_context"],
+                             "1M ctx. MoE coding-first. Successor to glm-5.1."),
         "glm-5.1": ModelInfo("glm-5.1", 200_000, ContextMode.STANDARD,
                              ["complex_reasoning", "coding", "analysis"],
                              "Superior in complex tasks. 200k ctx."),
@@ -124,8 +127,8 @@ class ModelRegistry:
 
     # Aliases — common shorthand names
     _aliases: dict[str, str] = {
-        "glm": "glm-5.1",
-        "glm5": "glm-5.1",
+        "glm": "glm-5.2",
+        "glm5": "glm-5.2",
         "kimi": "kimi-k2.6",
         "minimax": "minimax-m2.7",
         "minimax-m3": "minimax-m3",
@@ -425,10 +428,11 @@ class ModelRegistry:
         if key in cls._aliases:
             return cls._known_models[cls._aliases[key]]
 
-        # Fuzzy: check if any known model name contains the query
-        for name, info in cls._known_models.items():
-            if key in name or name in key:
-                return info
+        # No fuzzy/prefix match — removed.  Bidirectional containment
+        # caused "glm-5.2" → "glm-5" (200k) instead of correct 1M.
+        # Prefix matching still mis-resolves unknown variants (glm-5.3 →
+        # glm-5).  Unknown models fall through to the heuristic path
+        # (128k safe default) or endpoint probe (with autodetect).
 
         return None
 
@@ -440,23 +444,20 @@ class ModelRegistry:
     @classmethod
     def detect(cls, model_name: str, context_window: Optional[int] = None,
                base_url: Optional[str] = None,
-               autodetect: bool = False) -> ModelInfo:
-        """Resolve ModelInfo — offline & deterministic by default.
+               autodetect: bool = True) -> ModelInfo:
+        """Resolve ModelInfo — auto-detect context by default.
 
-        The default path (no base_url, no autodetect) reads ONLY ``os.environ`` and
-        the in-process registry — zero filesystem, zero network — so engine and
-        context construction is host-independent and reproducible:
+        Resolution order:
 
             1. explicit ``context_window`` argument     (programmatic override)
             2. env ``CONSCIO_CONTEXT_WINDOW``           (explicit, no I/O)
             3. endpoint probe of ``base_url``, if given (explicit, targeted network)
-            4. [opt-in only] config.json -> LM Studio state -> GGUF scan,
-               reachable via ``autodetect=True`` or env ``CONSCIO_AUTODETECT``
+            4. config.json -> LM Studio state -> GGUF scan (on by default)
             5. known-model registry                     (curated truth)
             6. heuristic from the model name
             7. 128k fallback
 
-        Ambient host-state reads (config file, LM Studio, GGUF) are gated behind the
+        Ambient host-state reads (config file, LM Studio, GGUF) run by default
         explicit opt-in. An explicit ``base_url`` enables only the probe of THAT
         endpoint, never a ``$HOME`` scan. GGUF reports a model's architectural MAX,
         so it is consulted last and labelled as such.
@@ -517,8 +518,14 @@ class ModelRegistry:
                     notes=notes,
                 )
 
-        # 4. OPT-IN ambient host-state path (autodetect=True or CONSCIO_AUTODETECT).
-        #    These reads touch $HOME, so they are NEVER on the default path.
+        # 4. Known model (curated registry truth) — deterministic, no I/O.
+        #    Checked BEFORE autodetect so known models never touch host state.
+        if info is not None:
+            return info
+
+        # 5. Auto-detect ambient host-state path (default on).
+        #    Only reached for UNKNOWN models not in the registry.
+        #    Can be disabled with autodetect=False or CONSCIO_AUTODETECT=0.
         if autodetect or cls._env_truthy("CONSCIO_AUTODETECT"):
             # 4a. Config file (explicit user value).
             config_ctx = cls._read_config_context(model_name)
@@ -566,10 +573,6 @@ class ModelRegistry:
                     strengths=strengths,
                     notes=notes,
                 )
-
-        # 5. Known model (curated registry truth) — deterministic.
-        if info is not None:
-            return info
 
         # 6. Heuristic from name.
         ctx = cls._extract_context_from_name(model_name)

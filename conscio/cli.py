@@ -140,7 +140,7 @@ def _cmd_version() -> int:
 
 
 def _cmd_info(model: str, storage: str,
-              base_url: str | None = None, autodetect: bool = False) -> int:
+              base_url: str | None = None, autodetect: bool = True) -> int:
     from .engine import ConsciousnessEngine
     eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage),
                                base_url=base_url, autodetect=autodetect)
@@ -158,7 +158,7 @@ def _cmd_info(model: str, storage: str,
 
 def _cmd_reflect(world_state: str, model: str, confidence: float,
                  storage: str,
-                 base_url: str | None = None, autodetect: bool = False) -> int:
+                 base_url: str | None = None, autodetect: bool = True) -> int:
     from .engine import ConsciousnessEngine
     eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage),
                                base_url=base_url, autodetect=autodetect)
