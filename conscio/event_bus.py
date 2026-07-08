@@ -68,6 +68,7 @@ VALID_TYPES = {
  "proposal:audited",      # v2.0: MCP propose_* audited proposal (advisory)
  "host:event",            # v2.0: raw host event recorded via MCP note()
  "act:result",            # v2.0.1: host-executed action outcome (report_result)
+ "reflection_gate",       # v2.13: adaptive reflection gate decision
 }
 
 VALID_CATEGORIES = {"system", "trading", "consciousness", "external", "session"}

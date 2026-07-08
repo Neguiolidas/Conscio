@@ -32,6 +32,7 @@ from .voice_preset import resolve_voice_preset
 from .self_prompt import generate_self_prompts
 from .dreaming import DreamRecommendation
 from .semantic import SemanticEngine, ContradictionDetector
+from .reflection_gate import ReflectionGate, GateContext, MAX_ENTITIES_FOR_CONTRADICTION
 from .output_filter import build_pipeline_from_dict
 from .token_tracker import TokenTracker
 from .content_layer import ContentLayerManager
@@ -148,6 +149,8 @@ class ConsciousnessEngine:
         voice_preset: Optional[str] = None,
         base_url: Optional[str] = None,
         autodetect: bool = False,
+        adaptive_reflection: bool = False,
+        max_reflection_cycles: int = 3,
     ):
         self.storage = Path(storage_path) if storage_path else self.DEFAULT_STORAGE
         self.storage.mkdir(parents=True, exist_ok=True)
@@ -239,6 +242,14 @@ class ConsciousnessEngine:
         # size when unset (see context_manager.total_tokens_approx docstring).
         self.session_tokens_used: Optional[int] = None
 
+        # v2.13: Adaptive reflection gate (opt-in)
+        self.adaptive_reflection = adaptive_reflection
+        self.reflection_gate: Optional[ReflectionGate] = None
+        if adaptive_reflection:
+            self.reflection_gate = ReflectionGate(
+                max_cycles=max_reflection_cycles,
+            )
+
         # v1.7: structural cognition — optional, opt-in. No graph is loaded by
         # default, so injection/lookup/advisory stay inert until the host calls
         # load_structure(). Keeps cognition (reflect()) entirely untouched.
@@ -303,13 +314,90 @@ class ConsciousnessEngine:
     ) -> dict:
         """
         Run a complete reflection cycle.
-        
+
+        If adaptive_reflection is enabled, runs 1-N cycles based on the
+        ReflectionGate. Otherwise, runs exactly 1 cycle (legacy behavior).
+        """
+        if not self.adaptive_reflection or self.reflection_gate is None:
+            return self._reflect_once(
+                world_state, recent_events, confidence, anomalies,
+            )
+
+        # Adaptive mode: gate decides depth
+        result = self._reflect_once(
+            world_state, recent_events, confidence, anomalies,
+        )
+        cycle = 1
+        while cycle < self.reflection_gate.max_cycles:
+            ctx = self._build_gate_context(cycle)
+            decision = self.reflection_gate.decide(ctx)
+            self.event_bus.emit(
+                type="reflection_gate",
+                category="consciousness",
+                data={
+                    "cycle": cycle,
+                    "need_score": decision.need_score,
+                    "continue": decision.continue_reflection,
+                    "breakdown": decision.breakdown,
+                    "reason": decision.reason,
+                },
+            )
+            if not decision.continue_reflection:
+                break
+            result = self._reflect_once(
+                world_state, recent_events, confidence, anomalies,
+            )
+            cycle += 1
+        return result
+
+    def _build_gate_context(self, cycle: int) -> GateContext:
+        """Build GateContext from current engine state."""
+        confidence = self.meta.average_confidence()
+        coherence = self.last_coherence.score if self.last_coherence else 0.5
+        entities = self.world.list_entities(limit=MAX_ENTITIES_FOR_CONTRADICTION)
+        contradiction_count = self._count_contradictions(entities)
+        novelty_count = len(entities)
+        metabolic = getattr(self._state, "metabolic", "")
+        return GateContext(
+            confidence=confidence,
+            coherence=coherence,
+            contradiction_count=contradiction_count,
+            novelty_count=novelty_count,
+            metabolic=metabolic,
+            cycle=cycle,
+        )
+
+    def _count_contradictions(self, entities: list[dict]) -> int:
+        """Count contradicting entity pairs using ContradictionDetector."""
+        if len(entities) < 2:
+            return 0
+        count = 0
+        names = [e.get("name", "") for e in entities]
+        for i, a in enumerate(names):
+            for b in names[i + 1:]:
+                try:
+                    if self._contradiction_detector.states_contradict(a, b):
+                        count += 1
+                except Exception:
+                    pass
+        return count
+
+    def _reflect_once(
+        self,
+        world_state: str = "",
+        recent_events: Optional[list[str]] = None,
+        confidence: float = 0.5,
+        anomalies: Optional[list[str]] = None,
+    ) -> dict:
+        """
+        Run a single reflection cycle (original reflect() logic).
+
         1. PERCEIVE — read world state
         2. REFLECT — compare with predictions, assess confidence
         3. GENERATE — create/update goals based on drives
         4. PREDICT — update world model predictions
         5. SUMMARIZE — compress into state_summary
-        
+
         Returns the reflection result dict.
         """
         anomalies = anomalies or []
