@@ -103,6 +103,7 @@ def test_awake_persists_to_storage(tmp_path):
 
 def test_daemon_once_runs_a_cycle(tmp_path):
     assert main(["daemon", "--storage", str(tmp_path),
+                 "--model", "test-model",
                  "--sensors", "host", "--once"]) == 0
 
 
