@@ -186,5 +186,6 @@ def test_workspace_polled_each_cycle(tmp_path):
 
 def test_main_once_exit_zero(tmp_path):
     from conscio.daemon import main
-    rc = main(["--storage", str(tmp_path / "s"), "--sensors", "host", "--once"])
+    rc = main(["--storage", str(tmp_path / "s"), "--model", "test-model",
+               "--sensors", "host", "--once"])
     assert rc == 0
