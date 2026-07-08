@@ -1,10 +1,8 @@
-"""v1.4 'Attune' — model-context detection must be offline & deterministic by default.
+"""v2.14 model-context detection — auto-detect ON by default.
 
-These tests pin the invariant the v1.3-era code held and the auto-detect commits
-broke: building model info for a *known* model with no explicit override performs
-ZERO filesystem/network I/O and returns the curated registry value on every
-machine. All host-state reads (config file, LM Studio state, GGUF scan) are
-reachable only behind an explicit opt-in (`autodetect=True` / CONSCIO_AUTODETECT).
+Known models resolve from the registry (zero I/O). Unknown models
+auto-detect context from host state (config, LM Studio, GGUF) by default.
+Can be disabled with autodetect=False or CONSCIO_AUTODETECT=0.
 """
 
 import pytest
@@ -39,10 +37,10 @@ def test_known_model_default_is_offline_and_registry_truth(monkeypatch):
     assert info.context_window == 200_000          # curated registry, deterministic
 
 
-def test_unknown_model_default_is_offline_heuristic(monkeypatch):
-    """An unknown model, no override → name heuristic, no GGUF/host scan."""
+def test_unknown_model_offline_with_autodetect_false(monkeypatch):
+    """An unknown model, autodetect=False → name heuristic, no GGUF/host scan."""
     _arm_tripwires(monkeypatch)
-    info = m.ModelRegistry.detect("mystery-256k")
+    info = m.ModelRegistry.detect("mystery-256k", autodetect=False)
     assert info.context_window == 256_000          # parsed from the name, no I/O
 
 
@@ -58,5 +56,7 @@ def test_autodetect_opt_in_consults_host_state(monkeypatch):
     """With autodetect=True the host-state path IS consulted (config wins here)."""
     monkeypatch.setattr(m.ModelRegistry, "_read_config_context",
                         classmethod(lambda cls, n: 777_000))
-    info = m.ModelRegistry.detect("glm-5.1", autodetect=True)
+    # Use an UNKNOWN model so autodetect path is reached (known models
+    # resolve from registry before autodetect).
+    info = m.ModelRegistry.detect("mystery-unknown", autodetect=True)
     assert info.context_window == 777_000

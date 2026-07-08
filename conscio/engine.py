@@ -148,7 +148,7 @@ class ConsciousnessEngine:
         drive_strengths: Optional[dict[str, float]] = None,
         voice_preset: Optional[str] = None,
         base_url: Optional[str] = None,
-        autodetect: bool = False,
+        autodetect: bool = True,
         adaptive_reflection: bool = False,
         max_reflection_cycles: int = 3,
     ):

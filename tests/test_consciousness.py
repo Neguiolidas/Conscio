@@ -63,7 +63,7 @@ class TestModelRegistry:
     def test_lookup_alias(self):
         info = ModelRegistry.lookup("glm")
         assert info is not None
-        assert info.name == "glm-5.1"
+        assert info.name == "glm-5.2"
 
     def test_lookup_unknown(self):
         info = ModelRegistry.lookup("unknown-model-xyz")

@@ -239,10 +239,10 @@ class TestJsonConfig:
         assert ModelRegistry.detect("bar-2", autodetect=True).context_window == 333_000
 
     def test_config_ignored_without_autodetect(self, tmp_path, monkeypatch):
-        # Config exists but autodetect is off -> unknown model falls to heuristic.
+        # Config exists but autodetect is explicitly off -> unknown model falls to heuristic.
         self._write_config(tmp_path, monkeypatch,
                            {"models": {"baz-3": {"context_window": 999_000}}})
-        assert ModelRegistry.detect("baz-3").context_window == 128_000  # heuristic, not config
+        assert ModelRegistry.detect("baz-3", autodetect=False).context_window == 128_000  # heuristic, not config
 
     def test_config_enabled_via_env(self, tmp_path, monkeypatch):
         self._write_config(tmp_path, monkeypatch,
