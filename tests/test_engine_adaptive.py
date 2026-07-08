@@ -157,6 +157,20 @@ class TestSmokeQwenAdaptive:
     Set CONSCIO_SMOKE_TEST=1 to enable.
     """
 
+    def test_engine_init_with_qwen(self, tmp_path):
+        """Engine initializes with qwen3.5-0.8b and adaptive reflection."""
+        eng = ConsciousnessEngine(
+            model_name="qwen3.5-0.8b",
+            storage_path=tmp_path,
+            adaptive_reflection=True,
+            max_reflection_cycles=3,
+            base_url="http://localhost:1234/v1",
+        )
+        assert eng.adaptive_reflection is True
+        assert eng.reflection_gate is not None
+        assert eng.reflection_gate.max_cycles == 3
+        eng.close()
+
     def test_adaptive_off_one_cycle(self, tmp_path):
         """adaptive_reflection=False → exactly 1 reflect cycle (legacy)."""
         eng = ConsciousnessEngine(
@@ -168,4 +182,23 @@ class TestSmokeQwenAdaptive:
         eng.reflect(world_state="test question")
         gate_events = eng.event_bus.query(type="reflection_gate", limit=10)
         assert len(gate_events) == 0  # no gate events when off
+        eng.close()
+
+    def test_adaptive_on_emits_gate_events(self, tmp_path):
+        """adaptive_reflection=True → gate events emitted during reflect()."""
+        eng = ConsciousnessEngine(
+            model_name="qwen3.5-0.8b",
+            storage_path=tmp_path,
+            adaptive_reflection=True,
+            max_reflection_cycles=3,
+            base_url="http://localhost:1234/v1",
+        )
+        eng.reflect(world_state="test question")
+        gate_events = eng.event_bus.query(type="reflection_gate", limit=10)
+        assert len(gate_events) >= 1
+        # Verify event has decision data
+        event_data = gate_events[0].to_dict()["data"]
+        assert "need_score" in event_data
+        assert "continue" in event_data
+        assert "breakdown" in event_data
         eng.close()
