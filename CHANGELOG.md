@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.13.0] - 2026-07-07 — ReflectionGate (adaptive reflection depth)
+
+### Added
+- **ReflectionGate** — adaptive reflection depth gate inspired by PonderNet
+  (Think-Vetor). Decides how many cycles of `reflect()` to run (1 to
+  `max_cycles`) based on textual heuristics: confidence, coherence,
+  contradiction count, novelty count. Pure read-only — does not modify state.
+  Zero dependencies (stdlib only).
+  - 4 heuristics: ConfidenceHeuristic, CoherenceHeuristic,
+    ContradictionHeuristic, NoveltyHeuristic
+  - Weighted score → cycle budget at cycle 0, continue/stop at per-cycle
+  - Weights normalized at init, configurable via `config.json`
+  - Failure of any heuristic → 0.5 fallback, gate still returns valid decision
+- `ConsciousnessEngine.__init__()` — new `adaptive_reflection: bool = False`
+  and `max_reflection_cycles: int = 3` parameters
+- `reflect()` — when adaptive is on, runs 1-N cycles internally based on gate
+- EventBus emits `reflection_gate` event with decision breakdown
+- `event_bus.py` — `reflection_gate` added to `VALID_TYPES`
+
+### Changed
+- `reflect()` internals refactored: original body → `_reflect_once()`,
+  new `reflect()` wraps it in adaptive loop when enabled
+
+### Tests
+- 44 unit tests in `tests/test_reflection_gate.py`
+- 10 integration tests + 1 skipped in `tests/test_engine_adaptive.py`
+- 3 smoke tests with qwen3.5-0.8b via LM Studio (gated by `CONSCIO_SMOKE_TEST`)
+- Full suite: 2147 passed, 1 skipped, 0 failed
+
+---
+
 ## [2.12.0] - 2026-07-06 — Intercepter (TV-DSL integration)
 
 ### Added
