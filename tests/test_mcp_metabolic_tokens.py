@@ -30,7 +30,8 @@ def test_feed_session_tokens_sets_engine_usage(tmp_path):
                                     "session_tokens": 150_000})
         assert eng.session_tokens_used == 150_000
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_feed_session_tokens_drives_critical_tier(tmp_path):
@@ -40,7 +41,8 @@ def test_feed_session_tokens_drives_critical_tier(tmp_path):
                                     "session_tokens": 150_000})
         assert "critical" in eng._state.metabolic.lower()
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_feed_without_session_tokens_leaves_usage_none(tmp_path):
@@ -49,7 +51,8 @@ def test_feed_without_session_tokens_leaves_usage_none(tmp_path):
         b._tools()["conscio.feed"]({"event": _event("e3")})
         assert eng.session_tokens_used is None
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_feed_ignores_bad_session_tokens(tmp_path):
@@ -59,4 +62,5 @@ def test_feed_ignores_bad_session_tokens(tmp_path):
                                     "session_tokens": -5})
         assert eng.session_tokens_used is None
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
