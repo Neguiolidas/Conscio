@@ -124,6 +124,15 @@ BASE_TOOL_DEFS: list[dict] = [
      "inputSchema": {"type": "object",
                      "properties": {"key": {"type": "string"}},
                      "required": ["key"]}},
+    {"name": "conscio.cognitive_cycle",
+     "description": "Run one explicit cognitive pass (reflect -> synthesize -> "
+                    "propose/act -> learn -> self-improve) and return a report "
+                    "of each stage. The act stage runs only when the server has "
+                    "act enabled; otherwise propose-only. Pass session_tokens "
+                    "to drive the metabolic tier.",
+     "inputSchema": {"type": "object",
+                     "properties": {"world_state": {"type": "string"},
+                                    "session_tokens": {"type": "integer"}}}},
 ]
 
 RESOURCE_DEFS: list[dict] = [
