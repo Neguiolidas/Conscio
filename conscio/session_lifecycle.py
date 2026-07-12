@@ -769,7 +769,17 @@ def record_session_lifecycle(
     own_engine = engine is None
     if own_engine:
         from .engine import ConsciousnessEngine
-        engine = ConsciousnessEngine(model_name=summary.model or os.environ.get("CONSCIO_MODEL", ""))
+        from .models import resolve_model_name
+        from .adapter_config import load_config
+        # Recorded session model wins; then config.json 'model'; then env
+        # (same precedence as the daemon/MCP/CLI). Never crash a resume when
+        # no model is configured — degrade to an empty name.
+        try:
+            _model = resolve_model_name(cli_arg=summary.model or None,
+                                        config_model=load_config().get("model"))
+        except ValueError:
+            _model = ""
+        engine = ConsciousnessEngine(model_name=_model)
 
     heartbeat = ""
     handoff = ""
