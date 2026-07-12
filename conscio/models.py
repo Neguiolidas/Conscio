@@ -150,6 +150,24 @@ class ModelRegistry:
     MINIMAL_THRESHOLD = 128_000
     COMPACT_THRESHOLD = 256_000
 
+    # Model-family context defaults — ONE rule per family, never a per-version
+    # catalog (Option A: the framework attends to the context window, not to an
+    # exhaustive model list). Used only as a heuristic for UNKNOWN models whose
+    # family has a single, stable window (every Claude model is 200k).
+    _FAMILY_CONTEXT: dict[str, int] = {
+        "claude-": 200_000,
+    }
+
+    # Quant/format tokens appended to a model id that do NOT change its context
+    # window (fp8, GGUF quant tags, …). Stripped for lookup/heuristics only.
+    _QUANT_SUFFIX_RE = re.compile(
+        r'[-_:@.]?('
+        r'fp8|fp16|bf16|f16|f32|'
+        r'q[0-9]+(?:_[0-9a-z]+)*|iq[0-9]+(?:_[0-9a-z]+)*|'
+        r'int4|int8|awq|gptq|gguf|ggml|mlx|4bit|8bit'
+        r')$'
+    )
+
     # Config file path for persistent model context overrides (stdlib JSON).
     _CONFIG_PATHS = [
         Path.home() / ".config" / "conscio" / "config.json",
@@ -168,6 +186,13 @@ class ModelRegistry:
         silently no-op for lack of a third-party package. Reached only on the
         opt-in autodetect path (see ``detect``).
         """
+        # Match the exact requested name first, then the canonical form, so a
+        # config keyed ``glm-5.2`` still pins a model requested as
+        # ``z-ai/glm-5.2`` or ``glm-5.2-fp8``.
+        candidates = [model_name]
+        canon = cls._canonical_name(model_name)
+        if canon != model_name:
+            candidates.append(canon)
         for config_path in cls._CONFIG_PATHS:
             if not config_path.exists():
                 continue
@@ -181,17 +206,19 @@ class ModelRegistry:
             # Nested: {"models": {name: {"context_window": ctx}}}
             models = config.get("models")
             if isinstance(models, dict):
-                model_cfg = models.get(model_name)
-                if isinstance(model_cfg, dict):
-                    ctx = model_cfg.get("context_window")
-                    if isinstance(ctx, (int, float)) and ctx > 0:
-                        return int(ctx)
+                for key in candidates:
+                    model_cfg = models.get(key)
+                    if isinstance(model_cfg, dict):
+                        ctx = model_cfg.get("context_window")
+                        if isinstance(ctx, (int, float)) and ctx > 0:
+                            return int(ctx)
             # Flat: {"context_window": {name: ctx}}
             ctx_map = config.get("context_window")
             if isinstance(ctx_map, dict):
-                ctx = ctx_map.get(model_name)
-                if isinstance(ctx, (int, float)) and ctx > 0:
-                    return int(ctx)
+                for key in candidates:
+                    ctx = ctx_map.get(key)
+                    if isinstance(ctx, (int, float)) and ctx > 0:
+                        return int(ctx)
         return None
 
     @classmethod
@@ -380,6 +407,26 @@ class ModelRegistry:
         return re.sub(r'[^a-z0-9]', '', name.lower())
 
     @classmethod
+    def _canonical_name(cls, name: str) -> str:
+        """Strip a provider prefix and quant/format suffixes for lookup.
+
+        ``z-ai/glm-5.2`` -> ``glm-5.2``; ``glm-5.2-fp8`` -> ``glm-5.2``;
+        ``glm-5.2:q4_k_m`` -> ``glm-5.2``. The context window is a property of
+        the model, not of its vendor namespace or quantization, so these tokens
+        must not change resolution (Option A: context-first). Matching stays
+        EXACT after this strip — never substring — so ``glm-5.2`` can never
+        collapse to the shorter ``glm-5``.
+        """
+        n = name.strip().lower()
+        if "/" in n:
+            n = n.rsplit("/", 1)[-1]
+        prev = None
+        while prev != n and n:
+            prev = n
+            n = cls._QUANT_SUFFIX_RE.sub("", n).strip("-_:@. ")
+        return n
+
+    @classmethod
     def query_context_from_gguf(cls, model_name: str,
                                 search_dirs: Optional[list] = None) -> Optional[int]:
         """Search local directories for a GGUF model and read its context_length.
@@ -428,11 +475,17 @@ class ModelRegistry:
         if key in cls._aliases:
             return cls._known_models[cls._aliases[key]]
 
-        # No fuzzy/prefix match — removed.  Bidirectional containment
-        # caused "glm-5.2" → "glm-5" (200k) instead of correct 1M.
-        # Prefix matching still mis-resolves unknown variants (glm-5.3 →
-        # glm-5).  Unknown models fall through to the heuristic path
-        # (128k safe default) or endpoint probe (with autodetect).
+        # Canonical retry: strip a provider prefix (z-ai/glm-5.2) and quant
+        # suffixes (glm-5.2-fp8) and match EXACTLY on the result. Exact-only —
+        # no substring/containment — so "glm-5.2" can never collapse to the
+        # shorter "glm-5" (200k). Unknown variants still fall through to the
+        # heuristic (128k / family default) or the endpoint probe.
+        canon = cls._canonical_name(model_name)
+        if canon != key:
+            if canon in cls._known_models:
+                return cls._known_models[canon]
+            if canon in cls._aliases:
+                return cls._known_models[cls._aliases[canon]]
 
         return None
 
@@ -447,20 +500,22 @@ class ModelRegistry:
                autodetect: bool = True) -> ModelInfo:
         """Resolve ModelInfo — auto-detect context by default.
 
-        Resolution order:
+        Resolution order (Option A — an explicit context/override always wins,
+        the model name is only a fallback lookup key):
 
             1. explicit ``context_window`` argument     (programmatic override)
             2. env ``CONSCIO_CONTEXT_WINDOW``           (explicit, no I/O)
-            3. endpoint probe of ``base_url``, if given (explicit, targeted network)
-            4. config.json -> LM Studio state -> GGUF scan (on by default)
-            5. known-model registry                     (curated truth)
-            6. heuristic from the model name
-            7. 128k fallback
+            3. config.json ``models`` override          (explicit user pin)
+            4. endpoint probe of ``base_url``, if given (explicit, targeted network)
+            5. known-model registry                     (curated fallback)
+            6. LM Studio state -> GGUF scan             (ambient, on by default)
+            7. heuristic from the model name (family default, then 128k)
 
-        Ambient host-state reads (config file, LM Studio, GGUF) run by default
-        explicit opt-in. An explicit ``base_url`` enables only the probe of THAT
-        endpoint, never a ``$HOME`` scan. GGUF reports a model's architectural MAX,
-        so it is consulted last and labelled as such.
+        Steps 3 and 6 are ambient host-state reads gated by ``autodetect`` (on
+        by default). The config override (3) is placed BEFORE the registry so a
+        user pin wins even for a known model. An explicit ``base_url`` enables
+        only the probe of THAT endpoint, never a ``$HOME`` scan. GGUF reports a
+        model's architectural MAX, so it is consulted last and labelled as such.
         """
         info = cls.lookup(model_name)
 
@@ -501,7 +556,24 @@ class ModelRegistry:
             except ValueError:
                 pass
 
-        # 3. Explicit, targeted endpoint probe — only the URL the caller named.
+        # 3. Config-file override (explicit user pin) — wins over the registry
+        #    AND the endpoint probe, so "an override always wins" holds even for
+        #    a KNOWN model (Option A). Gated by autodetect because a file read is
+        #    I/O; autodetect=False stays pure and deterministic. Keys match the
+        #    exact name or its canonical form (see _read_config_context).
+        if autodetect or cls._env_truthy("CONSCIO_AUTODETECT"):
+            config_ctx = cls._read_config_context(model_name)
+            if config_ctx is not None:
+                mode = cls.detect_mode(config_ctx)
+                return ModelInfo(
+                    name=model_name,
+                    context_window=config_ctx,
+                    mode=mode,
+                    strengths=info.strengths if info else [],
+                    notes=f"Context window from config file: {config_ctx}.",
+                )
+
+        # 4. Explicit, targeted endpoint probe — only the URL the caller named.
         if base_url:
             endpoint_ctx = cls.query_context_from_endpoint(base_url, model_name)
             if endpoint_ctx is not None:
@@ -518,30 +590,16 @@ class ModelRegistry:
                     notes=notes,
                 )
 
-        # 4. Known model (curated registry truth) — deterministic, no I/O.
-        #    Checked BEFORE autodetect so known models never touch host state.
+        # 5. Known model (curated fallback) — reached only when no explicit
+        #    override/pin/endpoint supplied a window above.
         if info is not None:
             return info
 
-        # 5. Auto-detect ambient host-state path (default on).
+        # 6. Auto-detect ambient host-state path (default on).
         #    Only reached for UNKNOWN models not in the registry.
         #    Can be disabled with autodetect=False or CONSCIO_AUTODETECT=0.
         if autodetect or cls._env_truthy("CONSCIO_AUTODETECT"):
-            # 4a. Config file (explicit user value).
-            config_ctx = cls._read_config_context(model_name)
-            if config_ctx is not None:
-                mode = cls.detect_mode(config_ctx)
-                strengths = info.strengths if info else []
-                notes = f"Context window from config file: {config_ctx}."
-                return ModelInfo(
-                    name=model_name,
-                    context_window=config_ctx,
-                    mode=mode,
-                    strengths=strengths,
-                    notes=notes,
-                )
-
-            # 4b. LM Studio active state (the loaded context — preferred over MAX).
+            # LM Studio active state (the loaded context — preferred over MAX).
             lmstudio_ctx = cls.query_context_from_lmstudio(model_name)
             if lmstudio_ctx is not None:
                 mode = cls.detect_mode(lmstudio_ctx)
@@ -592,7 +650,7 @@ class ModelRegistry:
         like \"-70b\", \"-550b\" (billion params — not context, but useful
         as a heuristic signal for large models).
         """
-        low = name.lower()
+        low = cls._canonical_name(name)
         # Explicit context suffix: "128k", "1m", "256k"
         match = re.search(r'(\d+)([km])', low)
         if match:
@@ -602,6 +660,12 @@ class ModelRegistry:
                 return num * 1_000
             elif unit == 'm':
                 return num * 1_000_000
+
+        # Family default: an unknown model in a family with a single stable
+        # window (all Claude models are 200k). One rule, not a per-version list.
+        for prefix, window in cls._FAMILY_CONTEXT.items():
+            if low.startswith(prefix):
+                return window
 
         # Param-count suffix heuristic: "-70b", "-550b", "-0.8b"
         # Large param count → likely 128k+ context; small → 32k

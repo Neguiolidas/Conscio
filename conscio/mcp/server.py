@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -539,12 +538,27 @@ def _arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_model(args) -> str:
+    """Resolve the model name: --model > config.json 'model' > CONSCIO_MODEL.
+
+    Mirrors the daemon's precedence so a host that registers ``conscio-mcp``
+    with only ``--storage`` (e.g. the Claude Code bundle) still picks up the
+    ``model`` from ~/.config/conscio/config.json instead of failing to start.
+    Raises ``ValueError`` when none of the three channels supplies a model.
+    """
+    from conscio.adapter_config import load_config
+    from conscio.models import resolve_model_name
+    return resolve_model_name(cli_arg=args.model,
+                              config_model=load_config().get("model"))
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
     from conscio.installer.binding import validate_binding   # R6
     validate_binding(args.storage)
-    model_name = args.model or os.environ.get("CONSCIO_MODEL", "")
-    if not model_name:
+    try:
+        model_name = _resolve_model(args)
+    except ValueError:
         print("Error: no model specified. Set CONSCIO_MODEL, configure 'model' "
               "in config.json, or pass --model.", file=sys.stderr)
         return 1
