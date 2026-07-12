@@ -37,7 +37,8 @@ def test_structure_tools_registered(tmp_path):
         defs = {d["name"] for d in b.tool_defs()}
         assert {"conscio.structure", "conscio.structural_lookup"} <= defs
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_structure_reports_not_loaded_by_default(tmp_path):
@@ -45,7 +46,8 @@ def test_structure_reports_not_loaded_by_default(tmp_path):
     try:
         assert b._tools()["conscio.structure"]({}) == {"loaded": False}
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_structure_reports_loaded_signal(tmp_path):
@@ -57,7 +59,8 @@ def test_structure_reports_loaded_signal(tmp_path):
         assert rep["node_count"] > 0
         assert "digest" in rep and isinstance(rep["digest"], str)
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_structural_lookup_resolves_a_node(tmp_path):
@@ -70,7 +73,8 @@ def test_structural_lookup_resolves_a_node(tmp_path):
         res = b._tools()["conscio.structural_lookup"]({"key": cid})["result"]
         assert res is not None and res["kind"] == "community"
     finally:
-        seen.close(); eng.close()
+        seen.close()
+        eng.close()
 
 
 def test_startup_sync_loads_on_consent(tmp_path):
