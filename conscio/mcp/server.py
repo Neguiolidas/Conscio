@@ -134,6 +134,8 @@ class Bindings:
             "conscio.state": lambda a: self._state_payload(),
             "conscio.events": lambda a: self._events_payload(a),
             "conscio.handoff": lambda a: self._handoff_payload(),
+            "conscio.structure": self._structure,
+            "conscio.structural_lookup": self._structural_lookup,
         }
         if self._act_enabled():
             tools.update({
@@ -361,6 +363,33 @@ class Bindings:
             raise j.InvalidParams(f"missing '{key}'")
         return args[key]
 
+    def _structure(self, args: dict) -> dict:
+        """Report the currently loaded workspace structure (consent-gated).
+
+        Read-only: the graph is synced at server startup (see
+        _sync_structure_at_startup). Returns loaded=False when none is loaded.
+        """
+        sig = self.engine.structural_signal()
+        if sig is None:
+            return {"loaded": False}
+        from conscio.structural import render_structural, structural_budget
+        budget = structural_budget(self.engine.model_info.context_window)
+        return {
+            "loaded": True,
+            "node_count": sig.node_count,
+            "link_count": sig.link_count,
+            "hyperedges": len(sig.hyperedges),
+            "communities": len(sig.communities),
+            "built_at_commit": sig.built_at_commit,
+            "content_hash": sig.content_hash,
+            "digest": render_structural(sig, budget),
+        }
+
+    def _structural_lookup(self, args: dict) -> dict:
+        """Resolve a structural node / hyperedge / community id to detail."""
+        key = self._require(args, "key")
+        return {"result": self.engine.structural_lookup(str(key))}
+
     def _feed(self, args: dict) -> dict:
         event = self._require(args, "event")
         errors = validate_event(event)
@@ -558,6 +587,23 @@ def _resolve_model(args) -> str:
                               config_model=load_config().get("model"))
 
 
+def _sync_structure_at_startup(engine, workspace) -> str:
+    """Bring the engine's structure in line with consent for ``workspace``.
+
+    The daemon does this each cycle; the MCP server (Claude Code) serves one
+    workspace per process, so it syncs once at startup. Consent-gated and
+    non-fatal — a missing/OFF consent or a bad graph never blocks startup.
+    Returns sync_structure's status verb, or ``skip:<err>``.
+    """
+    from conscio.structural_consent import (
+        StructuralConsent, consent_path, sync_structure)
+    try:
+        consent = StructuralConsent(consent_path(engine.storage))
+        return sync_structure(engine, workspace, consent)
+    except Exception as exc:                       # never block startup
+        return f"skip:{exc}"
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
     from conscio.installer.binding import validate_binding   # R6
@@ -584,6 +630,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.awake:
         engine.wake()                              # reuse the existing R9 toggle
     workspace = WorkspaceContext().current()
+    structure_status = _sync_structure_at_startup(engine, workspace)
     seen = SeenStore(Path(engine.storage) / "mcp_seen.db")
     seen.prune(args.seen_max_rows, args.seen_max_age_days)
     self_instance_id = ""
@@ -616,7 +663,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.auto_review:
         mode += "+auto-review"
     print(f"conscio-mcp {__version__} ready "
-          f"(workspace={workspace.id}, mode={mode})", file=sys.stderr)
+          f"(workspace={workspace.id}, mode={mode}, "
+          f"structure={structure_status})", file=sys.stderr)
     try:
         serve(bindings, sys.stdin, sys.stdout, max_bytes=args.max_frame_bytes)
     finally:

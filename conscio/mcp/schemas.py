@@ -112,6 +112,18 @@ BASE_TOOL_DEFS: list[dict] = [
     {"name": "conscio.handoff",
      "description": "Latest session handoff (pure read, markdown).",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "conscio.structure",
+     "description": "Report the workspace structural graph loaded into "
+                    "awareness (consent-gated; data, never code). Returns the "
+                    "distilled digest + counts, or loaded=false when none is "
+                    "consented/loaded.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "conscio.structural_lookup",
+     "description": "Resolve a structural node / hyperedge / community id from "
+                    "the loaded graph to its detail; null on miss.",
+     "inputSchema": {"type": "object",
+                     "properties": {"key": {"type": "string"}},
+                     "required": ["key"]}},
 ]
 
 RESOURCE_DEFS: list[dict] = [
