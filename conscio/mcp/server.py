@@ -136,6 +136,7 @@ class Bindings:
             "conscio.handoff": lambda a: self._handoff_payload(),
             "conscio.structure": self._structure,
             "conscio.structural_lookup": self._structural_lookup,
+            "conscio.cognitive_cycle": self._cognitive_cycle,
         }
         if self._act_enabled():
             tools.update({
@@ -389,6 +390,20 @@ class Bindings:
         """Resolve a structural node / hyperedge / community id to detail."""
         key = self._require(args, "key")
         return {"result": self.engine.structural_lookup(str(key))}
+
+    def _cognitive_cycle(self, args: dict) -> dict:
+        """Run one explicit cognitive pass and return a per-stage report.
+
+        The act stage runs only when act is enabled on this server; otherwise
+        it is propose-only (reflect/synthesize/self-improve). Accepts
+        session_tokens so the loop also feeds the metabolic tier.
+        """
+        st = args.get("session_tokens")
+        if isinstance(st, int) and not isinstance(st, bool) and st >= 0:
+            self.engine.session_tokens_used = st
+        return self.engine.cognitive_cycle(
+            world_state=args.get("world_state", "") or "",
+            act=self._act_enabled())
 
     def _feed(self, args: dict) -> dict:
         event = self._require(args, "event")

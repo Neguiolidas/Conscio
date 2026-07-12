@@ -1438,6 +1438,86 @@ class ConsciousnessEngine:
         loop = AutonomyLoop(self, self._act_pipeline, self._act_meter)
         return loop.run(budget or ActBudget(), world_state=world_state)
 
+    # --- v2.14: the cognitive cycle (an explicit, useful reflect loop) ---
+
+    def _synthesize(self) -> dict:
+        """Offline consolidation of the just-run reflection into a focus insight.
+
+        Pure heuristic (no LLM): reads the coherence snapshot, average
+        confidence, and the top active goals the reflection produced, and
+        distills a one-line insight the host can act on. Advisory — reads
+        state, never mutates it.
+        """
+        coh = self.last_coherence
+        score = coh.score if coh else None
+        tension = coh.dominant.dimension if (coh and coh.dominant) else None
+        try:
+            confidence = self.meta.average_confidence()
+        except Exception:
+            confidence = 0.5
+        focus = [g.description for g in self.goals.active_goals()][:3]
+        parts = []
+        if score is not None:
+            parts.append(f"coherence {score:.2f}")
+        parts.append(f"confidence {confidence:.2f}")
+        if tension:
+            parts.append(f"tension:{tension}")
+        parts.append(f"focus:{focus[0]}" if focus else "focus:none")
+        return {"coherence": score, "tension": tension,
+                "confidence": confidence, "focus_goals": focus,
+                "insight": "; ".join(parts)}
+
+    def cognitive_cycle(self, world_state: str = "",
+                        recent_events: Optional[list[str]] = None,
+                        confidence: float = 0.5,
+                        anomalies: Optional[list[str]] = None,
+                        *, act: bool = True) -> dict:
+        """One explicit, useful cognitive pass — the reflect loop, surfaced.
+
+        Runs and reports the stages the agent actually goes through:
+
+          1. Reflect      — reflect() (perceive/coherence/goals/self-improve;
+                            all offline-heuristic)
+          2. Synthesize   — consolidate into a focus insight (offline)
+          3. Propose+Act  — act(): an audited proposal, fully gated. Skipped
+                            when no adapter is attached or act=False. NOT
+                            awake-gated — the host drives this loop, and act()
+                            cannot run anything the ActPipeline would refuse.
+          4. Learn        — the act stage's outcome (skills settle inside act())
+          5. Self-improve — auto-evolution proposals from observed error
+                            patterns (human-gated; dedup makes it idempotent)
+
+        Returns a JSON-serializable report. Advisory + safe by construction.
+        """
+        reflection = self.reflect(world_state=world_state,
+                                  recent_events=recent_events,
+                                  confidence=confidence, anomalies=anomalies)
+        synthesis = self._synthesize()
+
+        action = None
+        learning: dict = {"from_action": None}
+        if act and getattr(self, "_act_pipeline", None) is not None:
+            report = self.act()
+            status = getattr(getattr(report, "status", None), "value", None)
+            action = {"status": status,
+                      "reason": getattr(report, "reason", None),
+                      "ledger_id": getattr(report, "ledger_id", None),
+                      "lockdown": getattr(report, "lockdown", False)}
+            learning = {"from_action": status}   # skills.settle ran inside act()
+
+        try:
+            new_props = self.evolution.observe_errors(self.meta)
+        except Exception:
+            new_props = []
+        self_improvement = {
+            "new_proposals": [getattr(p, "description", str(p)) for p in new_props],
+            "pending": len(self.evolution.pending_proposals()),
+        }
+
+        return {"reflection": reflection, "synthesis": synthesis,
+                "action": action, "learning": learning,
+                "self_improvement": self_improvement}
+
 
 # --- CLI Entry Point ---
 
