@@ -21,7 +21,11 @@ from pathlib import Path
 
 from . import __version__
 
-DEFAULT_MODEL = os.environ.get("CONSCIO_MODEL", "")
+# Empty sentinel: the effective model is resolved AFTER parsing in main()
+# (config.json 'model' > CONSCIO_MODEL), so a bare `conscio info` picks up the
+# configured model instead of falling through to the 128k heuristic. An
+# explicit CLI model still wins.
+DEFAULT_MODEL = ""
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -370,6 +374,17 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    # Resolve the model when a subcommand didn't get one explicitly: config.json
+    # 'model' then CONSCIO_MODEL (matches the daemon/MCP precedence). Left empty
+    # if nothing is configured — the subcommand degrades gracefully (info warns).
+    if getattr(args, "model", None) == "":
+        from .adapter_config import load_config
+        from .models import resolve_model_name
+        try:
+            args.model = resolve_model_name(config_model=load_config().get("model"))
+        except ValueError:
+            args.model = ""
 
     if args.command == "version":
         return _cmd_version()
