@@ -370,6 +370,12 @@ class Bindings:
         prior = self.seen.seen(eid)
         if prior is not None:
             return json.loads(prior)
+        # Host-reported live context usage feeds the metabolic tier. Reject
+        # bad values (bools are ints; negatives) so a malformed field can't
+        # poison the tier. Absent -> engine keeps its prior/None (healthy).
+        st = args.get("session_tokens")
+        if isinstance(st, int) and not isinstance(st, bool) and st >= 0:
+            self.engine.session_tokens_used = st
         world_state = event_to_frame(event).to_world_state()
         self.engine.perceive(world_state)
         self.engine.reflect(world_state)

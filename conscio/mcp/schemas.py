@@ -53,11 +53,24 @@ def derive_event_id(event: dict) -> str:
 _EVENT_INPUT = {"type": "object", "properties": {"event": {"type": "object"}},
                 "required": ["event"]}
 
+# feed also accepts the host's live context usage so the metabolic tier
+# (ACTIVE/FATIGUE/CRITICAL) reflects reality — Conscio cannot measure the
+# host's session length on its own.
+_FEED_INPUT = {"type": "object",
+               "properties": {
+                   "event": {"type": "object"},
+                   "session_tokens": {
+                       "type": "integer",
+                       "description": "Host's live context tokens used so far; "
+                                      "drives the metabolic tier. Optional."}},
+               "required": ["event"]}
+
 BASE_TOOL_DEFS: list[dict] = [
     {"name": "conscio.feed",
      "description": "Ingest a perception Event; runs perceive+reflect; returns "
-                    "the updated advisory. Idempotent on event.id.",
-     "inputSchema": _EVENT_INPUT},
+                    "the updated advisory. Idempotent on event.id. Pass "
+                    "session_tokens to drive the metabolic tier.",
+     "inputSchema": _FEED_INPUT},
     {"name": "conscio.note",
      "description": "Record a raw Event to the event log (no reflect). "
                     "Idempotent on event.id.",
