@@ -210,7 +210,7 @@ class TestStoreDimSafety:
 
     def test_upsert_drops_wrong_dim_vector(self, tmp_path):
         store = SessionVectorStore(tmp_path / "r.db", dim=8)
-        store.upsert_chunk(self._chunk("bad", [0.1, 0.2, 0.3, 0.4]))  # 4 != 8
+        store.upsert_batch([self._chunk("bad", [0.1, 0.2, 0.3, 0.4])])  # 4 != 8
         # Chunk text kept, vector dropped (NULL) -> not searchable, never crashes.
         assert store.get_stats()["total_chunks"] == 1
         assert store.search([0.0] * 7 + [1.0], limit=5, min_score=-1.0) == []
@@ -218,7 +218,7 @@ class TestStoreDimSafety:
     def test_search_survives_mixed_dim_blobs(self, tmp_path):
         store = SessionVectorStore(tmp_path / "r.db", dim=8)
         good = np.ones(8, dtype=np.float32).tolist()
-        store.upsert_chunk(self._chunk("good", good))
+        store.upsert_batch([self._chunk("good", good)])
         # Inject a rogue 4-dim blob directly (simulating a pre-fix corrupted store).
         conn = sqlite3.connect(str(store.db_path))
         conn.execute(
@@ -235,7 +235,7 @@ class TestStoreDimSafety:
     def test_reindex_on_model_change(self, tmp_path):
         db = tmp_path / "r.db"
         s1 = SessionVectorStore(db, dim=8, embed_model="model-A")
-        s1.upsert_chunk(self._chunk("c", np.ones(8, dtype=np.float32).tolist()))
+        s1.upsert_batch([self._chunk("c", np.ones(8, dtype=np.float32).tolist())])
         assert s1.reindex_required is False
         # Reopen with a different model -> stale -> embeddings cleared for re-index.
         s2 = SessionVectorStore(db, dim=8, embed_model="model-B")

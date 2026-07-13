@@ -400,28 +400,6 @@ class SessionVectorStore:
             return None
         return np.array(embedding, dtype=np.float32).tobytes()
 
-    def upsert_chunk(self, chunk: Chunk):
-        """Insert or update a chunk with its embedding."""
-        emb_blob = self._emb_blob(chunk.embedding)
-        conn = sqlite3.connect(str(self.db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("""
-            INSERT OR REPLACE INTO chunks (id, session_id, role, content,
-                                           embedding, msg_id, chunk_idx, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            chunk.id,
-            chunk.session_id,
-            chunk.role,
-            chunk.content,
-            emb_blob,
-            chunk.metadata.get("msg_id", 0),
-            chunk.metadata.get("chunk_idx", 0),
-            datetime.now(timezone.utc).isoformat(),
-        ))
-        conn.commit()
-        conn.close()
-
     def upsert_batch(self, chunks: list[Chunk]):
         """Batch insert chunks."""
         conn = sqlite3.connect(str(self.db_path))
@@ -694,24 +672,6 @@ class SessionRAG:
             role_filter=role_filter,
             min_score=min_score,
         )
-
-    def search_and_format(self, query: str, limit: int = 5) -> str:
-        """Search and return formatted results for injection into context."""
-        results = self.search(query, limit=limit)
-        if not results:
-            return f"No RAG results for: {query}"
-
-        lines = [f"## RAG Search: \"{query}\"", ""]
-        for i, r in enumerate(results, 1):
-            session_short = r.session_id[:20] + "..."
-            lines.append(
-                f"**{i}.** [{r.role}] (score={r.score:.2f}, "
-                f"session={session_short})"
-            )
-            lines.append(f"   {r.content[:200]}")
-            lines.append("")
-
-        return "\n".join(lines)
 
     def get_stats(self) -> dict:
         """Get RAG store statistics."""
