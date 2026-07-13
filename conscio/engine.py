@@ -21,6 +21,7 @@ from .timeutil import naive_utcnow, naive_utc_from_epoch
 from .context_manager import ContextManager
 from .inner_monologue import InnerMonologue
 from .world_model import WorldModel
+from .world_extract import extract_entities
 from .meta_cognition import MetaCognition
 from .goal_generator import GoalGenerator, Drive
 from .auto_evolution import AutoEvolution
@@ -861,13 +862,21 @@ class ConsciousnessEngine:
     def perceive(self, world_state: str, entities: Optional[dict] = None) -> None:
         """
         Update the world model with perceived state.
-        
+
         Delegates to ContentLayerManager which manages the WorldModel.
-        
+
+        When `entities` is None (the production path — the MCP server passes
+        only `world_state`), they are derived deterministically from the
+        world_state string via `extract_entities`. An explicit dict — including
+        an explicit empty `{}` — always wins over extraction, so callers can
+        suppress it or supply richer entities of their own.
+
         Args:
             world_state: Text description of current world state
             entities: Dict of {entity_name: {type, state, attributes}} to update
         """
+        if entities is None:
+            entities = extract_entities(world_state)
         self.content_layer.perceive(world_state, entities)
 
     # --- Evolution Interactions ---
