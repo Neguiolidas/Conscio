@@ -551,6 +551,30 @@ class ConsciousnessEngine:
                 priority=8,
             )
 
+        # --- #148: close the confidence loop ---
+        # Resolve the previous pending "general" record against realized
+        # prediction evidence (add_entity re-perception is the sole producer;
+        # error_rate was computed above from the same window). No evidence →
+        # stays pending; a resolved failure records a self-critique.
+        pred_errors, pred_total = self.world.recent_prediction_outcomes(
+            window_hours=24
+        )
+        if pred_total:
+            outcome = "success" if error_rate <= 0.5 else "failure"
+            resolved = self.meta.update_outcome("general", outcome)
+            if resolved and outcome == "failure":
+                self.meta.add_critique(
+                    task="prediction",
+                    what_i_did=(
+                        f"held beliefs that produced {pred_errors}/{pred_total}"
+                        " failed re-perception predictions in the last 24h"
+                    ),
+                    what_i_should_do=(
+                        "re-perceive volatile entities before predicting; "
+                        "lower persistence confidence for flappy states"
+                    ),
+                )
+
         # Record confidence in meta-cognition
         self.meta.record_confidence("general", confidence)
 

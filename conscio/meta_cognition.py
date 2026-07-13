@@ -80,14 +80,20 @@ class MetaCognition:
         self._detect_blind_spots()
         self._save()
 
-    def update_outcome(self, task_type: str, outcome: str) -> None:
-        """Update the outcome of the most recent confidence record for a task type."""
+    def update_outcome(self, task_type: str, outcome: str) -> bool:
+        """Resolve the most recent pending confidence record for a task type.
+
+        Returns True when a pending record was actually resolved — #148:
+        reflect() gates failure critiques on real resolution, so evidence-free
+        cycles never fabricate calibration data or critiques.
+        """
         for entry in reversed(self._data["confidence_history"]):
             if entry["task_type"] == task_type and entry["outcome"] == "pending":
                 entry["outcome"] = outcome
-                break
-        self._detect_blind_spots()
-        self._save()
+                self._detect_blind_spots()
+                self._save()
+                return True
+        return False
 
     def average_confidence(self, task_type: str = "") -> float:
         """Get average confidence, optionally filtered by task type."""
@@ -153,6 +159,12 @@ class MetaCognition:
         manual_blind_spots = [b for b in self._data.get("blind_spots", [])
                               if b not in auto_detected]
         self._data["blind_spots"] = blind_spots + manual_blind_spots
+
+    def blind_spots(self) -> list[str]:
+        """Blind spots as a shallow-copied list (public read — replaces the
+        private meta._data scans in self_prompt/engine, same v0.6-debt kill
+        as WorldModel.list_relations)."""
+        return list(self._data.get("blind_spots", []))
 
     # --- Error Patterns ---
 

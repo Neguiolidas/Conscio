@@ -22,6 +22,7 @@ _SIGNAL_DRIVE = {
     "temporal":    "maintenance",  # mode flapping → stabilize
     "blind_spot":  "evolution",
     "stale":       "maintenance",
+    "critique":    "evolution",    # #148: unacted self-critiques → self-improve
 }
 
 # Question templates per coherence dimension.
@@ -34,11 +35,12 @@ _QUESTION = {
 
 _BLIND_SPOT_SEVERITY = 0.5
 _STALE_SEVERITY = 0.5
+_CRITIQUE_SEVERITY = 0.6  # a recorded correction outranks generic maintenance
 
 # Deterministic tiebreak when severities are equal (lower = earlier).
 _SIGNAL_ORDER = {
     "ontological": 0, "reality": 1, "epistemic": 2, "temporal": 3,
-    "blind_spot": 4, "stale": 5,
+    "critique": 4, "blind_spot": 5, "stale": 6,
 }
 
 
@@ -105,6 +107,24 @@ def generate_self_prompts(meta, world, coherence_report, recent_events=None) -> 
             target=str(name),
             source_signal="stale",
             severity=_STALE_SEVERITY,
+        ))
+
+    # 4. Recent self-critiques (#148) — recorded corrections become questions.
+    #    getattr guard keeps signature-compatibility with minimal meta fakes.
+    try:
+        critiques = getattr(meta, "recent_critiques", lambda n=2: [])(2) or []
+    except Exception:
+        critiques = []
+    for c in critiques:
+        fix = str(c.get("what_i_should_do", "")).strip()
+        if not fix:
+            continue
+        prompts.append(SelfPrompt(
+            question=f"critique pending: {fix} — have I acted on it?",
+            drive=_SIGNAL_DRIVE["critique"],
+            target=str(c.get("task", "unknown")),
+            source_signal="critique",
+            severity=_CRITIQUE_SEVERITY,
         ))
 
     prompts.sort(key=lambda p: (-p.severity, _SIGNAL_ORDER.get(p.source_signal, 99)))

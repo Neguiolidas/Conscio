@@ -623,21 +623,28 @@ class WorldModel:
         self._save()
         return surprise
 
-    def recent_prediction_error_rate(self, window_hours: int = 24) -> float:
-        """Fraction of recorded predictions in the window that were wrong (0.0 if none)."""
-        log = self._data.get("prediction_log", [])
-        if not log:
-            return 0.0
+    def recent_prediction_outcomes(self, window_hours: int = 24) -> tuple[int, int]:
+        """(errors, total) recorded prediction outcomes inside the window.
+
+        #148: disambiguates "no evidence" (total == 0) from "perfect record" —
+        recent_prediction_error_rate() returns 0.0 for both, so the confidence
+        loop uses this to decide whether a pending record may be resolved.
+        """
         cutoff = datetime.now() - timedelta(hours=window_hours)
         errors = 0
         total = 0
-        for e in log:
+        for e in self._data.get("prediction_log", []):
             try:
                 if datetime.fromisoformat(e["ts"]) >= cutoff:
                     total += 1
                     errors += int(e.get("error", 0))
             except (ValueError, TypeError, KeyError):
                 continue
+        return errors, total
+
+    def recent_prediction_error_rate(self, window_hours: int = 24) -> float:
+        """Fraction of recorded predictions in the window that were wrong (0.0 if none)."""
+        errors, total = self.recent_prediction_outcomes(window_hours)
         return errors / total if total else 0.0
 
     def to_dict(self) -> dict:
