@@ -188,13 +188,16 @@ class ContentLayerManager:
         ordered = sorted(scores, key=lambda kk: -scores[kk])
         return [display[kk] for kk in ordered[:k]]
     
-    def perceive(self, world_state: str, entities: Optional[dict] = None) -> None:
+    def perceive(self, world_state: str, entities: Optional[dict] = None,
+                 relations: Optional[list] = None) -> None:
         """
         Update the world model with perceived state.
-        
+
         Args:
             world_state: Text description of current world state
             entities: Dict of {entity_name: {type, state, attributes}} to update
+            relations: List of (from_entity, relation, to_entity) triples to
+                record (WorldModel.add_relation deduplicates)
         """
         if entities:
             for name, info in entities.items():
@@ -204,6 +207,9 @@ class ContentLayerManager:
                     attributes=info.get("attributes"),
                     state=info.get("state", ""),
                 )
+        if relations:
+            for from_entity, relation, to_entity in relations:
+                self.world_model.add_relation(from_entity, relation, to_entity)
     
     def close(self) -> None:
         """Close SessionRAG resources (HTTP connections, etc.)."""

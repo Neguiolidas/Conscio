@@ -59,3 +59,37 @@ def test_reperception_updates_state_in_place(engine):
     wm = _wm(engine)
     assert wm.get_entity("status")["state"] == "degraded"
     assert len(wm.list_entities(limit=100)) == 1
+
+
+# --- relation wiring: perceive() populates the relation set in prod ---
+# query()/subgraph() traverse relations; without this wiring the set is
+# permanently empty because nothing in production calls add_relation().
+
+def test_perceive_records_relations_when_none_given(engine):
+    engine.perceive("[host:cpu]\nload=0.85\nstatus: hot")
+    wm = _wm(engine)
+    rels = wm.get_relations("host:cpu")
+    assert {"from": "host:cpu", "relation": "reports", "to": "load"} in rels
+    assert {"from": "host:cpu", "relation": "reports", "to": "status"} in rels
+
+
+def test_explicit_relations_win_over_extraction(engine):
+    engine.perceive("[host]\nstatus: ok",
+                    relations=[("BTC", "correlates_with", "ETH")])
+    wm = _wm(engine)
+    assert wm.get_relations("BTC") == [
+        {"from": "BTC", "relation": "correlates_with", "to": "ETH"}]
+    # Explicit list replaces extraction entirely — no merge.
+    assert wm.get_relations("host") == []
+
+
+def test_explicit_empty_relations_suppress_extraction(engine):
+    engine.perceive("[host]\nstatus: ok", relations=[])
+    assert _wm(engine).get_relations("host") == []
+
+
+def test_reperception_does_not_duplicate_relations(engine):
+    engine.perceive("[host]\nstatus: ok")
+    engine.perceive("[host]\nstatus: degraded")
+    assert _wm(engine).get_relations("host") == [
+        {"from": "host", "relation": "reports", "to": "status"}]
