@@ -27,6 +27,9 @@ W_REL = 0.3
 PREDICTION_LOG_RETENTION_HOURS = 168   # 7 days
 PREDICTION_LOG_MAX = 500               # hard cap backstop
 
+# If-then prediction store (v0.9 wiring): bounded, entity-linked, auto-validated.
+PREDICTIONS_MAX = 200
+
 # Relevance decay (v0.4): exponential memory decay per hour since last update.
 RELEVANCE_DECAY_LAMBDA = 0.05          # lambda in exp(-lambda*hours) — half-life ~14h
 
@@ -197,14 +200,25 @@ class WorldModel:
 
     # --- Predictions ---
 
-    def add_prediction(self, condition: str, outcome: str, confidence: float) -> None:
-        """Add a prediction about the world."""
-        self._data["predictions"].append({
+    def add_prediction(self, condition: str, outcome: str, confidence: float,
+                       entity: str = "") -> None:
+        """Add a forward if-then prediction about the world.
+
+        `entity` (v0.9 wiring) links the prediction to a world-model entity so
+        perceive() can auto-validate it; "" keeps the legacy free-text shape.
+        The store is capped at PREDICTIONS_MAX (oldest dropped first) so the
+        production producer can't grow the world file without bound.
+        """
+        p = {
             "if": condition,
             "then": outcome,
             "confidence": confidence,
             "created": datetime.now().isoformat(),
-        })
+        }
+        if entity:
+            p["entity"] = entity
+        self._data["predictions"].append(p)
+        self._data["predictions"] = self._data["predictions"][-PREDICTIONS_MAX:]
         self._save()
 
     def get_predictions(self, keyword: str = "") -> list[dict]:
@@ -222,6 +236,71 @@ class WorldModel:
             self._data["predictions"][index]["validated"] = was_correct
             self._data["predictions"][index]["validated_at"] = datetime.now().isoformat()
             self._save()
+
+    def validate_predictions_against(self, entities: dict) -> int:
+        """Validate pending if-then predictions against freshly perceived entities.
+
+        v0.9 wiring: called by content_layer.perceive(). For each pending
+        (never-validated) prediction linked to an entity in `entities`, compare
+        its expected outcome with the newly observed state (case-insensitive).
+        Blank observed states are no evidence and leave the prediction pending;
+        legacy predictions without an entity link are never auto-validated.
+
+        Deliberately does NOT feed _log_prediction_outcome: add_entity()
+        re-perception is the sole reality-signal producer, and double-logging
+        the same state transition would skew recent_prediction_error_rate().
+
+        Returns the number of predictions validated.
+        """
+        if not entities:
+            return 0
+        validated = 0
+        for i, p in enumerate(self._data["predictions"]):
+            if "validated" in p:
+                continue
+            ent = p.get("entity", "")
+            if not ent or ent not in entities:
+                continue
+            observed = str((entities[ent] or {}).get("state", "") or "")
+            if not observed:
+                continue
+            self.validate_prediction(
+                i, observed.strip().lower() == p["then"].strip().lower()
+            )
+            validated += 1
+        return validated
+
+    def generate_persistence_predictions(self, hours: int = 24, limit: int = 10) -> int:
+        """PREDICT-stage producer: forward persistence predictions (v0.9 wiring).
+
+        Called by engine reflect() (docstring step 4, previously unimplemented).
+        For each recently-changed entity with a non-blank state, predict that
+        the state persists: "if <name> is observed again, then <state>".
+        Deterministic, no LLM — the only relation to ground truth is the next
+        perceive(), which settles it via validate_predictions_against().
+
+        Confidence = 1 - recent prediction error rate, clamped to [0.1, 0.9].
+        Pending duplicates (same entity + outcome) are skipped so reflect()
+        can run every cycle without spamming the store.
+
+        Returns the number of predictions added.
+        """
+        confidence = max(0.1, min(0.9, 1.0 - self.recent_prediction_error_rate(24)))
+        pending = {
+            (p.get("entity", ""), p["then"])
+            for p in self._data["predictions"] if "validated" not in p
+        }
+        added = 0
+        for name in sorted(self.recently_changed(hours)):
+            state = self._data["entities"].get(name, {}).get("state", "")
+            if not state or (name, state) in pending:
+                continue
+            self.add_prediction(f"{name} is observed again", state,
+                                confidence, entity=name)
+            added += 1
+            if added >= limit:
+                break
+        return added
 
     # --- Queries ---
 
@@ -253,10 +332,19 @@ class WorldModel:
                 keyword in r["to"].lower()):
                 relevant_relations.append(r)
 
+        # Find matching predictions (the docstring has always promised these;
+        # v0.9 finally delivers them).
+        relevant_predictions = [
+            p for p in self._data["predictions"]
+            if (keyword in p["if"].lower() or
+                keyword in p["then"].lower() or
+                keyword in p.get("entity", "").lower())
+        ]
+
         if relevant_entities:
             self._save()
 
-        if not relevant_entities and not relevant_relations:
+        if not relevant_entities and not relevant_relations and not relevant_predictions:
             return "No relevant information found."
 
         # Build compact response
@@ -266,6 +354,12 @@ class WorldModel:
 
         for r in relevant_relations:
             parts.append(f"{r['from']} \u2192 {r['relation']} \u2192 {r['to']}")
+
+        for p in relevant_predictions:
+            status = ("pending" if "validated" not in p
+                      else "correct" if p["validated"] else "wrong")
+            parts.append(f"[prediction] if {p['if']} then {p['then']} "
+                         f"({status}, conf {p['confidence']:.2f})")
 
         return "; ".join(parts)
 

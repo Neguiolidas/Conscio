@@ -457,6 +457,12 @@ class ConsciousnessEngine:
                 "prune_stale", f"{len(stale)} stale entities: {', '.join(stale[:3])}"
             )
 
+        # 4. PREDICT — forward if-then persistence predictions for recently
+        # changed entities (v0.9 wiring: the docstring promised this stage but
+        # nothing implemented it). The next perceive() settles them via
+        # validate_predictions_against().
+        self.world.generate_persistence_predictions()
+
         # Feed meta-cognition insights into goals BEFORE reflection
         self.feed_meta_to_goals(self.meta, self.goals)
 
