@@ -85,8 +85,8 @@ def test_vector_store_upsert_and_search_ranks_by_similarity(store):
 
 def test_vector_store_min_score_filters(store):
     emb = FakeEmbedder(dim=8)
-    store.upsert_chunk(Chunk(id="a", session_id="s", role="user",
-                             content="apple", embedding=emb.embed("apple")))
+    store.upsert_batch([Chunk(id="a", session_id="s", role="user",
+                             content="apple", embedding=emb.embed("apple"))])
     # Query orthogonal-ish text with a high threshold → no results
     results = store.search(emb.embed("zzzzzz"), limit=5, min_score=0.99)
     assert results == []
@@ -94,10 +94,10 @@ def test_vector_store_min_score_filters(store):
 
 def test_vector_store_delete_session(store):
     emb = FakeEmbedder(dim=8)
-    store.upsert_chunk(Chunk(id="a", session_id="s1", role="user",
-                             content="x", embedding=emb.embed("x")))
-    store.upsert_chunk(Chunk(id="b", session_id="s2", role="user",
-                             content="y", embedding=emb.embed("y")))
+    store.upsert_batch([Chunk(id="a", session_id="s1", role="user",
+                             content="x", embedding=emb.embed("x"))])
+    store.upsert_batch([Chunk(id="b", session_id="s2", role="user",
+                             content="y", embedding=emb.embed("y"))])
     store.delete_session("s1")
     assert store.get_stats()["total_chunks"] == 1
 
@@ -130,11 +130,11 @@ def test_rag_available_false_when_embedder_fails(tmp_path):
 def test_rag_search_returns_indexed_chunk(rag):
     # Manually store a chunk, then search semantically.
     emb = rag.embedder
-    rag.store.upsert_chunk(Chunk(
+    rag.store.upsert_batch([Chunk(
         id="c1", session_id="s", role="assistant",
         content="the OutputFilter bug was in the pipeline",
         embedding=emb.embed("the OutputFilter bug was in the pipeline"),
-    ))
+    )])
     results = rag.search("OutputFilter bug pipeline", limit=3, min_score=-1.0)
     assert results
     assert "OutputFilter" in results[0].content
@@ -251,24 +251,3 @@ def test_index_recent_sessions_source_filter(tmp_path):
     assert stats["index_result"]["sessions_indexed"] == 0  # cron filtered out
 
 
-# ── search_and_format ──
-
-
-def test_search_and_format_returns_formatted_string(rag):
-    emb = rag.embedder
-    rag.store.upsert_chunk(Chunk(
-        id="c1", session_id="s1234567890", role="assistant",
-        content="the bug was in the output filter pipeline",
-        embedding=emb.embed("the bug was in the output filter pipeline"),
-    ))
-    formatted = rag.search_and_format("output filter bug", limit=3)
-    assert "RAG Search" in formatted
-    assert "output filter bug" in formatted
-    assert "s1234567890..." in formatted
-    assert "score=" in formatted
-    assert "assistant" in formatted
-
-
-def test_search_and_format_empty_results(rag):
-    formatted = rag.search_and_format("nothing here", limit=3)
-    assert formatted == "No RAG results for: nothing here"

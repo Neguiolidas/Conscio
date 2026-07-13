@@ -30,7 +30,7 @@ def test_entity_count(tmp_path):
 def test_state_log_appends_on_change(tmp_path):
     w = WorldModel(tmp_path)
     w.add_entity("svc", "system", state="operational")
-    w.update_state("svc", "offline")
+    w.add_entity("svc", "system", state="offline")
     log = [e["state"] for e in w.get_entity("svc")["state_log"]]
     assert log == ["operational", "offline"]
 
@@ -38,7 +38,7 @@ def test_state_log_appends_on_change(tmp_path):
 def test_state_log_dedups_consecutive_identical(tmp_path):
     w = WorldModel(tmp_path)
     w.add_entity("svc", "system", state="operational")
-    w.update_state("svc", "operational")  # no change → no new entry
+    w.add_entity("svc", "system", state="operational")  # no change → no new entry
     assert len(w.get_entity("svc")["state_log"]) == 1
 
 
@@ -46,7 +46,7 @@ def test_state_log_capped(tmp_path):
     w = WorldModel(tmp_path)
     w.add_entity("svc", "system", state="s0")
     for i in range(1, STATE_LOG_MAX + 3):
-        w.update_state("svc", f"s{i}")
+        w.add_entity("svc", "system", state=f"s{i}")
     assert len(w.get_entity("svc")["state_log"]) == STATE_LOG_MAX
 
 
@@ -64,7 +64,7 @@ def test_mark_contradictions_flags_relation_pairs(tmp_path):
 def test_mark_contradictions_flags_state_log(tmp_path):
     w = WorldModel(tmp_path)
     w.add_entity("svc", "system", state="operational")
-    w.update_state("svc", "offline")
+    w.add_entity("svc", "system", state="offline")
     flagged = w.mark_contradictions(FakeDetector())
     assert "svc" in flagged
 
@@ -132,9 +132,9 @@ def test_state_log_contradiction_ages_out(tmp_path):
     # STATE_LOG_MAX, the entity stops being flagged.
     w = WorldModel(tmp_path)
     w.add_entity("svc", "system", state="operational")
-    w.update_state("svc", "offline")
+    w.add_entity("svc", "system", state="offline")
     assert "svc" in w.mark_contradictions(FakeDetector())
     # Push the opposed pair out of the bounded window with neutral states.
     for i in range(STATE_LOG_MAX + 1):
-        w.update_state("svc", f"neutral{i}")
+        w.add_entity("svc", "system", state=f"neutral{i}")
     assert w.mark_contradictions(FakeDetector()) == []

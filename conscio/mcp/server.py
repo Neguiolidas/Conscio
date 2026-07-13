@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -135,6 +134,9 @@ class Bindings:
             "conscio.state": lambda a: self._state_payload(),
             "conscio.events": lambda a: self._events_payload(a),
             "conscio.handoff": lambda a: self._handoff_payload(),
+            "conscio.structure": self._structure,
+            "conscio.structural_lookup": self._structural_lookup,
+            "conscio.cognitive_cycle": self._cognitive_cycle,
         }
         if self._act_enabled():
             tools.update({
@@ -362,6 +364,47 @@ class Bindings:
             raise j.InvalidParams(f"missing '{key}'")
         return args[key]
 
+    def _structure(self, args: dict) -> dict:
+        """Report the currently loaded workspace structure (consent-gated).
+
+        Read-only: the graph is synced at server startup (see
+        _sync_structure_at_startup). Returns loaded=False when none is loaded.
+        """
+        sig = self.engine.structural_signal()
+        if sig is None:
+            return {"loaded": False}
+        from conscio.structural import render_structural, structural_budget
+        budget = structural_budget(self.engine.model_info.context_window)
+        return {
+            "loaded": True,
+            "node_count": sig.node_count,
+            "link_count": sig.link_count,
+            "hyperedges": len(sig.hyperedges),
+            "communities": len(sig.communities),
+            "built_at_commit": sig.built_at_commit,
+            "content_hash": sig.content_hash,
+            "digest": render_structural(sig, budget),
+        }
+
+    def _structural_lookup(self, args: dict) -> dict:
+        """Resolve a structural node / hyperedge / community id to detail."""
+        key = self._require(args, "key")
+        return {"result": self.engine.structural_lookup(str(key))}
+
+    def _cognitive_cycle(self, args: dict) -> dict:
+        """Run one explicit cognitive pass and return a per-stage report.
+
+        The act stage runs only when act is enabled on this server; otherwise
+        it is propose-only (reflect/synthesize/self-improve). Accepts
+        session_tokens so the loop also feeds the metabolic tier.
+        """
+        st = args.get("session_tokens")
+        if isinstance(st, int) and not isinstance(st, bool) and st >= 0:
+            self.engine.session_tokens_used = st
+        return self.engine.cognitive_cycle(
+            world_state=args.get("world_state", "") or "",
+            act=self._act_enabled())
+
     def _feed(self, args: dict) -> dict:
         event = self._require(args, "event")
         errors = validate_event(event)
@@ -371,6 +414,12 @@ class Bindings:
         prior = self.seen.seen(eid)
         if prior is not None:
             return json.loads(prior)
+        # Host-reported live context usage feeds the metabolic tier. Reject
+        # bad values (bools are ints; negatives) so a malformed field can't
+        # poison the tier. Absent -> engine keeps its prior/None (healthy).
+        st = args.get("session_tokens")
+        if isinstance(st, int) and not isinstance(st, bool) and st >= 0:
+            self.engine.session_tokens_used = st
         world_state = event_to_frame(event).to_world_state()
         self.engine.perceive(world_state)
         self.engine.reflect(world_state)
@@ -539,12 +588,44 @@ def _arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_model(args) -> str:
+    """Resolve the model name: --model > config.json 'model' > CONSCIO_MODEL.
+
+    Mirrors the daemon's precedence so a host that registers ``conscio-mcp``
+    with only ``--storage`` (e.g. the Claude Code bundle) still picks up the
+    ``model`` from ~/.config/conscio/config.json instead of failing to start.
+    Raises ``ValueError`` when none of the three channels supplies a model.
+    """
+    from conscio.adapter_config import load_config
+    from conscio.models import resolve_model_name
+    return resolve_model_name(cli_arg=args.model,
+                              config_model=load_config().get("model"))
+
+
+def _sync_structure_at_startup(engine, workspace) -> str:
+    """Bring the engine's structure in line with consent for ``workspace``.
+
+    The daemon does this each cycle; the MCP server (Claude Code) serves one
+    workspace per process, so it syncs once at startup. Consent-gated and
+    non-fatal — a missing/OFF consent or a bad graph never blocks startup.
+    Returns sync_structure's status verb, or ``skip:<err>``.
+    """
+    from conscio.structural_consent import (
+        StructuralConsent, consent_path, sync_structure)
+    try:
+        consent = StructuralConsent(consent_path(engine.storage))
+        return sync_structure(engine, workspace, consent)
+    except Exception as exc:                       # never block startup
+        return f"skip:{exc}"
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
     from conscio.installer.binding import validate_binding   # R6
     validate_binding(args.storage)
-    model_name = args.model or os.environ.get("CONSCIO_MODEL", "")
-    if not model_name:
+    try:
+        model_name = _resolve_model(args)
+    except ValueError:
         print("Error: no model specified. Set CONSCIO_MODEL, configure 'model' "
               "in config.json, or pass --model.", file=sys.stderr)
         return 1
@@ -564,6 +645,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.awake:
         engine.wake()                              # reuse the existing R9 toggle
     workspace = WorkspaceContext().current()
+    structure_status = _sync_structure_at_startup(engine, workspace)
     seen = SeenStore(Path(engine.storage) / "mcp_seen.db")
     seen.prune(args.seen_max_rows, args.seen_max_age_days)
     self_instance_id = ""
@@ -596,7 +678,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.auto_review:
         mode += "+auto-review"
     print(f"conscio-mcp {__version__} ready "
-          f"(workspace={workspace.id}, mode={mode})", file=sys.stderr)
+          f"(workspace={workspace.id}, mode={mode}, "
+          f"structure={structure_status})", file=sys.stderr)
     try:
         serve(bindings, sys.stdin, sys.stdout, max_bytes=args.max_frame_bytes)
     finally:

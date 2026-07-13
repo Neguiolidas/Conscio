@@ -562,12 +562,6 @@ class ContentStore:
 
         return len(source_ids)
 
-    def rebuild(self) -> None:
-        """Rebuild FTS5 indexes (reclaim space after deletions)."""
-        self.db.execute("INSERT INTO chunks(chunks) VALUES('rebuild')")
-        self.db.execute("INSERT INTO chunks_trigram(chunks_trigram) VALUES('rebuild')")
-        self.db.commit()
-
     # ─── Stats ───────────────────────────────────────────────────────
 
     def _total_db_size(self) -> int:

@@ -27,6 +27,9 @@ W_REL = 0.3
 PREDICTION_LOG_RETENTION_HOURS = 168   # 7 days
 PREDICTION_LOG_MAX = 500               # hard cap backstop
 
+# If-then prediction store (v0.9 wiring): bounded, entity-linked, auto-validated.
+PREDICTIONS_MAX = 200
+
 # Relevance decay (v0.4): exponential memory decay per hour since last update.
 RELEVANCE_DECAY_LAMBDA = 0.05          # lambda in exp(-lambda*hours) — half-life ~14h
 
@@ -110,6 +113,17 @@ class WorldModel:
         if state and state != prev_state:
             state_log.append({"state": state, "ts": datetime.now().isoformat()})
         state_log = state_log[-STATE_LOG_MAX:]  # normalize even an oversized legacy log
+        # Reality tracking (v0.4 producer wiring): re-perceiving a KNOWN entity
+        # tests the model's prior belief (prev_state) against the fresh
+        # observation (state). Match = confirmation (error 0); mismatch =
+        # surprise (error 1). This is the SOLE production producer feeding
+        # recent_prediction_error_rate() -> reality_score() (a coherence
+        # dimension) and engine meta_confidence. Skip first-ever observations
+        # (no prior belief) and blanking re-adds (empty new state) so the rate
+        # stays meaningful. No save here — the _save() below persists both the
+        # entity update and the log entry in one write.
+        if existing is not None and prev_state and state:
+            self._log_prediction_outcome(name, prev_state, state)
         self._data["entities"][name] = {
             "type": entity_type,
             "attributes": attributes or {},
@@ -127,21 +141,6 @@ class WorldModel:
             r for r in self._data["relations"]
             if r["from"] != name and r["to"] != name
         ]
-        self._save()
-
-    def update_state(self, name: str, state: str) -> None:
-        """Update an entity's state, appending to the bounded state_log only when
-        the state actually changes (dedup consecutive identical)."""
-        if name not in self._data["entities"]:
-            return
-        info = self._data["entities"][name]
-        if state != info.get("state", ""):
-            info.setdefault("state_log", []).append(
-                {"state": state, "ts": datetime.now().isoformat()})
-        info["state"] = state
-        info["last_updated"] = datetime.now().isoformat()
-        if "state_log" in info:
-            info["state_log"] = info["state_log"][-STATE_LOG_MAX:]
         self._save()
 
     def get_entity(self, name: str) -> Optional[dict]:
@@ -186,24 +185,26 @@ class WorldModel:
 
     # --- Predictions ---
 
-    def add_prediction(self, condition: str, outcome: str, confidence: float) -> None:
-        """Add a prediction about the world."""
-        self._data["predictions"].append({
+    def add_prediction(self, condition: str, outcome: str, confidence: float,
+                       entity: str = "") -> None:
+        """Add a forward if-then prediction about the world.
+
+        `entity` (v0.9 wiring) links the prediction to a world-model entity so
+        perceive() can auto-validate it; "" keeps the legacy free-text shape.
+        The store is capped at PREDICTIONS_MAX (oldest dropped first) so the
+        production producer can't grow the world file without bound.
+        """
+        p = {
             "if": condition,
             "then": outcome,
             "confidence": confidence,
             "created": datetime.now().isoformat(),
-        })
+        }
+        if entity:
+            p["entity"] = entity
+        self._data["predictions"].append(p)
+        self._data["predictions"] = self._data["predictions"][-PREDICTIONS_MAX:]
         self._save()
-
-    def get_predictions(self, keyword: str = "") -> list[dict]:
-        """Get predictions, optionally filtered by keyword."""
-        if not keyword:
-            return self._data["predictions"]
-        return [
-            p for p in self._data["predictions"]
-            if keyword.lower() in p["if"].lower() or keyword.lower() in p["then"].lower()
-        ]
 
     def validate_prediction(self, index: int, was_correct: bool) -> None:
         """Mark a prediction as validated (correct or incorrect)."""
@@ -211,6 +212,71 @@ class WorldModel:
             self._data["predictions"][index]["validated"] = was_correct
             self._data["predictions"][index]["validated_at"] = datetime.now().isoformat()
             self._save()
+
+    def validate_predictions_against(self, entities: dict) -> int:
+        """Validate pending if-then predictions against freshly perceived entities.
+
+        v0.9 wiring: called by content_layer.perceive(). For each pending
+        (never-validated) prediction linked to an entity in `entities`, compare
+        its expected outcome with the newly observed state (case-insensitive).
+        Blank observed states are no evidence and leave the prediction pending;
+        legacy predictions without an entity link are never auto-validated.
+
+        Deliberately does NOT feed _log_prediction_outcome: add_entity()
+        re-perception is the sole reality-signal producer, and double-logging
+        the same state transition would skew recent_prediction_error_rate().
+
+        Returns the number of predictions validated.
+        """
+        if not entities:
+            return 0
+        validated = 0
+        for i, p in enumerate(self._data["predictions"]):
+            if "validated" in p:
+                continue
+            ent = p.get("entity", "")
+            if not ent or ent not in entities:
+                continue
+            observed = str((entities[ent] or {}).get("state", "") or "")
+            if not observed:
+                continue
+            self.validate_prediction(
+                i, observed.strip().lower() == p["then"].strip().lower()
+            )
+            validated += 1
+        return validated
+
+    def generate_persistence_predictions(self, hours: int = 24, limit: int = 10) -> int:
+        """PREDICT-stage producer: forward persistence predictions (v0.9 wiring).
+
+        Called by engine reflect() (docstring step 4, previously unimplemented).
+        For each recently-changed entity with a non-blank state, predict that
+        the state persists: "if <name> is observed again, then <state>".
+        Deterministic, no LLM — the only relation to ground truth is the next
+        perceive(), which settles it via validate_predictions_against().
+
+        Confidence = 1 - recent prediction error rate, clamped to [0.1, 0.9].
+        Pending duplicates (same entity + outcome) are skipped so reflect()
+        can run every cycle without spamming the store.
+
+        Returns the number of predictions added.
+        """
+        confidence = max(0.1, min(0.9, 1.0 - self.recent_prediction_error_rate(24)))
+        pending = {
+            (p.get("entity", ""), p["then"])
+            for p in self._data["predictions"] if "validated" not in p
+        }
+        added = 0
+        for name in sorted(self.recently_changed(hours)):
+            state = self._data["entities"].get(name, {}).get("state", "")
+            if not state or (name, state) in pending:
+                continue
+            self.add_prediction(f"{name} is observed again", state,
+                                confidence, entity=name)
+            added += 1
+            if added >= limit:
+                break
+        return added
 
     # --- Queries ---
 
@@ -242,10 +308,19 @@ class WorldModel:
                 keyword in r["to"].lower()):
                 relevant_relations.append(r)
 
+        # Find matching predictions (the docstring has always promised these;
+        # v0.9 finally delivers them).
+        relevant_predictions = [
+            p for p in self._data["predictions"]
+            if (keyword in p["if"].lower() or
+                keyword in p["then"].lower() or
+                keyword in p.get("entity", "").lower())
+        ]
+
         if relevant_entities:
             self._save()
 
-        if not relevant_entities and not relevant_relations:
+        if not relevant_entities and not relevant_relations and not relevant_predictions:
             return "No relevant information found."
 
         # Build compact response
@@ -255,6 +330,12 @@ class WorldModel:
 
         for r in relevant_relations:
             parts.append(f"{r['from']} \u2192 {r['relation']} \u2192 {r['to']}")
+
+        for p in relevant_predictions:
+            status = ("pending" if "validated" not in p
+                      else "correct" if p["validated"] else "wrong")
+            parts.append(f"[prediction] if {p['if']} then {p['then']} "
+                         f"({status}, conf {p['confidence']:.2f})")
 
         return "; ".join(parts)
 
@@ -374,20 +455,6 @@ class WorldModel:
             self._save()
         return updated
 
-    def prune_irrelevant(self, min_relevance: float = 0.1) -> int:
-        """
-        Remove entities below the minimum relevance threshold.
-        
-        Returns the number of entities pruned.
-        """
-        to_remove = [
-            name for name, info in self._data["entities"].items()
-            if info.get("relevance", 1.0) < min_relevance
-        ]
-        for name in to_remove:
-            self.remove_entity(name)
-        return len(to_remove)
-
     def prune_stale(
         self,
         min_relevance: float = 0.2,
@@ -504,14 +571,13 @@ class WorldModel:
                 continue
         return changed
 
-    def record_prediction(self, entity: str, expected_state: str, actual_state: str) -> bool:
-        """
-        Record a world prediction outcome. Returns True on surprise (mismatch).
-
-        Appends to a bounded sliding-window log in the world JSON: entries older
-        than PREDICTION_LOG_RETENTION_HOURS are dropped, then a hard cap of
+    def _log_prediction_outcome(self, entity: str, expected_state: str,
+                                actual_state: str) -> bool:
+        """Append a prediction outcome to the bounded sliding-window log WITHOUT
+        saving (the caller persists). Entries older than
+        PREDICTION_LOG_RETENTION_HOURS are dropped, then a hard cap of
         PREDICTION_LOG_MAX newest entries is enforced (prevents file inflation).
-        """
+        Returns True on surprise (mismatch)."""
         error = 0 if expected_state == actual_state else 1
         now = datetime.now()
         log = self._data.setdefault("prediction_log", [])
@@ -534,25 +600,42 @@ class WorldModel:
         if len(kept) > PREDICTION_LOG_MAX:
             kept = kept[-PREDICTION_LOG_MAX:]
         self._data["prediction_log"] = kept
-
-        self._save()
         return bool(error)
 
-    def recent_prediction_error_rate(self, window_hours: int = 24) -> float:
-        """Fraction of recorded predictions in the window that were wrong (0.0 if none)."""
-        log = self._data.get("prediction_log", [])
-        if not log:
-            return 0.0
+    def record_prediction(self, entity: str, expected_state: str, actual_state: str) -> bool:
+        """
+        Record a world prediction outcome. Returns True on surprise (mismatch).
+
+        Public API for direct/explicit recording. The PRIMARY production
+        producer is add_entity() re-perception (see _log_prediction_outcome).
+        Appends to the bounded sliding-window log and persists.
+        """
+        surprise = self._log_prediction_outcome(entity, expected_state, actual_state)
+        self._save()
+        return surprise
+
+    def recent_prediction_outcomes(self, window_hours: int = 24) -> tuple[int, int]:
+        """(errors, total) recorded prediction outcomes inside the window.
+
+        #148: disambiguates "no evidence" (total == 0) from "perfect record" —
+        recent_prediction_error_rate() returns 0.0 for both, so the confidence
+        loop uses this to decide whether a pending record may be resolved.
+        """
         cutoff = datetime.now() - timedelta(hours=window_hours)
         errors = 0
         total = 0
-        for e in log:
+        for e in self._data.get("prediction_log", []):
             try:
                 if datetime.fromisoformat(e["ts"]) >= cutoff:
                     total += 1
                     errors += int(e.get("error", 0))
             except (ValueError, TypeError, KeyError):
                 continue
+        return errors, total
+
+    def recent_prediction_error_rate(self, window_hours: int = 24) -> float:
+        """Fraction of recorded predictions in the window that were wrong (0.0 if none)."""
+        errors, total = self.recent_prediction_outcomes(window_hours)
         return errors / total if total else 0.0
 
     def to_dict(self) -> dict:

@@ -204,7 +204,8 @@ class TestWorldModel:
 
     def test_predictions(self, world_model):
         world_model.add_prediction("BTC drops below 65k", "Sell signal triggered", 0.6)
-        preds = world_model.get_predictions("BTC")
+        preds = [p for p in world_model._data["predictions"]
+             if "btc" in p["if"].lower() or "btc" in p["then"].lower()]
         assert len(preds) == 1
         assert preds[0]["confidence"] == 0.6
 
@@ -252,16 +253,6 @@ class TestWorldModelDecay:
         # Should be boosted by 0.3, capped at 1.0
         assert entity["relevance"] == 0.7
 
-    def test_prune_removes_low_relevance(self, world_model):
-        world_model.add_entity("keeper", "test", state="active")
-        world_model.add_entity("goner", "test", state="dead")
-        world_model._data["entities"]["goner"]["relevance"] = 0.05
-        world_model._save()
-        pruned = world_model.prune_irrelevant(min_relevance=0.1)
-        assert pruned == 1
-        assert world_model.get_entity("goner") is None
-        assert world_model.get_entity("keeper") is not None
-
     def test_stale_includes_low_relevance(self, world_model):
         world_model.add_entity("irrelevant", "test", state="meh")
         world_model._data["entities"]["irrelevant"]["relevance"] = 0.1
@@ -286,7 +277,15 @@ class TestMetaCognition:
         # Low confidence → blind spot
         for _ in range(3):
             meta_cognition.record_confidence("weak_area", 0.3, "failure")
-        assert "weak_area" in meta_cognition._data["blind_spots"]
+        assert "weak_area" in meta_cognition.blind_spots()
+
+    def test_blind_spots_accessor_returns_copy(self, meta_cognition):
+        # Public read replaces external meta._data scans (v0.6-style tech debt).
+        for _ in range(3):
+            meta_cognition.record_confidence("weak_area", 0.3, "failure")
+        spots = meta_cognition.blind_spots()
+        spots.append("mutated")
+        assert "mutated" not in meta_cognition.blind_spots()  # store untouched
 
     def test_error_pattern_tracking(self, meta_cognition):
         meta_cognition.record_error("Forgot to check API rate limit")

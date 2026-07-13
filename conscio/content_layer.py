@@ -57,6 +57,12 @@ def layer_of(category: str, content_type: str = "") -> ContentLayer:
 # Recall reorder constants. RRF rank is higher = better.
 MAX_K = 50  # upper bound for recall() k parameter
 LAYER_EPSILON = 0.01 # rank-bucket width (~1% of RRF range); a one-line tunable
+
+# Reciprocal Rank Fusion constant for merging the lexical (ContentStore FTS5)
+# and dense (SessionRAG) rankings in recall(). 60 is the standard RRF default —
+# large enough that only the first ~dozen ranks matter, small enough that a
+# rank-0 hit in one source can beat a rank-2+ hit in the other.
+RECALL_RRF_K = 60
 _LAYER_PRIORITY = {
     ContentLayer.PROCESSING: 2,
     ContentLayer.INTUITION: 1,
@@ -118,9 +124,12 @@ class ContentLayerManager:
         """
         Retrieve relevant past context across sessions.
         
-        Primary source is ContentStore FTS5 (BM25 + RRF) with layer-prioritized reorder.
-        When SessionRAG is available (local Ollama up), semantic hits are merged in.
-        Each snippet is length-bounded; results are de-duplicated and capped at k.
+        Fuses two rankings with Reciprocal Rank Fusion: the lexical ranking from
+        ContentStore FTS5 (BM25 + porter/trigram RRF, then layer-prioritized
+        reorder) and, when SessionRAG is available (local Ollama up), the dense
+        semantic ranking. Cross-source agreement boosts a result; a strong
+        dense-only hit can outrank a weak lexical one. With RAG off it is exactly
+        the lexical order. Each snippet is length-bounded and de-duplicated.
         
         Args:
             query: Free-text query (e.g., current world_state + anomalies).
@@ -136,48 +145,59 @@ class ContentLayerManager:
         if k <= 0 or k > MAX_K:
             raise ValueError(f"k must be between 1 and {MAX_K}, got {k}")
         
-        snippets: list[str] = []
-        seen: set[str] = set()
-        
-        def _add(text: str) -> None:
-            t = " ".join((text or "").split())[:300]
-            key = t[:80].lower()
-            if t and key not in seen:
-                seen.add(key)
-                snippets.append(t)
-        
-        # ── ContentStore FTS5 (layer-prioritized reorder) ──
+        # Fetch a wider candidate pool per source than k so the fusion has
+        # material to reorder (a dense hit outside the lexical top-k can win).
+        pool = max(k, min(k * 4, 20))
+
+        scores: dict[str, float] = {}
+        display: dict[str, str] = {}
+
+        def _fuse(ranked_texts) -> None:
+            """Add each source's ranking into the shared RRF score map."""
+            for rank_0, text in enumerate(ranked_texts):
+                t = " ".join((text or "").split())[:300]
+                if not t:
+                    continue
+                key = t[:80].lower()
+                scores[key] = scores.get(key, 0.0) + 1.0 / (RECALL_RRF_K + rank_0 + 1)
+                display.setdefault(key, t)   # first-seen text wins as the display form
+
+        # ── ContentStore FTS5 (layer-prioritized reorder) — lexical ranking ──
         try:
             results = []
             if categories:
                 for cat in categories:
-                    results.extend(self.content_store.search(query, limit=k, category=cat))
+                    results.extend(self.content_store.search(query, limit=pool, category=cat))
             else:
-                results.extend(self.content_store.search(query, limit=k))
+                results.extend(self.content_store.search(query, limit=pool))
             results.sort(key=layer_sort_key)  # near-tie tiebreak by content layer
-            for r in results:
-                _add(r.content)
+            _fuse([r.content for r in results])
         except Exception:
             logging.warning("ContentStore search failed in recall()", exc_info=True)
-        
-        # ── SessionRAG semantic (optional) ──
+
+        # ── SessionRAG semantic (optional) — dense ranking ──
         try:
             rag = self.session_rag
             if rag is not None:
-                for r in rag.search(query, limit=k):
-                    _add(r.content)
+                _fuse([r.content for r in rag.search(query, limit=pool)])
         except Exception:
             logging.warning("SessionRAG search failed in recall()", exc_info=True)
-        
-        return snippets[:k]
+
+        # Stable sort by fused score desc; ties keep insertion order (lexical
+        # is fused first, so it wins a tie against an equal-rank dense hit).
+        ordered = sorted(scores, key=lambda kk: -scores[kk])
+        return [display[kk] for kk in ordered[:k]]
     
-    def perceive(self, world_state: str, entities: Optional[dict] = None) -> None:
+    def perceive(self, world_state: str, entities: Optional[dict] = None,
+                 relations: Optional[list] = None) -> None:
         """
         Update the world model with perceived state.
-        
+
         Args:
             world_state: Text description of current world state
             entities: Dict of {entity_name: {type, state, attributes}} to update
+            relations: List of (from_entity, relation, to_entity) triples to
+                record (WorldModel.add_relation deduplicates)
         """
         if entities:
             for name, info in entities.items():
@@ -187,6 +207,13 @@ class ContentLayerManager:
                     attributes=info.get("attributes"),
                     state=info.get("state", ""),
                 )
+            # v0.9 wiring: fresh perception is the evidence that settles
+            # pending if-then predictions (produced by reflect()'s PREDICT
+            # stage via generate_persistence_predictions).
+            self.world_model.validate_predictions_against(entities)
+        if relations:
+            for from_entity, relation, to_entity in relations:
+                self.world_model.add_relation(from_entity, relation, to_entity)
     
     def close(self) -> None:
         """Close SessionRAG resources (HTTP connections, etc.)."""

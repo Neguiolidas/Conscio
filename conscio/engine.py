@@ -21,6 +21,7 @@ from .timeutil import naive_utcnow, naive_utc_from_epoch
 from .context_manager import ContextManager
 from .inner_monologue import InnerMonologue
 from .world_model import WorldModel
+from .world_extract import extract_entities, extract_relations
 from .meta_cognition import MetaCognition
 from .goal_generator import GoalGenerator, Drive
 from .auto_evolution import AutoEvolution
@@ -199,6 +200,8 @@ class ConsciousnessEngine:
         self._contradiction_detector = ContradictionDetector(self._semantic)
         self.last_coherence: Optional[CoherenceReport] = None
         self.dream_recommended = DreamRecommendation(False, None, None)
+        # #147: Mitosis advisory — True at FATIGUE/CRITICAL context pressure.
+        self.handoff_recommended = False
         self.last_self_prompts: list = []
 
         # Voice preset (v0.6) — static marker. Precedence: param > env > default.
@@ -274,7 +277,7 @@ class ConsciousnessEngine:
 
         # Generate EVOLUTION goals from blind spots
         # GoalGenerator prefixes with "Evolve:" — match that for dedup
-        for blind_spot in meta._data.get("blind_spots", []):
+        for blind_spot in meta.blind_spots():
             expected_desc = f"Evolve: {blind_spot} \u2014 low confidence area"
             if expected_desc not in active_descriptions:
                 # v1.6 (#7): blind-spot goals are meta-derived -> diagnostic-only.
@@ -456,6 +459,12 @@ class ConsciousnessEngine:
                 "prune_stale", f"{len(stale)} stale entities: {', '.join(stale[:3])}"
             )
 
+        # 4. PREDICT — forward if-then persistence predictions for recently
+        # changed entities (v0.9 wiring: the docstring promised this stage but
+        # nothing implemented it). The next perceive() settles them via
+        # validate_predictions_against().
+        self.world.generate_persistence_predictions()
+
         # Feed meta-cognition insights into goals BEFORE reflection
         self.feed_meta_to_goals(self.meta, self.goals)
 
@@ -542,6 +551,30 @@ class ConsciousnessEngine:
                 priority=8,
             )
 
+        # --- #148: close the confidence loop ---
+        # Resolve the previous pending "general" record against realized
+        # prediction evidence (add_entity re-perception is the sole producer;
+        # error_rate was computed above from the same window). No evidence →
+        # stays pending; a resolved failure records a self-critique.
+        pred_errors, pred_total = self.world.recent_prediction_outcomes(
+            window_hours=24
+        )
+        if pred_total:
+            outcome = "success" if error_rate <= 0.5 else "failure"
+            resolved = self.meta.update_outcome("general", outcome)
+            if resolved and outcome == "failure":
+                self.meta.add_critique(
+                    task="prediction",
+                    what_i_did=(
+                        f"held beliefs that produced {pred_errors}/{pred_total}"
+                        " failed re-perception predictions in the last 24h"
+                    ),
+                    what_i_should_do=(
+                        "re-perceive volatile entities before predicting; "
+                        "lower persistence confidence for flappy states"
+                    ),
+                )
+
         # Record confidence in meta-cognition
         self.meta.record_confidence("general", confidence)
 
@@ -574,6 +607,20 @@ class ConsciousnessEngine:
         metabolic_note = f"{metabolic_state.value} {MetabolicContext.usage_pct(used_tokens, total_window):.0f}%"
         tier_action = MetabolicContext.tier_action(metabolic_state)
         self._state.metabolic = f"{metabolic_note} — {tier_action}"
+
+        # #147: machine-consumable metabolic gates. Dream may already be
+        # recommended by the coherence path (v0.7); metabolic CRITICAL is the
+        # second, independent trigger for the same advisory.
+        if (MetabolicContext.should_dream(metabolic_state)
+                and not self.dream_recommended.recommended):
+            self.dream_recommended = DreamRecommendation(
+                recommended=True,
+                dominant="metabolic",
+                score=MetabolicContext.usage_pct(used_tokens, total_window) / 100.0,
+            )
+            result["dream_recommended"] = True
+        self.handoff_recommended = MetabolicContext.should_mitosis(metabolic_state)
+        result["handoff_recommended"] = self.handoff_recommended
 
         # Persist state
         self.ctx.save_state(self._state)
@@ -811,6 +858,7 @@ class ConsciousnessEngine:
             "status": {
                 "action_lockdown": s.action_lockdown,
                 "dream_recommended": bool(s.dream_recommended),
+                "handoff_recommended": self.handoff_recommended,
                 "brake": self._last_brake_message(),
             },
             "structural": self._structural_advisory(),
@@ -858,17 +906,30 @@ class ConsciousnessEngine:
 
     # --- World Model Interactions ---
 
-    def perceive(self, world_state: str, entities: Optional[dict] = None) -> None:
+    def perceive(self, world_state: str, entities: Optional[dict] = None,
+                 relations: Optional[list] = None) -> None:
         """
         Update the world model with perceived state.
-        
+
         Delegates to ContentLayerManager which manages the WorldModel.
-        
+
+        When `entities`/`relations` is None (the production path — the MCP
+        server passes only `world_state`), they are derived deterministically
+        from the world_state string via `extract_entities` /
+        `extract_relations`. An explicit value — including an explicit empty
+        `{}`/`[]` — always wins over extraction, so callers can suppress
+        extraction or supply richer facts of their own.
+
         Args:
             world_state: Text description of current world state
             entities: Dict of {entity_name: {type, state, attributes}} to update
+            relations: List of (from_entity, relation, to_entity) triples
         """
-        self.content_layer.perceive(world_state, entities)
+        if entities is None:
+            entities = extract_entities(world_state)
+        if relations is None:
+            relations = extract_relations(world_state)
+        self.content_layer.perceive(world_state, entities, relations)
 
     # --- Evolution Interactions ---
 
@@ -1437,6 +1498,86 @@ class ConsciousnessEngine:
         self.probe()
         loop = AutonomyLoop(self, self._act_pipeline, self._act_meter)
         return loop.run(budget or ActBudget(), world_state=world_state)
+
+    # --- v2.14: the cognitive cycle (an explicit, useful reflect loop) ---
+
+    def _synthesize(self) -> dict:
+        """Offline consolidation of the just-run reflection into a focus insight.
+
+        Pure heuristic (no LLM): reads the coherence snapshot, average
+        confidence, and the top active goals the reflection produced, and
+        distills a one-line insight the host can act on. Advisory — reads
+        state, never mutates it.
+        """
+        coh = self.last_coherence
+        score = coh.score if coh else None
+        tension = coh.dominant.dimension if (coh and coh.dominant) else None
+        try:
+            confidence = self.meta.average_confidence()
+        except Exception:
+            confidence = 0.5
+        focus = [g.description for g in self.goals.active_goals()][:3]
+        parts = []
+        if score is not None:
+            parts.append(f"coherence {score:.2f}")
+        parts.append(f"confidence {confidence:.2f}")
+        if tension:
+            parts.append(f"tension:{tension}")
+        parts.append(f"focus:{focus[0]}" if focus else "focus:none")
+        return {"coherence": score, "tension": tension,
+                "confidence": confidence, "focus_goals": focus,
+                "insight": "; ".join(parts)}
+
+    def cognitive_cycle(self, world_state: str = "",
+                        recent_events: Optional[list[str]] = None,
+                        confidence: float = 0.5,
+                        anomalies: Optional[list[str]] = None,
+                        *, act: bool = True) -> dict:
+        """One explicit, useful cognitive pass — the reflect loop, surfaced.
+
+        Runs and reports the stages the agent actually goes through:
+
+          1. Reflect      — reflect() (perceive/coherence/goals/self-improve;
+                            all offline-heuristic)
+          2. Synthesize   — consolidate into a focus insight (offline)
+          3. Propose+Act  — act(): an audited proposal, fully gated. Skipped
+                            when no adapter is attached or act=False. NOT
+                            awake-gated — the host drives this loop, and act()
+                            cannot run anything the ActPipeline would refuse.
+          4. Learn        — the act stage's outcome (skills settle inside act())
+          5. Self-improve — auto-evolution proposals from observed error
+                            patterns (human-gated; dedup makes it idempotent)
+
+        Returns a JSON-serializable report. Advisory + safe by construction.
+        """
+        reflection = self.reflect(world_state=world_state,
+                                  recent_events=recent_events,
+                                  confidence=confidence, anomalies=anomalies)
+        synthesis = self._synthesize()
+
+        action = None
+        learning: dict = {"from_action": None}
+        if act and getattr(self, "_act_pipeline", None) is not None:
+            report = self.act()
+            status = getattr(getattr(report, "status", None), "value", None)
+            action = {"status": status,
+                      "reason": getattr(report, "reason", None),
+                      "ledger_id": getattr(report, "ledger_id", None),
+                      "lockdown": getattr(report, "lockdown", False)}
+            learning = {"from_action": status}   # skills.settle ran inside act()
+
+        try:
+            new_props = self.evolution.observe_errors(self.meta)
+        except Exception:
+            new_props = []
+        self_improvement = {
+            "new_proposals": [getattr(p, "description", str(p)) for p in new_props],
+            "pending": len(self.evolution.pending_proposals()),
+        }
+
+        return {"reflection": reflection, "synthesis": synthesis,
+                "action": action, "learning": learning,
+                "self_improvement": self_improvement}
 
 
 # --- CLI Entry Point ---

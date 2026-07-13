@@ -5,7 +5,10 @@ from conscio.coherence import CoherenceReport, Dissonance
 
 class _Meta:
     def __init__(self, blind=None):
-        self._data = {"blind_spots": blind or []}
+        self._blind = list(blind or [])
+
+    def blind_spots(self):
+        return list(self._blind)
 
 
 class _World:

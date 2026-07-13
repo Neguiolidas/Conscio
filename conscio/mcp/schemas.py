@@ -53,11 +53,24 @@ def derive_event_id(event: dict) -> str:
 _EVENT_INPUT = {"type": "object", "properties": {"event": {"type": "object"}},
                 "required": ["event"]}
 
+# feed also accepts the host's live context usage so the metabolic tier
+# (ACTIVE/FATIGUE/CRITICAL) reflects reality — Conscio cannot measure the
+# host's session length on its own.
+_FEED_INPUT = {"type": "object",
+               "properties": {
+                   "event": {"type": "object"},
+                   "session_tokens": {
+                       "type": "integer",
+                       "description": "Host's live context tokens used so far; "
+                                      "drives the metabolic tier. Optional."}},
+               "required": ["event"]}
+
 BASE_TOOL_DEFS: list[dict] = [
     {"name": "conscio.feed",
      "description": "Ingest a perception Event; runs perceive+reflect; returns "
-                    "the updated advisory. Idempotent on event.id.",
-     "inputSchema": _EVENT_INPUT},
+                    "the updated advisory. Idempotent on event.id. Pass "
+                    "session_tokens to drive the metabolic tier.",
+     "inputSchema": _FEED_INPUT},
     {"name": "conscio.note",
      "description": "Record a raw Event to the event log (no reflect). "
                     "Idempotent on event.id.",
@@ -99,6 +112,27 @@ BASE_TOOL_DEFS: list[dict] = [
     {"name": "conscio.handoff",
      "description": "Latest session handoff (pure read, markdown).",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "conscio.structure",
+     "description": "Report the workspace structural graph loaded into "
+                    "awareness (consent-gated; data, never code). Returns the "
+                    "distilled digest + counts, or loaded=false when none is "
+                    "consented/loaded.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "conscio.structural_lookup",
+     "description": "Resolve a structural node / hyperedge / community id from "
+                    "the loaded graph to its detail; null on miss.",
+     "inputSchema": {"type": "object",
+                     "properties": {"key": {"type": "string"}},
+                     "required": ["key"]}},
+    {"name": "conscio.cognitive_cycle",
+     "description": "Run one explicit cognitive pass (reflect -> synthesize -> "
+                    "propose/act -> learn -> self-improve) and return a report "
+                    "of each stage. The act stage runs only when the server has "
+                    "act enabled; otherwise propose-only. Pass session_tokens "
+                    "to drive the metabolic tier.",
+     "inputSchema": {"type": "object",
+                     "properties": {"world_state": {"type": "string"},
+                                    "session_tokens": {"type": "integer"}}}},
 ]
 
 RESOURCE_DEFS: list[dict] = [
