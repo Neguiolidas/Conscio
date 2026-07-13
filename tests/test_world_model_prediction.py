@@ -1,6 +1,7 @@
 # tests/test_world_model_prediction.py
 from datetime import datetime, timedelta
 
+from conscio.coherence import reality_score
 from conscio.world_model import WorldModel
 
 
@@ -117,3 +118,59 @@ def test_subgraph_missing_entity(tmp_path):
     wm = WorldModel(tmp_path)
     result = wm.subgraph("nonexistent")
     assert result == "Entity not found."
+
+
+# --- prediction wiring: add_entity re-perception feeds the reality signal ---
+# Regression: record_prediction had ZERO production callers, so prediction_log
+# was always empty -> recent_prediction_error_rate() -> reality_score() pinned
+# at 1.0 forever. The world's SOLE prod write path is add_entity (via
+# content_layer.perceive), so that is where "prior belief vs new observation"
+# must be recorded.
+
+
+def test_reperception_records_prediction_outcome(tmp_path):
+    """Re-perceiving a KNOWN entity logs a surprise (state changed, error=1) and
+    a confirmation (state unchanged, error=0) — the production producer for
+    recent_prediction_error_rate (the coherence 'reality' dimension)."""
+    wm = WorldModel(tmp_path)
+    wm.add_entity("btc", "asset", state="bullish")   # first obs: no prior belief
+    assert wm._data["prediction_log"] == []
+
+    wm.add_entity("btc", "asset", state="bearish")   # surprise: bullish -> bearish
+    wm.add_entity("btc", "asset", state="bearish")   # confirmation: bearish -> bearish
+    log = wm._data["prediction_log"]
+    assert len(log) == 2
+    assert log[0]["expected"] == "bullish"
+    assert log[0]["actual"] == "bearish"
+    assert log[0]["error"] == 1
+    assert log[1]["error"] == 0
+    assert wm.recent_prediction_error_rate(24) == 0.5
+
+
+def test_first_observation_and_blank_state_do_not_log(tmp_path):
+    """No prior belief (first add) or a blank new state must not pollute the log."""
+    wm = WorldModel(tmp_path)
+    wm.add_entity("eth", "asset", state="neutral")   # first: no prior -> skip
+    wm.add_entity("eth", "asset")                    # blank new state -> skip
+    assert wm._data["prediction_log"] == []
+    assert wm.recent_prediction_error_rate(24) == 0.0
+
+
+def test_reperception_outcome_persists(tmp_path):
+    """The recorded outcome survives a reload (single save inside add_entity)."""
+    wm = WorldModel(tmp_path)
+    wm.add_entity("btc", "asset", state="bullish")
+    wm.add_entity("btc", "asset", state="bearish")
+    wm2 = WorldModel(tmp_path)
+    assert len(wm2._data["prediction_log"]) == 1
+    assert wm2._data["prediction_log"][0]["error"] == 1
+
+
+def test_reality_score_reflects_reperception_drift(tmp_path):
+    """End-to-end: the coherence 'reality' dimension is no longer pinned at 1.0
+    once perception surprises the model."""
+    wm = WorldModel(tmp_path)
+    wm.add_entity("btc", "asset", state="bullish")
+    assert reality_score(wm) == 1.0                  # no drift observed yet
+    wm.add_entity("btc", "asset", state="bearish")   # one surprise in the window
+    assert reality_score(wm) < 1.0

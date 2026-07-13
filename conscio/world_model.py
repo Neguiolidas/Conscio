@@ -110,6 +110,17 @@ class WorldModel:
         if state and state != prev_state:
             state_log.append({"state": state, "ts": datetime.now().isoformat()})
         state_log = state_log[-STATE_LOG_MAX:]  # normalize even an oversized legacy log
+        # Reality tracking (v0.4 producer wiring): re-perceiving a KNOWN entity
+        # tests the model's prior belief (prev_state) against the fresh
+        # observation (state). Match = confirmation (error 0); mismatch =
+        # surprise (error 1). This is the SOLE production producer feeding
+        # recent_prediction_error_rate() -> reality_score() (a coherence
+        # dimension) and engine meta_confidence. Skip first-ever observations
+        # (no prior belief) and blanking re-adds (empty new state) so the rate
+        # stays meaningful. No save here — the _save() below persists both the
+        # entity update and the log entry in one write.
+        if existing is not None and prev_state and state:
+            self._log_prediction_outcome(name, prev_state, state)
         self._data["entities"][name] = {
             "type": entity_type,
             "attributes": attributes or {},
@@ -504,14 +515,13 @@ class WorldModel:
                 continue
         return changed
 
-    def record_prediction(self, entity: str, expected_state: str, actual_state: str) -> bool:
-        """
-        Record a world prediction outcome. Returns True on surprise (mismatch).
-
-        Appends to a bounded sliding-window log in the world JSON: entries older
-        than PREDICTION_LOG_RETENTION_HOURS are dropped, then a hard cap of
+    def _log_prediction_outcome(self, entity: str, expected_state: str,
+                                actual_state: str) -> bool:
+        """Append a prediction outcome to the bounded sliding-window log WITHOUT
+        saving (the caller persists). Entries older than
+        PREDICTION_LOG_RETENTION_HOURS are dropped, then a hard cap of
         PREDICTION_LOG_MAX newest entries is enforced (prevents file inflation).
-        """
+        Returns True on surprise (mismatch)."""
         error = 0 if expected_state == actual_state else 1
         now = datetime.now()
         log = self._data.setdefault("prediction_log", [])
@@ -534,9 +544,19 @@ class WorldModel:
         if len(kept) > PREDICTION_LOG_MAX:
             kept = kept[-PREDICTION_LOG_MAX:]
         self._data["prediction_log"] = kept
-
-        self._save()
         return bool(error)
+
+    def record_prediction(self, entity: str, expected_state: str, actual_state: str) -> bool:
+        """
+        Record a world prediction outcome. Returns True on surprise (mismatch).
+
+        Public API for direct/explicit recording. The PRIMARY production
+        producer is add_entity() re-perception (see _log_prediction_outcome).
+        Appends to the bounded sliding-window log and persists.
+        """
+        surprise = self._log_prediction_outcome(entity, expected_state, actual_state)
+        self._save()
+        return surprise
 
     def recent_prediction_error_rate(self, window_hours: int = 24) -> float:
         """Fraction of recorded predictions in the window that were wrong (0.0 if none)."""
