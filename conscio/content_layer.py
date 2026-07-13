@@ -207,6 +207,10 @@ class ContentLayerManager:
                     attributes=info.get("attributes"),
                     state=info.get("state", ""),
                 )
+            # v0.9 wiring: fresh perception is the evidence that settles
+            # pending if-then predictions (produced by reflect()'s PREDICT
+            # stage via generate_persistence_predictions).
+            self.world_model.validate_predictions_against(entities)
         if relations:
             for from_entity, relation, to_entity in relations:
                 self.world_model.add_relation(from_entity, relation, to_entity)

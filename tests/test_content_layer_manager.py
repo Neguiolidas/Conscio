@@ -44,6 +44,7 @@ class _StubWorldModel:
     """Minimal WorldModel stub that records add_entity calls."""
     def __init__(self):
         self.entities = {}
+        self.validated_against = []  # records perceive() prediction-validation wiring
 
     def add_entity(self, name=None, entity_type="unknown", attributes=None, state=""):
         self.entities[name] = {
@@ -51,6 +52,12 @@ class _StubWorldModel:
             "attributes": attributes,
             "state": state,
         }
+
+    def validate_predictions_against(self, entities):
+        self.validated_against.append(entities)
+
+    def add_relation(self, from_entity, relation, to_entity):
+        pass
 
 
 class _StubSessionRAG:
