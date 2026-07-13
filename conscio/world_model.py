@@ -143,21 +143,6 @@ class WorldModel:
         ]
         self._save()
 
-    def update_state(self, name: str, state: str) -> None:
-        """Update an entity's state, appending to the bounded state_log only when
-        the state actually changes (dedup consecutive identical)."""
-        if name not in self._data["entities"]:
-            return
-        info = self._data["entities"][name]
-        if state != info.get("state", ""):
-            info.setdefault("state_log", []).append(
-                {"state": state, "ts": datetime.now().isoformat()})
-        info["state"] = state
-        info["last_updated"] = datetime.now().isoformat()
-        if "state_log" in info:
-            info["state_log"] = info["state_log"][-STATE_LOG_MAX:]
-        self._save()
-
     def get_entity(self, name: str) -> Optional[dict]:
         """Get an entity by name."""
         return self._data["entities"].get(name)
@@ -478,20 +463,6 @@ class WorldModel:
         if updated > 0:
             self._save()
         return updated
-
-    def prune_irrelevant(self, min_relevance: float = 0.1) -> int:
-        """
-        Remove entities below the minimum relevance threshold.
-        
-        Returns the number of entities pruned.
-        """
-        to_remove = [
-            name for name, info in self._data["entities"].items()
-            if info.get("relevance", 1.0) < min_relevance
-        ]
-        for name in to_remove:
-            self.remove_entity(name)
-        return len(to_remove)
 
     def prune_stale(
         self,
