@@ -200,6 +200,8 @@ class ConsciousnessEngine:
         self._contradiction_detector = ContradictionDetector(self._semantic)
         self.last_coherence: Optional[CoherenceReport] = None
         self.dream_recommended = DreamRecommendation(False, None, None)
+        # #147: Mitosis advisory — True at FATIGUE/CRITICAL context pressure.
+        self.handoff_recommended = False
         self.last_self_prompts: list = []
 
         # Voice preset (v0.6) — static marker. Precedence: param > env > default.
@@ -582,6 +584,20 @@ class ConsciousnessEngine:
         tier_action = MetabolicContext.tier_action(metabolic_state)
         self._state.metabolic = f"{metabolic_note} — {tier_action}"
 
+        # #147: machine-consumable metabolic gates. Dream may already be
+        # recommended by the coherence path (v0.7); metabolic CRITICAL is the
+        # second, independent trigger for the same advisory.
+        if (MetabolicContext.should_dream(metabolic_state)
+                and not self.dream_recommended.recommended):
+            self.dream_recommended = DreamRecommendation(
+                recommended=True,
+                dominant="metabolic",
+                score=MetabolicContext.usage_pct(used_tokens, total_window) / 100.0,
+            )
+            result["dream_recommended"] = True
+        self.handoff_recommended = MetabolicContext.should_mitosis(metabolic_state)
+        result["handoff_recommended"] = self.handoff_recommended
+
         # Persist state
         self.ctx.save_state(self._state)
 
@@ -818,6 +834,7 @@ class ConsciousnessEngine:
             "status": {
                 "action_lockdown": s.action_lockdown,
                 "dream_recommended": bool(s.dream_recommended),
+                "handoff_recommended": self.handoff_recommended,
                 "brake": self._last_brake_message(),
             },
             "structural": self._structural_advisory(),
