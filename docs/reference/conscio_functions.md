@@ -337,7 +337,6 @@ Extração via AST do repositório `~/clawd/Repos/Conscio`. Cada função listad
 - **ContentStore.get_source**: Get source metadata
 - **ContentStore.delete_source**: Delete a source and all its chunks from both FTS5 tables
 - **ContentStore.compact**: Compact old content: remove sources older than before_days
-- **ContentStore.rebuild**: Rebuild FTS5 indexes (reclaim space after deletions)
 - **ContentStore._total_db_size**: Total size of DB + WAL + SHM files in bytes
 - **ContentStore.stats**: Return store statistics
 - **ContentStore.close**: Close the database connection
@@ -949,7 +948,6 @@ Extração via AST do repositório `~/clawd/Repos/Conscio`. Cada função listad
 - **SessionVectorStore._init_db**: Create tables if they don't exist
 - **SessionVectorStore._sync_embedder_identity**: Detect a changed embedding backend and force a clean re-index
 - **SessionVectorStore._emb_blob**: Pack an embedding to a float32 blob, dropping wrong-dim vectors
-- **SessionVectorStore.upsert_chunk**: Insert or update a chunk with its embedding
 - **SessionVectorStore.upsert_batch**: Batch insert chunks
 - **SessionVectorStore.search**: Search by cosine similarity
 - **SessionVectorStore.get_stats**: Get store statistics
@@ -960,7 +958,6 @@ Extração via AST do repositório `~/clawd/Repos/Conscio`. Cada função listad
 - **SessionRAG._get_session_messages**: Get messages for a session
 - **SessionRAG.index_recent_sessions**: Index the N most recent sessions into the RAG store
 - **SessionRAG.search**: Semantic search over session history
-- **SessionRAG.search_and_format**: Search and return formatted results for injection into context
 - **SessionRAG.get_stats**: Get RAG store statistics
 
 ## `conscio/session_rag_factory.py`
@@ -1053,14 +1050,12 @@ Extração via AST do repositório `~/clawd/Repos/Conscio`. Cada função listad
 - **WorldModel._save**: Save world model to disk
 - **WorldModel.add_entity**: Add or update an entity in the world model
 - **WorldModel.remove_entity**: Remove an entity and its relations
-- **WorldModel.update_state**: Update an entity's state, appending to the bounded state_log only when the state actually changes (dedup consecutive identical)
 - **WorldModel.get_entity**: Get an entity by name
 - **WorldModel.list_entities**: Top-N entities by relevance (descending)
 - **WorldModel.add_relation**: Add a relation between two entities
 - **WorldModel.get_relations**: Get all relations involving an entity
 - **WorldModel.list_relations**: All relations as a shallow-copied list (public read)
 - **WorldModel.add_prediction**: Add a prediction about the world
-- **WorldModel.get_predictions**: Get predictions, optionally filtered by keyword
 - **WorldModel.validate_prediction**: Mark a prediction as validated (correct or incorrect)
 - **WorldModel.query**: Natural language query against the world model
 - **WorldModel.subgraph**: Get a subgraph around an entity, for context injection
@@ -1069,7 +1064,6 @@ Extração via AST do repositório `~/clawd/Repos/Conscio`. Cada função listad
 - **WorldModel._compute_relevance**: Compute decayed relevance
 - **WorldModel.entropy**: Entropy score in [0, 1] for an entity
 - **WorldModel.decay_all_entities**: Recalculate relevance for all entities based on time decay
-- **WorldModel.prune_irrelevant**: Remove entities below the minimum relevance threshold
 - **WorldModel.prune_stale**: Decay relevance, then remove stale entities (and their relations)
 - **WorldModel.prune_by_entropy**: Decay relevance, then remove entities whose entropy exceeds ``threshold``
 - **WorldModel.recently_changed**: Names of entities whose ``last_updated`` is within the last ``hours``

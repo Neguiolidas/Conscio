@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.14.0] - 2026-07-13 — Wired loop (hostile audit: every circuit closed or cut)
+
+Theme: full hostile/skeptical audit of the codebase. Every half-wired feature
+was either wired into the live perceive→reflect loop (TDD) or deleted.
+No API is shipped that production code doesn't call.
+
+### Added
+- **`cognitive_cycle`** — explicit, useful reflect loop (perceive → reflect →
+  advisory → propose), reachable from the MCP host.
+- **Calibrated hybrid recall** — RRF-fuses lexical (FTS5) and dense (embedding)
+  rankings; semantic hits no longer drown under exact-match noise.
+- **Deterministic world_state entity extractor** — `engine.perceive()` now
+  populates the world model from plain text (no LLM, no clock, no I/O),
+  instead of waiting for explicitly-passed `entities=`.
+- **Structural cognition via MCP host** — structure/lookup surfaced as tools.
+- **Metabolic tier driven by host-reported context usage** — real token
+  pressure replaces guessed session length.
+- `docs/reference/conscio_functions.md` — generated reference guide for every
+  public function.
+
+### Changed (wiring — previously dead stores now live in the loop)
+- **Reality dimension live**: `add_entity()` re-perception is the sole
+  producer feeding `record_prediction()` → `recent_prediction_error_rate()` →
+  coherence `reality` score. (#140)
+- **`add_relation` wired into perception** — relations extracted
+  deterministically from perceived text. (#142)
+- **If-then predictions produce/validate/surface**: `reflect()` PREDICT stage
+  generates persistence predictions; next `perceive()` validates them;
+  `query()` surfaces matches. (#143)
+- **Metabolic gates wired**: `should_dream`/`should_mitosis` now emit cycle
+  advisories from `reflect()`. (#147)
+- **Confidence loop closed**: `update_outcome` + `add_critique` /
+  `recent_critiques` wired into the reflect cycle. (#148)
+- `blind_spots` call sites ported to the public MetaCognition accessor;
+  `list_relations()` refactor kills the last v0.6 private `_data` scans. (#145)
+
+### Fixed
+- Context fuzzling bug — `glm-5.2` detected as 200k instead of 1M.
+- Context-first model resolution — vendor prefixes and config model resolve
+  consistently; `resume` reads the model from config too.
+
+### Removed (dead code — zero production callers, verified repo-wide) (#141, #144)
+- `WorldModel.update_state`, `WorldModel.prune_irrelevant` (redundant with
+  `add_entity` state_log + `prune_stale`/`prune_by_entropy`).
+- `WorldModel.get_predictions` (test-only reader).
+- `SessionVectorStore.upsert_chunk` (test-only duplicate of `upsert_batch`,
+  the live write path via `index_recent_sessions`).
+- `SessionRAG.search_and_format`, `ContentStore.rebuild`.
+- Reference doc updated to match the shipped surface.
+
+### Tests
+- Full suite: **2246 passed** (2147 in 2.13.0) — every wiring change TDD'd
+  (RED → GREEN), every removal covered by migration to the live path.
+
+---
+
 ## [2.13.0] - 2026-07-07 — ReflectionGate (adaptive reflection depth)
 
 ### Added
