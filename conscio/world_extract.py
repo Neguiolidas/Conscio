@@ -38,6 +38,23 @@ def _classify(value: str) -> str:
     return "metric"
 
 
+def _parse_fact(line: str) -> tuple[str, str, str] | None:
+    """``(key, state, type)`` for a structured fact line, else ``None``."""
+    if ": " in line:
+        key, _, value = line.partition(": ")
+        etype = "attribute"
+    elif "=" in line:
+        key, _, value = line.partition("=")
+        value = value.strip()
+        etype = _classify(value)
+    else:
+        return None
+    key = key.strip()
+    if not _KEY_RE.match(key):
+        return None
+    return key, value.strip(), etype
+
+
 def extract_entities(world_state: str) -> dict[str, dict]:
     """Extract ``{name: {type, state, attributes}}`` from a world_state string.
 
@@ -49,18 +66,43 @@ def extract_entities(world_state: str) -> dict[str, dict]:
         line = raw.strip()
         if not line or (line.startswith("[") and line.endswith("]")):
             continue
-        if ": " in line:
-            key, _, value = line.partition(": ")
-            etype = "attribute"
-        elif "=" in line:
-            key, _, value = line.partition("=")
-            value = value.strip()
-            etype = _classify(value)
-        else:
+        fact = _parse_fact(line)
+        if fact is None:
             continue
-        key = key.strip()
-        if not _KEY_RE.match(key):
-            continue
-        entities[key] = {"type": etype, "state": value.strip(),
-                         "attributes": {}}
+        key, state, etype = fact
+        entities[key] = {"type": etype, "state": state, "attributes": {}}
     return entities
+
+
+def extract_relations(world_state: str) -> list[tuple[str, str, str]]:
+    """Extract ``(source, "reports", fact_key)`` triples from a world_state.
+
+    The ``[source]`` frame header is the only relation carrier in the
+    producer contract (`PerceptionFrame.to_world_state` emits it
+    unconditionally), so it is the only edge derived — no syntax is invented
+    that nothing produces. A header binds every structured fact that follows
+    it (until the next header) to its source; facts seen before any header
+    have no edge to hang off and yield nothing. Triples are unique, in
+    first-observation order, and the triple shape matches
+    `WorldModel.add_relation(from_entity, relation, to_entity)`.
+    """
+    relations: list[tuple[str, str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    source: str | None = None
+    for raw in world_state.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            source = line[1:-1].strip() or None
+            continue
+        if source is None:
+            continue
+        fact = _parse_fact(line)
+        if fact is None:
+            continue
+        triple = (source, "reports", fact[0])
+        if triple not in seen:
+            seen.add(triple)
+            relations.append(triple)
+    return relations
