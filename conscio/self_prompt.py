@@ -112,7 +112,7 @@ def generate_self_prompts(meta, world, coherence_report, recent_events=None) -> 
     # 4. Recent self-critiques (#148) — recorded corrections become questions.
     #    getattr guard keeps signature-compatibility with minimal meta fakes.
     try:
-        critiques = getattr(meta, "recent_critiques", lambda n=2: [])(2) or []
+        critiques: list = getattr(meta, "recent_critiques", lambda n=2: [])(2) or []
     except Exception:
         critiques = []
     for c in critiques:
