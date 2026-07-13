@@ -275,7 +275,7 @@ class ConsciousnessEngine:
 
         # Generate EVOLUTION goals from blind spots
         # GoalGenerator prefixes with "Evolve:" — match that for dedup
-        for blind_spot in meta._data.get("blind_spots", []):
+        for blind_spot in meta.blind_spots():
             expected_desc = f"Evolve: {blind_spot} \u2014 low confidence area"
             if expected_desc not in active_descriptions:
                 # v1.6 (#7): blind-spot goals are meta-derived -> diagnostic-only.
