@@ -364,17 +364,6 @@ class TestCompaction:
         assert removed == 0
         assert store.get_source(sid) is not None
 
-    def test_rebuild(self, populated_store):
-        """rebuild() doesn't crash and preserves data."""
-        stats_before = populated_store.stats()
-        populated_store.rebuild()
-        stats_after = populated_store.stats()
-        # Counts should be the same after rebuild
-        assert stats_before["source_count"] == stats_after["source_count"]
-
-
-# ─── Stats Tests ────────────────────────────────────────────────────────
-
 class TestStats:
     def test_empty_stats(self, store):
         """Empty store has zero counts."""

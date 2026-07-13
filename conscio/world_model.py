@@ -206,15 +206,6 @@ class WorldModel:
         self._data["predictions"] = self._data["predictions"][-PREDICTIONS_MAX:]
         self._save()
 
-    def get_predictions(self, keyword: str = "") -> list[dict]:
-        """Get predictions, optionally filtered by keyword."""
-        if not keyword:
-            return self._data["predictions"]
-        return [
-            p for p in self._data["predictions"]
-            if keyword.lower() in p["if"].lower() or keyword.lower() in p["then"].lower()
-        ]
-
     def validate_prediction(self, index: int, was_correct: bool) -> None:
         """Mark a prediction as validated (correct or incorrect)."""
         if 0 <= index < len(self._data["predictions"]):
