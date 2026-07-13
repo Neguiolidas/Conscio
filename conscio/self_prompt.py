@@ -60,7 +60,7 @@ def generate_self_prompts(meta, world, coherence_report, recent_events=None) -> 
 
     PURE / deterministic. Sources:
       - coherence_report.dissonances  → one prompt per dimension below threshold
-      - meta._data["blind_spots"]     → evolution prompts (top 2)
+      - meta.blind_spots()            → evolution prompts (top 2)
       - world.stale_entities()        → maintenance prompts (top 2)
 
     `recent_events` is accepted for signature symmetry; v0.7 derives temporal from
@@ -79,9 +79,9 @@ def generate_self_prompts(meta, world, coherence_report, recent_events=None) -> 
             severity=float(getattr(d, "severity", 1.0 - getattr(d, "score", 0.5))),
         ))
 
-    # 2. Blind spots (meta-cognition).
+    # 2. Blind spots (meta-cognition, public accessor).
     try:
-        blind = list(meta._data.get("blind_spots", []))
+        blind = meta.blind_spots()
     except Exception:
         blind = []
     for spot in blind[:2]:
