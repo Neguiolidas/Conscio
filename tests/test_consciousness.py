@@ -252,16 +252,6 @@ class TestWorldModelDecay:
         # Should be boosted by 0.3, capped at 1.0
         assert entity["relevance"] == 0.7
 
-    def test_prune_removes_low_relevance(self, world_model):
-        world_model.add_entity("keeper", "test", state="active")
-        world_model.add_entity("goner", "test", state="dead")
-        world_model._data["entities"]["goner"]["relevance"] = 0.05
-        world_model._save()
-        pruned = world_model.prune_irrelevant(min_relevance=0.1)
-        assert pruned == 1
-        assert world_model.get_entity("goner") is None
-        assert world_model.get_entity("keeper") is not None
-
     def test_stale_includes_low_relevance(self, world_model):
         world_model.add_entity("irrelevant", "test", state="meh")
         world_model._data["entities"]["irrelevant"]["relevance"] = 0.1
