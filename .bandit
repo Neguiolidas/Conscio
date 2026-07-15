@@ -1,0 +1,7 @@
+targets:
+  - conscio
+severity: medium
+confidence: medium
+skips:
+  - B101
+  - B113

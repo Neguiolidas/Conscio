@@ -139,14 +139,16 @@ class Bindings:
             "conscio.cognitive_cycle": self._cognitive_cycle,
         }
         if self._act_enabled():
+            ha = self.engine.host_act
+            assert ha is not None  # guarded by _act_enabled()
             tools.update({
                 "conscio.act": self._act,
                 "conscio.report_result": self._report_result,
-                "conscio.pending": lambda a: self.engine.host_act.pending(
+                "conscio.pending": lambda a, _ha=ha: _ha.pending(
                     self._int_arg(a, "limit", 20)),
-                "conscio.approve": lambda a: self.engine.host_act.approve(
+                "conscio.approve": lambda a, _ha=ha: _ha.approve(
                     self._int_arg(a, "ledger_id")),
-                "conscio.reject": lambda a: self.engine.host_act.reject(
+                "conscio.reject": lambda a, _ha=ha: _ha.reject(
                     self._int_arg(a, "ledger_id"), str(a.get("reason", ""))),
             })
         if self.hermes_review:
@@ -178,7 +180,9 @@ class Bindings:
         result = self._require(args, "result")
         if not isinstance(result, dict):
             raise j.InvalidParams("result must be an object")
-        return self.engine.host_act.report(ledger_id, result)
+        ha = self.engine.host_act
+        assert ha is not None  # only callable via act tools
+        return ha.report(ledger_id, result)
 
     # ── v2.6.0 Liaison: reviewer side (pure mailbox; no host_act) ──
     def _reviews(self, args: dict) -> list[dict]:
@@ -232,7 +236,7 @@ class Bindings:
             return
         if result.get("approval_policy") != "hermes_review":
             return
-        row = self.engine.host_act.ledger.get(result["ledger_id"])  # Hermet R1
+        row = self.engine.host_act.ledger.get(result["ledger_id"]) if self.engine.host_act else None  # Hermet R1
         if row is None:
             return
         args = self._row_args(row)
@@ -461,7 +465,7 @@ class Bindings:
             prior = self.seen.seen(skey)
             if prior is not None:
                 return json.loads(prior)
-        result = self.engine.host_act.propose(intent)
+        result = self.engine.host_act.propose(intent) if self.engine.host_act else {"status": "error", "message": "act not enabled"}
         if skey is not None:
             self.seen.mark(skey, json.dumps(result), time.time())
         self._maybe_publish_review(result)

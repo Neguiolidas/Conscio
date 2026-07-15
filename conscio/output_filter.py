@@ -21,6 +21,7 @@ try:
     import yaml  # type: ignore[import-untyped]
     HAS_YAML = True
 except ImportError:
+    yaml = None  # type: ignore[assignment]
     HAS_YAML = False
 
 
@@ -495,6 +496,7 @@ def build_pipeline_from_config(config_path: str | Path | None = None) -> FilterP
     if not path.exists() or not HAS_YAML:
         return FilterPipeline()  # Defaults
 
+    assert yaml is not None  # guarded by HAS_YAML above
     with open(path) as f:
         config = yaml.safe_load(f)
 
