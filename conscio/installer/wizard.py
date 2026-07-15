@@ -50,6 +50,7 @@ def _write_generic(io: PromptIO, slug: str, flags: dict, model, ts: str,
 
 def run_with(io: PromptIO, *, host: str, repair: bool, model: "str | None",
              ts: str, label: "str | None" = None) -> int:
+    cfg: Path | None = None
     if repair and host == "claude-code":
         # repair rebinds the EXISTING space: recover slug + model from the
         # current entry so a rerun never mints a fresh empty mind or strips
@@ -68,7 +69,7 @@ def run_with(io: PromptIO, *, host: str, repair: bool, model: "str | None",
     if repair:
         # repair rewrites the binding only — recover the flags the user had
         # already granted instead of silently downgrading them to OFF
-        if host == "claude-code":
+        if host == "claude-code" and cfg is not None:
             flags.update(hostcfg.existing_flags(cfg))
         if flags.get("initiate"):
             io.echo("  note: initiate applies to the Awake daemon — start it "

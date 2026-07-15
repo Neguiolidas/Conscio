@@ -37,11 +37,13 @@ Changelog = "https://github.com/Neguiolidas/Conscio/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
- "pytest>=7.0",
- "pytest-cov>=4.0",
- "ruff>=0.8",
- "mypy>=1.0",
- "pyyaml>=6.0",
+  "pytest>=7.0",
+  "pytest-cov>=4.0",
+  "ruff>=0.8",
+  "pyright>=1.1.350",
+  "bandit>=1.7",
+  "vulture>=2.1",
+  "pyyaml>=6.0",
 ]
 docs = [
  "mkdocs-material>=9.5",
@@ -71,3 +73,39 @@ version = {attr = "conscio.__version__"}
 
 [tool.setuptools.package-data]
 conscio = ["py.typed", "hub/static/*", "observatory/static/*", "integrations/claude_code/assets/**/*"]
+
+# ── pyright (type checker — substitui mypy) ─────────────────────────
+[tool.pyright]
+include = ["conscio"]
+pythonVersion = "3.10"
+typeCheckingMode = "standard"
+reportPossiblyUnboundVariable = "error"
+reportOptionalMemberAccess = "error"
+reportIncompatibleMethodOverride = "warning"
+reportMissingImports = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownVariableType = "none"
+reportMissingTypeStubs = "none"
+
+# ── bandit (security linter) ────────────────────────────────────────
+[tool.bandit]
+targets = ["conscio"]
+severity = "medium"
+confidence = "medium"
+skips = [
+  "B101",  # assert_used — pytest usa assert natural
+  "B113",  # request_without_timeout — RAG factory tem timeout explicito
+]
+
+# ── vulture (dead code finder) ──────────────────────────────────────
+[tool.vulture]
+paths = ["conscio"]
+min_confidence = 60
+# Métodos do_HTTP* são dispatch do BaseHTTPRequestHandler — não são "mortos"
+# row_factory é sqlite3 idiom — atribuição tem efeito colateral
+# Funções de API pública podem ser chamadas externamente
+exclude_patterns = [
+  "*/observatory/server.py",
+  "*/session_lifecycle.py",
+]
