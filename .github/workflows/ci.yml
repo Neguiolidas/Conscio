@@ -63,7 +63,7 @@ jobs:
         run: bandit -r conscio/ -q -ll --exit-zero -c .bandit
 
       - name: Vulture dead code scan
-        run: vulture conscio/ --min-confidence 60
+        run: vulture conscio/ vulture_whitelist.py --min-confidence 60
 
   # Build smoke: catch a packaging regression on every push, not at tag time.
   package:

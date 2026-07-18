@@ -105,7 +105,7 @@ min_confidence = 60
 # Métodos do_HTTP* são dispatch do BaseHTTPRequestHandler — não são "mortos"
 # row_factory é sqlite3 idiom — atribuição tem efeito colateral
 # Funções de API pública podem ser chamadas externamente
-exclude_patterns = [
-  "*/observatory/server.py",
-  "*/session_lifecycle.py",
+exclude = [
+  "conscio/observatory/server.py",
+  "conscio/session_lifecycle.py",
 ]
