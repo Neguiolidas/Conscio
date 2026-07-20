@@ -71,8 +71,12 @@ VALID_TYPES = {
  "reflection_gate",       # v2.13: adaptive reflection gate decision
  "adr:proposed",          # v3.0: ADR created with status proposed
  "adr:accepted",          # v3.0: ADR accepted
- "council:convened",      # v3.0: Council executed (4 voices + result)
- "gate:vetoed",           # v3.0: Loop gate or investigate vetoed action
+ "council:convened",      # v3.0: council session result
+ "gate:vetoed",           # v3.0: gate blocked an action
+ "pipeline:acceptance",   # v3.0: acceptance criteria defined
+ "pipeline:verified",     # v3.0: verification loop completed
+ "pipeline:compact",     # v3.0: strategic compact advisory
+ "pipeline:ledger",       # v3.0: decision ledger entry
  }
 
 VALID_CATEGORIES = {"system", "trading", "consciousness", "external", "session"}

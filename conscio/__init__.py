@@ -38,6 +38,10 @@ from .gates import (  # noqa: F401
     decide, council, loop_gate, delivery_check, investigate,
     ADR_VALID_STATUSES, COUNCIL_ROLES, COUNCIL_VOTES,
 )
+from .pipelines import (  # noqa: F401
+    acceptance_criteria, verify, continuous_loop, strategic_compact, ledger,
+    LOOP_PATTERNS, PROMOTION_GATES,
+)
 # Plugin discovery lives under `conscio.plugins` (discover_adapters/sensors/tools)
 # — kept out of the top-level namespace to keep this import light.
 

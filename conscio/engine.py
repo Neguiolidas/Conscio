@@ -1098,6 +1098,46 @@ class ConsciousnessEngine:
         from .gates import investigate as _investigate
         return _investigate(self, target=target, action_type=action_type)
 
+    # --- Pipeline Tools (v3.0) ---
+
+    def acceptance_criteria(self, *, goal: str = "", depth: str = "",
+                            risk_domains: list[str] | None = None) -> dict:
+        """Generate acceptance criteria for a goal or task."""
+        from .pipelines import acceptance_criteria as _ac
+        return _ac(self, goal=goal, depth=depth, risk_domains=risk_domains)
+
+    def verify(self, *, criteria: list[dict] | None = None,
+               criteria_source: str = "") -> dict:
+        """Verify that acceptance criteria have been met."""
+        from .pipelines import verify as _v
+        return _v(self, criteria=criteria, criteria_source=criteria_source)
+
+    def continuous_loop(self, *, task: str = "", pattern: str = "",
+                        frequency: str = "", verifiable: bool = True,
+                        budget_ok: bool = True, has_tools: bool = True) -> dict:
+        """Select and gate an autonomous loop pattern."""
+        from .pipelines import continuous_loop as _cl
+        return _cl(self, task=task, pattern=pattern, frequency=frequency,
+                   verifiable=verifiable, budget_ok=budget_ok, has_tools=has_tools)
+
+    def strategic_compact(self, *, phase: str = "", context_tokens: int = 0,
+                          context_window: int = 0) -> dict:
+        """Advise on strategic context compaction timing."""
+        from .pipelines import strategic_compact as _sc
+        return _sc(self, phase=phase, context_tokens=context_tokens,
+                   context_window=context_window)
+
+    def ledger(self, *, action: str = "record", rollout_id: str | None = None,
+               candidates: list[dict] | None = None, fresh_info: str = "",
+               search_space_size: int = 0, marks: dict | None = None,
+               prior_winner: str = "", coherence_mark: dict | None = None) -> dict:
+        """Record, query, or promote entries in the recursive decision ledger."""
+        from .pipelines import ledger as _l
+        return _l(self, action=action, rollout_id=rollout_id,
+                   candidates=candidates, fresh_info=fresh_info,
+                   search_space_size=search_space_size, marks=marks,
+                   prior_winner=prior_winner, coherence_mark=coherence_mark)
+
     # --- Lifecycle / Resource Cleanup ---
 
     def close(self) -> None:

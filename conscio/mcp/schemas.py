@@ -183,6 +183,52 @@ BASE_TOOL_DEFS: list[dict] = [
                      "properties": {"target": {"type": "string"},
                                     "action_type": {"type": "string"}},
                      "required": ["target"]}},
+    # ── v3.0 Pipeline tools ───────────────────────────────────────────
+    {"name": "conscio.acceptance_criteria",
+     "description": "Generate acceptance criteria for a goal. Auto-detects risk "
+                    "domains and depth (quick/full). Emits pipeline:acceptance event.",
+     "inputSchema": {"type": "object",
+                     "properties": {"goal": {"type": "string"},
+                                    "depth": {"type": "string",
+                                               "description": "quick|full|auto"},
+                                    "risk_domains": {"type": "array",
+                                                      "items": {"type": "string"}}}}},
+    {"name": "conscio.verify",
+     "description": "Verify acceptance criteria against evidence events. "
+                    "Use criteria_source='acceptance' to load from last acceptance event.",
+     "inputSchema": {"type": "object",
+                     "properties": {"criteria": {"type": "array"},
+                                    "criteria_source": {"type": "string"}}}},
+    {"name": "conscio.continuous_loop",
+     "description": "Select and gate an autonomous loop pattern (sequential, "
+                    "continuous_pr, rfc_dag, infinite). Checks loop_gate conditions.",
+     "inputSchema": {"type": "object",
+                     "properties": {"task": {"type": "string"},
+                                    "pattern": {"type": "string"},
+                                    "frequency": {"type": "string"},
+                                    "verifiable": {"type": "boolean", "default": True},
+                                    "budget_ok": {"type": "boolean", "default": True},
+                                    "has_tools": {"type": "boolean", "default": True}}}},
+    {"name": "conscio.strategic_compact",
+     "description": "Advise on strategic context compaction timing. "
+                    "Checks token pressure and workflow phase.",
+     "inputSchema": {"type": "object",
+                     "properties": {"phase": {"type": "string"},
+                                    "context_tokens": {"type": "integer"},
+                                    "context_window": {"type": "integer"}}}},
+    {"name": "conscio.ledger",
+     "description": "Record, query, or promote entries in the recursive decision "
+                    "ledger with coherence marks and promotion gates.",
+     "inputSchema": {"type": "object",
+                     "properties": {"action": {"type": "string",
+                                                "description": "record|query|promote"},
+                                    "rollout_id": {"type": "string"},
+                                    "candidates": {"type": "array"},
+                                    "fresh_info": {"type": "string"},
+                                    "search_space_size": {"type": "integer"},
+                                    "marks": {"type": "object"},
+                                    "prior_winner": {"type": "string"},
+                                    "coherence_mark": {"type": "object"}}}},
 ]
 
 RESOURCE_DEFS: list[dict] = [
