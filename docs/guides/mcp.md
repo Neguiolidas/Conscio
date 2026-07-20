@@ -153,6 +153,82 @@ Run one explicit cognitive pass: reflect → synthesize → propose/act → lear
 self-improve. Returns a report of each stage. The `act` stage only runs when
 the server has `--enable-act` on.
 
+### `conscio.evaluate(task_description, output)` (v2.15)
+
+5-axis self-evaluation scorecard (accuracy, completeness, clarity,
+actionability, conciseness). Scores 1–5 per axis with justification.
+
+## Tools — GATES (v3.0, always available)
+
+### `conscio.decide(title, context, status, alternatives?, deciders?)`
+
+Create an Architecture Decision Record. `status` is one of `proposed`,
+`accepted`, `deprecated`, `superseded`. Returns ADR dict with unique ID.
+
+### `conscio.council(question, context?)`
+
+Convene a 3-voice deterministic council (Arquiteto, Cético, Pragmatista).
+Optional LLM Critic if Awake Mode is active. Returns votes + majority verdict.
+
+### `conscio.loop_gate(verifiable?, budget_ok?, has_tools?)`
+
+Gate an autonomous loop. Checks three conditions, returns `approved` bool
+plus vetoed conditions list. Emits `gate:vetoed` when denied.
+
+### `conscio.delivery_check()`
+
+Pre-close delivery check. Scans for blockers, rationalization patterns,
+stale proposals, and disk space. Runs automatically in `engine.close()`.
+
+### `conscio.investigate(target, action_type?)`
+
+Verify that `target` was read before acting. Queries EventBus for
+`investigate:read` events matching the target (substring match).
+
+## Tools — PIPELINES (v3.0, always available)
+
+### `conscio.acceptance_criteria(goal?, depth?, risk_domains?)`
+
+Generate intent-driven acceptance criteria. Auto-detects risk domains
+(security/data/integration/compliance) and depth (quick/full).
+
+### `conscio.verify(criteria?, criteria_source?)`
+
+Verify acceptance criteria against `verify:evidence` events in EventBus.
+Use `criteria_source="acceptance"` to load from the last acceptance event.
+
+### `conscio.continuous_loop(task?, pattern?, frequency?, …)`
+
+Select and gate an autonomous loop pattern: `sequential`, `continuous_pr`,
+`rfc_dag`, `infinite`. Word-boundary keyword matching. Includes loop_gate.
+
+### `conscio.strategic_compact(phase?, context_tokens?, context_window?)`
+
+Advise on strategic context compaction. Checks token pressure, workflow
+phase, and milestone count. Returns `should_compact`, `urgency`, keep/drop lists.
+
+### `conscio.ledger(action, rollout_id?, candidates?, …)`
+
+Recursive decision ledger. `action` is `record`, `query`, or `promote`.
+Promotion gates: `paper` → `dry_run` → `live`, gated by coherence marks.
+
+## Tools — DIAGNOSTICS (v3.0, always available)
+
+### `conscio.context_budget(context_tokens?, context_window?, detail?)`
+
+Audit context window consumption. Returns token pressure, per-source
+breakdown, metabolic tier sizes, and optimization recommendations.
+
+### `conscio.eval_harness(action, eval_id?, eval_type?, task?, criteria?, results?, k_values?)`
+
+Formal evaluation framework. `define` creates an eval, `run` records results
+and computes pass@k metrics, `report` aggregates across all evals.
+
+### `conscio.rules_distill(action, source_types?, min_occurrences?, rule_text?, rule_id?)`
+
+Extract cross-cutting principles. `scan` finds repeated patterns in
+skills/events/decisions, `distill` creates a rule, `list` shows all rules.
+
 ## Tools — ACT (opt-in `--enable-act`)
 
 Available only with `--enable-act` (and engine Awake):
@@ -210,13 +286,16 @@ surfaced by relay. Payload cap: 64KB. Retention: 7 days after read.
 A duplicate `id` returns the **exact prior result** — retries never inflate the
 world model or the event log.
 
-## VALID_TYPES (22)
+## VALID_TYPES (33)
 
 ```
 tool_call, reflection, trade, error, anomaly, decision, perception,
 goal_created, goal_expired, evolution_proposed, system, consciousness,
 session, coherence:dissonance, awake:changed, workspace:changed,
-structure:changed, proposal:audited, host:event, act:result, reflection_gate
+structure:changed, proposal:audited, host:event, act:result, reflection_gate,
+adr:proposed, adr:accepted, council:convened, gate:vetoed,
+pipeline:acceptance, pipeline:verified, pipeline:compact, pipeline:ledger,
+diagnostic:budget, diagnostic:eval, diagnostic:rule
 ```
 
 Invalid type raises `ValueError` immediately.

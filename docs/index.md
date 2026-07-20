@@ -19,6 +19,12 @@ a Conscio instance over a stdlib-only MCP stdio server (`conscio-mcp`) and consu
 its cognition + audited proposals live. The surface is **propose-only**: Conscio
 signs and audits intent; the host executes. See [MCP server](guides/mcp.md).
 
+**v3.0** adds 13 ECC tools across three modules: **gates** (ADRs, council,
+loop gate, delivery check, investigate), **pipelines** (acceptance criteria,
+verify, continuous loop, strategic compact, decision ledger), and
+**diagnostics** (context budget, eval harness, rule distillation). All
+deterministic, EventBus-backed, and exported from the `conscio` namespace.
+
 ## Install
 
 ```bash

@@ -77,7 +77,15 @@ non-negotiable (see [Safety rules](#safety-rules-non-negotiable)).
 - **Learns procedures** — successful audited plans become reusable skills (procedural
   memory), fed back to the actor as few-shot exemplars.
 - **Judges its own quality** — confidence calibration, blind-spot detection, and
-  coherence/dissonance metrics.
+  coherence/dissonance metrics; formal 5-axis self-evaluation (`evaluate()`).
+- **Gates its own decisions** (v3.0) — ADRs (`decide`), multi-voice council
+  (`council`), autonomous-loop gate (`loop_gate`), pre-close delivery check
+  (`delivery_check`), and read-before-act verification (`investigate`).
+- **Pipelines its own work** (v3.0) — intent-driven acceptance criteria, post-
+  implementation verification, loop-pattern selection, strategic compaction
+  advisory, and a recursive decision ledger with promotion gates.
+- **Diagnoses its own context** (v3.0) — context-budget audit, eval harness with
+  pass@k reliability metrics, and rule distillation from skills/events/decisions.
 - **Stores & retrieves knowledge** — FTS5 BM25 dual-index with RRF merging; optional
   semantic recall.
 - **Consolidates while idle** — a dream cycle that releases, prunes, reconciles,
@@ -201,6 +209,10 @@ read-only on the live `conscio.db`, no inherited trust, no network.
    ├─ Metabolism     MetabolicContext · DreamCycle (release→prune→…→distill)
    ├─ Coherence      CoherenceEngine · semantic reconciliation
    ├─ Structural     StructuralDistiller (graph → ranked signal; data, not code)
+   ├─ Gates (v3.0)   decide · council · loop_gate · delivery_check · investigate
+   ├─ Pipelines (v3.0) acceptance_criteria · verify · continuous_loop ·
+   │                 strategic_compact · ledger
+   ├─ Diagnostics (v3.0) context_budget · eval_harness · rules_distill
    └─ Embodiment     conscio-mcp: JSON-RPC 2.0 over stdio (stdlib only)
                                                               │
             act()  ── opt-in agency · audited · gated ◀───────┘

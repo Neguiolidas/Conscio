@@ -30,6 +30,18 @@ two surfaces — passive `reflect()` and audited `act()` — never blur.
 │ CoherenceEngine (epistemic/reality/ontological/temporal)             │ │
 │ semantic reconciliation (antonym axes) · voice & axis presets         │ │
 └────────────────────────────────────────────────────────────────────────┘ │
+┌─────────────── Gates (v3.0) · conscio/gates.py ──────────────────────┐ │
+│ decide (ADRs) · council (3 voices) · loop_gate · delivery_check       │ │
+│ investigate (read-before-act) · _check_closed guard                   │ │
+└────────────────────────────────────────────────────────────────────────┘ │
+┌─────────────── Pipelines (v3.0) · conscio/pipelines.py ──────────────┐ │
+│ acceptance_criteria · verify · continuous_loop · strategic_compact    │ │
+│ ledger (recursive, paper→dry_run→live promotion gates)                │ │
+└────────────────────────────────────────────────────────────────────────┘ │
+┌─────────────── Diagnostics (v3.0) · conscio/diagnostics.py ──────────┐ │
+│ context_budget (token audit) · eval_harness (pass@k)                  │ │
+│ rules_distill (pattern extraction → rules)                            │ │
+└────────────────────────────────────────────────────────────────────────┘ │
                                                                             │
    act()  ── opt-in agency, audited, gated ◀────────────────────────────────┘
    ▼
@@ -85,3 +97,21 @@ execution over MCP (`act`) is deferred to v2.0.1.
   (localhost by default). No network tools in the registry (rule R7).
 - **Everything is data, never code** — skills are plan templates, not executable
   behavior; the audited pipeline re-validates everything.
+
+## ECC tools (v3.0)
+
+Three modules of advisory, deterministic tools backed by EventBus events:
+
+- **Gates** (`conscio.gates`) — ADRs with `decide`, 3-voice `council`,
+  autonomous-loop `loop_gate`, pre-close `delivery_check`, read-before-act
+  `investigate`. All guarded by `_check_closed()`.
+- **Pipelines** (`conscio.pipelines`) — intent-driven `acceptance_criteria`,
+  evidence-based `verify`, pattern-selecting `continuous_loop`, compaction
+  advisory `strategic_compact`, recursive `ledger` with promotion gates
+  (paper → dry_run → live).
+- **Diagnostics** (`conscio.diagnostics`) — token audit `context_budget`,
+  `eval_harness` with pass@k metrics, `rules_distill` for pattern extraction.
+
+All 13 tools are exported from the top-level `conscio` namespace, available as
+engine methods, and exposed as MCP tools. See [MCP server](mcp.md) and
+[Public API](../reference/public-api.md).

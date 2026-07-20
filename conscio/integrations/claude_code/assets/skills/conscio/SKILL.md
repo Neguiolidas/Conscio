@@ -20,6 +20,18 @@ state, and a society of peer agents. Two faces:
 - **A decision/fact is settled** → `conscio.remember` it (durable only).
 - **Coordinating with another agent** → `conscio.relay_send` / check society.
 - **Unsure of project direction** → `conscio.state` for goals/coherence.
+- **Making an architecture decision** → `conscio.decide` to create an ADR.
+- **Need multi-perspective analysis** → `conscio.council` for 3-voice review.
+- **Starting an autonomous loop** → `conscio.loop_gate` to verify conditions.
+- **Closing a session** → `conscio.delivery_check` runs automatically.
+- **Before acting on a target** → `conscio.investigate` to verify you read it.
+- **Defining success criteria** → `conscio.acceptance_criteria` for the goal.
+- **Verifying work is done** → `conscio.verify` against acceptance criteria.
+- **Context getting long** → `conscio.strategic_compact` for compaction advice.
+- **Recording a decision** → `conscio.ledger` with coherence marks.
+- **Auditing token usage** → `conscio.context_budget` for pressure analysis.
+- **Measuring reliability** → `conscio.eval_harness` with pass@k metrics.
+- **Finding repeated patterns** → `conscio.rules_distill` to scan and distill.
 
 Keep it light: recall/remember are cheap; don't narrate the tool use, just fold
 the result into your work.

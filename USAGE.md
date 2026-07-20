@@ -2,7 +2,7 @@
 
 Self-awareness framework for AI agents. 100% local Python + SQLite FTS5. Zero external deps runtime (numpy optional for embeddings).
 
-**Version:** 2.14.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
+**Version:** 3.0.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
 
 ## Install
 
@@ -123,6 +123,9 @@ tool_call reflection trade error anomaly decision perception
 goal_created goal_expired evolution_proposed system consciousness
 session coherence:dissonance awake:changed workspace:changed
 structure:changed proposal:audited host:event act:result reflection_gate
+adr:proposed adr:accepted council:convened gate:vetoed
+pipeline:acceptance pipeline:verified pipeline:compact pipeline:ledger
+diagnostic:budget diagnostic:eval diagnostic:rule
 ```
 
 ## VALID_CATEGORIES

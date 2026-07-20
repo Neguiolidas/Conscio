@@ -1074,3 +1074,32 @@ Extração via AST do repositório `~/clawd/Repos/Conscio`. Cada função listad
 - **WorldModel.mark_contradictions**: Scan relations (per from→to pair) + entity state_logs via `detector`, writing a cached `contradicted: bool` onto each entity
 - **WorldModel.contradicted_entities**: Cheap read of cached `contradicted` flags
 - **WorldModel.status**: Return status for monitoring
+
+## conscio.evaluation
+
+- **evaluate**: Produce a 5-axis self-evaluation scorecard from the engine state.
+- **EvaluationReport.to_dict**: Serialize evaluation report
+- **AxisScore.to_dict**: Serialize axis score
+- **EvaluationReport.to_injection**: Compact form for context injection.
+
+## conscio.gates (v3.0)
+
+- **decide**: Create or update an Architecture Decision Record.
+- **council**: Convene a 4-voice council for decision analysis.
+- **loop_gate**: Vet an autonomous loop against 4 conditions.
+- **delivery_check**: Pre-close quality gate: rationalization, stale libs, disk space.
+- **investigate**: Verify that the target was read before acting.
+
+## conscio.pipelines (v3.0)
+
+- **acceptance_criteria**: Generate acceptance criteria for a goal or task.
+- **verify**: Verify that acceptance criteria have been met.
+- **continuous_loop**: Select and gate an autonomous loop pattern.
+- **strategic_compact**: Advise on strategic context compaction timing.
+- **ledger**: Record, query, or promote entries in the recursive decision ledger.
+
+## conscio.diagnostics (v3.0)
+
+- **context_budget**: Audit context window consumption and surface optimizations.
+- **eval_harness**: Formal evaluation framework with pass@k metrics.
+- **rules_distill**: Extract cross-cutting principles from skills, events, and decisions.

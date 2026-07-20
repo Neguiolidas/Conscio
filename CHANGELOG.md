@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [3.0.0] - 2026-07-20 — ECC full integration (13 tools: gates + pipelines + diagnostics)
+## [3.0.0] - 2026-07-20 — G-P-D (13 tools: gates + pipelines + diagnostics)
 
 ### Added — Ato 1: Gates (5 tools)
 - `conscio.gates.decide()` — Architecture Decision Records with 4 statuses (proposed/accepted/deprecated/superseded), unique IDs with random suffix

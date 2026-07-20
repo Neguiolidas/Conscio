@@ -24,9 +24,16 @@
 | v1.6 | Structural Cognition (field slice) | goal-provenance gate + `advisory()` consumption seam | ✅ Done |
 | v1.7 | Structural Cognition (distiller) | `StructuralDistiller` + budget-adaptive injection + consent (R10) | ✅ Done |
 | v1.8 | Structural Drift | drift + freshness (vs repo HEAD, pure `.git`) — temporal structure | ✅ Done |
+| v2.0 | Connect | MCP stdio server + noosphere + Liaison + Observatory | ✅ Done |
+| v2.4–2.6 | Liaison/Observatory | cross-agent review + read-only state window | ✅ Done |
+| v2.8 | Cognitive Cycle | explicit single-pass: reflect→synthesize→propose/act→learn | ✅ Done |
+| v2.13 | ReflectionGate | adaptive reflection depth | ✅ Done |
+| v2.15 | Self-Evaluation | `evaluate()` 5-axis rubric + ECC workflow skills | ✅ Done |
+| v3.0 | G-P-D | 13 ECC tools: gates (5) + pipelines (5) + diagnostics (3) | ✅ Done |
 
-> Full per-release detail lives in [`CHANGELOG.md`](../CHANGELOG.md). Next: the
-> **Connect** band (v2.0 — same-host noosphere; cross-host deferred to authenticated transport).
+> Full per-release detail lives in [`CHANGELOG.md`](../CHANGELOG.md). The
+> **G-P-D** band (v3.0 — 13 advisory ECC tools: gates, pipelines, diagnostics)
+> shipped 2026-07-20 with 460 tests.
 
 ---
 
