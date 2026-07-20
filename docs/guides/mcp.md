@@ -38,24 +38,155 @@ command:
   adapter, read tools still work and `propose_*` / `act` fail closed.
 - `--enable-act` (off by default) / `--awake` — opt into audited `act` (see
   [Audited act](#audited-act-v201-opt-in)).
+- `--enable-hermes-review --reviewer <id>` (repeatable) — enable review channel.
+- `--enable-relay --relay-peer <id>` (repeatable) — enable cross-host relay.
+- `--liaison-db <path>` — mailbox path (default `$HERMES_HOME/liaison.db`).
 - `--max-frame-bytes` (default `1048576`), `--seen-max-rows` (default `10000`),
   `--seen-max-age-days` (default `30`).
 
 Run `conscio-mcp` directly (the console entry point), not `python -m
 conscio.mcp.server`.
 
-## Tools
+## Tools — BASE (always available)
 
-| Tool | What it does |
-|---|---|
-| `conscio.feed(event)` | Ingest a perception Event → `perceive` + `reflect` → returns the updated advisory. Idempotent on `event.id`. |
-| `conscio.note(event)` | Record a raw Event to the event log (no reflect). Idempotent on `event.id`. |
-| `conscio.advisory()` | Current cognitive state (pure read). |
-| `conscio.recall(query, k=3, categories?)` | Relevant past context (FTS5 + RAG). |
-| `conscio.propose_action(intent)` | Audit an explicit action `{tool, args, rationale, expected_outcome}` with the Skeptic → `{verdict, reasons, risk_flags, confidence, proposal}`. **Never executes.** |
-| `conscio.propose_plan(goal, tools)` | Actor generates ONE action toward `goal`, constrained to the declared `tools` vocabulary (`[{name, description}]`), then the Skeptic audits it. **Never executes; not free-form.** |
+### `conscio.feed(event, session_tokens?)`
 
-## Resources
+Ingest a perception Event → `perceive` + `reflect` → returns the updated advisory.
+Idempotent on `event.id`. Optional `session_tokens` (int) drives the metabolic
+tier (VITAL / ACTIVE / FATIGUE / CRITICAL) based on real host context usage.
+
+```json
+{
+  "event": {
+    "type": "perception",
+    "category": "consciousness",
+    "data": {"summary": "user reported interface bug"},
+    "ts": 0
+  },
+  "session_tokens": 8000
+}
+```
+
+### `conscio.note(event)`
+
+Record a raw Event to the event log (**no reflect**). Idempotent on `event.id`.
+Use for fire-and-forget logging — `feed` is the heavier "perceive + reflect" path.
+
+```json
+{
+  "event": {
+    "type": "decision",
+    "category": "consciousness",
+    "data": {"summary": "[neurata] murmur_hash para content_hash"},
+    "id": "design-2026-07-19-001"
+  }
+}
+```
+
+### `conscio.advisory()` (pure read)
+
+Current cognitive state. No args. Returns mode, metabolic tier, active goals,
+recent reflections.
+
+### `conscio.recall(query, k?, categories?)` (pure read)
+
+Retrieve relevant past context (FTS5 BM25 + RAG fusion).
+
+```json
+{"query": "debug cron Hermes", "k": 5, "categories": ["consciousness", "session"]}
+```
+
+### `conscio.propose_action(intent)`
+
+Audit an explicit action intent with the Skeptic. **Never executes.**
+Returns `{verdict: "PASS"|"FAIL", reasons, risk_flags, confidence, proposal}`.
+
+```json
+{"intent": {"action": "delete", "target": "/tmp/old.log", "reason": "cleanup"}}
+```
+
+### `conscio.propose_plan(goal, tools)`
+
+Actor generates ONE action toward `goal`, constrained to the declared `tools`
+vocabulary. **Never executes; not free-form; not multi-step.**
+
+```json
+{
+  "goal": "limpar logs antigos",
+  "tools": [{"name": "shell", "description": "run shell command"}]
+}
+```
+
+### `conscio.state()` (pure read)
+
+ConsciousnessState snapshot. No args.
+
+### `conscio.events(type?, category?, since?, limit?)` (pure read)
+
+Recent events. All args optional.
+
+```json
+{"type": "error", "category": "trading", "limit": 20}
+```
+
+### `conscio.handoff()` (pure read)
+
+Latest session handoff (markdown). No args.
+
+### `conscio.structure()` (pure read)
+
+Workspace structural graph (consent-gated; data, never code). Returns
+`loaded=false` if not consented or not loaded.
+
+### `conscio.structural_lookup(key)` (pure read)
+
+Resolve a structural node / hyperedge / community id from the loaded graph to
+its detail. `null` on miss.
+
+```json
+{"key": "node:src/lib/auth.py"}
+```
+
+### `conscio.cognitive_cycle()` (v2.8)
+
+Run one explicit cognitive pass: reflect → synthesize → propose/act → learn →
+self-improve. Returns a report of each stage. The `act` stage only runs when
+the server has `--enable-act` on.
+
+## Tools — ACT (opt-in `--enable-act`)
+
+Available only with `--enable-act` (and engine Awake):
+
+- `conscio.act(intent, idempotency_key?)` — execute a pre-audited action
+- `conscio.report_result(ledger_id, result)` — feedback the outcome
+- `conscio.pending()` — list actions awaiting approval
+- `conscio.approve(ledger_id)` — approve a pending action
+- `conscio.reject(ledger_id, reason)` — reject a pending action
+
+See [Audited act (v2.0.1)](#audited-act-v201-opt-in) for the full flow.
+
+## Tools — REVIEW (opt-in `--enable-hermes-review`)
+
+Cross-agent `hermes_review` channel. Requires `--reviewer <id>` allowlist.
+
+- `conscio.reviews(limit?)` — inbox of pending review requests
+- `conscio.review_approve(request_id, verdict)` — issue verdict PASS + comments
+- `conscio.review_reject(request_id, verdict)` — issue verdict FAIL + comments
+- `conscio.poll_reviews()` — long-poll inbox for new requests
+
+## Tools — RELAY (opt-in `--enable-relay`)
+
+General cross-agent messaging. Requires `--relay-peer <id>` allowlist.
+
+- `conscio.relay_send(to, type, payload)` — send free-form message
+- `conscio.relay_inbox(limit?)` — read inbox
+- `conscio.relay_read(ids)` — mark messages read
+- `conscio.relay_broadcast(type, payload)` — fan-out to all peers
+
+Reserved-type isolation: `review_request` / `review_verdict` never sent or
+surfaced by relay. Payload cap: 64KB. Retention: 7 days after read.
+
+## Resources (read-only URIs)
 
 | URI | Returns |
 |---|---|
@@ -71,14 +202,46 @@ conscio.mcp.server`.
 | Field | Required | Notes |
 |---|---|---|
 | `id` | recommended | Idempotency key. If absent, the server derives a stable content hash. |
-| `type` | yes | e.g. `perception`, `tool_result`, `user_msg`, `log`. |
-| `source` | yes | Who/what produced it. |
-| `category` | yes | Domain grouping, e.g. `host`, `agent`, `user`. |
+| `type` | yes | One of `VALID_TYPES` (see below). |
+| `category` | yes | One of `VALID_CATEGORIES` (see below). |
+| `data` | yes | JSON-serializable payload (the "content"). |
 | `ts` | no | Epoch seconds; the server stamps when absent. |
-| `payload` | yes | The content; numeric fields become signals, the rest observations. |
 
 A duplicate `id` returns the **exact prior result** — retries never inflate the
 world model or the event log.
+
+## VALID_TYPES (22)
+
+```
+tool_call, reflection, trade, error, anomaly, decision, perception,
+goal_created, goal_expired, evolution_proposed, system, consciousness,
+session, coherence:dissonance, awake:changed, workspace:changed,
+structure:changed, proposal:audited, host:event, act:result, reflection_gate
+```
+
+Invalid type raises `ValueError` immediately.
+
+## VALID_CATEGORIES
+
+**EventBus (5):** `system`, `trading`, `consciousness`, `external`, `session`
+
+**ContentStore (8):** `reflection`, `perception`, `trading`, `system`, `error`,
+`consciousness`, `external`, `session`
+
+Project names like `"neurata"` are NOT valid categories. Use `"consciousness"`
+with a `[project-name]` prefix in the summary for grepability.
+
+### Mapping practice
+
+| Workflow | type | category |
+|---|---|---|
+| Design decision | `decision` | `consciousness` |
+| Exception / failure | `error` | `consciousness` (or `system` if infra) |
+| External perception | `perception` | `consciousness` |
+| Session lifecycle | `session` | `session` |
+| Trading signal | `trade` | `trading` |
+| Infrastructure event | `system` | `system` |
+| Tool was called | `tool_call` | `system` |
 
 ## The propose-only loop
 
@@ -127,3 +290,27 @@ entry has a `name`, `params` (the same arg schema the Skeptic validates), a base
 
 Every action writes an `ActionLedger` row — the same audited trail native `act()`
 uses. `act` is **never** local dispatch: Conscio audits, the host executes.
+
+## Common pitfalls
+
+1. **Invalid `type` / `category`** raises `ValueError` before any DB write. Check
+   the valid sets above.
+2. **`conscio.note` does NOT run `reflect`** — use `conscio.feed` if you want the
+   engine to react. `note` is fire-and-forget.
+3. **`event.id`** when present is the **only** idempotency key. A retry with the
+   same id returns the prior result (no inflation).
+4. **`session_tokens` is only accepted by `feed`**, not by `note`. Without it,
+   the metabolic tier is driven by session length heuristics.
+5. **`propose_action` and `propose_plan` never execute**, they audit. Only `act`
+   (which requires `--enable-act` + Awake) returns an executable packet.
+6. **`conscio.relay_*` ignores `review_request` / `review_verdict`** — those only
+   travel on the review channel (`reviews` / `review_approve` / `review_reject`).
+7. **`structural_lookup` returns `null` on miss** — no exception, just `null`.
+8. **Two hosts on the same `$HERMES_HOME` share `liaison.db`** — mailbox is
+   filesystem-scoped, not per-instance.
+9. **Adapter required for any `propose_*` / `act`** — without `--adapter` these
+   fail closed with a clear error. Read tools (`advisory`, `state`, `events`,
+   `recall`, `handoff`, `structure`, `structural_lookup`) work without adapter.
+10. **`conscio.cognitive_cycle` is explicit** — the daemon's autonomous loop runs
+    the same stages, but calling this tool runs **one** pass and returns a report.
+    It is not a long-running background loop.

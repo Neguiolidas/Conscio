@@ -161,6 +161,7 @@ class ConsciousnessEngine:
                                     base_url=base_url, autodetect=autodetect)
         self.model_info = self.ctx.model_info
         self.mode = self.ctx.mode
+        self._closed = False
 
         # Initialize modules
         self.monologue = InnerMonologue(self.ctx)
@@ -371,18 +372,34 @@ class ConsciousnessEngine:
         )
 
     def _count_contradictions(self, entities: list[dict]) -> int:
-        """Count contradicting entity pairs using ContradictionDetector."""
+        """Count contradicting entity pairs using ContradictionDetector.
+
+        Checks entity STATES (not names) for contradictions. Two entities
+        with different names whose states contradict each other count.
+        Also counts entities with multiple distinct states in their
+        state_log (temporal contradictions).
+        """
         if len(entities) < 2:
-            return 0
-        count = 0
-        names = [e.get("name", "") for e in entities]
-        for i, a in enumerate(names):
-            for b in names[i + 1:]:
-                try:
-                    if self._contradiction_detector.states_contradict(a, b):
-                        count += 1
-                except Exception:
-                    pass
+            count = 0
+        else:
+            count = 0
+            # Cross-entity: compare states between different entities
+            for i, a in enumerate(entities):
+                for b in entities[i + 1:]:
+                    try:
+                        sa = a.get("state", "")
+                        sb = b.get("state", "")
+                        if sa and sb and self._contradiction_detector.states_contradict(sa, sb):
+                            count += 1
+                    except Exception:
+                        pass
+        # Temporal: entities with multiple distinct states in state_log
+        for e in entities:
+            state_log = e.get("state_log", [])
+            if len(state_log) >= 2:
+                states = {entry.get("state", "") for entry in state_log if entry.get("state")}
+                if len(states) >= 2:
+                    count += 1
         return count
 
     def _reflect_once(
@@ -1016,10 +1033,37 @@ class ConsciousnessEngine:
             "stale_entities": len(self.world.stale_entities()),
         }
 
+    def evaluate(
+        self,
+        task_description: str = "",
+        output: str | None = None,
+    ):
+        """Produce a 5-axis self-evaluation scorecard (v2.15).
+
+        Axes: accuracy, completeness, clarity, actionability, conciseness.
+        Scores 1-5 with concrete evidence. Pure read-only — no state mutation.
+
+        Args:
+            task_description: what the agent was trying to do.
+            output: optional output text being evaluated (used for
+                    conciseness and clarity heuristics).
+
+        Returns:
+            EvaluationReport with 5 AxisScores + overall + improvements.
+
+        Raises:
+            RuntimeError: if engine has been closed.
+        """
+        if getattr(self, "_closed", False):
+            raise RuntimeError("evaluate() called on a closed engine")
+        from .evaluation import evaluate as _evaluate
+        return _evaluate(self, task_description, output)
+
     # --- Lifecycle / Resource Cleanup ---
 
     def close(self) -> None:
         """Close all SQLite-backed modules and flush WAL."""
+        self._closed = True
         for mod in (self.content_store, self.event_bus, self.token_tracker):
             try:
                 mod.close()

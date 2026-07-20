@@ -133,6 +133,16 @@ BASE_TOOL_DEFS: list[dict] = [
      "inputSchema": {"type": "object",
                      "properties": {"world_state": {"type": "string"},
                                     "session_tokens": {"type": "integer"}}}},
+    {"name": "conscio.evaluate",
+     "description": "5-axis self-evaluation scorecard (accuracy, completeness, "
+                    "clarity, actionability, conciseness). Scores 1-5 with "
+                    "concrete evidence. Pure read-only — no state mutation.",
+     "inputSchema": {"type": "object",
+                     "properties": {"task_description": {"type": "string",
+                                                        "description": "what the agent was trying to do"},
+                                    "output": {"type": "string",
+                                               "description": "optional output text being evaluated "
+                                                              "(used for conciseness and clarity heuristics)"}}}},
 ]
 
 RESOURCE_DEFS: list[dict] = [

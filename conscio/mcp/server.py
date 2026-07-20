@@ -137,6 +137,8 @@ class Bindings:
             "conscio.structure": self._structure,
             "conscio.structural_lookup": self._structural_lookup,
             "conscio.cognitive_cycle": self._cognitive_cycle,
+            "conscio.evaluate": lambda a: self.engine.evaluate(
+                a.get("task_description", ""), a.get("output")).to_dict(),
         }
         if self._act_enabled():
             ha = self.engine.host_act
