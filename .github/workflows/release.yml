@@ -35,7 +35,7 @@ jobs:
       - name: Lint + types
         run: |
           ruff check conscio/ tests/
-          mypy conscio/ --ignore-missing-imports
+          pyright conscio/
 
   build:
     needs: gate
