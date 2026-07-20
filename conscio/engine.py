@@ -1138,6 +1138,40 @@ class ConsciousnessEngine:
                    search_space_size=search_space_size, marks=marks,
                    prior_winner=prior_winner, coherence_mark=coherence_mark)
 
+    # --- Diagnostic Tools (v3.0) ---
+
+    def context_budget(self, *, context_tokens: int = 0,
+                        context_window: int = 0,
+                        detail: str = "summary") -> dict:
+        """Audit context window consumption and surface optimizations."""
+        from .diagnostics import context_budget as _cb
+        return _cb(self, context_tokens=context_tokens,
+                    context_window=context_window, detail=detail)
+
+    def eval_harness(self, *, action: str = "define",
+                      eval_id: str | None = None,
+                      eval_type: str = "capability",
+                      task: str = "",
+                      criteria: list[str] | None = None,
+                      results: list[bool] | None = None,
+                      k_values: list[int] | None = None) -> dict:
+        """Formal evaluation framework with pass@k metrics."""
+        from .diagnostics import eval_harness as _eh
+        return _eh(self, action=action, eval_id=eval_id, eval_type=eval_type,
+                    task=task, criteria=criteria, results=results,
+                    k_values=k_values)
+
+    def rules_distill(self, *, action: str = "scan",
+                       source_types: list[str] | None = None,
+                       min_occurrences: int = 2,
+                       rule_text: str = "",
+                       rule_id: str | None = None) -> dict:
+        """Extract cross-cutting principles from skills and events."""
+        from .diagnostics import rules_distill as _rd
+        return _rd(self, action=action, source_types=source_types,
+                    min_occurrences=min_occurrences, rule_text=rule_text,
+                    rule_id=rule_id)
+
     # --- Lifecycle / Resource Cleanup ---
 
     def close(self) -> None:

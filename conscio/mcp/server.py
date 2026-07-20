@@ -176,6 +176,25 @@ class Bindings:
                 search_space_size=a.get("search_space_size", 0),
                 marks=a.get("marks"), prior_winner=a.get("prior_winner", ""),
                 coherence_mark=a.get("coherence_mark")),
+            # ── v3.0 Diagnostic tools ──
+            "conscio.context_budget": lambda a: self.engine.context_budget(
+                context_tokens=a.get("context_tokens", 0),
+                context_window=a.get("context_window", 0),
+                detail=a.get("detail", "summary")),
+            "conscio.eval_harness": lambda a: self.engine.eval_harness(
+                action=a.get("action", "define"),
+                eval_id=a.get("eval_id"),
+                eval_type=a.get("eval_type", "capability"),
+                task=a.get("task", ""),
+                criteria=a.get("criteria"),
+                results=a.get("results"),
+                k_values=a.get("k_values")),
+            "conscio.rules_distill": lambda a: self.engine.rules_distill(
+                action=a.get("action", "scan"),
+                source_types=a.get("source_types"),
+                min_occurrences=a.get("min_occurrences", 2),
+                rule_text=a.get("rule_text", ""),
+                rule_id=a.get("rule_id")),
         }
         if self._act_enabled():
             ha = self.engine.host_act

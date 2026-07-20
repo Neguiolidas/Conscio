@@ -77,6 +77,9 @@ VALID_TYPES = {
  "pipeline:verified",     # v3.0: verification loop completed
  "pipeline:compact",     # v3.0: strategic compact advisory
  "pipeline:ledger",       # v3.0: decision ledger entry
+ "diagnostic:budget",     # v3.0: context budget audit
+ "diagnostic:eval",       # v3.0: eval harness result
+ "diagnostic:rule",       # v3.0: distilled rule
  }
 
 VALID_CATEGORIES = {"system", "trading", "consciousness", "external", "session"}
