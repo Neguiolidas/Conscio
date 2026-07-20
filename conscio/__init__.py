@@ -34,6 +34,10 @@ from .structural_drift import StructuralDigest, StructuralDelta, \
     StructuralFreshness, StructuralDriftStore, compute_delta, \
     compute_freshness, read_head_commit, drift_path  # noqa: F401
 from .evaluation import evaluate, EvaluationReport, AxisScore  # noqa: F401
+from .gates import (  # noqa: F401
+    decide, council, loop_gate, delivery_check, investigate,
+    ADR_VALID_STATUSES, COUNCIL_ROLES, COUNCIL_VOTES,
+)
 # Plugin discovery lives under `conscio.plugins` (discover_adapters/sensors/tools)
 # — kept out of the top-level namespace to keep this import light.
 

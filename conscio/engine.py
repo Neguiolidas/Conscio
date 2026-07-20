@@ -152,6 +152,7 @@ class ConsciousnessEngine:
         autodetect: bool = True,
         adaptive_reflection: bool = False,
         max_reflection_cycles: int = 3,
+        delivery_check: bool = True,
     ):
         self.storage = Path(storage_path) if storage_path else self.DEFAULT_STORAGE
         self.storage.mkdir(parents=True, exist_ok=True)
@@ -162,6 +163,7 @@ class ConsciousnessEngine:
         self.model_info = self.ctx.model_info
         self.mode = self.ctx.mode
         self._closed = False
+        self._delivery_check_enabled = delivery_check
 
         # Initialize modules
         self.monologue = InnerMonologue(self.ctx)
@@ -1059,10 +1061,54 @@ class ConsciousnessEngine:
         from .evaluation import evaluate as _evaluate
         return _evaluate(self, task_description, output)
 
+    # --- Gate Tools (v3.0) ---
+
+    def decide(self, *, title: str = "", context: str = "",
+               alternatives: list[str] | None = None,
+               adr_id: str | None = None, status: str = "proposed",
+               deciders: list[str] | None = None) -> dict:
+        """Create or update an Architecture Decision Record (ADR)."""
+        from .gates import decide as _decide
+        return _decide(self, title=title, context=context,
+                       alternatives=alternatives, adr_id=adr_id,
+                       status=status, deciders=deciders)
+
+    def council(self, question: str = "", context: str = "",
+                options: list[str] | None = None) -> dict:
+        """Convene a 4-voice decision council."""
+        from .gates import council as _council
+        return _council(self, question=question, context=context, options=options)
+
+    def loop_gate(self, *, task: str = "", frequency: str = "",
+                  verifiable: bool = True, budget_ok: bool = True,
+                  has_tools: bool = True) -> dict:
+        """Vet an autonomous loop against 4 conditions."""
+        from .gates import loop_gate as _loop_gate
+        return _loop_gate(self, task=task, frequency=frequency,
+                          verifiable=verifiable, budget_ok=budget_ok,
+                          has_tools=has_tools)
+
+    def delivery_check(self) -> dict:
+        """Pre-close quality gate: rationalization, stale libs, disk."""
+        from .gates import delivery_check as _delivery_check
+        return _delivery_check(self)
+
+    def investigate(self, *, target: str = "", action_type: str = "") -> dict:
+        """Verify that the target was read before acting."""
+        from .gates import investigate as _investigate
+        return _investigate(self, target=target, action_type=action_type)
+
     # --- Lifecycle / Resource Cleanup ---
 
     def close(self) -> None:
         """Close all SQLite-backed modules and flush WAL."""
+        # Run delivery_check before closing SQLite (so it can query EventBus)
+        if getattr(self, "_delivery_check_enabled", False):
+            try:
+                from .gates import delivery_check as _delivery_check
+                _delivery_check(self)
+            except Exception:
+                pass
         self._closed = True
         for mod in (self.content_store, self.event_bus, self.token_tracker):
             try:

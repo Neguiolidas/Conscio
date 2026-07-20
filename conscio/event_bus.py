@@ -69,7 +69,11 @@ VALID_TYPES = {
  "host:event",            # v2.0: raw host event recorded via MCP note()
  "act:result",            # v2.0.1: host-executed action outcome (report_result)
  "reflection_gate",       # v2.13: adaptive reflection gate decision
-}
+ "adr:proposed",          # v3.0: ADR created with status proposed
+ "adr:accepted",          # v3.0: ADR accepted
+ "council:convened",      # v3.0: Council executed (4 voices + result)
+ "gate:vetoed",           # v3.0: Loop gate or investigate vetoed action
+ }
 
 VALID_CATEGORIES = {"system", "trading", "consciousness", "external", "session"}
 

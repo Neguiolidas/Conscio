@@ -143,6 +143,46 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "output": {"type": "string",
                                                "description": "optional output text being evaluated "
                                                               "(used for conciseness and clarity heuristics)"}}}},
+    # ── v3.0 Gate tools ──────────────────────────────────────────────
+    {"name": "conscio.decide",
+     "description": "Create or update an Architecture Decision Record (ADR). "
+                    "Creating: pass title + context. Updating: pass adr_id + status.",
+     "inputSchema": {"type": "object",
+                     "properties": {"title": {"type": "string"},
+                                    "context": {"type": "string"},
+                                    "alternatives": {"type": "array", "items": {"type": "string"}},
+                                    "adr_id": {"type": "string"},
+                                    "status": {"type": "string",
+                                               "description": "proposed|accepted|deprecated|superseded"},
+                                    "deciders": {"type": "array", "items": {"type": "string"}}}}},
+    {"name": "conscio.council",
+     "description": "Convene a 4-voice council (architect, skeptic, pragmatist, critic) "
+                    "for decision analysis. Returns votes and recommendation.",
+     "inputSchema": {"type": "object",
+                     "properties": {"question": {"type": "string"},
+                                    "context": {"type": "string"},
+                                    "options": {"type": "array", "items": {"type": "string"}}},
+                     "required": ["question"]}},
+    {"name": "conscio.loop_gate",
+     "description": "Vet an autonomous loop against 4 conditions: frequency, "
+                    "verifiable, budget_ok, has_tools. Returns approved/vetoed.",
+     "inputSchema": {"type": "object",
+                     "properties": {"task": {"type": "string"},
+                                    "frequency": {"type": "string"},
+                                    "verifiable": {"type": "boolean", "default": True},
+                                    "budget_ok": {"type": "boolean", "default": True},
+                                    "has_tools": {"type": "boolean", "default": True}}}},
+    {"name": "conscio.delivery_check",
+     "description": "Pre-close quality gate: rationalization patterns, stale proposals, "
+                    "disk space. Also runs automatically on engine.close().",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "conscio.investigate",
+     "description": "Verify that a target was read before acting. Checks EventBus "
+                    "for investigate:read events mentioning the target.",
+     "inputSchema": {"type": "object",
+                     "properties": {"target": {"type": "string"},
+                                    "action_type": {"type": "string"}},
+                     "required": ["target"]}},
 ]
 
 RESOURCE_DEFS: list[dict] = [
