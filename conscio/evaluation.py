@@ -16,7 +16,6 @@ This is a read-only diagnostic — never modifies state, never emits events.
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
@@ -386,7 +385,6 @@ def _score_conciseness(engine: "ConsciousnessEngine", output: Optional[str]) -> 
 
     # Analyze the output text itself.
     text = output
-    n_chars = len(text)
     n_words = len(text.split())
 
     # repetition ratio: how many words are duplicates

@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 
 import pytest
 
 from conscio import ConsciousnessEngine
 from conscio.pipelines import (
     acceptance_criteria, verify, continuous_loop, strategic_compact, ledger,
-    LOOP_PATTERNS, PROMOTION_GATES,
 )
 
 
@@ -57,7 +54,7 @@ class TestAcceptanceCriteria:
         assert r["goal"] == "Deploy to production"
 
     def test_emits_acceptance_event(self, engine):
-        r = acceptance_criteria(engine, goal="test goal")
+        acceptance_criteria(engine, goal="test goal")
         events = engine.event_bus.query(type="pipeline:acceptance")
         assert len(events) >= 1
 
@@ -223,7 +220,7 @@ class TestStrategicCompact:
         strategic_compact(engine, context_tokens=1000, context_window=200000)
         # Should not emit unless should_compact=True
         # With very low tokens, should_compact is False
-        events = engine.event_bus.query(type="pipeline:compact")
+        engine.event_bus.query(type="pipeline:compact")
         # Only events from previous tests might exist, but this call shouldn't add one
         # We can't easily test this in isolation, so skip strict check
         pass
@@ -259,7 +256,7 @@ class TestLedger:
 
     def test_promote_paper_to_dry_run_with_coherence(self, engine):
         # Record with matching prior
-        r = ledger(engine, action="record", rollout_id="RL-PROMOTE-1",
+        ledger(engine, action="record", rollout_id="RL-PROMOTE-1",
                     candidates=[{"id": "E", "description": "E"}],
                     marks={"E": "accept"}, prior_winner="E")
         # Promote
@@ -268,7 +265,7 @@ class TestLedger:
         assert r2["new_gate"] == "dry_run"
 
     def test_promote_paper_blocked_without_coherence(self, engine):
-        r = ledger(engine, action="record", rollout_id="RL-BLOCK-1",
+        ledger(engine, action="record", rollout_id="RL-BLOCK-1",
                     candidates=[{"id": "F", "description": "F"}],
                     marks={"F": "accept"}, prior_winner="DIFFERENT")
         r2 = ledger(engine, action="promote", rollout_id="RL-BLOCK-1")
@@ -277,7 +274,7 @@ class TestLedger:
 
     def test_promote_dry_run_to_live(self, engine):
         # Create entry with coherence, then promote to dry_run, then to live
-        r = ledger(engine, action="record", rollout_id="RL-LIVE-1",
+        ledger(engine, action="record", rollout_id="RL-LIVE-1",
                     candidates=[{"id": "G", "description": "G"}],
                     marks={"G": "accept"}, prior_winner="G",
                     fresh_info="New data available")
