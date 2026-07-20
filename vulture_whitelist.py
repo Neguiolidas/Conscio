@@ -152,3 +152,12 @@ WorldModel.list_relations
 WorldModel.subgraph
 WorldModel.prune_stale
 WorldModel.record_prediction
+
+# ── gates (v3.0) ────────────────────────────────────────────────────
+from conscio.gates import COUNCIL_ROLES, COUNCIL_VOTES
+COUNCIL_ROLES
+COUNCIL_VOTES
+
+# ── pipelines (v3.0) ───────────────────────────────────────────────
+from conscio.pipelines import PROMOTION_GATES
+PROMOTION_GATES
