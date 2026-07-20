@@ -155,6 +155,27 @@ class Bindings:
             "conscio.delivery_check": lambda a: self.engine.delivery_check(),
             "conscio.investigate": lambda a: self.engine.investigate(
                 target=a.get("target", ""), action_type=a.get("action_type", "")),
+            # ── v3.0 Pipeline tools ──
+            "conscio.acceptance_criteria": lambda a: self.engine.acceptance_criteria(
+                goal=a.get("goal", ""), depth=a.get("depth", ""),
+                risk_domains=a.get("risk_domains")),
+            "conscio.verify": lambda a: self.engine.verify(
+                criteria=a.get("criteria"), criteria_source=a.get("criteria_source", "")),
+            "conscio.continuous_loop": lambda a: self.engine.continuous_loop(
+                task=a.get("task", ""), pattern=a.get("pattern", ""),
+                frequency=a.get("frequency", ""),
+                verifiable=a.get("verifiable", True),
+                budget_ok=a.get("budget_ok", True),
+                has_tools=a.get("has_tools", True)),
+            "conscio.strategic_compact": lambda a: self.engine.strategic_compact(
+                phase=a.get("phase", ""), context_tokens=a.get("context_tokens", 0),
+                context_window=a.get("context_window", 0)),
+            "conscio.ledger": lambda a: self.engine.ledger(
+                action=a.get("action", "record"), rollout_id=a.get("rollout_id"),
+                candidates=a.get("candidates"), fresh_info=a.get("fresh_info", ""),
+                search_space_size=a.get("search_space_size", 0),
+                marks=a.get("marks"), prior_winner=a.get("prior_winner", ""),
+                coherence_mark=a.get("coherence_mark")),
         }
         if self._act_enabled():
             ha = self.engine.host_act
