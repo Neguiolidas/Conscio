@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 
 import pytest
 
 from conscio import ConsciousnessEngine
 from conscio.gates import (
-    ADR_VALID_STATUSES,
-    COUNCIL_ROLES,
     COUNCIL_VOTES,
     decide,
     council,

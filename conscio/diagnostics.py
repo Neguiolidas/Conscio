@@ -296,7 +296,7 @@ def _eval_report(
         c = comp.get("passed", 0)
         all_results.extend([True] * c + [False] * (n - c))
 
-    aggregate = {}
+    aggregate: dict[str, int | float] = {}
     if all_results:
         aggregate["total_trials"] = len(all_results)
         aggregate["total_passed"] = sum(all_results)

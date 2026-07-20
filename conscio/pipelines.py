@@ -580,7 +580,6 @@ def _ledger_record(
         coherence_mark = _compute_coherence(engine, candidates, prior_winner)
 
     # Determine promotion gate
-    current_winner = _current_winner(candidates, marks)
 
     # New entries default to "paper" gate
     promotion_gate = "paper"
