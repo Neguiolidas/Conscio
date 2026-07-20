@@ -4,6 +4,10 @@
 **Conscio mapping:** `conscio.feed` + `conscio.note` + `conscio.recall`
 **Type:** Workflow (capture → generalize → persist → reuse)
 
+> **v3.0 enrichment:** `conscio.acceptance_criteria` defines what "learned" means;
+> `conscio.verify` confirms the pattern applies; `conscio.rules_distill` automates
+> the generalize step.
+
 ## When to use
 
 When you discover a non-trivial pattern, workaround, or insight that you'll need again. This is the "write it down before you forget" protocol.

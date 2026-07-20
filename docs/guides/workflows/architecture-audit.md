@@ -4,6 +4,10 @@
 **Conscio mapping:** `conscio.structure` + `conscio.state` + `conscio.events` + `conscio.evaluate`
 **Type:** Workflow (diagnostic checklist using existing MCP tools)
 
+> **v3.0 enrichment:** `conscio.context_budget` can audit token overhead per layer;
+> `conscio.decide` records architecture decisions as ADRs during the audit;
+> `conscio.rules_distill` can extract cross-cutting patterns from audit findings.
+
 ## When to use
 
 When the agent is producing inconsistent results, losing context, hallucinating tool calls, or degrading over time. This is the "systematic health check" protocol.

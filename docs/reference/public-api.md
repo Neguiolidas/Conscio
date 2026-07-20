@@ -22,6 +22,17 @@ from conscio import (
     MockAdapter, OllamaAdapter, LlamaCppAdapter, OpenAICompatAdapter,
     # Shared safety vocabulary + perception surface
     Risk, SensorAdapter, PerceptionFrame, MockSensor,
+    # Self-evaluation (v2.15)
+    evaluate, EvaluationReport, AxisScore,
+    # Gate tools (v3.0 — Ato 1)
+    decide, council, loop_gate, delivery_check, investigate,
+    ADR_VALID_STATUSES, COUNCIL_ROLES, COUNCIL_VOTES,
+    # Pipeline tools (v3.0 — Ato 2)
+    acceptance_criteria, verify, continuous_loop, strategic_compact, ledger,
+    LOOP_PATTERNS, PROMOTION_GATES,
+    # Diagnostic tools (v3.0 — Ato 3)
+    context_budget, eval_harness, rules_distill,
+    EVAL_CAPABILITY, EVAL_REGRESSION, EVAL_BENCHMARK,
 )
 ```
 
@@ -30,6 +41,23 @@ Key methods: `reflect()`, `get_state_for_injection()`, `advisory()`, `recall()`,
 `status()`, `attach_adapter()`, `probe()`, `act()`, `approve()`, `run()`,
 `propose_action()`, `propose_plan()`, `load_structure()`, `structural_lookup()`,
 `structural_signal()`, `structural_delta()`, `structural_freshness()`, `close()`.
+
+**v2.15 — Self-evaluation:** `evaluate(task_description, output)` → 5-axis rubric
+(accuracy, completeness, clarity, actionability, conciseness), scores 1–5 each.
+
+**v3.0 — Gate tools (Ato 1):** `decide(title, context, status, …)`,
+`council(question, …)`, `loop_gate(verifiable, budget_ok, has_tools)`,
+`delivery_check()`, `investigate(target, action_type)`. Each emits a typed EventBus
+event and returns a dict. `delivery_check()` also runs automatically in `close()`.
+
+**v3.0 — Pipeline tools (Ato 2):** `acceptance_criteria(goal, depth, …)`,
+`verify(criteria, criteria_source)`, `continuous_loop(task, pattern, …)`,
+`strategic_compact(phase, context_tokens, context_window)`,
+`ledger(action, rollout_id, …)`. Advisory, deterministic, EventBus-backed.
+
+**v3.0 — Diagnostic tools (Ato 3):** `context_budget(context_tokens, …)`,
+`eval_harness(action, eval_id, …)`, `rules_distill(action, …)`. Read-only audits
+and pattern extraction.
 
 `advisory()` is the structured, read-only pull surface a host consumes each turn
 (goals tagged by provenance, lockdown/brake status). See
@@ -89,9 +117,21 @@ from conscio.mcp import serve, main      # stdio serve loop + CLI entry point
 `conscio-mcp` speaks newline-delimited JSON-RPC 2.0 over stdio (stdlib only,
 nothing opens a socket). Propose-only tools: `conscio.feed`/`conscio.note`
 (idempotent on `event.id`), `conscio.advisory`, `conscio.recall`,
-`conscio.propose_action`, `conscio.propose_plan`. Resources: `conscio://advisory`,
-`conscio://state`, `conscio://events`, `conscio://handoff`. See
-[MCP server](../guides/mcp.md).
+`conscio.propose_action`, `conscio.propose_plan`.
+
+**v2.15:** `conscio.evaluate` (5-axis self-evaluation scorecard).
+
+**v3.0 — Gate tools:** `conscio.decide`, `conscio.council`, `conscio.loop_gate`,
+`conscio.delivery_check`, `conscio.investigate`.
+
+**v3.0 — Pipeline tools:** `conscio.acceptance_criteria`, `conscio.verify`,
+`conscio.continuous_loop`, `conscio.strategic_compact`, `conscio.ledger`.
+
+**v3.0 — Diagnostic tools:** `conscio.context_budget`, `conscio.eval_harness`,
+`conscio.rules_distill`.
+
+Resources: `conscio://advisory`, `conscio://state`, `conscio://events`,
+`conscio://handoff`. See [MCP server](../guides/mcp.md).
 
 ## `conscio.perception`
 

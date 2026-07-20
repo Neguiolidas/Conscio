@@ -4,6 +4,10 @@
 **Conscio mapping:** `conscio.note` + `conscio.feed` + `conscio.cognitive_cycle`
 **Type:** Workflow (sequence of existing MCP tools — no new tools needed)
 
+> **v3.0 enrichment:** `conscio.investigate` verifies the target was read before
+> attempting a fix; `conscio.loop_gate` gates the recovery loop; `conscio.eval_harness`
+> measures debugging reliability with pass@k.
+
 ## When to use
 
 When you're stuck in a loop, getting wrong results, or the agent's behavior doesn't match intent. This is the "I'm broken, let me think" protocol.

@@ -64,6 +64,34 @@ engine.reflect(world_state=frame.to_world_state())
 
 See [Plugins](plugins.md) for writing your own sensors, adapters, and tools.
 
+## ECC tools — G-P-D (v3.0)
+
+13 advisory tools across three modules, all deterministic and EventBus-backed:
+
+```python
+# Gates — decision architecture
+adr = engine.decide(title="Use SQLite", context="Need local storage", status="proposed")
+result = engine.council(question="Should we use SQLite or PostgreSQL?")
+ok = engine.loop_gate(verifiable=True, budget_ok=True, has_tools=True)
+check = engine.delivery_check()      # also runs automatically in engine.close()
+engine.investigate(target="config.py")  # verify you read it before acting
+
+# Pipelines — workflow management
+criteria = engine.acceptance_criteria(goal="Add API endpoint", depth="full")
+result = engine.verify(criteria_source="acceptance")
+loop = engine.continuous_loop(task="Run CI on every PR", frequency="daily")
+compact = engine.strategic_compact(context_tokens=150000, context_window=200000)
+entry = engine.ledger(action="record", candidates=[{"id": "A", "description": "Option A"}])
+
+# Diagnostics — self-audit
+budget = engine.context_budget(context_tokens=150000, context_window=200000)
+eval_result = engine.eval_harness(action="run", eval_id="EVAL-1", results=[True, True, False])
+rules = engine.rules_distill(action="scan", source_types=["events", "decisions"])
+```
+
+See [MCP server](mcp.md) for the full tool reference and [Public API](../reference/public-api.md)
+for the Python API.
+
 ## Embed in an MCP host (v2.0)
 
 To run Conscio *inside* a host (CLI/IDE/agent), point it at the `conscio-mcp`
