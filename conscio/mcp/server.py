@@ -139,6 +139,22 @@ class Bindings:
             "conscio.cognitive_cycle": self._cognitive_cycle,
             "conscio.evaluate": lambda a: self.engine.evaluate(
                 a.get("task_description", ""), a.get("output")).to_dict(),
+            # ── v3.0 Gate tools ──
+            "conscio.decide": lambda a: self.engine.decide(
+                title=a.get("title", ""), context=a.get("context", ""),
+                alternatives=a.get("alternatives"), adr_id=a.get("adr_id"),
+                status=a.get("status", "proposed"), deciders=a.get("deciders")),
+            "conscio.council": lambda a: self.engine.council(
+                question=a.get("question", ""), context=a.get("context", ""),
+                options=a.get("options")),
+            "conscio.loop_gate": lambda a: self.engine.loop_gate(
+                task=a.get("task", ""), frequency=a.get("frequency", ""),
+                verifiable=a.get("verifiable", True),
+                budget_ok=a.get("budget_ok", True),
+                has_tools=a.get("has_tools", True)),
+            "conscio.delivery_check": lambda a: self.engine.delivery_check(),
+            "conscio.investigate": lambda a: self.engine.investigate(
+                target=a.get("target", ""), action_type=a.get("action_type", "")),
         }
         if self._act_enabled():
             ha = self.engine.host_act
