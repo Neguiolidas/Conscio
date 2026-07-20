@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.0] - 2026-07-20 — ECC full integration (13 tools: gates + pipelines + diagnostics)
+
+### Added — Ato 1: Gates (5 tools)
+- `conscio.gates.decide()` — Architecture Decision Records with 4 statuses (proposed/accepted/deprecated/superseded), unique IDs with random suffix
+- `conscio.gates.council()` — 3 deterministic voices (Arquiteto, Cético, Pragmatista) + optional LLM Critic, majority voting
+- `conscio.gates.loop_gate()` — Autonomous loop gate with verifiable/budget/tools conditions
+- `conscio.gates.delivery_check()` — Pre-close delivery check (rationalization scan, stale proposals, disk space)
+- `conscio.gates.investigate()` — Read-before-act verification via EventBus evidence matching (substring matching)
+- 4 new VALID_TYPES: adr:proposed, adr:accepted, council:convened, gate:vetoed
+- Engine: delivery_check runs in close() BEFORE _closed flag; opt-out via flag
+- All gate tools guarded by `_check_closed()` RuntimeError
+
+### Added — Ato 2: Pipelines (5 tools)
+- `conscio.pipelines.acceptance_criteria()` — Intent-driven criteria with auto risk detection (security/data/integration/compliance) and depth (quick/full)
+- `conscio.pipelines.verify()` — Post-implementation verification against evidence events; loads from acceptance events via criteria_source
+- `conscio.pipelines.continuous_loop()` — Pattern selection (sequential/continuous_pr/rfc_dag/infinite) with word-boundary matching + loop_gate integration
+- `conscio.pipelines.strategic_compact()` — Compaction advisory based on token pressure + workflow phase + milestone detection
+- `conscio.pipelines.ledger()` — Recursive decision ledger with coherence marks, promotion gates (paper→dry_run→live)
+- 4 new VALID_TYPES: pipeline:acceptance, pipeline:verified, pipeline:compact, pipeline:ledger
+- Global _counter for AC-ID uniqueness (prevents cross-acceptance evidence collision)
+
+### Added — Ato 3: Diagnostics (3 tools)
+- `conscio.diagnostics.context_budget()` — Token pressure audit, per-source breakdown, metabolic tiers, optimization recommendations
+- `conscio.diagnostics.eval_harness()` — Define/run/report evals with pass@k reliability metrics (log-space computation for large N)
+- `conscio.diagnostics.rules_distill()` — Scan patterns from skills/events/decisions, distill into rules, list existing
+- 3 new VALID_TYPES: diagnostic:budget, diagnostic:eval, diagnostic:rule
+
+### Infrastructure
+- 13 engine convenience methods (lazy imports)
+- 13 MCP tool definitions + handlers
+- 13 tool exports from `conscio` namespace
+- 11 new VALID_TYPES total (4 gates + 4 pipelines + 3 diagnostics)
+- 460/460 tests passing (41 gates + 41 pipelines + 30 diagnostics)
+- Hostile review scripts: 25/25 gates, 30/30 pipelines
+
 ## [2.15.0] - 2026-07-19 — ECC integration (5-axis evaluate + 3 workflow skills)
 
 Theme: surface the introspection, evaluation, and audit patterns from ECC
