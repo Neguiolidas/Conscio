@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.15.0] - 2026-07-19 — ECC integration (5-axis evaluate + 3 workflow skills)
+
+Theme: surface the introspection, evaluation, and audit patterns from ECC
+(Everything Claude Code) as first-class Conscio capabilities. The engine
+already had the modules — this release exposes them to host agents.
+
+### Added
+- **`conscio.evaluate()`** — 5-axis self-evaluation rubric (accuracy,
+  completeness, clarity, actionability, conciseness). Scores 1-5 with
+  concrete evidence. Pure read-only, deterministic, no LLM.
+  - Available as `engine.evaluate()`, standalone `evaluate()`, and MCP
+    tool `conscio.evaluate`.
+  - Returns `EvaluationReport` with `AxisScore` per axis, overall score,
+  ranked improvements, and a self-check verdict.
+- **`conscio/evaluation.py`** — new module implementing the rubric
+  heuristics (confidence → accuracy, stale entities → completeness,
+  coherence → clarity, pending proposals → actionability, output
+  length/repetition → conciseness).
+- **3 workflow skills** (installed in both Conscio repo and Hermes):
+  - `conscio-introspection-debugging` — 4-phase loop (capture → diagnose
+    → recover → report) for when the agent is stuck.
+  - `conscio-architecture-audit` — 12-layer stack checklist for
+    systematic health checks.
+  - `conscio-continuous-learning` — discover → capture → generalize →
+    reuse for persisting non-trivial patterns.
+- **`docs/guides/workflows/`** — 3 workflow reference docs in the
+  Conscio repo for any MCP host.
+- **`conscio manual`** CLI command now finds `conscio/USAGE.md` from the
+  installed package (not just the repo root).
+
+### Changed
+- `conscio/mcp/schemas.py` — added `conscio.evaluate` tool definition.
+- `conscio/mcp/server.py` — added `conscio.evaluate` handler.
+- `conscio/__init__.py` — exported `evaluate`, `EvaluationReport`,
+  `AxisScore`.
+
+### Tests
+- `tests/test_evaluation.py` — 32 new tests covering band mapping,
+  data structures, fresh engine scores, output analysis, error impact,
+  read-only guarantee, and improvement ranking.
+
+---
+
 ## [2.14.0] - 2026-07-13 — Wired loop (hostile audit: every circuit closed or cut)
 
 Theme: full hostile/skeptical audit of the codebase. Every half-wired feature

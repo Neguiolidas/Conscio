@@ -72,7 +72,7 @@ include = ["conscio*"]
 version = {attr = "conscio.__version__"}
 
 [tool.setuptools.package-data]
-conscio = ["py.typed", "hub/static/*", "observatory/static/*", "integrations/claude_code/assets/**/*"]
+conscio = ["py.typed", "hub/static/*", "observatory/static/*", "integrations/claude_code/assets/**/*", "USAGE.md"]
 
 # ── pyright (type checker — substitui mypy) ─────────────────────────
 [tool.pyright]

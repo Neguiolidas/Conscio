@@ -114,6 +114,13 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("noosphere", add_help=False,
                    help="share skills across same-host instances "
                         "(see: conscio noosphere --help)")
+
+    p_manual = sub.add_parser(
+        "manual",
+        help="print the location of the usage manual (USAGE.md shipped with the package)")
+    p_manual.add_argument(
+        "--open", action="store_true",
+        help="also try to open the manual with the system pager/editor")
     return parser
 
 
@@ -411,9 +418,36 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "promote":
         return _cmd_promote(args.model, args.storage, args.quarantine,
                             args.enable_promote)
-
+    if args.command == "manual":
+        return _cmd_manual(open_it=getattr(args, "open", False))
     parser.print_help()
     return 2
+
+
+def _cmd_manual(*, open_it: bool = False) -> int:
+    """Locate and optionally open the USAGE.md manual shipped with the package."""
+    from pathlib import Path
+    import subprocess
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here.parent / "USAGE.md",
+        here / "USAGE.md",
+        here.parent / "docs" / "guides" / "mcp.md",
+    ]
+    path = next((p for p in candidates if p.exists()), None)
+    if path is None:
+        print("Manual not found. See https://github.com/Neguiolidas/Conscio#readme")
+        return 1
+    print(f"[conscio] manual: {path}")
+    if not open_it:
+        print("Use --open to page through it now.")
+        return 0
+    pager = os.environ.get("PAGER") or os.environ.get("EDITOR") or "less"
+    try:
+        subprocess.run([pager, str(path)], check=False)
+    except FileNotFoundError:
+        print(path.read_text(encoding="utf-8"))
+    return 0
 
 
 if __name__ == "__main__":
