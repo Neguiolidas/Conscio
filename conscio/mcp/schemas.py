@@ -229,6 +229,37 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "marks": {"type": "object"},
                                     "prior_winner": {"type": "string"},
                                     "coherence_mark": {"type": "object"}}}},
+    # ── v3.0 Diagnostic tools ────────────────────────────────────────
+    {"name": "conscio.context_budget",
+     "description": "Audit context window consumption. Shows token pressure, "
+                    "source breakdown, and optimization recommendations.",
+     "inputSchema": {"type": "object",
+                     "properties": {"context_tokens": {"type": "integer"},
+                                    "context_window": {"type": "integer"},
+                                    "detail": {"type": "string",
+                                               "description": "summary|full"}}}},
+    {"name": "conscio.eval_harness",
+     "description": "Formal evaluation framework with pass@k metrics. "
+                    "Define evals, record results, get reliability reports.",
+     "inputSchema": {"type": "object",
+                     "properties": {"action": {"type": "string",
+                                                "description": "define|run|report"},
+                                    "eval_id": {"type": "string"},
+                                    "eval_type": {"type": "string"},
+                                    "task": {"type": "string"},
+                                    "criteria": {"type": "array", "items": {"type": "string"}},
+                                    "results": {"type": "array", "items": {"type": "boolean"}},
+                                    "k_values": {"type": "array", "items": {"type": "integer"}}}}},
+    {"name": "conscio.rules_distill",
+     "description": "Extract cross-cutting principles from skills and events. "
+                    "Scan for patterns, distill into rules, list existing rules.",
+     "inputSchema": {"type": "object",
+                     "properties": {"action": {"type": "string",
+                                                "description": "scan|distill|list"},
+                                    "source_types": {"type": "array", "items": {"type": "string"}},
+                                    "min_occurrences": {"type": "integer"},
+                                    "rule_text": {"type": "string"},
+                                    "rule_id": {"type": "string"}}}},
 ]
 
 RESOURCE_DEFS: list[dict] = [

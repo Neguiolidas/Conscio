@@ -42,6 +42,10 @@ from .pipelines import (  # noqa: F401
     acceptance_criteria, verify, continuous_loop, strategic_compact, ledger,
     LOOP_PATTERNS, PROMOTION_GATES,
 )
+from .diagnostics import (  # noqa: F401
+    context_budget, eval_harness, rules_distill,
+    EVAL_CAPABILITY, EVAL_REGRESSION, EVAL_BENCHMARK,
+)
 # Plugin discovery lives under `conscio.plugins` (discover_adapters/sensors/tools)
 # — kept out of the top-level namespace to keep this import light.
 
