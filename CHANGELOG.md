@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.1] - 2026-07-21 — Release pipeline hardening
+
+### Fixed
+- `release.yml` publish job: retry PyPI publish up to 3x with backoff. Root
+  cause of v3.0.0's failed automated publish wasn't OIDC/trusted-publisher
+  config (that was correct) — it was a transient `ConnectionResetError`
+  talking to sigstore's Fulcio/Rekor during PEP 740 attestation signing.
+  Retries use `skip-existing: true` so a partial prior upload doesn't fail
+  the next attempt.
+
+---
+
 ## [3.0.0] - 2026-07-20 — G-P-D (13 tools: gates + pipelines + diagnostics)
 
 ### Added — Ato 1: Gates (5 tools)
