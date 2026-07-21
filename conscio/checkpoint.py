@@ -28,12 +28,16 @@ class CompactionCheckpoint:
 
     @property
     def byte_hash(self) -> str:
-        """SHA-256 of all artifacts — detect content drift."""
+        """SHA-256 of all artifacts — detect content drift.
+
+        skill_references are sorted before hashing so that the same
+        set of skills produces the same hash regardless of insertion order.
+        """
         payload = json.dumps({
             "d": self.durable_memory,
             "e": self.execution_summary,
             "u": self.user_requirements,
-            "s": self.skill_references,
+            "s": sorted(self.skill_references),
         }, sort_keys=True)
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
