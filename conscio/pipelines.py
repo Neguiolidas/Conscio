@@ -458,8 +458,54 @@ def strategic_compact(
 
     if should_compact:
         engine.event_bus.emit("pipeline:compact", "consciousness", result)
+        # v3.1: produce a CompactionCheckpoint when compacting.
+        # The checkpoint is append-only (never rewrites), enabling the
+        # new prompt reconstructed from it to become a cacheable prefix.
+        result["checkpoint"] = _produce_checkpoint(engine, result)
 
     return result
+
+
+def _produce_checkpoint(engine: ConsciousnessEngine, compact_result: dict) -> dict:
+    """v3.1: Create a CompactionCheckpoint and append to chain.
+
+    Returns the checkpoint dict with checkpoint_id for traceability.
+    """
+    from conscio.checkpoint import CompactionCheckpoint, CheckpointChain
+
+    chain = CheckpointChain(
+        engine.storage / "checkpoints.db",
+        consolidate_every=5,
+    )
+
+    # Build artifacts from engine state
+    recent_events = engine.event_bus.query(limit=50)
+    event_summaries = [
+        f"{e.type}: {e.data.get('action', e.data.get('reason', ''))}"
+        for e in recent_events[:20]
+    ]
+
+    cp = CompactionCheckpoint(
+        durable_memory="\n".join(event_summaries),
+        execution_summary=f"Phase: {compact_result.get('suggested_phase', 'unknown')}\n"
+                         f"Pressure: {compact_result.get('token_pressure', 0)}\n"
+                         f"Keep: {', '.join(compact_result.get('keep', []))}\n"
+                         f"Drop: {', '.join(compact_result.get('drop', []))}",
+        user_requirements="",  # preserved verbatim from host events
+        skill_references=[],
+    )
+
+    cid = chain.append(cp)
+    engine.event_bus.emit(
+        "harness:checkpoint", "consciousness",
+        {"checkpoint_id": cid, "byte_hash": cp.byte_hash},
+    )
+
+    return {
+        "checkpoint_id": cid,
+        "byte_hash": cp.byte_hash,
+        "chain_length": chain.length(),
+    }
 
 
 def _detect_phase(engine: ConsciousnessEngine) -> str:
