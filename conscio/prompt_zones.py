@@ -73,6 +73,10 @@ def build_zoned_prompt(
     - full:    full persona + tools + memories + few-shot + intercept
     - compact: compact persona + tools + state + goal (no memories, no few-shot)
     - minimal: tools + state + goal only (no persona — tiny models focus on schema)
+    The JSON instruction block ("Respond with ONE JSON object only...")
+    is injected into the stable zone so it gets cached by the provider
+    instead of being re-sent on every retry. The gateway still appends
+    feedback (volatile) on retries.
     """
     # Persona selection
     if complexity == "minimal":
