@@ -1148,6 +1148,20 @@ class ConsciousnessEngine:
         return _cb(self, context_tokens=context_tokens,
                     context_window=context_window, detail=detail)
 
+    # --- Harness Efficiency (v3.1) ---
+
+    def token_summary(self) -> dict:
+        """v3.1: Aggregate token usage summary from the session ledger."""
+        from .token_account import TokenLedger
+        ledger = TokenLedger(self.storage / "token_ledger.db")
+        return ledger.summary()
+
+    def cpm(self, quality: float = 1.0) -> float:
+        """v3.1: Completions Per Million effective Tokens."""
+        from .token_account import TokenLedger
+        ledger = TokenLedger(self.storage / "token_ledger.db")
+        return ledger.cpm(quality=quality)
+
     def eval_harness(self, *, action: str = "define",
                       eval_id: str | None = None,
                       eval_type: str = "capability",
