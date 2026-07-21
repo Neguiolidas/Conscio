@@ -619,7 +619,8 @@ def _arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="conscio-mcp",
                                      description="Conscio MCP stdio server")
     parser.add_argument("--storage", default=None)
-    parser.add_argument("--model", default=None)
+    parser.add_argument("--model", default=None,
+                        help="model name, 'auto' for auto-detect, or omit")
     parser.add_argument("--base-url", default=None,
                         help="OpenAI-compatible endpoint to probe")
     parser.add_argument("--adapter", default=None)
@@ -653,6 +654,11 @@ def _arg_parser() -> argparse.ArgumentParser:
 def _resolve_model(args) -> str:
     """Resolve the model name: --model > config.json 'model' > CONSCIO_MODEL.
 
+    v3.1: --model auto triggers auto-detection from the LM Studio /v1/models
+    endpoint. Tests each model with a minimal prompt and returns the first
+    that responds. Persists the winner to ~/.config/conscio/config.json so
+    the next boot skips detection.
+
     Mirrors the daemon's precedence so a host that registers ``conscio-mcp``
     with only ``--storage`` (e.g. the Claude Code bundle) still picks up the
     ``model`` from ~/.config/conscio/config.json instead of failing to start.
@@ -660,8 +666,138 @@ def _resolve_model(args) -> str:
     """
     from conscio.adapter_config import load_config
     from conscio.models import resolve_model_name
-    return resolve_model_name(cli_arg=args.model,
+
+    # v3.1: auto-detect mode
+    if args.model == "auto":
+        detected, all_models = _auto_detect_model(args.base_url)
+        if detected is not None:
+            _persist_model(detected)
+            # Store all_models for FallbackAdapter construction in main()
+            args._auto_fallback_models = all_models
+            return detected
+        # fall through to normal resolution if auto-detect failed
+
+    return resolve_model_name(cli_arg=args.model if args.model != "auto" else None,
                               config_model=load_config().get("model"))
+
+
+def _auto_detect_model(base_url: str | None) -> tuple[str | None, list[str]]:
+    """v3.1: Auto-detect working models from the LM Studio /v1/models endpoint.
+
+    Returns (first_working_model, all_chat_models).
+    The first_working_model is used for immediate startup; all_chat_models
+    is used to build a FallbackAdapter chain.
+    """
+    import json as _json
+    import urllib.request
+
+    url = (base_url or "http://localhost:1234/v1").rstrip("/")
+    models_url = f"{url}/models"
+
+    try:
+        req = urllib.request.Request(models_url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = _json.loads(resp.read())
+    except Exception as exc:
+        print(f"[conscio-mcp] auto-detect: cannot reach {models_url}: {exc}",
+              file=sys.stderr)
+        return None, []
+
+    models = data.get("data", [])
+    if not models:
+        print("[conscio-mcp] auto-detect: no models available", file=sys.stderr)
+        return None, []
+
+    # Filter out embedding models (they can't do chat completions)
+    chat_models = [
+        m["id"] for m in models
+        if "embed" not in m["id"].lower()
+        and "nomic" not in m["id"].lower()
+    ]
+
+    if not chat_models:
+        print("[conscio-mcp] auto-detect: no chat models found (all embedding?)",
+              file=sys.stderr)
+        return None, []
+
+    print(f"[conscio-mcp] auto-detect: {len(chat_models)} chat models found: "
+          f"{', '.join(chat_models[:5])}{'...' if len(chat_models) > 5 else ''}",
+          file=sys.stderr)
+
+    # Test each model with a minimal prompt to find the first that works
+    for model_id in chat_models:
+        if _test_model(url, model_id):
+            print(f"[conscio-mcp] auto-detect: '{model_id}' responded OK",
+                  file=sys.stderr)
+            return model_id, chat_models
+        print(f"[conscio-mcp] auto-detect: '{model_id}' failed, trying next...",
+              file=sys.stderr)
+
+    print("[conscio-mcp] auto-detect: no model responded to test prompt",
+          file=sys.stderr)
+    return None, chat_models
+
+
+def _test_model(base_url: str, model_id: str) -> bool:
+    """Send a minimal chat completion to test if a model is working."""
+    import json as _json
+    import urllib.request
+
+    payload = _json.dumps({
+        "model": model_id,
+        "messages": [{"role": "user", "content": "Respond with: ok"}],
+        "max_tokens": 5,
+        "temperature": 0.0,
+        "stream": False,
+    }).encode("utf-8")
+
+    try:
+        req = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = _json.loads(resp.read())
+            text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            return len(text.strip()) > 0
+    except Exception:
+        return False
+
+
+def _persist_model(model_id: str) -> None:
+    """v3.1: Persist the detected model to ~/.config/conscio/config.json.
+
+    So the next boot skips auto-detection and starts instantly.
+    """
+    import os
+    from pathlib import Path
+
+    config_dir = Path(os.path.expanduser("~/.config/conscio"))
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "config.json"
+
+    existing = {}
+    if config_path.exists():
+        try:
+            import json as _json
+            with open(config_path) as f:
+                existing = _json.load(f)
+        except Exception:
+            existing = {}
+
+    existing["model"] = model_id
+
+    try:
+        import json as _json
+        with open(config_path, "w") as f:
+            _json.dump(existing, f, indent=2)
+        print(f"[conscio-mcp] auto-detect: persisted '{model_id}' to {config_path}",
+              file=sys.stderr)
+    except Exception as exc:
+        print(f"[conscio-mcp] auto-detect: failed to persist config: {exc}",
+              file=sys.stderr)
 
 
 def _sync_structure_at_startup(engine, workspace) -> str:
@@ -706,6 +842,28 @@ def main(argv: list[str] | None = None) -> int:
             adapter_name = atype
     if args.awake:
         engine.wake()                              # reuse the existing R9 toggle
+    # v3.1: if auto-detect found multiple models, use FallbackAdapter
+    fallback_models = getattr(args, "_auto_fallback_models", None)
+    if fallback_models and len(fallback_models) > 1 and not args.adapter:
+        from .agency.fallback_adapter import FallbackAdapter
+        base_url = args.base_url or "http://localhost:1234/v1"
+        fb_adapter = FallbackAdapter(
+            base_url=base_url, models=fallback_models,
+        )
+        engine.attach_adapter(fb_adapter)
+        adapter_name = "fallback"
+        print(f"[conscio-mcp] fallback chain: {' -> '.join(fallback_models[:5])}"
+              f"{'...' if len(fallback_models) > 5 else ''}",
+              file=sys.stderr)
+    elif args.adapter:                               # CLI wins (mock | ollama:..)
+        engine.attach_adapter(_build_adapter(args.adapter))
+        adapter_name = args.adapter
+    else:
+        adapter, atype = build_adapter_from_config(load_config(),
+                                                   fallback_model=model_name)
+        if adapter is not None:
+            engine.attach_adapter(adapter)
+            adapter_name = atype
     workspace = WorkspaceContext().current()
     structure_status = _sync_structure_at_startup(engine, workspace)
     seen = SeenStore(Path(engine.storage) / "mcp_seen.db")
