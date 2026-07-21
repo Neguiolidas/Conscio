@@ -2,7 +2,7 @@
 
 Self-awareness framework for AI agents. 100% local Python + SQLite FTS5. Zero external deps runtime (numpy optional for embeddings).
 
-**Version:** 3.0.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
+**Version:** 3.1.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
 
 ## Install
 
@@ -40,6 +40,41 @@ with ConsciousnessEngine(model_name="glm-5.2") as engine:
 ## Quickstart — MCP server
 
 Point any MCP host (Claude Code, IDE, agent) at `conscio-mcp`:
+
+### v3.1 — Auto-detect (recommended for LM Studio)
+
+The MCP JSON stays **fixed forever** — Conscio auto-detects what's loaded in
+LM Studio and falls back to the next model if the current one fails:
+
+```json
+{
+  "mcpServers": {
+    "conscio": {
+      "command": "conscio-mcp",
+      "args": ["--model", "auto", "--base-url", "http://localhost:1234/v1"]
+    }
+  }
+}
+```
+
+On boot: `GET /v1/models` → filter embedding models → test each chat model →
+use first that responds → persist to `~/.config/conscio/config.json`. Runtime:
+`FallbackAdapter` switches models on failure automatically.
+
+### Explicit model (any OpenAI-compatible endpoint)
+
+```json
+{
+  "mcpServers": {
+    "conscio": {
+      "command": "conscio-mcp",
+      "args": ["--model", "liquid/lfm2.5-1.2b", "--base-url", "http://localhost:1234/v1"]
+    }
+  }
+}
+```
+
+### Legacy adapter syntax
 
 ```json
 {

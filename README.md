@@ -14,14 +14,17 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.0.0` "G-P-D":** 13 advisory tools across three new modules —
-**Gates** (decide, council, loop_gate, delivery_check, investigate), **Pipelines**
-(acceptance_criteria, verify, continuous_loop, strategic_compact, ledger), and
-**Diagnostics** (context_budget, eval_harness, rules_distill). All deterministic, stdlib-only,
-EventBus-backed. 11 new event types, 460+ tests, 13 MCP tools. Plus: 5-axis
-self-evaluation (`evaluate`), adaptive reflection depth (ReflectionGate), hostile audit
-wiring, intercepter TV-DSL integration, and one global install with per-host minds
-and native Claude Code integration.
+**Latest release — `v3.1.0` "Harness Efficiency Layer + Model-Agnostic":**
+Builds on "The Harness Effect" paper (Writer, 2026). Adds a two-zone prompt
+architecture with provider-side prompt caching (PromptZones), per-task token
+accounting with CPM metric (TokenLedger), 6-type failure classification
+(FailureGovernor), checkpoint chain for compaction, progressive skill
+disclosure, and ablation tooling. Plus **adaptive prompt complexity**
+(full/compact/minimal based on model profile), **auto-detect model**
+(`--model auto` probes LM Studio and picks the first working model),
+**FallbackAdapter** (runtime fallback chain across loaded models), **skeptic
+skip** for side-effect-free tools (think, memory_note), and **adaptive
+max_retries** based on json_fidelity. 2447 tests, stdlib-only core.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
@@ -321,7 +324,7 @@ augment tool calls before they reach the engine.
                                                               │
   ConsciousnessEngine  (orchestrator · lifecycle · injection) │
    ├─ Witness        InnerMonologue · WorldModel · MetaCognition · GoalGenerator
-   ├─ Substrate      ContentStore (FTS5 BM25 + RRF) · EventBus (33 event types) · FilterPipeline
+   ├─ Substrate      ContentStore (FTS5 BM25 + RRF) · EventBus (38 event types) · FilterPipeline
    ├─ Continuity     SessionLifecycle (6-step handoff) · SessionRAG (optional)
    ├─ Metabolism     MetabolicContext · DreamCycle (release→prune→…→distill)
    ├─ Coherence      CoherenceEngine · semantic reconciliation
@@ -331,6 +334,11 @@ augment tool calls before they reach the engine.
    ├─ Pipelines (v3.0) acceptance_criteria · verify · continuous_loop ·
    │                 strategic_compact · ledger
    ├─ Diagnostics (v3.0) context_budget · eval_harness · rules_distill
+   ├─ Harness (v3.1)  PromptZones (stable+volatile) · CheckpointChain ·
+   │                 TokenAccount+CPM · FailureGovernor (6-type) ·
+   │                 adaptive max_retries · skeptic skip (safe tools)
+   ├─ Adaptive (v3.1) prompt_complexity (full/compact/minimal) ·
+   │                 auto-detect (--model auto) · FallbackAdapter
    ├─ Intercepter (v2.12) TV-DSL tool filtering and routing
    └─ Embodiment     conscio-mcp: JSON-RPC 2.0 over stdio (stdlib only)
                                                               │
@@ -360,6 +368,64 @@ a window — in one line:
 from conscio import ModelRegistry
 ModelRegistry.register("my-model", context_window=200_000)
 ```
+
+---
+
+## Model-agnostic by design (v3.1)
+
+Conscio adapts to any model — from 0.8B local to frontier API — using two
+mechanisms:
+
+### Adaptive prompt complexity
+
+The `ProbeSuite` measures each model's `json_fidelity`, `schema_depth`, and
+`instruction_depth` (5 empirical probes, cached in SQLite). Based on the
+profile, `prompt_complexity()` selects one of three prompt tiers:
+
+| Tier | Persona | Tools | State | Memories | Few-shot | When |
+|------|---------|-------|-------|----------|----------|------|
+| `full` | complete | ✓ | ✓ | ✓ | ✓ | json_fidelity ≥ 0.8 + instruction_depth ≥ 2 |
+| `compact` | 1-line | ✓ | ✓ | ✗ | ✗ | instruction_depth ≥ 2 + schema_depth ≥ 2 |
+| `minimal` | none | ✓ | ✓ | ✗ | ✗ | otherwise (tiny models) |
+
+The bench loop tries `full` first and falls back to `compact` if args
+validation fails — so models with identical profiles but opposite
+preferences (Qwen 0.8B wants full, LFM 1.2B wants compact) both hit 100%.
+
+### Auto-detect + fallback chain
+
+`--model auto` makes the MCP JSON **fixed forever** — no manual model
+swapping when you change what's loaded in LM Studio:
+
+```json
+{
+  "mcpServers": {
+    "conscio": {
+      "command": "conscio-mcp",
+      "args": ["--model", "auto", "--base-url", "http://localhost:1234/v1"]
+    }
+  }
+}
+```
+
+On boot, Conscio `GET /v1/models`, filters out embedding models, tests each
+chat model with a minimal prompt, and uses the first that responds. The
+winner is persisted to `~/.config/conscio/config.json` so the next boot
+starts instantly. At runtime, `FallbackAdapter` switches to the next model
+in the chain if the current one fails (PERMANENT error, timeout, bad
+response).
+
+### Benchmark (v3.1, local LM Studio, 5 cycles)
+
+| Model | json_fidelity | Tier | JSON valid | Tokens | Latency p50 | Catch rate |
+|-------|--------------|------|------------|--------|-------------|------------|
+| Qwen 0.8B | 1.0 | T2 | **100%** | 5357 | 19.0s | 100% |
+| LFM 1.2B | 1.0 | T2 | **100%** | 4950 | 23.6s | 100% |
+
+Both small models hit 100% JSON validity through Conscio (raw: 60% and 80%).
+Token cost 6–10× (no prompt caching on local LM Studio); with provider
+caching (Anthropic/OpenAI), the stable zone caches at ~0.1×, reducing
+effective cost to ~2–3×.
 
 ---
 
