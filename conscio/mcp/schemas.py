@@ -260,6 +260,12 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "min_occurrences": {"type": "integer"},
                                     "rule_text": {"type": "string"},
                                     "rule_id": {"type": "string"}}}},
+    {"name": "conscio.health",
+     "description": "Quick health check — are all Conscio modules operational? "
+                    "Returns mode, model, pending proposals, active goals, and "
+                    "stale entity count. Pure read-only.",
+     "inputSchema": {"type": "object",
+                     "properties": {}}},
 ]
 
 RESOURCE_DEFS: list[dict] = [
