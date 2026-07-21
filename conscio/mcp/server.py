@@ -195,6 +195,7 @@ class Bindings:
                 min_occurrences=a.get("min_occurrences", 2),
                 rule_text=a.get("rule_text", ""),
                 rule_id=a.get("rule_id")),
+            "conscio.health": lambda a: self.engine.health_check(),
         }
         if self._act_enabled():
             ha = self.engine.host_act
