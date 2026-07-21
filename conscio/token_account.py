@@ -82,7 +82,7 @@ class TokenLedger:
              cache_read_tokens, cache_write_tokens,
              cost_usd, duration_seconds, time.time()),
         )
-        task_id = cur.lastrowid
+        task_id = cur.lastrowid or 0
         conn.commit()
         conn.close()
         return task_id  # type: ignore[return-value]
@@ -160,8 +160,8 @@ class TokenLedger:
             return 0
         to_delete = total - max_rows
         conn.execute(
-            f"DELETE FROM token_accounts WHERE task_id IN "
-            f"(SELECT task_id FROM token_accounts ORDER BY task_id ASC LIMIT ?)",
+            "DELETE FROM token_accounts WHERE task_id IN "
+            "(SELECT task_id FROM token_accounts ORDER BY task_id ASC LIMIT ?)",
             (to_delete,),
         )
         conn.commit()

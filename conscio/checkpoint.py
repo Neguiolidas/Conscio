@@ -14,7 +14,7 @@ import hashlib
 import json
 import sqlite3
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -101,7 +101,7 @@ class CheckpointChain:
              d["user_requirements"], d["skill_references"], d["byte_hash"],
              time.time()),
         )
-        cid = cur.lastrowid
+        cid = cur.lastrowid or 0
         conn.commit()
 
         if self.consolidate_every and self.length() >= self.consolidate_every * 2:

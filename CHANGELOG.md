@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.0] - 2026-07-21 — Harness Efficiency Layer
+
+Based on "The Harness Effect" paper (Writer, 2026, arxiv:2607.06906).
+Implements 6 mechanisms for token economics in the orchestration layer.
+
+### Added
+- **PromptZones** (`conscio/prompt_zones.py`): two-zone prompt with cache-shape
+  discipline. Stable zone (persona + tool schemas + skill summary) is byte-identical
+  across turns, enabling provider-side prompt caching at ~0.1x effective price.
+  `build_zoned_prompt()` replaces `build_actor_prompt()` (kept as deprecated wrapper).
+- **OutputGateway** accepts `PromptZones` objects with cache breakpoint at the
+  stable/volatile boundary. `attach_ledger()` wires TokenLedger for per-task capture.
+- **CompactionCheckpoint** (`conscio/checkpoint.py`): append-only checkpoint chain
+  backed by SQLite. 4 artifacts (durable_memory, execution_summary,
+  user_requirements, skill_references). Never rewrites — new prompt becomes new
+  cacheable prefix. Consolidation merges old entries.
+- **strategic_compact** now produces CheckpointChain entries when compacting.
+- **TokenAccount + TokenLedger** (`conscio/token_account.py`): per-task token
+  accounting. CPM (Completions Per Million effective Tokens) metric.
+  effective_tokens = prompt - cache_read + completion. Append-only SQLite.
+- **engine.token_summary()** and **engine.cpm()** convenience methods.
+- **FailureClass + FailureGovernor** (`conscio/failure.py`): 6-type failure
+  classification (RATE_LIMIT, STALL, TIMEOUT, MALFORMED_STREAM, PROVIDER_OUTAGE,
+  PERMANENT). Per-tool circuit breaker. `should_retry()` returns False only
+  for PERMANENT.
+- **Progressive skill disclosure**: `build_zoned_prompt()` accepts `skill_summary`
+  param — one-line name+description per skill in the stable (cacheable) zone.
+  Full skill docs loaded on invocation, not in the prompt.
+- **5 new VALID_TYPES**: `harness:cache`, `harness:zone`, `harness:checkpoint`,
+  `harness:failure`, `harness:account`.
+- **Ablation study script** (`scripts/ablation_study.py`): runs baseline vs
+  harness across multiple models. Reports CPM improvement, token reduction.
+
+### Changed
+- `build_actor_prompt` is now a deprecated wrapper around `build_zoned_prompt`.
+  Will be removed in v3.2.
+- `ActPipeline.act()` calls `build_zoned_prompt()` instead of `build_actor_prompt()`.
+- `OutputGateway.request_action()` accepts `str | PromptZones`.
+
+### Tests
+- 2447 passed, 3 skipped (up from 2402 in v3.0.1; +45 new tests)
+
 ## [3.0.1] - 2026-07-21 — Release pipeline hardening
 
 ### Fixed

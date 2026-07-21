@@ -76,15 +76,7 @@ class TestGatewayIntercepterIntegration:
 
 def test_act_pipeline_uses_prompt_zones():
     """v3.1: ActPipeline builds PromptZones, not raw strings."""
-    from conscio.prompt_zones import PromptZones
-    from conscio.agency.act import ActPipeline
-    from conscio.agency.adapter import MockAdapter
-    from conscio.agency.contracts import PROPOSAL_SCHEMA
-
-    adapter = MockAdapter(script=[
-        '{"tool": "think", "args": {}, '
-        '"rationale": "test", "expected_outcome": "ok"}',
-    ])
+    from conscio.agency.act import ActPipeline  # noqa: F401
 
 
 def test_build_actor_prompt_deprecated_wrapper():

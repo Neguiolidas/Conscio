@@ -14,12 +14,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
 from pathlib import Path
 
-from conscio import ConsciousnessEngine
 from conscio.agency.adapter import MockAdapter
-from conscio.bench import run_bench, format_report
+from conscio.bench import run_bench
 
 
 def run_baseline(model_name: str, storage: Path, cycles: int = 10) -> dict:
@@ -92,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     storage.mkdir(parents=True, exist_ok=True)
     models = [m.strip() for m in args.models.split(",")]
 
-    print(f"=== Conscio v3.1 Ablation Study ===")
+    print("=== Conscio v3.1 Ablation Study ===")
     print(f"Models: {models}")
     print(f"Cycles: {args.cycles}")
     print()
