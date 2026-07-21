@@ -90,3 +90,27 @@ def test_frozen_dataclass():
     pz = PromptZones(stable="a", volatile="b")
     with pytest.raises(Exception):
         pz.stable = "c"
+
+
+def test_skill_summary_in_stable_zone():
+    """v3.1: skill_summary appears in stable (cacheable) zone."""
+    pz = build_zoned_prompt(
+        state=ConsciousnessState(),
+        goal_text="g",
+        catalog_text="tool1",
+        skill_summary="- code-review: review code quality\n",
+    )
+    assert "code-review" in pz.stable
+    assert "Available skills" in pz.stable
+    assert "code-review" not in pz.volatile
+
+
+def test_no_skill_summary_when_none():
+    """v3.1: no skill_summary section when parameter is None."""
+    pz = build_zoned_prompt(
+        state=ConsciousnessState(),
+        goal_text="g",
+        catalog_text="tool1",
+        skill_summary=None,
+    )
+    assert "Available skills" not in pz.stable
