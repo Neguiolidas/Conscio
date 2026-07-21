@@ -9,43 +9,26 @@ current ConsciousnessState, never from previous cycles.
 few_shot is the v1.1 SkillLibrary hook: F1 callers pass an empty list.
 """
 from __future__ import annotations
-
 from conscio.context_manager import ConsciousnessState
 
-ACTOR_PERSONA = (
-    "You are the volition of a persistent agent. You receive the agent's "
-    "current conscious state, one active goal and the available tools. "
-    "Propose exactly ONE tool action that reduces the agent's dominant "
-    "dissonance and advances the goal. Be conservative: prefer reading "
-    "before writing, and never invent tools or arguments.")
+# v3.1: ACTOR_PERSONA moved to prompt_zones.py, re-exported for compat
+from conscio.prompt_zones import ACTOR_PERSONA  # noqa: F401
 
 
 def build_actor_prompt(*, state: ConsciousnessState, goal_text: str,
-                       catalog_text: str, recall_snippets: list[str],
-                       few_shot: list[str],
+                       catalog_text: str, recall_snippets: list[str] | None = None,
+                       few_shot: list[str] | None = None,
                        intercept_enabled: bool = False) -> str:
-    sections = [ACTOR_PERSONA, "", state.to_injection()]
-    if state.coherence_note:
-        sections.append(f"Dominant dissonance: {state.coherence_note}")
-    sections.append(f"Active goal: {goal_text}")
-    if recall_snippets:
-        sections.append("Relevant memories:")
-        sections.extend(f"- {snippet}" for snippet in recall_snippets)
-    if few_shot:
-        sections.append("Examples of past successful actions:")
-        sections.extend(few_shot)
-    if catalog_text:
-        sections.append("Available tools:")
-        sections.append(catalog_text)
-    if intercept_enabled:
-        sections.append("")
-        sections.append(
-            "## Deterministic Computation\n"
-            "You may use [INTERCEPT: <expr>] tags for safe deterministic "
-            "computation. The system will evaluate these before your next "
-            "turn. Available: arithmetic (+, -, *, /, **, //, %), "
-            "comparisons (>, <, >=, <=, ==, !=), and functions "
-            "(abs, round, min, max, sum, pow, sqrt, floor, ceil, log, "
-            "sin, cos, tan). Example: [INTERCEPT: 2**10] -> [RESULT: 1024]"
-        )
-    return "\n".join(sections)
+    """Deprecated wrapper — returns full_prompt string for backward compat.
+
+    v3.1: Use build_zoned_prompt() which returns PromptZones with
+    cache-shape discipline. This wrapper will be removed in v3.2.
+    """
+    from conscio.prompt_zones import build_zoned_prompt
+
+    pz = build_zoned_prompt(
+        state=state, goal_text=goal_text, catalog_text=catalog_text,
+        recall_snippets=recall_snippets or [], few_shot=few_shot or [],
+        intercept_enabled=intercept_enabled,
+    )
+    return pz.full_prompt

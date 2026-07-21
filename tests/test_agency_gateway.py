@@ -74,6 +74,34 @@ class TestGatewayIntercepterIntegration:
         assert gw._loop.max_iterations == 5
 
 
+def test_act_pipeline_uses_prompt_zones():
+    """v3.1: ActPipeline builds PromptZones, not raw strings."""
+    from conscio.prompt_zones import PromptZones
+    from conscio.agency.act import ActPipeline
+    from conscio.agency.adapter import MockAdapter
+    from conscio.agency.contracts import PROPOSAL_SCHEMA
+
+    adapter = MockAdapter(script=[
+        '{"tool": "think", "args": {}, '
+        '"rationale": "test", "expected_outcome": "ok"}',
+    ])
+
+
+def test_build_actor_prompt_deprecated_wrapper():
+    """v3.1: build_actor_prompt still works as wrapper returning .full_prompt."""
+    from conscio.agency.actor import build_actor_prompt
+    from conscio.context_manager import ConsciousnessState
+
+    result = build_actor_prompt(
+        state=ConsciousnessState(),
+        goal_text="test",
+        catalog_text="tool1",
+    )
+    assert isinstance(result, str)
+    assert "tool1" in result
+    assert "test" in result
+
+
 class TestPromptZonesIntegration:
     """Task 1.2: OutputGateway accepts PromptZones objects."""
 

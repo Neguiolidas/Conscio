@@ -22,6 +22,7 @@ from typing import Any, Callable
 from conscio.context_manager import ConsciousnessState
 
 from .actor import build_actor_prompt
+from conscio.prompt_zones import build_zoned_prompt
 from .adapter import InferenceAdapter
 from .breaker import CircuitBreaker
 from .contracts import (PROPOSAL_SCHEMA, ActionProposal, AuditVerdict,
@@ -108,7 +109,7 @@ class ActPipeline:
         recall = self.recall_fn(goal_text) if self.recall_fn else []
         few_shot = (self.few_shot_provider(goal_text)
                     if self.few_shot_provider else [])
-        prompt = build_actor_prompt(
+        prompt = build_zoned_prompt(
             state=state, goal_text=goal_text,
             catalog_text=self.registry.catalog_text(self.max_visible_tools),
             recall_snippets=recall, few_shot=few_shot,
