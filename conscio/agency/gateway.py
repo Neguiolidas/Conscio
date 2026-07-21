@@ -122,6 +122,10 @@ class OutputGateway:
         caps = self.adapter.capabilities()
         return "T1" if caps.grammar else "T2" if caps.json_mode else "T3"
 
+    def attach_ledger(self, ledger) -> None:
+        """v3.1: attach a TokenLedger to record per-task token usage."""
+        self._token_ledger = ledger
+
     def _generate(self, prompt: str, **kwargs: Any) -> Any:
         """Route through InterceptionLoop if present, else call adapter directly.
 
@@ -129,8 +133,20 @@ class OutputGateway:
         output — the LLM cannot emit [INTERCEPT: ...] tags under GBNF.
         """
         if self._loop is not None and self.effective_tier() != "T1":
-            return self._loop.generate(prompt, **kwargs)
-        return self.adapter.generate(prompt, **kwargs)
+            result = self._loop.generate(prompt, **kwargs)
+        else:
+            result = self.adapter.generate(prompt, **kwargs)
+        # v3.1: record token usage if ledger attached
+        ledger = getattr(self, "_token_ledger", None)
+        if ledger is not None and hasattr(result, "tokens_in"):
+            latency = getattr(result, "latency_ms", 0)
+            ledger.record(
+                model=self.adapter.capabilities().model_name,
+                prompt_tokens=result.tokens_in,
+                completion_tokens=result.tokens_out,
+                duration_seconds=latency / 1000.0 if latency else 0.0,
+            )
+        return result
 
     def request_action(self, base_prompt: str | "PromptZones", schema: dict,
                        *, goal_id: str = "",
