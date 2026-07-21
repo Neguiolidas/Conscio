@@ -1638,7 +1638,8 @@ class ConsciousnessEngine:
         if self._model_profile is not None and not force:
             return self._model_profile
         from .agency.profiles import (ProbeSuite, choose_tier,
-                                      max_visible_tools, skeptic_mode)
+                                      max_visible_tools, skeptic_mode,
+                                      prompt_complexity)
         suite = ProbeSuite(self._act_pipeline.adapter,
                            self.storage / "conscio.db")
         try:
@@ -1649,6 +1650,7 @@ class ConsciousnessEngine:
         if profile.valid:
             self._act_pipeline.gateway.tier = choose_tier(profile)
             self._act_pipeline.max_visible_tools = max_visible_tools(profile)
+            self._act_pipeline.prompt_complexity = prompt_complexity(profile)
             if (not getattr(self, "_skeptic_mode_explicit", False)
                     and self._act_pipeline.skeptic is not None):
                 self._act_pipeline.skeptic.mode = skeptic_mode(profile)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Real ablation test with Qwen 0.8B via LM Studio."""
-import json, time, sys
+import time
 from pathlib import Path
 import tempfile
 

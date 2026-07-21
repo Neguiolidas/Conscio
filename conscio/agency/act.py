@@ -87,6 +87,7 @@ class ActPipeline:
         self.max_visible_tools: int | None = None    # set by engine.probe()
         self.intercept_enabled = intercept_enabled
         self.skill_summary_fn = skill_summary_fn
+        self.prompt_complexity: str = "full"  # set by engine.probe()
 
     # ── act cycle (spec §6) ──
 
@@ -116,7 +117,8 @@ class ActPipeline:
             catalog_text=self.registry.catalog_text(self.max_visible_tools),
             recall_snippets=recall, few_shot=few_shot,
             intercept_enabled=self.intercept_enabled,
-            skill_summary=skill_summary)
+            skill_summary=skill_summary,
+            complexity=self.prompt_complexity)
         self.emit_fn(type="tool_call", category="external",
                      data={"action": "cycle_start", "goal_fp": goal_fp})
 

@@ -28,6 +28,7 @@ from typing import Callable
 
 from .agency import goal_fingerprint
 from .agency.actor import build_actor_prompt
+from .prompt_zones import build_zoned_prompt
 from .agency.adapter import (AdapterCaps, AdapterError, Meter, MeteredAdapter,
                              MockAdapter)
 from .agency.adapters import (LlamaCppAdapter, LMStudioAdapter, OllamaAdapter,
@@ -35,7 +36,7 @@ from .agency.adapters import (LlamaCppAdapter, LMStudioAdapter, OllamaAdapter,
 from .agency.contracts import PROPOSAL_SCHEMA, ActionProposal, validate
 from .agency.gateway import GatewayError, OutputGateway
 from .agency.ledger import ActionLedger
-from .agency.profiles import ProbeSuite, choose_tier, skeptic_mode
+from .agency.profiles import ProbeSuite, choose_tier, skeptic_mode, max_visible_tools
 from .agency.skeptic import Skeptic
 from .agency.skills import SkillLibrary
 from .agency.tools import Risk, make_default_registry
@@ -182,6 +183,9 @@ def run_bench(adapter, *, cycles: int = 10, workdir=None) -> dict:
             "backend returned no signal on any probe — is it reachable?")
     tier = choose_tier(profile)
     gateway = OutputGateway(metered, tier=tier)
+    from .agency.profiles import prompt_complexity as _pc
+    complexity = _pc(profile)
+    max_tools = max_visible_tools(profile)
     state = ConsciousnessState(state_summary="bench: synthetic state",
                                active_goals=list(GOALS),
                                coherence_note="epistemic",
@@ -190,10 +194,11 @@ def run_bench(adapter, *, cycles: int = 10, workdir=None) -> dict:
     valid = 0
     tiers_used: dict[str, int] = {}
     for index in range(cycles):
-        prompt = build_actor_prompt(
+        prompt = build_zoned_prompt(
             state=state, goal_text=GOALS[index % len(GOALS)],
-            catalog_text=registry.catalog_text(), recall_snippets=[],
-            few_shot=[])
+            catalog_text=registry.catalog_text(max_tools),
+            recall_snippets=[], few_shot=[],
+            complexity=complexity)
         try:
             proposal = gateway.request_action(prompt, PROPOSAL_SCHEMA,
                                               tool_names=registry.names())

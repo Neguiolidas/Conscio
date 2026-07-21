@@ -5,8 +5,6 @@ Baseline: raw adapter.generate() calls — no Conscio pipeline.
 Conscio: full conscio-bench with agency pipeline (gateway, skeptic, breaker, audit).
 """
 import json
-import time
-import sys
 import tempfile
 from pathlib import Path
 
@@ -158,7 +156,7 @@ try:
         s = ledger.summary()
         print(f"{'Effective tokens':<25} {'N/A':>15} {s['effective_tokens']:>15}")
         print(f"{'CPM (q=1.0)':<25} {'N/A':>15} {s['cpm_with_quality_1p0']:>15.1f}")
-    except:
+    except Exception:
         pass
 
 except Exception as e:
