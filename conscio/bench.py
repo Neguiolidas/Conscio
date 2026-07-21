@@ -186,7 +186,6 @@ def run_bench(adapter, *, cycles: int = 10, workdir=None) -> dict:
     adaptive_retries = 0 if profile.json_fidelity >= 0.8 else 2
     gateway = OutputGateway(metered, tier=tier, max_retries=adaptive_retries)
     from .agency.profiles import prompt_complexity as _pc
-    from .agency.profiles import ModelProfile
     # v3.1: adaptive complexity — start with profile-based, but fall back
     # to compact if full fails. Some models (LFM 1.2B) do better with
     # compact; others (Qwen 0.8B) need full. The profile heuristic picks
