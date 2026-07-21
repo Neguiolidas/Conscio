@@ -86,14 +86,23 @@ def prompt_complexity(profile: ModelProfile) -> str:
     - compact: persona (short) + tool catalog + state (no memories, no few-shot)
     - minimal: tool catalog + state only (tiny models, persona hurts)
 
-    The persona prompt adds ~200 tokens of instructions. For models <2B,
-    those tokens compete with the tool schema for attention, degrading
-    JSON quality. Stripping the persona lets the model focus on what matters:
-    the tools and the goal.
+    Heuristics:
+    - json_fidelity >= 0.8 AND instruction_depth >= 2: 'full' — the model
+      can handle JSON well and the full persona context helps it structure
+      the output (Qwen 0.8B: full=100%, compact=80%).
+    - instruction_depth >= 2 AND schema_depth >= 2: 'compact' — medium
+      models that can follow instructions but get confused by full persona
+      (LFM 1.2B: full=40%, compact=100%).
+    - Otherwise: 'minimal'.
+
+    Note: when both conditions match (json_fidelity >= 0.8 wins), the
+    model gets 'full'. This is correct for models that pass all JSON probes
+    AND follow instructions — they benefit from context. The retry in the
+    gateway handles the rare case where full fails on such a model.
     """
     if not profile.valid:
-        return "full"  # unknown model — give full prompt, let retry handle it
-    if profile.instruction_depth >= 3 and profile.schema_depth >= 3:
+        return "full"
+    if profile.json_fidelity >= 0.8 and profile.instruction_depth >= 2:
         return "full"
     if profile.instruction_depth >= 2 and profile.schema_depth >= 2:
         return "compact"
