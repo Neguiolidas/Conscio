@@ -1,11 +1,11 @@
-"""TokenAccount + TokenLedger (v3.1 Ato 3).
+"""TokenAccount + TokenLedger (v3.1 Harness Efficiency Layer).
 
-Per-task token accounting with CPM (Completions Per Million effective Tokens).
-Append-only SQLite ledger. CPM = quality * 1e6 / effective_tokens, where
-effective_tokens = prompt_tokens - cache_read_tokens + completion_tokens.
+Append-only token accounting backed by SQLite. Tracks prompt/completion/cache
+tokens per task, computes CPM (Completions Per Million effective tokens) as a
+harness-efficiency metric.
 
-Mirrors the per-task accounting concept from The Harness Effect paper,
-Section 4.6 and Definition 1 (token maxing is unobservable without this).
+CPM = quality * 1e6 / effective_tokens
+effective_tokens = prompt_tokens - cache_read_tokens + completion_tokens
 """
 from __future__ import annotations
 
@@ -17,7 +17,8 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class TokenAccount:
-    """Single task's token usage record."""
+    """Immutable record of a single inference task's token usage."""
+
     task_id: int
     model: str
     prompt_tokens: int
@@ -30,32 +31,33 @@ class TokenAccount:
 
 
 class TokenLedger:
-    """Append-only token accounting backed by SQLite.
+    """Append-only ledger of TokenAccount rows backed by SQLite."""
 
-    No rewrites, no updates. rotate() deletes oldest rows beyond max_rows.
-    """
-
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
         self._init_db()
+
+    # -- schema ---------------------------------------------------------------
 
     def _init_db(self) -> None:
         conn = sqlite3.connect(str(self.db_path))
         conn.execute("""
             CREATE TABLE IF NOT EXISTS token_accounts (
-                task_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                model TEXT NOT NULL,
-                prompt_tokens INTEGER NOT NULL,
+                task_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                model            TEXT    NOT NULL,
+                prompt_tokens    INTEGER NOT NULL,
                 completion_tokens INTEGER NOT NULL,
-                cache_read_tokens INTEGER DEFAULT 0,
-                cache_write_tokens INTEGER DEFAULT 0,
-                cost_usd REAL DEFAULT 0.0,
-                duration_seconds REAL DEFAULT 0.0,
-                timestamp REAL NOT NULL
+                cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
+                cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+                cost_usd         REAL    NOT NULL DEFAULT 0.0,
+                duration_seconds REAL    NOT NULL DEFAULT 0.0,
+                timestamp        REAL    NOT NULL DEFAULT 0.0
             )
         """)
         conn.commit()
         conn.close()
+
+    # -- write ----------------------------------------------------------------
 
     def record(
         self,
@@ -68,7 +70,7 @@ class TokenLedger:
         cost_usd: float = 0.0,
         duration_seconds: float = 0.0,
     ) -> int:
-        """Append a token account record. Returns task_id."""
+        """Append a token account row. Returns task_id."""
         conn = sqlite3.connect(str(self.db_path))
         cur = conn.execute(
             """INSERT INTO token_accounts
@@ -83,29 +85,31 @@ class TokenLedger:
         task_id = cur.lastrowid
         conn.commit()
         conn.close()
-        return task_id
+        return task_id  # type: ignore[return-value]
+
+    # -- read -----------------------------------------------------------------
 
     def effective_tokens(self) -> int:
-        """Sum of (prompt - cache_read + completion) across all records."""
+        """Sum of (prompt_tokens - cache_read_tokens + completion_tokens)."""
         conn = sqlite3.connect(str(self.db_path))
         cur = conn.execute(
             "SELECT COALESCE(SUM(prompt_tokens - cache_read_tokens + completion_tokens), 0) "
             "FROM token_accounts"
         )
-        total = cur.fetchone()[0]
+        val = cur.fetchone()[0]
         conn.close()
-        return total
+        return val
 
     def total_tokens(self) -> int:
-        """Sum of prompt_tokens + completion_tokens across all records."""
+        """Sum of prompt_tokens + completion_tokens."""
         conn = sqlite3.connect(str(self.db_path))
         cur = conn.execute(
             "SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0) "
             "FROM token_accounts"
         )
-        total = cur.fetchone()[0]
+        val = cur.fetchone()[0]
         conn.close()
-        return total
+        return val
 
     def total_cost(self) -> float:
         """Sum of cost_usd across all records."""
@@ -113,23 +117,22 @@ class TokenLedger:
         cur = conn.execute(
             "SELECT COALESCE(SUM(cost_usd), 0.0) FROM token_accounts"
         )
-        total = cur.fetchone()[0]
+        val = cur.fetchone()[0]
         conn.close()
-        return total
+        return val
 
     def count(self) -> int:
         """Number of records."""
         conn = sqlite3.connect(str(self.db_path))
         cur = conn.execute("SELECT COUNT(*) FROM token_accounts")
-        count = cur.fetchone()[0]
+        val = cur.fetchone()[0]
         conn.close()
-        return count
+        return val
 
     def cpm(self, quality: float) -> float:
-        """Completions Per Million effective Tokens.
+        """CPM = quality * 1e6 / total_effective_tokens.
 
-        CPM = quality * 1e6 / effective_tokens.
-        Returns 0.0 if no records (avoids division by zero).
+        Returns 0.0 when ledger is empty (avoids division by zero).
         """
         eff = self.effective_tokens()
         if eff == 0:
@@ -137,27 +140,28 @@ class TokenLedger:
         return quality * 1e6 / eff
 
     def summary(self) -> dict:
-        """Aggregate summary of all records."""
+        """Aggregate stats dict with pre-computed CPM at quality=1.0."""
         return {
             "count": self.count(),
             "total_tokens": self.total_tokens(),
             "effective_tokens": self.effective_tokens(),
             "total_cost": self.total_cost(),
-            "cpm_with_quality_1p0": self.cpm(quality=1.0),
+            "cpm_with_quality_1p0": self.cpm(1.0),
         }
 
+    # -- maintenance ----------------------------------------------------------
+
     def rotate(self, max_rows: int = 100000) -> int:
-        """Delete oldest records beyond max_rows. Returns deleted count."""
+        """Delete oldest rows beyond *max_rows*. Returns deleted count."""
         conn = sqlite3.connect(str(self.db_path))
-        cur = conn.execute("SELECT COUNT(*) FROM token_accounts")
-        total = cur.fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) FROM token_accounts").fetchone()[0]
         if total <= max_rows:
             conn.close()
             return 0
         to_delete = total - max_rows
         conn.execute(
-            "DELETE FROM token_accounts WHERE task_id IN "
-            "(SELECT task_id FROM token_accounts ORDER BY task_id ASC LIMIT ?)",
+            f"DELETE FROM token_accounts WHERE task_id IN "
+            f"(SELECT task_id FROM token_accounts ORDER BY task_id ASC LIMIT ?)",
             (to_delete,),
         )
         conn.commit()
