@@ -190,8 +190,19 @@ class ActPipeline:
 
     # ── audit + autonomy helpers ──
 
+    # v3.1: tools with no external side effects — skeptic audit is overkill.
+    # think: pure reasoning, no I/O. memory_note: append-only local note.
+    # fs_read excluded: it accesses filesystem (side-channel info leak risk).
+    _SKEPTIC_SKIP_TOOLS = frozenset({"think", "memory_note"})
+
     def _audit(self, spec, proposal: ActionProposal,
                goal_text: str) -> AuditVerdict:
+        # v3.1: skip skeptic for inherently safe tools (no side effects)
+        if proposal.tool in self._SKEPTIC_SKIP_TOOLS:
+            return AuditVerdict(
+                verdict="PASS", audited=False, reasons=[],
+                confidence=0.85,
+                risk_flags=["skip:safe_tool"])
         if (spec.risk is Risk.LOW and self.trust is not None
                 and self.trust.fast_path_ok()):
             return AuditVerdict(

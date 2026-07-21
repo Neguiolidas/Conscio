@@ -64,14 +64,16 @@ class TestProbe:
             assert pipe.gateway.tier is None      # caps auto preserved
 
     def test_act_alone_never_probes(self, tmp_path):
-        """A6 guard: F1/F2-style attach+act consumes zero probe calls."""
+        """A6 guard: F1/F2-style attach+act consumes zero probe calls.
+        v3.1: memory_note is in _SKEPTIC_SKIP_TOOLS, so skeptic is
+        skipped — only 1 LLM call (actor), not 2 (actor + skeptic)."""
         adapter = MockAdapter(script=[_proposal(), CHECKLIST_PASS])
         with ConsciousnessEngine("glm-5.1", storage_path=tmp_path) as eng:
             eng.content_layer._session_rag = _RAG_DISABLED
             eng.attach_adapter(adapter, sandbox_root=tmp_path / "sb")
             report = eng.act(ConsciousnessState(active_goals=["note it"]))
             assert report.status.value in ("proposed", "executed")
-            assert len(adapter.calls) == 2        # actor + skeptic only
+            assert len(adapter.calls) == 1        # actor only (skeptic skipped)
 
 
 class TestRun:
@@ -99,10 +101,11 @@ class TestRun:
             report = eng.run(ActBudget(max_cycles=cycles, max_wall_s=120.0))
             assert report.cycles == cycles
             assert report.stopped == "max_cycles"
-            # loop budget counts only its own consumption (actor+skeptic);
-            # the one-time probe cost is visible on the engine meter
-            assert report.llm_calls == cycles * 2
-            assert eng._act_meter.calls == 5 + cycles * 2
+            # loop budget counts only its own consumption;
+            # v3.1: memory_note is in _SKEPTIC_SKIP_TOOLS, skeptic skipped
+            # actor: cycles calls. Reflection: 1 call (perceive/reflect phase).
+            assert report.llm_calls == cycles + 1   # actor + reflection
+            assert eng._act_meter.calls == 5 + cycles + 1  # probes + actor + reflect
             assert eng._model_profile is not None
 
     def test_run_ledger_records_real_tier_and_adapter(self, tmp_path):
