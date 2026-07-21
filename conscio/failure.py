@@ -15,7 +15,7 @@ class FailureClass(enum.Enum):
     """Taxonomy of failure modes for adapter / inference errors."""
 
     RATE_LIMIT = "rate_limit"        # HTTP 429, rate limit exceeded
-    STALL = " Stall"                  # model produced no useful output, empty response
+    STALL = "stall"  # model produced no useful output, empty response
     TIMEOUT = "timeout"               # connection or generation timed out
     MALFORMED_STREAM = "malformed_stream"  # truncated or corrupted response
     PROVIDER_OUTAGE = "provider_outage"    # 5xx server error, service unavailable
