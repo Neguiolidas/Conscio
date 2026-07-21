@@ -21,7 +21,6 @@ from typing import Any, Callable
 
 from conscio.context_manager import ConsciousnessState
 
-from .actor import build_actor_prompt
 from conscio.prompt_zones import build_zoned_prompt
 from .adapter import InferenceAdapter
 from .breaker import CircuitBreaker

@@ -1,5 +1,4 @@
 """TDD tests for FailureClass enum + FailureGovernor (Conscio v3.1)."""
-import pytest
 
 from conscio.agency.adapter import AdapterTimeout, AdapterConnectionError, AdapterBadResponse
 from conscio.failure import FailureClass, FailureGovernor

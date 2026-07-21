@@ -1,8 +1,5 @@
 """TDD for CompactionCheckpoint + CheckpointChain (v3.1 Ato 2)."""
 import json
-import tempfile
-import pytest
-from pathlib import Path
 
 from conscio.checkpoint import CompactionCheckpoint, CheckpointChain
 

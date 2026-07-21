@@ -148,7 +148,7 @@ class OutputGateway:
             )
         return result
 
-    def request_action(self, base_prompt: str | "PromptZones", schema: dict,
+    def request_action(self, base_prompt, schema: dict,
                        *, goal_id: str = "",
                        tool_names: list[str] | None = None) -> ActionProposal:
         # v3.1: accept PromptZones — convert to string for downstream tiers.
