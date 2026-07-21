@@ -4,7 +4,7 @@
 
 <p align="center">
   <b>Context-aware memory, introspection, goal generation, and an audited agency
-  layer that lets a model act on its own conclusions under hard safety gates.</b>
+layer that lets a model act on its own conclusions under hard safety gates.</b>
 </p>
 
 > *"The first step toward consciousness is knowing what you are and what limits you."*
@@ -14,14 +14,14 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v2.11.0` "Reach":** install Conscio **once** and bind **many
-agentic hosts** (Claude Code, Antigravity, any MCP host) on one machine, each to its
-own **space** (`~/.conscio/instances/<slug>/` — its own identity, memory, ledger)
-while sharing one **society** (`~/.hermes/{noosphere,liaison}.db`). An interactive
-**`conscio init`** wizard creates the space, emits + read-back-verifies the host's MCP
-config, and for Claude Code materializes a native bundle: **10 `/conscio:*` slash
-commands**, a `conscio` skill, and a defensive awareness hook. Debt-zero on the
-cognitive core.
+**Latest release — `v3.0.0` "G-P-D":** 13 advisory tools across three new modules —
+**Gates** (decide, council, loop_gate, delivery_check, investigate), **Pipelines**
+(acceptance_criteria, verify, continuous_loop, strategic_compact, ledger), and
+**Diagnostics** (context_budget, eval_harness, rules_distill). All deterministic, stdlib-only,
+EventBus-backed. 11 new event types, 460+ tests, 13 MCP tools. Plus: 5-axis
+self-evaluation (`evaluate`), adaptive reflection depth (ReflectionGate), hostile audit
+wiring, intercepter TV-DSL integration, and one global install with per-host minds
+and native Claude Code integration.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
@@ -57,6 +57,29 @@ with ConsciousnessEngine(model_name="kimi-k2.6") as engine:
     injection = engine.get_state_for_injection()   # compact state for context injection
     engine.world.add_entity("server", "system", state="healthy")
     hits = engine.recall("latency incidents")       # cross-session memory (FTS5 + optional RAG)
+
+    # v2.15 — 5-axis self-evaluation (accuracy, completeness, clarity, actionability, conciseness)
+    report = engine.evaluate()
+    print(report.overall_score, report.self_check)
+
+    # v3.0 — Gate tools
+    adr = engine.decide("Use SQLite for session storage", status="proposed")
+    result = engine.council("Should we enable autonomous mode?")
+    gate = engine.loop_gate(verifiable=True, budget_ok=True, has_tools=True)
+    check = engine.delivery_check()
+    evidence = engine.investigate("server latency")
+
+    # v3.0 — Pipeline tools
+    criteria = engine.acceptance_criteria(goal="Deploy to production")
+    verified = engine.verify(criteria_source=adr["id"])
+    loop = engine.continuous_loop(pattern="continuous_pr")
+    compact = engine.strategic_compact(context_tokens=8000, context_window=128000)
+    entry = engine.ledger(action="record", rollout_id="RL-1")
+
+    # v3.0 — Diagnostic tools
+    budget = engine.context_budget()
+    eval_result = engine.eval_harness(action="define", eval_type="capability")
+    rules = engine.rules_distill(action="scan", source="skills")
 ```
 
 `reflect()` is the **passive heart** and is never allowed to act. Everything that can
@@ -70,14 +93,15 @@ non-negotiable (see [Safety rules](#safety-rules-non-negotiable)).
 - **Knows itself** — detects its model and context window (offline & deterministic by
   default; opt-in auto-detection), and adapts its footprint.
 - **Reflects continuously** — a passive inner-monologue loop that observes, assesses
-  confidence, and summarizes (`engine.reflect()` — advisory, never acts).
+  confidence, and summarizes (`engine.reflect()` — advisory, never acts). Reflection
+  depth adapts via ReflectionGate (v2.13).
 - **Generates its own goals** — driven by curiosity, maintenance, and evolution.
 - **Acts under audit** — an opt-in agency layer (`engine.act()`) that proposes,
   audits, risk-gates, and only then executes — with a human gate for anything risky.
 - **Learns procedures** — successful audited plans become reusable skills (procedural
   memory), fed back to the actor as few-shot exemplars.
 - **Judges its own quality** — confidence calibration, blind-spot detection, and
-  coherence/dissonance metrics; formal 5-axis self-evaluation (`evaluate()`).
+  coherence/dissonance metrics; formal 5-axis self-evaluation (`evaluate()`, v2.15).
 - **Gates its own decisions** (v3.0) — ADRs (`decide`), multi-voice council
   (`council`), autonomous-loop gate (`loop_gate`), pre-close delivery check
   (`delivery_check`), and read-before-act verification (`investigate`).
@@ -94,6 +118,8 @@ non-negotiable (see [Safety rules](#safety-rules-non-negotiable)).
 - **Knows its codebase structurally** — optional, consent-gated ingestion of a
   Graphify graph, distilled to a compact signal injected budget-aware. Data, never
   code (R10).
+- **Intercepts tool calls** (v2.12) — Intercepter provides TV-DSL integration for
+  host-side tool filtering and routing.
 - **Plugs into any host** — a stdlib-only MCP stdio server (`conscio-mcp`) feeds any
   CLI/IDE/agent its cognition and audited proposals live.
 
@@ -152,6 +178,90 @@ model, `TrustMatrix` grants L1/L2/L3 from real calibration and ledger history, a
 `CircuitBreaker` quarantines misbehaving goals. HIGH-risk actions are *always* queued
 for a human (R6).
 
+### Gate tools (v3.0)
+
+Five advisory tools for decision governance — all deterministic, EventBus-backed, no
+LLM calls:
+
+```python
+# Architecture Decision Records
+adr = engine.decide("Use SQLite for session storage", status="proposed")
+# adr = {"id": "ADR-20260720-a3f1b2", "status": "proposed", "decision": "..."}
+
+# Multi-voice council (Architect + Skeptic + Pragmatist + optional Critic)
+result = engine.council("Should we enable autonomous mode?")
+# result = {"consensus": True, "votes": {"architect": "yes", ...}}
+
+# Autonomous loop gate — 3 conditions must pass
+gate = engine.loop_gate(verifiable=True, budget_ok=True, has_tools=True)
+# gate = {"allowed": True, "conditions": {...}}
+
+# Pre-close delivery check (auto-runs on engine.close())
+check = engine.delivery_check()
+# check = {"pass": True, "blockers": [], "rationalization_hits": 0}
+
+# Read-before-act evidence verification
+evidence = engine.investigate("server latency")
+```
+
+### Pipeline tools (v3.0)
+
+Five tools for structured workflows — acceptance criteria, verification, loop
+patterns, compaction advisory, and recursive decision ledger:
+
+```python
+# Intent-driven acceptance criteria with auto risk detection
+criteria = engine.acceptance_criteria(goal="Deploy to production", depth="full")
+# criteria = {"goal": "Deploy to production", "risk_tier": "security", "criteria": [...]}
+
+# Post-implementation verification
+verified = engine.verify(criteria_source="ADR-20260720-a3f1b2")
+
+# Loop pattern selection (sequential / continuous_pr / rfc_dag / infinite)
+loop = engine.continuous_loop(pattern="continuous_pr")
+
+# Strategic compaction advisory
+compact = engine.strategic_compact(context_tokens=8000, context_window=128000)
+
+# Recursive decision ledger with promotion gates (paper → dry_run → live)
+entry = engine.ledger(action="record", rollout_id="RL-1",
+                      candidates=[{"id": "A", "description": "A"}],
+                      marks={"A": "accept"})
+promoted = engine.ledger(action="promote", rollout_id="RL-1")
+```
+
+### Diagnostic tools (v3.0)
+
+Three tools for context auditing, evaluation, and rule extraction:
+
+```python
+# Context budget audit — per-source breakdown, metabolic tiers, recommendations
+budget = engine.context_budget()
+# budget = {"total_tokens": 8000, "sources": [...], "metabolic_tier": "normal"}
+
+# Eval harness with pass@k reliability metrics
+result = engine.eval_harness(action="define", eval_type="capability",
+                              name="memory_recall", criteria="...")
+report = engine.eval_harness(action="report")
+
+# Rule distillation from skills, events, or decisions
+rules = engine.rules_distill(action="scan", source="skills")
+distilled = engine.rules_distill(action="distill", source="events")
+```
+
+### Self-evaluation (v2.15)
+
+Formal 5-axis rubric — accuracy, completeness, clarity, actionability, conciseness.
+Pure read-only, deterministic, no LLM:
+
+```python
+report = engine.evaluate()
+# report.overall_score  → 3.4
+# report.axes["accuracy"].score  → 4
+# report.self_check  → "PASS"
+# report.ranked_improvements  → ["completeness: add more entities", ...]
+```
+
 ### Live mode — daemon, sensors & Awake Mode
 
 Conscio can run as a **living process** that perceives the world each cycle and acts
@@ -185,7 +295,8 @@ JSON-RPC 2.0) so any MCP host can plug into a Conscio instance and consume its
 cognition live. Zero new dependency; nothing opens a socket. The base surface is
 **propose-only** (perceive / reflect / recall / audit); opt-in `--enable-act` adds
 host-executed, ledgered, gated `act` — Conscio signs and audits the intent, the host
-pulls the trigger. See [the MCP guide](docs/guides/mcp.md).
+pulls the trigger. 13 additional MCP tools for gate, pipeline, and diagnostic
+operations. See [the MCP guide](docs/guides/mcp.md).
 
 ### Society — shared minds
 
@@ -194,6 +305,12 @@ Same-host instances can **share locally-proven skills as data** through a host-s
 promotion), **audit each other's** action records, and exchange messages over the
 Liaison mailbox (`hermes_review` cross-agent approvals + free-form relay). Engine-free,
 read-only on the live `conscio.db`, no inherited trust, no network.
+
+### Intercepter (v2.12)
+
+TV-DSL integration for host-side tool filtering and routing. Intercepter sits between
+the host and the tool registry, applying declarative rules to filter, redirect, or
+augment tool calls before they reach the engine.
 
 ---
 
@@ -204,15 +321,17 @@ read-only on the live `conscio.db`, no inherited trust, no network.
                                                               │
   ConsciousnessEngine  (orchestrator · lifecycle · injection) │
    ├─ Witness        InnerMonologue · WorldModel · MetaCognition · GoalGenerator
-   ├─ Substrate      ContentStore (FTS5 BM25 + RRF) · EventBus · FilterPipeline
+   ├─ Substrate      ContentStore (FTS5 BM25 + RRF) · EventBus (33 event types) · FilterPipeline
    ├─ Continuity     SessionLifecycle (6-step handoff) · SessionRAG (optional)
    ├─ Metabolism     MetabolicContext · DreamCycle (release→prune→…→distill)
    ├─ Coherence      CoherenceEngine · semantic reconciliation
    ├─ Structural     StructuralDistiller (graph → ranked signal; data, not code)
+   ├─ Evaluation (v2.15) evaluate() — 5-axis rubric (accuracy·completeness·clarity·actionability·conciseness)
    ├─ Gates (v3.0)   decide · council · loop_gate · delivery_check · investigate
    ├─ Pipelines (v3.0) acceptance_criteria · verify · continuous_loop ·
    │                 strategic_compact · ledger
    ├─ Diagnostics (v3.0) context_budget · eval_harness · rules_distill
+   ├─ Intercepter (v2.12) TV-DSL tool filtering and routing
    └─ Embodiment     conscio-mcp: JSON-RPC 2.0 over stdio (stdlib only)
                                                               │
             act()  ── opt-in agency · audited · gated ◀───────┘
