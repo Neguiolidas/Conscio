@@ -80,6 +80,11 @@ VALID_TYPES = {
  "diagnostic:budget",     # v3.0: context budget audit
  "diagnostic:eval",       # v3.0: eval harness result
  "diagnostic:rule",       # v3.0: distilled rule
+ "harness:cache",         # v3.1: prompt cache hit/miss stats
+ "harness:zone",          # v3.1: prompt zone composition report
+ "harness:checkpoint",    # v3.1: compaction checkpoint created
+ "harness:failure",       # v3.1: classified failure event
+ "harness:account",       # v3.1: token account recorded
  }
 
 VALID_CATEGORIES = {"system", "trading", "consciousness", "external", "session"}
