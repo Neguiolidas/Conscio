@@ -78,6 +78,28 @@ def max_visible_tools(profile: ModelProfile) -> int | None:
     return VISIBLE_TOOLS_SMALL
 
 
+def prompt_complexity(profile: ModelProfile) -> str:
+    """v3.1: adaptive prompt complexity based on model profile.
+
+    Returns 'full', 'compact', or 'minimal':
+    - full:    persona + tool catalog + state + memories + few-shot (capable models)
+    - compact: persona (short) + tool catalog + state (no memories, no few-shot)
+    - minimal: tool catalog + state only (tiny models, persona hurts)
+
+    The persona prompt adds ~200 tokens of instructions. For models <2B,
+    those tokens compete with the tool schema for attention, degrading
+    JSON quality. Stripping the persona lets the model focus on what matters:
+    the tools and the goal.
+    """
+    if not profile.valid:
+        return "full"  # unknown model — give full prompt, let retry handle it
+    if profile.instruction_depth >= 3 and profile.schema_depth >= 3:
+        return "full"
+    if profile.instruction_depth >= 2 and profile.schema_depth >= 2:
+        return "compact"
+    return "minimal"
+
+
 # ── the five probes (name, prompt, scorer) ─────────────────────────────
 
 def _json_or_none(raw: str):

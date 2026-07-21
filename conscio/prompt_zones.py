@@ -23,6 +23,11 @@ ACTOR_PERSONA = (
     "before writing, and never invent tools or arguments."
 )
 
+ACTOR_PERSONA_COMPACT = (
+    "Propose ONE tool action in JSON. Reduce dissonance, advance the goal. "
+    "Never invent tools."
+)
+
 
 @dataclass(frozen=True)
 class PromptZones:
@@ -54,6 +59,7 @@ def build_zoned_prompt(
     few_shot: list[str] | None = None,
     intercept_enabled: bool = False,
     skill_summary: str | None = None,
+    complexity: str = "full",
 ) -> PromptZones:
     """Build a two-zone prompt separating stable (cacheable) from volatile.
 
@@ -62,12 +68,28 @@ def build_zoned_prompt(
 
     skill_summary (v3.1 progressive disclosure): one-line name+description
     per skill, NOT the full skill doc. Full docs loaded on invocation.
+
+    complexity (v3.1 adaptive): 'full' (default), 'compact', or 'minimal'.
+    - full:    full persona + tools + memories + few-shot + intercept
+    - compact: compact persona + tools + state + goal (no memories, no few-shot)
+    - minimal: tools + state + goal only (no persona — tiny models focus on schema)
     """
-    stable_parts: list[str] = [ACTOR_PERSONA, ""]
+    # Persona selection
+    if complexity == "minimal":
+        persona = ""
+    elif complexity == "compact":
+        persona = ACTOR_PERSONA_COMPACT
+    else:
+        persona = ACTOR_PERSONA
+
+    stable_parts: list[str] = []
+    if persona:
+        stable_parts.append(persona)
+        stable_parts.append("")
     if catalog_text:
         stable_parts.append("Available tools:")
         stable_parts.append(catalog_text)
-    if skill_summary:
+    if skill_summary and complexity != "minimal":
         stable_parts.append("")
         stable_parts.append("Available skills (invoke for full instructions):")
         stable_parts.append(skill_summary)
@@ -76,13 +98,14 @@ def build_zoned_prompt(
     if state.coherence_note:
         volatile_parts.append(f"Dominant dissonance: {state.coherence_note}")
     volatile_parts.append(f"Active goal: {goal_text}")
-    if recall_snippets:
+    # Memories and few-shot only for full complexity
+    if complexity == "full" and recall_snippets:
         volatile_parts.append("Relevant memories:")
         volatile_parts.extend(f"- {s}" for s in recall_snippets)
-    if few_shot:
+    if complexity == "full" and few_shot:
         volatile_parts.append("Examples of past successful actions:")
         volatile_parts.extend(few_shot)
-    if intercept_enabled:
+    if intercept_enabled and complexity != "minimal":
         volatile_parts.append("")
         volatile_parts.append(
             "## Deterministic Computation\n"
