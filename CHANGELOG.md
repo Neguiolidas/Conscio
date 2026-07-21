@@ -49,6 +49,62 @@ Implements 6 mechanisms for token economics in the orchestration layer.
 ### Tests
 - 2447 passed, 3 skipped (up from 2402 in v3.0.1; +45 new tests)
 
+### v3.1.0 Additions (2026-07-21, model-agnostic release)
+
+- **Adaptive prompt complexity** (`conscio/agency/profiles.py`):
+  `prompt_complexity(profile)` returns `'full'`, `'compact'`, or `'minimal'`
+  based on the model's probe profile. `full` = complete persona + tools +
+  memories + few-shot; `compact` = 1-line persona + tools + state (no
+  memories/few-shot); `minimal` = tools + state only (no persona, for tiny
+  models). Wired end-to-end: `probe()` → `act_pipeline.prompt_complexity` →
+  `build_zoned_prompt(complexity=...)`.
+- **`ACTOR_PERSONA_COMPACT`** (`conscio/prompt_zones.py`): 1-line persona
+  for medium models that get confused by the full persona block.
+- **Complexity fallback in bench**: tries `full` first, falls back to
+  `compact` if args validation fails. Models with identical profiles but
+  opposite preferences (Qwen 0.8B wants full, LFM 1.2B wants compact) both
+  hit 100% JSON validity.
+- **Auto-detect model** (`conscio/mcp/server.py`): `--model auto` triggers
+  `GET /v1/models` from the LM Studio endpoint. Filters out embedding
+  models, tests each chat model with a minimal prompt ("Respond with: ok"),
+  returns the first that responds. Persists the winner to
+  `~/.config/conscio/config.json` for instant next-boot startup.
+- **FallbackAdapter** (`conscio/agency/fallback_adapter.py`): wraps multiple
+  `OpenAICompatAdapter` instances. If the current model fails
+  (PERMANENT/timeout/bad response), switches to the next model in the chain
+  and retries. All models exhausted → raise. Wired in `main()` when
+  `--model auto` detects multiple models.
+- **Skeptic skip for safe tools** (`conscio/agency/act.py`):
+  `_SKEPTIC_SKIP_TOOLS = {"think", "memory_note"}` — the skeptic audit LLM
+  call is skipped for tools with no external side effects. Saves 1 LLM
+  call per task in production. `fs_read` excluded (filesystem side-channel
+  risk).
+- **Adaptive max_retries** (`conscio/bench.py`): models with
+  `json_fidelity >= 0.8` get `max_retries=0` (they don't need retries).
+  Lower-fidelity models keep `max_retries=2`.
+- **MCP `--model auto`** (`conscio/mcp/server.py`): the MCP JSON can now be
+  fixed forever — no manual model swapping when LM Studio loads/unloads
+  models. Conscio auto-detects what's available and falls back at runtime.
+
+### v3.1.0 Benchmark (local LM Studio, 5 cycles)
+
+| Model | json_fidelity | Tier | JSON valid | Tokens | Latency p50 | Catch rate |
+|-------|--------------|------|------------|--------|-------------|------------|
+| Qwen 0.8B | 1.0 | T2 | 100% | 5357 | 19.0s | 100% |
+| LFM 1.2B | 1.0 | T2 | 100% | 4950 | 23.6s | 100% |
+
+Both models: raw JSON validity was 60% (Qwen) and 80% (LFM); Conscio
+brings both to 100%. Token cost 6–10× (no prompt caching on local LM
+Studio); with provider caching, stable zone caches at ~0.1× → ~2–3×
+effective cost. Catch rate (skeptic audit) 100% on both.
+
+### Changed (v3.1.0)
+- `build_zoned_prompt()` accepts `complexity` param (`'full'` default).
+- `ActPipeline` has `prompt_complexity` attribute, set by `engine.probe()`.
+- `bench.py` uses `build_zoned_prompt` with adaptive complexity + fallback.
+- `_resolve_model()` in `server.py` supports `--model auto`.
+- 3 tests updated for skeptic skip (fewer LLM calls expected).
+
 ## [3.0.1] - 2026-07-21 — Release pipeline hardening
 
 ### Fixed
