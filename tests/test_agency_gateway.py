@@ -74,6 +74,44 @@ class TestGatewayIntercepterIntegration:
         assert gw._loop.max_iterations == 5
 
 
+class TestPromptZonesIntegration:
+    """Task 1.2: OutputGateway accepts PromptZones objects."""
+
+    def test_request_action_with_prompt_zones(self):
+        """Gateway accepts PromptZones and converts to full_prompt internally."""
+        from conscio.prompt_zones import PromptZones
+
+        adapter = MockAdapter(script=[
+            '{"tool": "think", "args": {}, '
+            '"rationale": "test", "expected_outcome": "ok"}',
+        ])
+        gw = OutputGateway(adapter)
+        pz = PromptZones(
+            stable="system prompt\ntool schemas",
+            volatile="state + goal",
+        )
+        result = gw.request_action(pz, PROPOSAL_SCHEMA, tool_names=["think"])
+        assert isinstance(result, ActionProposal)
+
+    def test_prompt_zones_equivalent_to_string(self):
+        """Passing PromptZones.full_prompt as string produces same result."""
+        from conscio.prompt_zones import PromptZones
+
+        script = [
+            '{"tool": "think", "args": {}, '
+            '"rationale": "test", "expected_outcome": "ok"}',
+        ]
+        pz = PromptZones(stable="hello", volatile="world")
+
+        gw1 = OutputGateway(MockAdapter(script=script))
+        result1 = gw1.request_action(pz, PROPOSAL_SCHEMA)
+
+        gw2 = OutputGateway(MockAdapter(script=script))
+        result2 = gw2.request_action(pz.full_prompt, PROPOSAL_SCHEMA)
+
+        assert result1.tool == result2.tool
+
+
 class TestEffectiveTier:
     def test_explicit_tier_wins(self):
         gw = OutputGateway(MockAdapter(script=[]), tier="T3")
