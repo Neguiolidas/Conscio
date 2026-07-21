@@ -132,9 +132,13 @@ class OutputGateway:
             return self._loop.generate(prompt, **kwargs)
         return self.adapter.generate(prompt, **kwargs)
 
-    def request_action(self, base_prompt: str, schema: dict,
+    def request_action(self, base_prompt: str | "PromptZones", schema: dict,
                        *, goal_id: str = "",
                        tool_names: list[str] | None = None) -> ActionProposal:
+        # v3.1: accept PromptZones — convert to string for downstream tiers.
+        # Cache breakpoint sits at the stable/volatile boundary (full_prompt).
+        if hasattr(base_prompt, "full_prompt"):
+            base_prompt = base_prompt.full_prompt
         self.last_adapter_error = None
         caps = self.adapter.capabilities()
         tier = self.effective_tier()
