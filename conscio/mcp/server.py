@@ -845,7 +845,7 @@ def main(argv: list[str] | None = None) -> int:
     # v3.1: if auto-detect found multiple models, use FallbackAdapter
     fallback_models = getattr(args, "_auto_fallback_models", None)
     if fallback_models and len(fallback_models) > 1 and not args.adapter:
-        from .agency.fallback_adapter import FallbackAdapter
+        from ..agency.fallback_adapter import FallbackAdapter
         base_url = args.base_url or "http://localhost:1234/v1"
         fb_adapter = FallbackAdapter(
             base_url=base_url, models=fallback_models,
