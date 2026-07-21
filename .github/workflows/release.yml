@@ -66,5 +66,38 @@ jobs:
         with:
           name: dist
           path: dist/
-      - name: Publish to PyPI
+
+      # Publish is retried up to 3x. Root cause of past failures wasn't OIDC/
+      # trusted-publisher config (that part always worked) — it was
+      # ConnectionResetError talking to sigstore's Fulcio/Rekor during PEP 740
+      # attestation signing, a transient network blip. skip-existing makes
+      # retries safe if a prior attempt already uploaded the file before
+      # failing on the attestation step.
+      - name: Publish to PyPI (attempt 1)
+        id: publish1
         uses: pypa/gh-action-pypi-publish@release/v1
+        continue-on-error: true
+        with:
+          skip-existing: true
+
+      - name: Wait before retry 2
+        if: steps.publish1.outcome == 'failure'
+        run: sleep 30
+
+      - name: Publish to PyPI (attempt 2)
+        id: publish2
+        if: steps.publish1.outcome == 'failure'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        continue-on-error: true
+        with:
+          skip-existing: true
+
+      - name: Wait before retry 3
+        if: steps.publish1.outcome == 'failure' && steps.publish2.outcome == 'failure'
+        run: sleep 60
+
+      - name: Publish to PyPI (attempt 3)
+        if: steps.publish1.outcome == 'failure' && steps.publish2.outcome == 'failure'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
