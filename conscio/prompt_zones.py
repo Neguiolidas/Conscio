@@ -53,19 +53,24 @@ def build_zoned_prompt(
     recall_snippets: list[str] | None = None,
     few_shot: list[str] | None = None,
     intercept_enabled: bool = False,
+    skill_summary: str | None = None,
 ) -> PromptZones:
     """Build a two-zone prompt separating stable (cacheable) from volatile.
 
-    Stable zone: ACTOR_PERSONA + tool catalog (byte-stable across turns).
+    Stable zone: ACTOR_PERSONA + tool catalog + skill summary (byte-stable).
     Volatile zone: state injection + goal + memories + few-shot + intercept.
 
-    This replaces build_actor_prompt (actor.py) which returned a single
-    concatenated string with no zone separation.
+    skill_summary (v3.1 progressive disclosure): one-line name+description
+    per skill, NOT the full skill doc. Full docs loaded on invocation.
     """
     stable_parts: list[str] = [ACTOR_PERSONA, ""]
     if catalog_text:
         stable_parts.append("Available tools:")
         stable_parts.append(catalog_text)
+    if skill_summary:
+        stable_parts.append("")
+        stable_parts.append("Available skills (invoke for full instructions):")
+        stable_parts.append(skill_summary)
 
     volatile_parts: list[str] = [state.to_injection()]
     if state.coherence_note:
