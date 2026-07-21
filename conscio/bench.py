@@ -182,7 +182,9 @@ def run_bench(adapter, *, cycles: int = 10, workdir=None) -> dict:
         raise AdapterError(
             "backend returned no signal on any probe — is it reachable?")
     tier = choose_tier(profile)
-    gateway = OutputGateway(metered, tier=tier)
+    # v3.1: adaptive retries — high-fidelity models don't need retries
+    adaptive_retries = 0 if profile.json_fidelity >= 0.8 else 2
+    gateway = OutputGateway(metered, tier=tier, max_retries=adaptive_retries)
     from .agency.profiles import prompt_complexity as _pc
     complexity = _pc(profile)
     max_tools = max_visible_tools(profile)
