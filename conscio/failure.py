@@ -61,9 +61,9 @@ class FailureGovernor:
     # ── retry decision ─────────────────────────────────────────────────
 
     @staticmethod
-    def should_retry(cls: FailureClass) -> bool:
+    def should_retry(failure_cls: FailureClass) -> bool:
         """Whether the failure class warrants a retry."""
-        return cls is not FailureClass.PERMANENT
+        return failure_cls is not FailureClass.PERMANENT
 
     # ── circuit breaker ────────────────────────────────────────────────
 

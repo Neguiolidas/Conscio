@@ -95,17 +95,17 @@ class OutputGateway:
     def __init__(self, adapter: InferenceAdapter, *, max_retries: int = 2,
                  tier: str | None = None,
                  intercepter: Intercepter | None = None,
-                 max_intercept_iterations: int = 3):
+                 max_intercept_iterations: int = 3,
+                 failure_governor=None):
         self.adapter = adapter
         self.max_retries = max_retries
         self.tier = tier         # explicit "T1"/"T2"/"T3"; None = caps auto
         self.last_tier = ""      # tier that produced (or last tried) decode
-        # Set when a tier bailed because the adapter raised (vs invalid
-        # output). Lets a caller distinguish "backend down" from "model
-        # produced junk" after a GatewayError — without changing control
-        # flow: a GatewayError is still raised in both cases (the act path
-        # relies on that). Reset at the start of every request_action().
         self.last_adapter_error: AdapterError | None = None
+        self._token_ledger = None
+        # v3.1: failure classification + circuit breaker
+        from conscio.failure import FailureGovernor
+        self._failure_gov = failure_governor or FailureGovernor(max_consecutive=3)
         # Intercepter integration (v2.7)
         self._loop: InterceptionLoop | None = None
         if intercepter is not None:
@@ -179,6 +179,11 @@ class OutputGateway:
             data = self._try_kv(base_prompt, schema,
                                 attempts=1 + self.max_retries)
         if data is None:
+            # v3.1: check if failure was PERMANENT — if so, don't try more tiers
+            if self.last_adapter_error is not None:
+                from conscio.failure import FailureGovernor as _FG
+                if not _FG.should_retry(_FG.classify(self.last_adapter_error)):
+                    raise GatewayError("permanent failure: " + str(self.last_adapter_error))
             raise GatewayError("all decode tiers failed")
         return proposal_from_dict(data, goal_id=goal_id)
 
@@ -197,6 +202,10 @@ class OutputGateway:
                                             grammar=grammar).text
             except AdapterError as exc:
                 self.last_adapter_error = exc
+                # v3.1: skip remaining tiers if PERMANENT failure
+                from conscio.failure import FailureGovernor as _FG
+                if not _FG.should_retry(_FG.classify(exc)):
+                    return None
                 return None
             try:
                 data = json.loads(repair_json(raw))
@@ -219,6 +228,10 @@ class OutputGateway:
                                             schema=schema).text
             except AdapterError as exc:
                 self.last_adapter_error = exc
+                # v3.1: skip remaining tiers if PERMANENT failure
+                from conscio.failure import FailureGovernor as _FG
+                if not _FG.should_retry(_FG.classify(exc)):
+                    return None
                 return None
             try:
                 data = json.loads(repair_json(raw))
@@ -241,6 +254,10 @@ class OutputGateway:
                 raw = self._generate(prompt + feedback).text
             except AdapterError as exc:
                 self.last_adapter_error = exc
+                # v3.1: skip remaining tiers if PERMANENT failure
+                from conscio.failure import FailureGovernor as _FG
+                if not _FG.should_retry(_FG.classify(exc)):
+                    return None
                 return None
             data = parse_kv(raw)
             errors = validate(data, schema)
