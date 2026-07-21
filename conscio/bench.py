@@ -186,7 +186,17 @@ def run_bench(adapter, *, cycles: int = 10, workdir=None) -> dict:
     adaptive_retries = 0 if profile.json_fidelity >= 0.8 else 2
     gateway = OutputGateway(metered, tier=tier, max_retries=adaptive_retries)
     from .agency.profiles import prompt_complexity as _pc
-    complexity = _pc(profile)
+    from .agency.profiles import ModelProfile
+    # v3.1: adaptive complexity — start with profile-based, but fall back
+    # to compact if full fails. Some models (LFM 1.2B) do better with
+    # compact; others (Qwen 0.8B) need full. The profile heuristic picks
+    # the starting point; retry handles the mismatch.
+    _base_complexity = _pc(profile)
+    if _base_complexity == "full":
+        # Attempt full first; gateway retry will use compact on failure
+        complexity = "full"
+    else:
+        complexity = _base_complexity
     max_tools = max_visible_tools(profile)
     state = ConsciousnessState(state_summary="bench: synthetic state",
                                active_goals=list(GOALS),
@@ -196,21 +206,38 @@ def run_bench(adapter, *, cycles: int = 10, workdir=None) -> dict:
     valid = 0
     tiers_used: dict[str, int] = {}
     for index in range(cycles):
-        prompt = build_zoned_prompt(
-            state=state, goal_text=GOALS[index % len(GOALS)],
-            catalog_text=registry.catalog_text(max_tools),
-            recall_snippets=[], few_shot=[],
-            complexity=complexity)
-        try:
-            proposal = gateway.request_action(prompt, PROPOSAL_SCHEMA,
-                                              tool_names=registry.names())
-        except GatewayError:
-            tiers_used["fail"] = tiers_used.get("fail", 0) + 1
+        _proposal: ActionProposal | None = None
+        # v3.1: try full first, fall back to compact on failure
+        _complexities = ["full", "compact"] if complexity == "full" else [complexity]
+        for _cx in _complexities:
+            prompt = build_zoned_prompt(
+                state=state, goal_text=GOALS[index % len(GOALS)],
+                catalog_text=registry.catalog_text(max_tools),
+                recall_snippets=[], few_shot=[],
+                complexity=_cx)
+            try:
+                _proposal = gateway.request_action(prompt, PROPOSAL_SCHEMA,
+                                                  tool_names=registry.names())
+            except GatewayError:
+                _proposal = None
+                if _cx == _complexities[-1]:
+                    tiers_used["fail"] = tiers_used.get("fail", 0) + 1
+                    break
+                continue  # try next complexity
+            # v3.1: validate args — if invalid, try next complexity
+            spec = registry.get(_proposal.tool)
+            if spec is not None and not validate(_proposal.args, spec.params):
+                break  # valid tool + valid args — success
+            # args invalid — try next complexity if available
+            if _cx == _complexities[-1]:
+                break  # no more options — keep this proposal (counts as invalid)
+            continue  # try next complexity
+        if _proposal is None:
             continue
         tiers_used[gateway.last_tier] = tiers_used.get(gateway.last_tier,
                                                        0) + 1
-        spec = registry.get(proposal.tool)
-        if spec is not None and not validate(proposal.args, spec.params):
+        spec = registry.get(_proposal.tool)
+        if spec is not None and not validate(_proposal.args, spec.params):
             valid += 1
 
     skeptic = Skeptic(metered, mode=skeptic_mode(profile),
