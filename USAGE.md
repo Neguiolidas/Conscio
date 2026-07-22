@@ -2,7 +2,7 @@
 
 Self-awareness framework for AI agents. 100% local Python + SQLite FTS5. Zero external deps runtime (numpy optional for embeddings).
 
-**Version:** 3.1.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
+**Version:** 3.2.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
 
 ## Install
 
@@ -269,6 +269,78 @@ engine.attach_adapter(intercept_enabled=True)
    `conscio.perception.sensor`.
 10. **`reflect()` is advisory (read-only)**. `act()` / `dispatch()` is executive.
     Never merge these — architectural rule #1.
+
+## Memory modules (KG, Hallways, Embeddings, Miner, Migration)
+
+```python
+from conscio import (
+    KnowledgeGraph, Hallways, WingManager, VectorBackend,
+    Deduplicator, EntityDetector, EmbeddingProvider, Miner,
+    export_archive, import_archive, import_format_mempalace,
+)
+
+# KnowledgeGraph — entities + triples
+kg = KnowledgeGraph(db_path="kg.db")
+kg.add_entity("Conscio", entity_type="project")
+kg.add_entity("Hermes", entity_type="project")
+kg.add_triple("Conscio", "integrates_with", "Hermes")
+ent = kg.query_entity("Conscio")
+rels = kg.query_relationship("Conscio")
+kg.close()
+
+# Hallways — wing/room/drawer hierarchy
+hw = Hallways(db_path="hw.db")
+hw.create_wing("projects")
+hw.create_room("projects", "pentest")
+hw.create_drawer("projects", "pentest", label="vault_scan")
+hw.close()
+
+# WingManager — Hallways + ContentStore integration
+from conscio import ContentStore
+cs = ContentStore(db_path="cs.db")
+wm = WingManager(hallways_db="hw.db", content_store=cs)
+wm.index(label="report", content="Pentest vault.grolv.com.br",
+         category="external", content_type="prose",
+         wing="projects", room="pentest")
+results = wm.search("pentest vault", wing="projects", limit=5)
+wm.close()
+
+# EntityDetector — regex Unicode (PT accents supported)
+ed = EntityDetector(kg=kg)
+found = ed.detect_and_store("Samuel released Conscio v3.2.0 at vault.grolv.com.br")
+# → detects: Samuel, Conscio, v3.2.0, vault.grolv.com.br
+
+# EmbeddingProvider — native fallback (no daemon needed)
+ep = EmbeddingProvider()
+if ep.available():
+    vec = ep.embed("Conscio consciousness framework")
+    # 384-dim by default (all-MiniLM-L6-v2)
+    # 768-dim optional: CONSCIO_EMBED_MODEL=nomic-embed-text-v1.5
+
+# Miner — file + conversation ingestion
+m = Miner(wing_manager=wm)
+m.ingest_file("report.md", wing="projects", room="pentest")
+m.ingest_directory("./docs", wing="docs", room="general")
+
+# Migration — export/import
+export_archive("backup.tar.gz", content_store=cs, kg=kg, hallways=hw)
+cs2, kg2, hw2 = import_archive("backup.tar.gz", target_dir="./restored")
+
+# MemPalace adapter
+count = import_format_mempalace("~/.mempalace/palace", wing_manager=wm)
+```
+
+### Embedding configuration
+
+Default: `all-MiniLM-L6-v2` (384-dim, ~90MB, native in-process).
+
+Optional 768-dim model:
+```bash
+export CONSCIO_EMBED_MODEL=nomic-embed-text-v1.5
+export CONSCIO_EMBED_DIM=768
+```
+
+Fallback chain: Ollama → OpenAI-compatible API → sentence_transformers (native) → None.
 
 ## Where to read more
 

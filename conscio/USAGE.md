@@ -2,7 +2,7 @@
 
 Self-awareness framework for AI agents. 100% local Python + SQLite FTS5. Zero external deps runtime (numpy optional for embeddings).
 
-**Version:** 3.0.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
+**Version:** 3.2.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
 
 ## Install
 
