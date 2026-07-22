@@ -283,3 +283,39 @@ See `docs/guides/workflows/continuous-learning.md`.
 Returns: 5 axes (accuracy, completeness, clarity, actionability, conciseness),
 each scored 1-5 with evidence. Overall average. Ranked improvements.
 Pure read-only — no state mutation.
+
+## When to Call Conscio (Recommended Heuristic)
+
+Conscio is a model refiner — it adds consciousness loops, reflection, gates,
+council, and evaluation on top of a base model. The trade-off is **latency for
+quality**. Calling the MCP server adds 1-3 extra model round-trips per tool,
+so it should be used judiciously.
+
+> **This is a recommendation, not a requirement.** Each user decides how best
+> to integrate Conscio into their workflow. The heuristic below is the
+> suggested default.
+
+### Skip the MCP when (low cost of reversal)
+
+- **Factual queries** — "what version is X?", "where is file Y?"
+- **Casual conversation** or simple acknowledgements
+- **Single mechanical commands** — "run tests", "install X", "git add"
+- **Operations you already know the answer to** with no ambiguity
+- **Routine file edits, greps, builds** — no consciousness loop needed
+
+### Call the MCP when (high cost of reversal)
+
+| Scenario | Tools | Why |
+|---|---|---|
+| **Architectural decisions** with irreversible trade-offs | `decide()` + `council()` | Multiple perspectives before committing |
+| **Complex debugging** with intertwined hypotheses | `investigate()` | Structured root-cause tree instead of guessing |
+| **Multi-act planning** (release, major refactor) | `loop_gate()` + `delivery_check()` | Prevents shipping incomplete work |
+| **Mandatory self-review** of specs, PRDs, plans | `evaluate()` | 5-6 axis rubric catches what you missed |
+| **High-risk operations** (prod migration, data deletion, public API change) | `council()` | Architect + Skeptic + Pragmatist + Critic review |
+| **Explicit user request** for semantic analysis or knowledge recall | `recall()` / `wings_search` | FTS5 / vector search over stored memory |
+
+### The core criterion
+
+> **Cost of reversal.** If reversing the decision is cheap (re-run a command,
+> edit a file), skip the MCP. If reversing is expensive or impossible (data
+> loss, production deploy, architectural lock-in), pay the latency.
