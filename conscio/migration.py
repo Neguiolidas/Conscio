@@ -89,11 +89,10 @@ def import_archive(
     cs_path = None
     kg_path = None
     hw_path = None
-    metadata = {}
     with tarfile.open(path, "r:gz") as tar:
         meta_member = tar.extractfile("metadata.json")
         if meta_member:
-            metadata = json.loads(meta_member.read().decode("utf-8"))
+            json.loads(meta_member.read().decode("utf-8"))
         for member in tar.getmembers():
             if member.name == "content_store.db":
                 # Use unique filename in target

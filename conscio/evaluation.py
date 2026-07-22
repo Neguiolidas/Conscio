@@ -482,7 +482,7 @@ def _score_output_quality(engine: "ConsciousnessEngine", output: str) -> AxisSco
                     break
             else:
                 evidence = f"LLM judge response unparseable: {text.strip()[:100]}"
-    except Exception as e:
+    except Exception:
         # Fallback to heuristic
         pass
 
