@@ -153,26 +153,26 @@ def import_format_mempalace(
         eid = row["id"]
         # Get document content
         doc_row = conn.execute(
-            "SELECT value FROM embedding_metadata WHERE id = ? AND key = 'chroma:document'",
+            "SELECT string_value FROM embedding_metadata WHERE id = ? AND key = 'chroma:document'",
             (eid,),
         ).fetchone()
         if doc_row is None:
             continue
-        content = doc_row["value"]
+        content = doc_row["string_value"]
         if not content:
             continue
 
         # Get wing + room (optional)
         wing_row = conn.execute(
-            "SELECT value FROM embedding_metadata WHERE id = ? AND key = 'wing'",
+            "SELECT string_value FROM embedding_metadata WHERE id = ? AND key = 'wing'",
             (eid,),
         ).fetchone()
         room_row = conn.execute(
-            "SELECT value FROM embedding_metadata WHERE id = ? AND key = 'room'",
+            "SELECT string_value FROM embedding_metadata WHERE id = ? AND key = 'room'",
             (eid,),
         ).fetchone()
-        wing = wing_row["value"] if wing_row else "mempalace"
-        room = room_row["value"] if room_row else "imported"
+        wing = wing_row["string_value"] if wing_row else "mempalace"
+        room = room_row["string_value"] if room_row else "imported"
 
         try:
             wing_manager.index(

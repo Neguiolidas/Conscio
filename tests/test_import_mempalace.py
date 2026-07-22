@@ -35,8 +35,12 @@ def test_import_mempalace_with_data(tmp_path):
         );
         CREATE TABLE embedding_metadata (
             id INTEGER,
-            key TEXT,
-            value TEXT,
+            key TEXT NOT NULL,
+            string_value TEXT,
+            int_value INTEGER,
+            float_value REAL,
+            bool_value INTEGER,
+            PRIMARY KEY (id, key),
             FOREIGN KEY (id) REFERENCES embeddings(id)
         );
     """)
@@ -44,13 +48,13 @@ def test_import_mempalace_with_data(tmp_path):
     db.execute("INSERT INTO embeddings (id, embedding_id) VALUES (1, 'vec1')")
     db.execute("INSERT INTO embeddings (id, embedding_id) VALUES (2, 'vec2')")
     # Drawer 1: wing=projects, room=pentest
-    db.execute("INSERT INTO embedding_metadata (id, key, value) VALUES (1, 'chroma:document', 'Pentest of vault.grolv.com.br')")
-    db.execute("INSERT INTO embedding_metadata (id, key, value) VALUES (1, 'wing', 'projects')")
-    db.execute("INSERT INTO embedding_metadata (id, key, value) VALUES (1, 'room', 'pentest')")
+    db.execute("INSERT INTO embedding_metadata (id, key, string_value) VALUES (1, 'chroma:document', 'Pentest of vault.grolv.com.br')")
+    db.execute("INSERT INTO embedding_metadata (id, key, string_value) VALUES (1, 'wing', 'projects')")
+    db.execute("INSERT INTO embedding_metadata (id, key, string_value) VALUES (1, 'room', 'pentest')")
     # Drawer 2: wing=conscio, room=general
-    db.execute("INSERT INTO embedding_metadata (id, key, value) VALUES (2, 'chroma:document', 'Conscio engine reflect scene')")
-    db.execute("INSERT INTO embedding_metadata (id, key, value) VALUES (2, 'wing', 'conscio')")
-    db.execute("INSERT INTO embedding_metadata (id, key, value) VALUES (2, 'room', 'general')")
+    db.execute("INSERT INTO embedding_metadata (id, key, string_value) VALUES (2, 'chroma:document', 'Conscio engine reflect scene')")
+    db.execute("INSERT INTO embedding_metadata (id, key, string_value) VALUES (2, 'wing', 'conscio')")
+    db.execute("INSERT INTO embedding_metadata (id, key, string_value) VALUES (2, 'room', 'general')")
     db.commit()
     db.close()
 
