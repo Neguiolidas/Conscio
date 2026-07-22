@@ -1,15 +1,18 @@
-"""conscio.evaluation — 5-axis self-evaluation rubric (v2.15).
+"""conscio.evaluation — 5/6-axis self-evaluation rubric (v3.2).
 
 Inspired by ECC's `agent-self-evaluation` skill. Produces a structured 1-5
 scorecard with concrete evidence per axis, derived from the engine's own
 deterministic state (no LLM, no I/O).
 
-The 5 axes:
+The 5 base axes:
     1. Accuracy       — are the facts/claims/output correct?
     2. Completeness   — did it cover what was asked?
     3. Clarity        — is the explanation understandable and well-structured?
     4. Actionability  — can the user act on the output immediately?
     5. Conciseness    — did it use the minimum tokens needed?
+
+The 6th axis (output_quality) is added when `output` is provided:
+    6. output_quality — LLM-as-judge or heuristic assessment of output quality
 
 Scores 1-5. Every score below 5 MUST cite specific evidence.
 This is a read-only diagnostic — never modifies state, never emits events.
@@ -122,8 +125,15 @@ def evaluate(
     actionability = _score_actionability(engine)
     conciseness = _score_conciseness(engine, output)
 
-    axes = (accuracy, completeness, clarity, actionability, conciseness)
-    overall = round(sum(a.score for a in axes) / 5.0, 1)
+    axes_list = [accuracy, completeness, clarity, actionability, conciseness]
+
+    # ── output_quality (6th axis, LLM-as-judge) ────────────────────
+    if output is not None:
+        output_quality = _score_output_quality(engine, output)
+        axes_list.append(output_quality)
+
+    axes = tuple(axes_list)
+    overall = round(sum(a.score for a in axes) / len(axes), 1)
 
     # Collect improvements ranked by gap (5 - score), biggest first.
     gaps = [(5 - a.score, a) for a in axes if a.score < 5]
@@ -436,6 +446,70 @@ def _score_conciseness(engine: "ConsciousnessEngine", output: Optional[str]) -> 
         improvement = "Slash length and remove repetition; aim for under 1000 words."
 
     return AxisScore("conciseness", score, evidence, improvement)
+
+
+# ─── output_quality (6th axis) ────────────────────────────────────────────────
+
+def _score_output_quality(engine: "ConsciousnessEngine", output: str) -> AxisScore:
+    """Assess output quality via LLM-as-judge if available, else heuristic.
+
+    With adapter: sends a judge prompt to the LLM and parses the score.
+    Without adapter: heuristic based on output length, structure, and content signals.
+    """
+    # Try LLM-as-judge via engine's pipeline adapter
+    score = 3  # default: adequate/uncertain
+    evidence = "No LLM judge available — defaulting to uncertain score"
+    improvement = ""
+
+    try:
+        adapter = getattr(engine, "_act_pipeline", None)
+        if adapter is not None:
+            adapter = getattr(adapter, "adapter", None)
+        if adapter is not None and hasattr(adapter, "request"):
+            prompt = (
+                "Rate the quality of this AI output on a 1-5 scale.\n"
+                "5=exceptional, 4=good, 3=adequate, 2=weak, 1=poor.\n"
+                "Reply with ONLY a number and one-sentence reason.\n\n"
+                f"Output:\n{output[:2000]}\n\nRating:"
+            )
+            resp = adapter.request([{"role": "user", "content": prompt}])
+            text = resp if isinstance(resp, str) else str(resp)
+            # Parse: first digit in response
+            for ch in text:
+                if ch in "12345":
+                    score = int(ch)
+                    evidence = f"LLM judge: {text.strip()[:200]}"
+                    break
+            else:
+                evidence = f"LLM judge response unparseable: {text.strip()[:100]}"
+    except Exception as e:
+        # Fallback to heuristic
+        pass
+
+    # Heuristic fallback if LLM didn't work
+    if evidence.startswith("No LLM") or "unparseable" in evidence:
+        n_words = len(output.split())
+        has_structure = any(c in output for c in ["\n- ", "\n1.", "\n* ", "## "])
+        has_code = "```" in output
+
+        if n_words > 50 and has_structure and has_code:
+            score = 4
+            evidence = f"Heuristic: {n_words} words with structure and code — likely good quality"
+        elif n_words > 20 and (has_structure or has_code):
+            score = 3
+            evidence = f"Heuristic: {n_words} words with some structure — adequate"
+        elif n_words <= 5:
+            score = 2
+            evidence = f"Heuristic: {n_words} words — too short to assess quality"
+            improvement = "Provide more substantial output for meaningful evaluation."
+        else:
+            score = 3
+            evidence = f"Heuristic: {n_words} words plain text — uncertain quality"
+
+    if score < 3:
+        improvement = improvement or "Improve output completeness and structure."
+
+    return AxisScore("output_quality", score, evidence, improvement)
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
