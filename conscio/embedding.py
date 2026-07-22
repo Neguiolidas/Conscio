@@ -14,11 +14,23 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DIMENSION = 768
+DEFAULT_MODEL = "all-MiniLM-L6-v2"
+DEFAULT_DIMENSION = 384  # all-MiniLM-L6-v2 dimension
 
 
 class EmbeddingProvider:
-    """Unified embedder with lazy fallback chain."""
+    """Unified embedder with lazy fallback chain.
+
+    Fallback order:
+    1. Ollama (if running locally)
+    2. OpenAI-compatible API (LM Studio, etc.)
+    3. sentence_transformers with all-MiniLM-L6-v2 (NATIVE, no daemon)
+    4. None
+
+    The sentence_transformers fallback is truly self-contained: loads the model
+    from HF cache (no network needed after first download), runs in-process.
+    All-MiniLM-L6-v2 is 384-dim, ~90MB cached.
+    """
 
     def __init__(self, force_no_network: bool = False):
         self.default_dimension = DEFAULT_DIMENSION
@@ -55,10 +67,10 @@ class EmbeddingProvider:
         except Exception as e:
             logger.debug(f"OpenAICompatibleEmbedder unavailable: {e}")
 
-        # Try sentence_transformers (optional dep)
+        # Try sentence_transformers (NATIVE, no daemon — all-MiniLM-L6-v2)
         try:
             from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer("nomic-embed-text-v1.5")
+            model = SentenceTransformer(DEFAULT_MODEL)
             v = model.encode("test").tolist()
             if v and len(v) == self.default_dimension:
                 self._embedder = model
@@ -80,6 +92,10 @@ class EmbeddingProvider:
         if ed is None:
             return None
         try:
+            # SentenceTransformer uses .encode(), embedders use .embed()
+            if hasattr(ed, "encode"):
+                v = ed.encode(text)
+                return list(v) if v is not None else None
             v = ed.embed(text)
             return list(v) if v is not None else None
         except Exception as e:
@@ -92,6 +108,9 @@ class EmbeddingProvider:
         if ed is None:
             return None
         try:
+            if hasattr(ed, "encode"):
+                vecs = ed.encode(texts)
+                return [list(v) for v in vecs] if vecs is not None else None
             if hasattr(ed, "embed_batch"):
                 vecs = ed.embed_batch(texts)
                 return [list(v) for v in vecs] if vecs else None
