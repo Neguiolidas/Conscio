@@ -46,6 +46,16 @@ from .diagnostics import (  # noqa: F401
     context_budget, eval_harness, rules_distill,
     EVAL_CAPABILITY, EVAL_REGRESSION, EVAL_BENCHMARK,
 )
+# ── v3.2 Memory modules ──
+from .kg import KnowledgeGraph  # noqa: F401
+from .hallways import Hallways  # noqa: F401
+from .wings import WingManager  # noqa: F401
+from .vector_backend import VectorBackend  # noqa: F401
+from .dedup import Deduplicator  # noqa: F401
+from .entity_detector import EntityDetector  # noqa: F401
+from .embedding import EmbeddingProvider  # noqa: F401
+from .miner import Miner  # noqa: F401
+from .migration import export_archive, import_archive, import_format_mempalace  # noqa: F401
 # Plugin discovery lives under `conscio.plugins` (discover_adapters/sensors/tools)
 # — kept out of the top-level namespace to keep this import light.
 
@@ -108,4 +118,16 @@ __all__ = [
  "evaluate",
  "EvaluationReport",
  "AxisScore",
+ # v3.2 — memory modules (autocontido)
+ "KnowledgeGraph",
+ "Hallways",
+ "WingManager",
+ "VectorBackend",
+ "Deduplicator",
+ "EntityDetector",
+ "EmbeddingProvider",
+ "Miner",
+ "export_archive",
+ "import_archive",
+ "import_format_mempalace",
 ]
