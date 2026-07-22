@@ -12,6 +12,7 @@ DEFAULT_SKIP_DIRS: .git, __pycache__, node_modules, .venv, venv, env
 from __future__ import annotations
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -137,13 +138,13 @@ class Miner:
         if not p.is_dir():
             return 0
         count = 0
-        for root, dirs, files in p.walk():
+        for root, dirs, files in os.walk(p):
             # Filter out skip dirs in-place
             dirs[:] = [d for d in dirs if d not in DEFAULT_SKIP_DIRS]
             for f in files:
                 if f == ".DS_Store":
                     continue
-                fpath = root / f
+                fpath = Path(root) / f
                 c = self.ingest_file(fpath, wing=wing, room=room)
                 count += c
         return count
