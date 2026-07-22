@@ -599,6 +599,13 @@ class ContentStore:
         """Close the database connection."""
         self.db.close()
 
+    def dump(self, target_path: str | Path) -> None:
+        """Atomic backup via sqlite3 backup API."""
+        import sqlite3 as _sql
+        dst = _sql.connect(str(target_path))
+        self.db.backup(dst)
+        dst.close()
+
     def __enter__(self):
         return self
 
