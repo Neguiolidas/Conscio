@@ -476,7 +476,7 @@ class Bindings:
 
     def _kg_query(self, args: dict) -> dict:
         """Query the Knowledge Graph for entity/relationship info."""
-        from .kg import KnowledgeGraph
+        from conscio.kg import KnowledgeGraph
         name = args.get("name", "")
         if not name:
             return {"error": "name required"}
@@ -496,8 +496,8 @@ class Bindings:
 
     def _wings_search(self, args: dict) -> dict:
         """Search content by wing/room hierarchy."""
-        from .wings import WingManager
-        from .content_store import ContentStore
+        from conscio.wings import WingManager
+        from conscio.content_store import ContentStore
         query = args.get("query", "")
         if not query:
             return {"error": "query required"}
@@ -510,16 +510,16 @@ class Bindings:
         cs = ContentStore(db_path=cs_path)
         wm = WingManager(hallways_db=hw_path, content_store=cs)
         results = wm.search(query, wing=wing, limit=limit)
-        items = [{"label": r.label, "content": r.content[:200], "score": getattr(r, "score", None)} for r in results]
+        items = [{"title": r.title, "content": r.content[:200], "rank": r.rank} for r in results]
         wm.close()
         cs.close()
         return {"results": items}
 
     def _export(self, args: dict) -> dict:
         """Export Conscio memory to tar.gz archive."""
-        from .migration import export_archive
-        from .kg import KnowledgeGraph
-        from .hallways import Hallways
+        from conscio.migration import export_archive
+        from conscio.kg import KnowledgeGraph
+        from conscio.hallways import Hallways
         path = args.get("path", "")
         if not path:
             return {"error": "path required"}
