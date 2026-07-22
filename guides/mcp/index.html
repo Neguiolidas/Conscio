@@ -1,0 +1,1907 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Self-awareness framework for AI agents — reflect (passive) + act (audited).">
+      
+      
+      
+      
+        <link rel="prev" href="../integration/">
+      
+      
+        <link rel="next" href="../hub/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>MCP server (embodiment) - Conscio</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#mcp-server-embodiment" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Conscio" class="md-header__button md-logo" aria-label="Conscio" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Conscio
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              MCP server (embodiment)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="indigo"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="indigo"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Neguiolidas/Conscio" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Neguiolidas/Conscio
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Conscio" class="md-nav__button md-logo" aria-label="Conscio" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Conscio
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Neguiolidas/Conscio" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Neguiolidas/Conscio
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins & extension points
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../safety-rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Safety rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Consuming awake output
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP server (embodiment)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP server (embodiment)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#configure-a-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configure a host
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools-base-always-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tools — BASE (always available)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tools — BASE (always available)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#consciofeedevent-session_tokens" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.feed(event, session_tokens?)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conscionoteevent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.note(event)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conscioadvisory-pure-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.advisory() (pure read)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consciorecallquery-k-categories-pure-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.recall(query, k?, categories?) (pure read)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consciopropose_actionintent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.propose_action(intent)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consciopropose_plangoal-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.propose_plan(goal, tools)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consciostate-pure-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.state() (pure read)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conscioeventstype-category-since-limit-pure-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.events(type?, category?, since?, limit?) (pure read)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consciohandoff-pure-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.handoff() (pure read)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consciostructure-pure-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.structure() (pure read)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consciostructural_lookupkey-pure-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.structural_lookup(key) (pure read)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consciocognitive_cycle-v28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.cognitive_cycle() (v2.8)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conscioevaluatetask_description-output-v215" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.evaluate(task_description, output) (v2.15)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools-gates-v30-always-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tools — GATES (v3.0, always available)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tools — GATES (v3.0, always available)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#consciodecidetitle-context-status-alternatives-deciders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.decide(title, context, status, alternatives?, deciders?)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consciocouncilquestion-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.council(question, context?)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conscioloop_gateverifiable-budget_ok-has_tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.loop_gate(verifiable?, budget_ok?, has_tools?)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consciodelivery_check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.delivery_check()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conscioinvestigatetarget-action_type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.investigate(target, action_type?)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools-pipelines-v30-always-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tools — PIPELINES (v3.0, always available)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tools — PIPELINES (v3.0, always available)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#conscioacceptance_criteriagoal-depth-risk_domains" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.acceptance_criteria(goal?, depth?, risk_domains?)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conscioverifycriteria-criteria_source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.verify(criteria?, criteria_source?)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consciocontinuous_looptask-pattern-frequency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.continuous_loop(task?, pattern?, frequency?, …)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consciostrategic_compactphase-context_tokens-context_window" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.strategic_compact(phase?, context_tokens?, context_window?)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conscioledgeraction-rollout_id-candidates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.ledger(action, rollout_id?, candidates?, …)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools-diagnostics-v30-always-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tools — DIAGNOSTICS (v3.0, always available)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tools — DIAGNOSTICS (v3.0, always available)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#consciocontext_budgetcontext_tokens-context_window-detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.context_budget(context_tokens?, context_window?, detail?)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conscioeval_harnessaction-eval_id-eval_type-task-criteria-results-k_values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.eval_harness(action, eval_id?, eval_type?, task?, criteria?, results?, k_values?)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#consciorules_distillaction-source_types-min_occurrences-rule_text-rule_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        conscio.rules_distill(action, source_types?, min_occurrences?, rule_text?, rule_id?)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools-act-opt-in-enable-act" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tools — ACT (opt-in --enable-act)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools-review-opt-in-enable-hermes-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tools — REVIEW (opt-in --enable-hermes-review)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools-relay-opt-in-enable-relay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tools — RELAY (opt-in --enable-relay)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resources-read-only-uris" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resources (read-only URIs)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-event-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Event schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#valid_types-33" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VALID_TYPES (33)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#valid_categories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VALID_CATEGORIES
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="VALID_CATEGORIES">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mapping-practice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mapping practice
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-propose-only-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The propose-only loop
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#audited-act-v201-opt-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audited act (v2.0.1, opt-in)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-pitfalls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common pitfalls
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../noosphere/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Noosphere (society)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../observatory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observatory (read-only view)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../liaison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Liaison (cross-agent review)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/public-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../CLAIMS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims ledger
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bench
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Bench
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../bench/v1.0.0-bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v1.0.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../bench/v1.2-campaign/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v1.2 campaign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../bench/v1.2-skill-curve/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v1.2 skill curve
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="mcp-server-embodiment">MCP server (embodiment)<a class="headerlink" href="#mcp-server-embodiment" title="Permanent link">&para;</a></h1>
+<p><code>conscio-mcp</code> is a hand-rolled, <strong>stdlib-only</strong> <a href="https://modelcontextprotocol.io">MCP</a>
+stdio server (newline-delimited JSON-RPC 2.0). It lets <strong>any</strong> MCP host — a CLI,
+an IDE, or an agent — plug into a Conscio instance and consume its cognition as a
+live consciousness-layer. Zero new runtime dependency; nothing here opens a
+socket.</p>
+<p>The surface is <strong>propose-only by default</strong>: Conscio perceives, reflects, recalls,
+and <strong>audits</strong> proposed actions, but never executes anything itself — the host
+stays sovereign over execution. Since <strong>v2.0.1</strong>, opt-in <strong>audited <code>act</code></strong> is
+available behind <code>--enable-act</code> (see <a href="#audited-act-v201-opt-in">Audited act</a>):
+Conscio audits + gates + ledgers and returns an execution packet; the host still
+pulls the trigger.</p>
+<h2 id="configure-a-host">Configure a host<a class="headerlink" href="#configure-a-host" title="Permanent link">&para;</a></h2>
+<p>Conscio runs one engine per workspace. Point any MCP host at the <code>conscio-mcp</code>
+command:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;conscio&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;conscio-mcp&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;--storage&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/path/to/workspace/.conscio&quot;</span><span class="p">,</span>
+<span class="w">               </span><span class="s2">&quot;--adapter&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;ollama:qwen3.5:0.8b&quot;</span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><code>--storage</code> — per-workspace state dir (one engine = one workspace).</li>
+<li><code>--adapter</code> — needed for <code>propose_action</code> / <code>propose_plan</code> / <code>act</code> (the Skeptic
+  and Actor call a model). Forms: <code>mock</code>, <code>ollama:&lt;model&gt;</code>. If omitted, the six
+  daemon provider types are also built from <code>~/.config/conscio/config.json</code>
+  (<code>lmstudio</code>/<code>ollama</code>/<code>openai</code>/<code>anthropic</code>/<code>gemini</code>/<code>openai-compat</code>). Without any
+  adapter, read tools still work and <code>propose_*</code> / <code>act</code> fail closed.</li>
+<li><code>--enable-act</code> (off by default) / <code>--awake</code> — opt into audited <code>act</code> (see
+  <a href="#audited-act-v201-opt-in">Audited act</a>).</li>
+<li><code>--enable-hermes-review --reviewer &lt;id&gt;</code> (repeatable) — enable review channel.</li>
+<li><code>--enable-relay --relay-peer &lt;id&gt;</code> (repeatable) — enable cross-host relay.</li>
+<li><code>--liaison-db &lt;path&gt;</code> — mailbox path (default <code>$HERMES_HOME/liaison.db</code>).</li>
+<li><code>--max-frame-bytes</code> (default <code>1048576</code>), <code>--seen-max-rows</code> (default <code>10000</code>),
+  <code>--seen-max-age-days</code> (default <code>30</code>).</li>
+</ul>
+<p>Run <code>conscio-mcp</code> directly (the console entry point), not <code>python -m
+conscio.mcp.server</code>.</p>
+<h2 id="tools-base-always-available">Tools — BASE (always available)<a class="headerlink" href="#tools-base-always-available" title="Permanent link">&para;</a></h2>
+<h3 id="consciofeedevent-session_tokens"><code>conscio.feed(event, session_tokens?)</code><a class="headerlink" href="#consciofeedevent-session_tokens" title="Permanent link">&para;</a></h3>
+<p>Ingest a perception Event → <code>perceive</code> + <code>reflect</code> → returns the updated advisory.
+Idempotent on <code>event.id</code>. Optional <code>session_tokens</code> (int) drives the metabolic
+tier (VITAL / ACTIVE / FATIGUE / CRITICAL) based on real host context usage.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;event&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;perception&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;category&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;consciousness&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;summary&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user reported interface bug&quot;</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;ts&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;session_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">8000</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="conscionoteevent"><code>conscio.note(event)</code><a class="headerlink" href="#conscionoteevent" title="Permanent link">&para;</a></h3>
+<p>Record a raw Event to the event log (<strong>no reflect</strong>). Idempotent on <code>event.id</code>.
+Use for fire-and-forget logging — <code>feed</code> is the heavier "perceive + reflect" path.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;event&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;decision&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;category&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;consciousness&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;summary&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;[neurata] murmur_hash para content_hash&quot;</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;design-2026-07-19-001&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="conscioadvisory-pure-read"><code>conscio.advisory()</code> (pure read)<a class="headerlink" href="#conscioadvisory-pure-read" title="Permanent link">&para;</a></h3>
+<p>Current cognitive state. No args. Returns mode, metabolic tier, active goals,
+recent reflections.</p>
+<h3 id="consciorecallquery-k-categories-pure-read"><code>conscio.recall(query, k?, categories?)</code> (pure read)<a class="headerlink" href="#consciorecallquery-k-categories-pure-read" title="Permanent link">&para;</a></h3>
+<p>Retrieve relevant past context (FTS5 BM25 + RAG fusion).</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">&quot;query&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;debug cron Hermes&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;k&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;categories&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;consciousness&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;session&quot;</span><span class="p">]}</span>
+</code></pre></div>
+<h3 id="consciopropose_actionintent"><code>conscio.propose_action(intent)</code><a class="headerlink" href="#consciopropose_actionintent" title="Permanent link">&para;</a></h3>
+<p>Audit an explicit action intent with the Skeptic. <strong>Never executes.</strong>
+Returns <code>{verdict: "PASS"|"FAIL", reasons, risk_flags, confidence, proposal}</code>.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">&quot;intent&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;action&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;delete&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;target&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/tmp/old.log&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cleanup&quot;</span><span class="p">}}</span>
+</code></pre></div>
+<h3 id="consciopropose_plangoal-tools"><code>conscio.propose_plan(goal, tools)</code><a class="headerlink" href="#consciopropose_plangoal-tools" title="Permanent link">&para;</a></h3>
+<p>Actor generates ONE action toward <code>goal</code>, constrained to the declared <code>tools</code>
+vocabulary. <strong>Never executes; not free-form; not multi-step.</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;goal&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;limpar logs antigos&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;tools&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;shell&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;run shell command&quot;</span><span class="p">}]</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="consciostate-pure-read"><code>conscio.state()</code> (pure read)<a class="headerlink" href="#consciostate-pure-read" title="Permanent link">&para;</a></h3>
+<p>ConsciousnessState snapshot. No args.</p>
+<h3 id="conscioeventstype-category-since-limit-pure-read"><code>conscio.events(type?, category?, since?, limit?)</code> (pure read)<a class="headerlink" href="#conscioeventstype-category-since-limit-pure-read" title="Permanent link">&para;</a></h3>
+<p>Recent events. All args optional.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;error&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;category&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;trading&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;limit&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">}</span>
+</code></pre></div>
+<h3 id="consciohandoff-pure-read"><code>conscio.handoff()</code> (pure read)<a class="headerlink" href="#consciohandoff-pure-read" title="Permanent link">&para;</a></h3>
+<p>Latest session handoff (markdown). No args.</p>
+<h3 id="consciostructure-pure-read"><code>conscio.structure()</code> (pure read)<a class="headerlink" href="#consciostructure-pure-read" title="Permanent link">&para;</a></h3>
+<p>Workspace structural graph (consent-gated; data, never code). Returns
+<code>loaded=false</code> if not consented or not loaded.</p>
+<h3 id="consciostructural_lookupkey-pure-read"><code>conscio.structural_lookup(key)</code> (pure read)<a class="headerlink" href="#consciostructural_lookupkey-pure-read" title="Permanent link">&para;</a></h3>
+<p>Resolve a structural node / hyperedge / community id from the loaded graph to
+its detail. <code>null</code> on miss.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">&quot;key&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;node:src/lib/auth.py&quot;</span><span class="p">}</span>
+</code></pre></div>
+<h3 id="consciocognitive_cycle-v28"><code>conscio.cognitive_cycle()</code> (v2.8)<a class="headerlink" href="#consciocognitive_cycle-v28" title="Permanent link">&para;</a></h3>
+<p>Run one explicit cognitive pass: reflect → synthesize → propose/act → learn →
+self-improve. Returns a report of each stage. The <code>act</code> stage only runs when
+the server has <code>--enable-act</code> on.</p>
+<h3 id="conscioevaluatetask_description-output-v215"><code>conscio.evaluate(task_description, output)</code> (v2.15)<a class="headerlink" href="#conscioevaluatetask_description-output-v215" title="Permanent link">&para;</a></h3>
+<p>5-axis self-evaluation scorecard (accuracy, completeness, clarity,
+actionability, conciseness). Scores 1–5 per axis with justification.</p>
+<h2 id="tools-gates-v30-always-available">Tools — GATES (v3.0, always available)<a class="headerlink" href="#tools-gates-v30-always-available" title="Permanent link">&para;</a></h2>
+<h3 id="consciodecidetitle-context-status-alternatives-deciders"><code>conscio.decide(title, context, status, alternatives?, deciders?)</code><a class="headerlink" href="#consciodecidetitle-context-status-alternatives-deciders" title="Permanent link">&para;</a></h3>
+<p>Create an Architecture Decision Record. <code>status</code> is one of <code>proposed</code>,
+<code>accepted</code>, <code>deprecated</code>, <code>superseded</code>. Returns ADR dict with unique ID.</p>
+<h3 id="consciocouncilquestion-context"><code>conscio.council(question, context?)</code><a class="headerlink" href="#consciocouncilquestion-context" title="Permanent link">&para;</a></h3>
+<p>Convene a 3-voice deterministic council (Arquiteto, Cético, Pragmatista).
+Optional LLM Critic if Awake Mode is active. Returns votes + majority verdict.</p>
+<h3 id="conscioloop_gateverifiable-budget_ok-has_tools"><code>conscio.loop_gate(verifiable?, budget_ok?, has_tools?)</code><a class="headerlink" href="#conscioloop_gateverifiable-budget_ok-has_tools" title="Permanent link">&para;</a></h3>
+<p>Gate an autonomous loop. Checks three conditions, returns <code>approved</code> bool
+plus vetoed conditions list. Emits <code>gate:vetoed</code> when denied.</p>
+<h3 id="consciodelivery_check"><code>conscio.delivery_check()</code><a class="headerlink" href="#consciodelivery_check" title="Permanent link">&para;</a></h3>
+<p>Pre-close delivery check. Scans for blockers, rationalization patterns,
+stale proposals, and disk space. Runs automatically in <code>engine.close()</code>.</p>
+<h3 id="conscioinvestigatetarget-action_type"><code>conscio.investigate(target, action_type?)</code><a class="headerlink" href="#conscioinvestigatetarget-action_type" title="Permanent link">&para;</a></h3>
+<p>Verify that <code>target</code> was read before acting. Queries EventBus for
+<code>investigate:read</code> events matching the target (substring match).</p>
+<h2 id="tools-pipelines-v30-always-available">Tools — PIPELINES (v3.0, always available)<a class="headerlink" href="#tools-pipelines-v30-always-available" title="Permanent link">&para;</a></h2>
+<h3 id="conscioacceptance_criteriagoal-depth-risk_domains"><code>conscio.acceptance_criteria(goal?, depth?, risk_domains?)</code><a class="headerlink" href="#conscioacceptance_criteriagoal-depth-risk_domains" title="Permanent link">&para;</a></h3>
+<p>Generate intent-driven acceptance criteria. Auto-detects risk domains
+(security/data/integration/compliance) and depth (quick/full).</p>
+<h3 id="conscioverifycriteria-criteria_source"><code>conscio.verify(criteria?, criteria_source?)</code><a class="headerlink" href="#conscioverifycriteria-criteria_source" title="Permanent link">&para;</a></h3>
+<p>Verify acceptance criteria against <code>verify:evidence</code> events in EventBus.
+Use <code>criteria_source="acceptance"</code> to load from the last acceptance event.</p>
+<h3 id="consciocontinuous_looptask-pattern-frequency"><code>conscio.continuous_loop(task?, pattern?, frequency?, …)</code><a class="headerlink" href="#consciocontinuous_looptask-pattern-frequency" title="Permanent link">&para;</a></h3>
+<p>Select and gate an autonomous loop pattern: <code>sequential</code>, <code>continuous_pr</code>,
+<code>rfc_dag</code>, <code>infinite</code>. Word-boundary keyword matching. Includes loop_gate.</p>
+<h3 id="consciostrategic_compactphase-context_tokens-context_window"><code>conscio.strategic_compact(phase?, context_tokens?, context_window?)</code><a class="headerlink" href="#consciostrategic_compactphase-context_tokens-context_window" title="Permanent link">&para;</a></h3>
+<p>Advise on strategic context compaction. Checks token pressure, workflow
+phase, and milestone count. Returns <code>should_compact</code>, <code>urgency</code>, keep/drop lists.</p>
+<h3 id="conscioledgeraction-rollout_id-candidates"><code>conscio.ledger(action, rollout_id?, candidates?, …)</code><a class="headerlink" href="#conscioledgeraction-rollout_id-candidates" title="Permanent link">&para;</a></h3>
+<p>Recursive decision ledger. <code>action</code> is <code>record</code>, <code>query</code>, or <code>promote</code>.
+Promotion gates: <code>paper</code> → <code>dry_run</code> → <code>live</code>, gated by coherence marks.</p>
+<h2 id="tools-diagnostics-v30-always-available">Tools — DIAGNOSTICS (v3.0, always available)<a class="headerlink" href="#tools-diagnostics-v30-always-available" title="Permanent link">&para;</a></h2>
+<h3 id="consciocontext_budgetcontext_tokens-context_window-detail"><code>conscio.context_budget(context_tokens?, context_window?, detail?)</code><a class="headerlink" href="#consciocontext_budgetcontext_tokens-context_window-detail" title="Permanent link">&para;</a></h3>
+<p>Audit context window consumption. Returns token pressure, per-source
+breakdown, metabolic tier sizes, and optimization recommendations.</p>
+<h3 id="conscioeval_harnessaction-eval_id-eval_type-task-criteria-results-k_values"><code>conscio.eval_harness(action, eval_id?, eval_type?, task?, criteria?, results?, k_values?)</code><a class="headerlink" href="#conscioeval_harnessaction-eval_id-eval_type-task-criteria-results-k_values" title="Permanent link">&para;</a></h3>
+<p>Formal evaluation framework. <code>define</code> creates an eval, <code>run</code> records results
+and computes pass@k metrics, <code>report</code> aggregates across all evals.</p>
+<h3 id="consciorules_distillaction-source_types-min_occurrences-rule_text-rule_id"><code>conscio.rules_distill(action, source_types?, min_occurrences?, rule_text?, rule_id?)</code><a class="headerlink" href="#consciorules_distillaction-source_types-min_occurrences-rule_text-rule_id" title="Permanent link">&para;</a></h3>
+<p>Extract cross-cutting principles. <code>scan</code> finds repeated patterns in
+skills/events/decisions, <code>distill</code> creates a rule, <code>list</code> shows all rules.</p>
+<h2 id="tools-act-opt-in-enable-act">Tools — ACT (opt-in <code>--enable-act</code>)<a class="headerlink" href="#tools-act-opt-in-enable-act" title="Permanent link">&para;</a></h2>
+<p>Available only with <code>--enable-act</code> (and engine Awake):</p>
+<ul>
+<li><code>conscio.act(intent, idempotency_key?)</code> — execute a pre-audited action</li>
+<li><code>conscio.report_result(ledger_id, result)</code> — feedback the outcome</li>
+<li><code>conscio.pending()</code> — list actions awaiting approval</li>
+<li><code>conscio.approve(ledger_id)</code> — approve a pending action</li>
+<li><code>conscio.reject(ledger_id, reason)</code> — reject a pending action</li>
+</ul>
+<p>See <a href="#audited-act-v201-opt-in">Audited act (v2.0.1)</a> for the full flow.</p>
+<h2 id="tools-review-opt-in-enable-hermes-review">Tools — REVIEW (opt-in <code>--enable-hermes-review</code>)<a class="headerlink" href="#tools-review-opt-in-enable-hermes-review" title="Permanent link">&para;</a></h2>
+<p>Cross-agent <code>hermes_review</code> channel. Requires <code>--reviewer &lt;id&gt;</code> allowlist.</p>
+<ul>
+<li><code>conscio.reviews(limit?)</code> — inbox of pending review requests</li>
+<li><code>conscio.review_approve(request_id, verdict)</code> — issue verdict PASS + comments</li>
+<li><code>conscio.review_reject(request_id, verdict)</code> — issue verdict FAIL + comments</li>
+<li><code>conscio.poll_reviews()</code> — long-poll inbox for new requests</li>
+</ul>
+<h2 id="tools-relay-opt-in-enable-relay">Tools — RELAY (opt-in <code>--enable-relay</code>)<a class="headerlink" href="#tools-relay-opt-in-enable-relay" title="Permanent link">&para;</a></h2>
+<p>General cross-agent messaging. Requires <code>--relay-peer &lt;id&gt;</code> allowlist.</p>
+<ul>
+<li><code>conscio.relay_send(to, type, payload)</code> — send free-form message</li>
+<li><code>conscio.relay_inbox(limit?)</code> — read inbox</li>
+<li><code>conscio.relay_read(ids)</code> — mark messages read</li>
+<li><code>conscio.relay_broadcast(type, payload)</code> — fan-out to all peers</li>
+</ul>
+<p>Reserved-type isolation: <code>review_request</code> / <code>review_verdict</code> never sent or
+surfaced by relay. Payload cap: 64KB. Retention: 7 days after read.</p>
+<h2 id="resources-read-only-uris">Resources (read-only URIs)<a class="headerlink" href="#resources-read-only-uris" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>URI</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>conscio://advisory</code></td>
+<td>Current advisory (JSON).</td>
+</tr>
+<tr>
+<td><code>conscio://state</code></td>
+<td>ConsciousnessState snapshot.</td>
+</tr>
+<tr>
+<td><code>conscio://events?type=&amp;category=&amp;since=&amp;limit=</code></td>
+<td>Recent events.</td>
+</tr>
+<tr>
+<td><code>conscio://handoff</code></td>
+<td>Latest session handoff (markdown).</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-event-schema">The Event schema<a class="headerlink" href="#the-event-schema" title="Permanent link">&para;</a></h2>
+<p><code>feed</code> and <code>note</code> take one rigid <code>event</code> object:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Required</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>recommended</td>
+<td>Idempotency key. If absent, the server derives a stable content hash.</td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td>yes</td>
+<td>One of <code>VALID_TYPES</code> (see below).</td>
+</tr>
+<tr>
+<td><code>category</code></td>
+<td>yes</td>
+<td>One of <code>VALID_CATEGORIES</code> (see below).</td>
+</tr>
+<tr>
+<td><code>data</code></td>
+<td>yes</td>
+<td>JSON-serializable payload (the "content").</td>
+</tr>
+<tr>
+<td><code>ts</code></td>
+<td>no</td>
+<td>Epoch seconds; the server stamps when absent.</td>
+</tr>
+</tbody>
+</table>
+<p>A duplicate <code>id</code> returns the <strong>exact prior result</strong> — retries never inflate the
+world model or the event log.</p>
+<h2 id="valid_types-33">VALID_TYPES (33)<a class="headerlink" href="#valid_types-33" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>tool_call, reflection, trade, error, anomaly, decision, perception,
+goal_created, goal_expired, evolution_proposed, system, consciousness,
+session, coherence:dissonance, awake:changed, workspace:changed,
+structure:changed, proposal:audited, host:event, act:result, reflection_gate,
+adr:proposed, adr:accepted, council:convened, gate:vetoed,
+pipeline:acceptance, pipeline:verified, pipeline:compact, pipeline:ledger,
+diagnostic:budget, diagnostic:eval, diagnostic:rule
+</code></pre></div>
+<p>Invalid type raises <code>ValueError</code> immediately.</p>
+<h2 id="valid_categories">VALID_CATEGORIES<a class="headerlink" href="#valid_categories" title="Permanent link">&para;</a></h2>
+<p><strong>EventBus (5):</strong> <code>system</code>, <code>trading</code>, <code>consciousness</code>, <code>external</code>, <code>session</code></p>
+<p><strong>ContentStore (8):</strong> <code>reflection</code>, <code>perception</code>, <code>trading</code>, <code>system</code>, <code>error</code>,
+<code>consciousness</code>, <code>external</code>, <code>session</code></p>
+<p>Project names like <code>"neurata"</code> are NOT valid categories. Use <code>"consciousness"</code>
+with a <code>[project-name]</code> prefix in the summary for grepability.</p>
+<h3 id="mapping-practice">Mapping practice<a class="headerlink" href="#mapping-practice" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Workflow</th>
+<th>type</th>
+<th>category</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Design decision</td>
+<td><code>decision</code></td>
+<td><code>consciousness</code></td>
+</tr>
+<tr>
+<td>Exception / failure</td>
+<td><code>error</code></td>
+<td><code>consciousness</code> (or <code>system</code> if infra)</td>
+</tr>
+<tr>
+<td>External perception</td>
+<td><code>perception</code></td>
+<td><code>consciousness</code></td>
+</tr>
+<tr>
+<td>Session lifecycle</td>
+<td><code>session</code></td>
+<td><code>session</code></td>
+</tr>
+<tr>
+<td>Trading signal</td>
+<td><code>trade</code></td>
+<td><code>trading</code></td>
+</tr>
+<tr>
+<td>Infrastructure event</td>
+<td><code>system</code></td>
+<td><code>system</code></td>
+</tr>
+<tr>
+<td>Tool was called</td>
+<td><code>tool_call</code></td>
+<td><code>system</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-propose-only-loop">The propose-only loop<a class="headerlink" href="#the-propose-only-loop" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Host sends perception via <code>conscio.feed</code>.</li>
+<li>Conscio reflects; the host reads <code>conscio://advisory</code>.</li>
+<li>Host asks <code>conscio.propose_action</code> (or <code>propose_plan</code>) about an intent.</li>
+<li>Conscio runs the Skeptic and returns a <code>PASS</code>/<code>FAIL</code> verdict with reasons.</li>
+<li><strong>The host</strong> decides and executes.</li>
+<li>Host feeds the result back as a new Event.</li>
+</ol>
+<p>Conscio signs and audits the intent; the host pulls the trigger.</p>
+<h2 id="audited-act-v201-opt-in">Audited act (v2.0.1, opt-in)<a class="headerlink" href="#audited-act-v201-opt-in" title="Permanent link">&para;</a></h2>
+<p>Off by default. Launch with <code>conscio-mcp --enable-act</code> and the engine <strong>Awake</strong>
+(<code>--awake</code>, or a persisted awake state). Only then do five more tools appear:
+<code>conscio.act</code>, <code>conscio.report_result</code>, <code>conscio.pending</code>, <code>conscio.approve</code>,
+<code>conscio.reject</code>.</p>
+<p><strong>The host owns the tools.</strong> Declare a manifest in the <code>initialize</code> params — each
+entry has a <code>name</code>, <code>params</code> (the same arg schema the Skeptic validates), a base
+<code>risk</code> (<code>low</code>/<code>medium</code>/<code>high</code>), and an <code>approval_policy</code>
+(<code>auto</code> / <code>require_approval</code> / <code>hermes_review</code>):</p>
+<div class="highlight"><pre><span></span><code>&quot;params&quot;: { &quot;protocolVersion&quot;: &quot;2025-06-18&quot;,
+  &quot;conscio&quot;: { &quot;tools&quot;: [
+    { &quot;name&quot;: &quot;deploy&quot;, &quot;params&quot;: {&quot;env&quot;: {&quot;type&quot;: &quot;str&quot;, &quot;required&quot;: true}},
+      &quot;risk&quot;: &quot;high&quot;, &quot;approval_policy&quot;: &quot;require_approval&quot; } ] } }
+</code></pre></div>
+<p><strong>The flow</strong> (Conscio points the weapon and audits it; the host pulls the trigger):</p>
+<ol>
+<li>Host calls <code>conscio.act(intent)</code> with a concrete <code>{tool, args, rationale,
+   expected_outcome}</code> (optionally an <code>idempotency_key</code>). Conscio runs the Skeptic.</li>
+<li>Skeptic FAIL → <code>{status: "rejected"}</code>. PASS + <code>low</code>/<code>medium</code> + <code>auto</code> →
+   <code>{status: "executable", packet, ledger_id}</code> (claimed). PASS + <code>high</code> /
+   <code>require_approval</code> / <code>hermes_review</code> → <code>{status: "pending_approval"}</code>. Engine
+   asleep or breaker lockdown → <code>{status: "gated"}</code>.</li>
+<li>For a pending action, a human/Hermes calls <code>conscio.approve(ledger_id)</code>
+   (→ an executable packet) or <code>conscio.reject(ledger_id, reason)</code>.</li>
+<li><strong>The host executes the packet</strong> — Conscio never does.</li>
+<li>Host calls <code>conscio.report_result(ledger_id, result)</code>; Conscio closes the
+   ledger entry, emits an <code>act:result</code> event, and feeds the breaker/trust. A
+   duplicate report returns <code>already_reported</code>.</li>
+</ol>
+<p>Every action writes an <code>ActionLedger</code> row — the same audited trail native <code>act()</code>
+uses. <code>act</code> is <strong>never</strong> local dispatch: Conscio audits, the host executes.</p>
+<h2 id="common-pitfalls">Common pitfalls<a class="headerlink" href="#common-pitfalls" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Invalid <code>type</code> / <code>category</code></strong> raises <code>ValueError</code> before any DB write. Check
+   the valid sets above.</li>
+<li><strong><code>conscio.note</code> does NOT run <code>reflect</code></strong> — use <code>conscio.feed</code> if you want the
+   engine to react. <code>note</code> is fire-and-forget.</li>
+<li><strong><code>event.id</code></strong> when present is the <strong>only</strong> idempotency key. A retry with the
+   same id returns the prior result (no inflation).</li>
+<li><strong><code>session_tokens</code> is only accepted by <code>feed</code></strong>, not by <code>note</code>. Without it,
+   the metabolic tier is driven by session length heuristics.</li>
+<li><strong><code>propose_action</code> and <code>propose_plan</code> never execute</strong>, they audit. Only <code>act</code>
+   (which requires <code>--enable-act</code> + Awake) returns an executable packet.</li>
+<li><strong><code>conscio.relay_*</code> ignores <code>review_request</code> / <code>review_verdict</code></strong> — those only
+   travel on the review channel (<code>reviews</code> / <code>review_approve</code> / <code>review_reject</code>).</li>
+<li><strong><code>structural_lookup</code> returns <code>null</code> on miss</strong> — no exception, just <code>null</code>.</li>
+<li><strong>Two hosts on the same <code>$HERMES_HOME</code> share <code>liaison.db</code></strong> — mailbox is
+   filesystem-scoped, not per-instance.</li>
+<li><strong>Adapter required for any <code>propose_*</code> / <code>act</code></strong> — without <code>--adapter</code> these
+   fail closed with a clear error. Read tools (<code>advisory</code>, <code>state</code>, <code>events</code>,
+   <code>recall</code>, <code>handoff</code>, <code>structure</code>, <code>structural_lookup</code>) work without adapter.</li>
+<li><strong><code>conscio.cognitive_cycle</code> is explicit</strong> — the daemon's autonomous loop runs
+    the same stages, but calling this tool runs <strong>one</strong> pass and returns a report.
+    It is not a long-running background loop.</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

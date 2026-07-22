@@ -1,0 +1,1201 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Self-awareness framework for AI agents — reflect (passive) + act (audited).">
+      
+      
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Report Hermet - Conscio</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Conscio" class="md-header__button md-logo" aria-label="Conscio" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Conscio
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Report Hermet
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="indigo"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="indigo"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Neguiolidas/Conscio" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Neguiolidas/Conscio
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Conscio" class="md-nav__button md-logo" aria-label="Conscio" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Conscio
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Neguiolidas/Conscio" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Neguiolidas/Conscio
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins & extension points
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/safety-rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Safety rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Consuming awake output
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP server (embodiment)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/noosphere/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Noosphere (society)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/observatory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observatory (read-only view)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/liaison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Liaison (cross-agent review)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/public-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CLAIMS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims ledger
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bench
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Bench
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bench/v1.0.0-bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v1.0.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bench/v1.2-campaign/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v1.2 campaign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bench/v1.2-skill-curve/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v1.2 skill curve
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+  <h1>Report Hermet</h1>
+
+<p>Avaliação do plano: bom, bem mais consistente que a spec, mas ainda não aprovo para implementação direta.</p>
+<p>Nota: 8.6/10.</p>
+<p>O plano já absorveu várias correções que eu pedi na spec:</p>
+<ul>
+<li>PK do catálogo agora é (origin_instance_id, content_sha256) — correto.</li>
+<li>content_sha256 exclui published_ts — correto.</li>
+<li>published_ts é metadata do catálogo, não parte do artifact.</li>
+<li>conscio.db é aberto read-only.</li>
+<li>Sem PRAGMA em conscio.db.</li>
+<li>Label tem validação.</li>
+<li>Existing-file edits estão corretos: act.py, cli.py, <strong>init</strong>.py.</li>
+</ul>
+<p>Mas tem bugs reais no plano.</p>
+<p>Bloqueantes</p>
+<ol>
+<li>publish.run() pode quebrar com skill local malformada</li>
+</ol>
+<p>Em docs/...plans/...:1086-1101, o publish faz:</p>
+<p>tool_seq=json.loads(s["tool_seq"])
+plan_template=json.loads(s["plan_template"])</p>
+<p>Se uma row local em conscio.db estiver corrompida, o comando quebra.</p>
+<p>Isso viola a postura “não crashar em store corrompido”.</p>
+<p>Correção exigida:</p>
+<ul>
+<li>envolver parse em try/except</li>
+<li>pular row malformada</li>
+<li>contar como malformed ou skipped</li>
+<li>não poluir o catálogo</li>
+<li>não crashar</li>
+</ul>
+<p>Também validaria goal_fp == goal_fingerprint(goal_text) antes de publicar.</p>
+<ol>
+<li>publish._open_conscio_ro() precisa quoting correto de URI</li>
+</ol>
+<p>Em docs/...plans/...:1055-1059:</p>
+<p>sqlite3.connect(f"file:{Path(path)}?mode=ro", uri=True)</p>
+<p>Se o path tiver espaço, ?, #, % ou caractere especial, isso pode falhar.</p>
+<p>Correção exigida:</p>
+<p>sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True)</p>
+<p>Ou usar urllib.parse.quote.</p>
+<ol>
+<li>importer.revalidate() não checa schema_version</li>
+</ol>
+<p>Em docs/...plans/...:1257-1289, o revalidate checa shape, fp e consistência, mas ignora:</p>
+<p>body.get("schema_version")</p>
+<p>Se vier schema_version: 999, ainda passa.</p>
+<p>Correção exigida:</p>
+<p>if body.get("schema_version") != artifact.ARTIFACT_SCHEMA:
+    return RevalidationOutcome("malformed", "unsupported schema_version")</p>
+<ol>
+<li>importer.run() deve armazenar campos derivados do artifact, não do catalog denormalizado</li>
+</ol>
+<p>Em docs/...plans/...:1306-1313, ele salva:</p>
+<p>tool_seq=cr.tool_seq
+plan_template=cr.plan_template</p>
+<p>Mas o artifact JSON é a fonte autoritativa. O catálogo tem campos denormalizados por conveniência.</p>
+<p>Correção exigida:</p>
+<ul>
+<li>revalidate retorna o body parseado quando ok</li>
+<li>importer salva json.dumps(body["tool_seq"], ...)</li>
+<li>importer salva json.dumps(body["plan_template"], ...)</li>
+<li>ou reparseia o artifact_json antes de inserir</li>
+</ul>
+<p>Isso evita quarantine com denormalização inconsistente.</p>
+<ol>
+<li>CLI unknown subcommand está errado no teste</li>
+</ol>
+<p>Em docs/...plans/...:1401-1403:</p>
+<p>assert cli.main(["bogus"]) == 2</p>
+<p>Mas argparse.parse_args() vai levantar SystemExit(2), não retornar 2.</p>
+<p>Correção exigida:</p>
+<p>Ou mudar o teste para:</p>
+<p>with pytest.raises(SystemExit) as exc:
+    cli.main(["bogus"])
+assert exc.value.code == 2</p>
+<p>Ou melhor: capturar SystemExit dentro de cli.main() e retornar o código.</p>
+<p>Eu prefiro retornar 2.</p>
+<ol>
+<li>CLI precisa tratar erros sem traceback</li>
+</ol>
+<p>Em docs/...plans/...:1500-1528, show pode quebrar em:</p>
+<ul>
+<li>int(args.quarantine) com valor inválido</li>
+<li>json.loads(row.artifact_json.decode("utf-8")) com artifact corrupt</li>
+</ul>
+<p>Também id --set-label pode levantar ValueError.</p>
+<p>Correção exigida:</p>
+<ul>
+<li>validar rowid</li>
+<li>tratar JSON corrupt no show</li>
+<li>capturar ValueError, NoosphereIdentityError, UnicodeDecodeError, json.JSONDecodeError</li>
+<li>retornar 1 ou 2 com mensagem limpa</li>
+</ul>
+<p>Ajustes obrigatórios menores</p>
+<ol>
+<li>identity._write_atomic() deve garantir write completo</li>
+</ol>
+<p>Em docs/...plans/...:361-373, usa:</p>
+<p>os.write(fd, blob)</p>
+<p>os.write pode escrever parcialmente.</p>
+<p>Correção:</p>
+<p>while written &lt; len(blob):
+    written += os.write(fd, blob[written:])</p>
+<ol>
+<li>Integration smoke deve tamperar BLOB corretamente</li>
+</ol>
+<p>Em docs/...plans/...:1714-1717:</p>
+<p>artifact_json = artifact_json || ' '</p>
+<p>Prefira:</p>
+<p>artifact_json = artifact_json || X'20'</p>
+<p>Mais explícito para BLOB.</p>
+<ol>
+<li>Manual smoke precisa de seed reproduzível</li>
+</ol>
+<p>Em docs/...plans/...:1803-1808, diz “seed /tmp/a/conscio.db com uma skill”.</p>
+<p>Eu exigiria um snippet mínimo ou um helper de teste, senão a verificação manual fica ambígua.</p>
+<p>Pontos que estão bons</p>
+<ul>
+<li>Task 1: extrair goal_fingerprint está certo.</li>
+<li>Task 2: paths com HERMES_HOME está certo.</li>
+<li>Task 3: identity hard-fail em corrupt está certo.</li>
+<li>Task 4: artifact content-only hash está certo.</li>
+<li>Task 5: catálogo com PK (origin_instance_id, content_sha256) está certo.</li>
+<li>Task 6: quarantine per-instance está certo.</li>
+<li>Task 7: read-only proof está certo, depois do ajuste de URI.</li>
+<li>Task 8: static revalidation está quase certo; falta schema_version + body derivado.</li>
+<li>Task 9: CLI surface está certa; falta robustez.</li>
+<li>Task 10: engine-free proof está certo.</li>
+<li>Task 11: two-instance smoke está certo; ajuste pequeno no tamper.</li>
+<li>Task 12: version/docs/ship está certo.</li>
+</ul>
+<p>Veredito</p>
+<p>Plano aprovável após correções.</p>
+<p>Não mandaria implementar antes de corrigir principalmente:</p>
+<ol>
+<li>publish não pode crashar com JSON local ruim</li>
+<li>URI read-only precisa quoting</li>
+<li>importer precisa checar schema_version</li>
+<li>importer precisa salvar body parsed, não denormalizado cru</li>
+<li>CLI precisa retornar erro limpo em vez de traceback/SystemExit</li>
+<li>identity write precisa write_all</li>
+</ol>
+<p>Depois desses ajustes, eu aprovo para execução TDD.</p>
+<p>RELATÓRIO DE TESTE DE AMBIENTE - CONSCIO</p>
+<p>Data do teste: 2026-06-21
+Repositório: /home/ubuntu/clawd/Repos/Conscio
+Branch: main
+HEAD: 6ebccec
+Tag atual: v2.1.0
+Working tree: limpo em código, com docs internos não versionados já listados abaixo.</p>
+<p>Ambiente base:</p>
+<ul>
+<li>Python: 3.11.14</li>
+<li>sqlite3: 3.50.4</li>
+<li>HERMES_HOME: /home/ubuntu/.hermes</li>
+<li>Storage Conscio: /home/ubuntu/.hermes/consciousness</li>
+<li>conscio.db existe: sim</li>
+<li>journal_mode do conscio.db: wal</li>
+<li>noosphere.db existe: não</li>
+<li>Espaço livre em disco: 10.6 GB</li>
+<li>Disco total: 193.63 GB</li>
+</ul>
+<p>Versão importada:</p>
+<ul>
+<li>conscio.<strong>version</strong> = 2.1.0</li>
+<li>goal_fingerprint importou corretamente de conscio.agency.act</li>
+<li>goal_fingerprint_sample = 6e458146f2634508</li>
+</ul>
+<p>Banco real:</p>
+<ul>
+<li>/home/ubuntu/.hermes/consciousness/conscio.db</li>
+<li>skills_count = 0</li>
+<li>Isso confirma que o banco real está limpo, sem skills carregadas.</li>
+<li>Para smoke test real do Noosphere, vai precisar de seed reproduzível, porque não há skill estatística no banco atual.</li>
+</ul>
+<p>Teste de conexão somente leitura:</p>
+<ul>
+<li>URI mode=ro funcionou.</li>
+<li>PRAGMA journal_mode retornou wal.</li>
+<li>Isso fecha o requisito de leitura somente leitura do conscio.db pelo noosphere CLI.</li>
+</ul>
+<p>Teste de suite:</p>
+<ul>
+<li>Comando: python3 -m pytest -q</li>
+<li>Resultado: 1565 passed</li>
+<li>Falhas: 0</li>
+<li>Duração: 81.89s</li>
+</ul>
+<p>Ruff:</p>
+<ul>
+<li>Comando: python3 -m ruff check conscio tests</li>
+<li>Resultado: All checks passed</li>
+</ul>
+<p>Pontos de atenção antes de implementação v2.2:</p>
+<ol>
+<li>docs/superpowers/ ainda não está no .gitignore.</li>
+<li>Existem docs internos não versionados:</li>
+<li>docs/REPORT_v1.5_HANDOFF.md</li>
+<li>docs/auditedF2-volition-clone-prompt.md</li>
+<li>docs/blueprint v1.0.0.md</li>
+<li>docs/f3-discipline-analysis.md</li>
+<li>docs/fable-quality-patterns.md</li>
+<li>docs/fable5-F1-method-analysis-report.md</li>
+<li>docs/fable5-agentic-clone-prompt.md</li>
+<li>docs/superpowers/</li>
+<li>Disco está melhor, mas ainda vale limpar .venv-herm-audit/ e dist-v201/ antes de build/push grande.</li>
+<li>conscio.db real tem 0 skills, então teste de smoke do Noosphere precisa criar fixture temporária ou seed isolado.</li>
+</ol>
+<p>Conclusão:</p>
+<p>Ambiente Conscio está funcional para começar implementação do Noosphere Core.</p>
+<ul>
+<li>Python OK</li>
+<li>SQLite OK</li>
+<li>conscio.db real legível em modo read-only</li>
+<li>versão atual v2.1.0</li>
+<li>suite completa passando</li>
+<li>ruff passando</li>
+<li>noosphere.db ainda não existe, então o primeiro teste real pode criar /tmp/noosphere.db ou ~/.hermes/noosphere.db sem colidir com estado existente.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

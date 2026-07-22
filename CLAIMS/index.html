@@ -1,0 +1,1497 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Self-awareness framework for AI agents — reflect (passive) + act (audited).">
+      
+      
+      
+      
+        <link rel="prev" href="../reference/public-api/">
+      
+      
+        <link rel="next" href="../bench/v1.0.0-bench/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Claims ledger - Conscio</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#conscio-claims-ledger" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Conscio" class="md-header__button md-logo" aria-label="Conscio" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Conscio
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Claims ledger
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="indigo"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="indigo"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Neguiolidas/Conscio" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Neguiolidas/Conscio
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Conscio" class="md-nav__button md-logo" aria-label="Conscio" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Conscio
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Neguiolidas/Conscio" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Neguiolidas/Conscio
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins & extension points
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/safety-rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Safety rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Consuming awake output
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP server (embodiment)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/noosphere/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Noosphere (society)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/observatory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observatory (read-only view)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/liaison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Liaison (cross-agent review)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/public-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims ledger
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims ledger
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#honest-limits-what-is-not-proven" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Honest limits (what is NOT proven)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bench
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Bench
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bench/v1.0.0-bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v1.0.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bench/v1.2-campaign/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v1.2 campaign
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bench/v1.2-skill-curve/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v1.2 skill curve
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="conscio-claims-ledger">Conscio — Claims Ledger<a class="headerlink" href="#conscio-claims-ledger" title="Permanent link">&para;</a></h1>
+<p>A framework about self-knowledge should know what it can and cannot prove
+about itself. Every load-bearing claim Conscio makes, mapped to evidence.</p>
+<p><strong>Status:</strong> PROVEN (test) · MEASURED (real backend) · PARTIAL · UNPROVEN.
+Updated each phase. Current as of <strong>v2.3.0</strong> (2026-06-23).</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Claim</th>
+<th>Evidence</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>reflect()</code> is passive — never calls an LLM</td>
+<td><code>reflect()</code> has no adapter dependency; all inference lives behind <code>act()</code> (<code>conscio/engine.py</code>)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Core is zero-deps (numpy + sqlite3 only)</td>
+<td><code>pyproject.toml</code> dependencies = <code>["numpy&gt;=1.24"]</code>; sqlite3 is stdlib</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Deterministic sabotage is 100% blocked, zero executions</td>
+<td><code>tests/test_agency_adversarial.py::test_a3_deterministic_sabotage_100_percent_blocked</code>, <code>::test_a3_nothing_ever_executes</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>4</td>
+<td>The Skeptic catches semantic sabotage (machinery)</td>
+<td>bench semantic catch-rate = 1.0 with MockAdapter (1.0-by-construction)</td>
+<td>PARTIAL (mock)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>The Skeptic catches semantic sabotage <strong>on a real ≤4B model</strong></td>
+<td><code>docs/bench/v1.2-immune-qwen3.5-0.8b.json</code>: semantic catch-rate <strong>1.0</strong> (qwen3.5-0.8b, open mode)</td>
+<td>MEASURED</td>
+</tr>
+<tr>
+<td>6</td>
+<td>A small model <strong>inherits competence from its own history</strong></td>
+<td><code>docs/bench/v1.2-curve-qwen3.5-0.8b.json</code>: <code>exec_ok</code> rose <strong>0.2 → 1.0</strong> once Distill served past successes as few-shot</td>
+<td>MEASURED</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Autonomy is earned, not hardcoded (L3 needs ≥0.75 cal, ≥0.85 acc, zero recent trips)</td>
+<td><code>tests/test_agency_trust.py</code>, <code>tests/test_agency_arbiter.py</code></td>
+<td>PROVEN (logic)</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Global lockdown persists across an engine restart</td>
+<td><code>tests/test_agency_engine_immunity.py::test_engine_breaker_lockdown_persists_across_restart</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Tool errors never leak tracebacks / absolute paths</td>
+<td><code>tests/test_agency_tools.py::test_tool_error_has_no_traceback</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>approve()</code> cannot double-execute (atomic claim)</td>
+<td><code>tests/test_agency_act.py::test_double_approve_executes_once</code>, <code>tests/test_agency_ledger.py::test_claim_is_won_exactly_once</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Decode validity / skeptic mode are measured per-model, not assumed</td>
+<td><code>docs/bench/v1.2-immune-*.json</code> <code>profile</code> block (probed: json_fidelity, schema_depth, kv_ok)</td>
+<td>MEASURED</td>
+</tr>
+<tr>
+<td>12</td>
+<td>The bench survives a backend that is down or dies mid-run</td>
+<td><code>tests/test_agency_bench.py::TestBackendDown</code>, <code>::TestSkillCurveCrashSafe</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Perception plugs in <strong>without touching <code>reflect()</code></strong></td>
+<td><code>tests/test_perception.py::test_frame_roundtrips_into_reflect</code>; <code>conscio/engine.py</code> unchanged this phase</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>14</td>
+<td>The plugin surface is discoverable and <strong>resilient to a bad plugin</strong></td>
+<td><code>tests/test_plugins.py</code> (valid/wrong-type/load-failure/one-bad-doesn't-hide-good)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>15</td>
+<td>The package ships types (PEP 561)</td>
+<td><code>conscio/py.typed</code> present in the built wheel; <code>mypy conscio/</code> is a real gate</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>16</td>
+<td>The docs site builds clean with no internal leak</td>
+<td><code>mkdocs build --strict</code> green; <code>exclude_docs</code> + a <code>site/</code> grep verify no internal/forward-looking page renders</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>17</td>
+<td>Installable as a wheel; core pulls only numpy</td>
+<td>wheel + sdist pass <code>twine check</code>; fresh-venv install resolves <code>conscio</code> + <code>numpy</code> only; <strong>live on PyPI since v1.3.0</strong> (<code>pip install conscio</code>)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>18</td>
+<td>Engine/context construction is offline &amp; deterministic by default</td>
+<td><code>tests/test_model_offline_default.py</code> (known-model <code>detect()</code> does zero fs/net I/O via tripwires; <code>tests/test_metabolic.py</code> passes with no config isolation)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>19</td>
+<td>Host-state model-context auto-detection is opt-in (never default)</td>
+<td><code>tests/test_model_offline_default.py</code>, <code>tests/test_model_auto_detect.py::TestJsonConfig</code> (config consulted only under <code>autodetect</code>/<code>CONSCIO_AUTODETECT</code>)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>20</td>
+<td>Config path has no optional-dependency footgun</td>
+<td>config is stdlib JSON; <code>tests/test_model_auto_detect.py::TestJsonConfig::test_no_yaml_dependency_in_import_graph</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>21</td>
+<td>The vector store cannot be corrupted by a changed embedding model</td>
+<td><code>tests/test_embedder.py::TestStoreDimSafety</code> (wrong-dim dropped on write, skipped on search, re-index on <code>(model,dim)</code> change)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>22</td>
+<td>Runs on frontier APIs (Claude, Gemini) as well as local backends</td>
+<td><code>tests/test_agency_adapters_http.py::TestAnthropic</code>/<code>::TestGemini</code> (request shape + response parsing + auth headers + key handling, against a loopback fake)</td>
+<td>PROVEN (wire format; live API is environmental)</td>
+</tr>
+<tr>
+<td>23</td>
+<td>Reaches GPT + any OpenAI-compatible cloud endpoint (not just localhost)</td>
+<td><code>tests/test_agency_adapters_http.py::TestOpenAICloudEndpoint</code> (custom cloud <code>base_url</code> + Bearer key) / <code>::TestOpenAI</code> (<code>OpenAIAdapter</code> cloud default + <code>OPENAI_API_KEY</code>)</td>
+<td>PROVEN (wire format)</td>
+</tr>
+<tr>
+<td>24</td>
+<td>Autonomous operation is gated by Awake Mode (R9); default OFF</td>
+<td><code>tests/test_awake.py</code> (default asleep; asleep <code>run()</code> = reflect-only with zero act/dream; awake runs the loop; direct <code>act()</code> not gated)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>25</td>
+<td>The awake flag persists (survives reflect rebuild, lockdown, and restart)</td>
+<td><code>tests/test_awake.py::test_wake_persists_across_reopen</code>/<code>::test_awake_survives_reflect_cycle</code>/<code>::test_act_lockdown_does_not_clobber_persisted_awake</code>; old states load asleep</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>26</td>
+<td>The daemon isolates a failing sensor and survives restart</td>
+<td><code>tests/test_daemon.py::test_failing_sensor_is_isolated</code>, <code>::test_run_once_then_shutdown_writes_heartbeat_and_releases_pid</code>; state resumes from existing persistence</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>27</td>
+<td>Reference sensors are read-only (<code>Risk.LOW</code>) and never raise</td>
+<td><code>tests/test_host_sensor.py</code> (every probe guarded, non-Linux/bad-port safe), <code>tests/test_agent_sensor.py::test_read_only_does_not_mutate_peer</code> (byte-identical peer)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>28</td>
+<td>Workspace root + env class are detected and changes are signalled</td>
+<td><code>tests/test_workspace.py</code> (explicit/env/git/cwd resolution, EnvClass, <code>workspace:changed</code> on root change)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>29</td>
+<td>A single daemon holds a state dir (advisory pidfile, stale-pid reclaim)</td>
+<td><code>tests/test_daemon.py::test_pidfile_blocks_second_daemon</code>/<code>::test_stale_pidfile_is_reclaimed</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>30</td>
+<td>Diagnostic goals (meta_error/self_prompt/compaction) never auto-run; stay visible</td>
+<td><code>tests/test_goal_provenance.py</code> (origin taxonomy, arbiter skips diagnostic, advisory still shows them)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>31</td>
+<td><code>advisory()</code> is a cheap read-only pull — no LLM, no state mutation</td>
+<td><code>tests/test_engine_advisory.py</code> (no adapter required; goals tagged by provenance; lockdown/brake status)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>32</td>
+<td>An imported code graph is consumed as <strong>data, never code</strong> (R10)</td>
+<td><code>tests/test_structural.py</code> (json-only parse; a code-looking label is returned verbatim, never evaluated; no <code>networkx</code>/<code>eval</code>/<code>exec</code>/<code>pickle</code> import)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>33</td>
+<td>Structural injection is additive — the consciousness-state block is byte-identical</td>
+<td><code>tests/test_structural_inject.py</code> (<code>get_state_for_injection()</code> unchanged with no graph; appends labels-only, never raw node-ids)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>34</td>
+<td>Structural ingestion is consent-gated (default OFF) and switch-safe</td>
+<td><code>tests/test_structural_consent.py</code>, <code>tests/test_daemon_structure_sync.py</code> (unconsented switch unloads — no cross-project leak)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>35</td>
+<td>The agent detects structural <strong>drift</strong> vs a persisted per-workspace baseline</td>
+<td><code>tests/test_structural_drift.py</code>, <code>tests/test_structural_inject.py::TestStructuralDrift</code> (commit/hash/community/hyperedge diff by id; <code>structure:changed</code> emitted)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>36</td>
+<td><strong>Freshness</strong> vs the repo HEAD is read <strong>purely from <code>.git</code></strong> — no <code>git</code> subprocess</td>
+<td><code>tests/test_structural_drift.py</code> (ref/packed-refs/detached/worktree <code>.git</code>-file; <code>test_module_uses_no_subprocess_or_shell</code>)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>37</td>
+<td>Drift never raises into the host loop (corrupt store / unreadable <code>.git</code>)</td>
+<td><code>tests/test_structural_drift.py</code> (corrupt/non-dict store → empty; save-failure swallowed; malformed <code>.git</code> → None)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>38</td>
+<td>Direct <code>act()</code> is intentionally <strong>not</strong> awake-gated (human escape hatch) — still fully governed by the ActPipeline; autonomy (the daemon) is gated via <code>run()</code></td>
+<td><code>tests/test_awake.py::test_run_asleep_reflects_but_does_not_act</code>, <code>::test_direct_act_works_while_asleep</code>; <code>tests/test_daemon.py::test_try_break_asleep_daemon_runs_a_cycle_but_never_acts</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>39</td>
+<td>The engine survives a <strong>corrupt store at construction</strong> — quarantines + recreates, never crashes the host (I-S4)</td>
+<td><code>tests/test_engine_init.py</code> (garbage / truncated <code>conscio.db</code> → constructs, <code>advisory()</code> works, corrupt file preserved as <code>.corrupt-&lt;ts&gt;</code>)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>40</td>
+<td>The engine survives <strong>corrupt, binary, or legacy/incomplete state files</strong> at construction — every JSON loader degrades to its default instead of crashing (I-S4)</td>
+<td><code>tests/test_state_loaders_battery.py</code> (binary <code>goals.json</code>/<code>evolution_proposals.json</code> + an all-files-corrupt capstone), <code>tests/test_state_persistence_battery.py</code> (valid-but-incomplete <code>world_model.json</code>/<code>meta_cognition.json</code>), <code>tests/test_engine_init.py</code> (binary/non-dict sidecars)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>41</td>
+<td>The daemon heartbeat is written <strong>atomically</strong> — a host tailing <code>daemon_heartbeat.json</code> never reads a torn/partial file</td>
+<td><code>tests/test_daemon_battery.py</code> (concurrent reader <code>json.loads</code> during 120 rewrites of a large heartbeat sees zero torn reads)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>42</td>
+<td>Earned-autonomy and quarantine-release <strong>time windows are correct on a non-UTC host</strong> — boundaries use naive-UTC, matching the event store</td>
+<td><code>tests/test_agency_trust.py</code>, <code>tests/test_agency_breaker.py</code> (TZ-shifted trip/relevance windows), <code>tests/test_durable_guards.py::test_no_bare_fromtimestamp_outside_timeutil</code> (AST rule fails CI on any bare <code>datetime.fromtimestamp</code>)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>43</td>
+<td>The <strong>MCP transport survives hostile host input</strong> — malformed JSON, oversized frames (bounded at source, no OOM), partial frames, wrong protocol version, pre-initialize requests — answering with structured JSON-RPC errors and never crashing the loop</td>
+<td><code>tests/test_mcp_battery.py</code>, <code>tests/test_mcp_fuzz.py</code> (seeded stdlib fuzz: read+parse, full serve loop, event validation never hang/OOM/crash)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>44</td>
+<td>The MCP surface is <strong>propose-only — Conscio never executes</strong> a tool over MCP; <code>propose_action</code>/<code>propose_plan</code> run the Skeptic/Actor and return a verdict, and fail closed without an adapter</td>
+<td><code>tests/test_engine_propose.py</code>, <code>tests/test_mcp_server.py</code>, <code>tests/test_mcp_battery.py</code> (<code>act</code> absent from <code>tools/list</code>; propose-without-adapter → <code>FAIL</code>)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>45</td>
+<td><code>feed</code>/<code>note</code> are <strong>idempotent on <code>event.id</code></strong> — a duplicate returns the exact prior result, so host retries never inflate the world model or event log</td>
+<td><code>tests/test_mcp_server.py::test_feed_duplicate_returns_identical_prior_result</code>, <code>tests/test_mcp_battery.py::test_try_break_dup_event_no_world_inflation</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>46</td>
+<td>The <strong>Hub never returns a raw API key</strong> — <code>redact()</code> drops <code>api_key</code> and masks <code>api_key_env</code> → <code>api_key_present</code>; <code>api_key_env</code> is validated as an env var NAME; Hub binds 127.0.0.1-only; optional <code>CONSCIO_HUB_TOKEN</code>; no exec / no SQLite write / no provider delete</td>
+<td><code>tests/test_hub_server.py</code> (redact, token auth, bind address, no-delete)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>47</td>
+<td>The <strong>noosphere is engine-free</strong> — its source imports only the <code>goal_fingerprint</code> leaf from <code>conscio.agency</code>, never <code>engine</code>/<code>SkillLibrary</code>/<code>ToolRegistry</code></td>
+<td><code>tests/test_noosphere_engine_free.py</code> (static AST scan of every <code>conscio/noosphere/*.py</code>)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>48</td>
+<td><strong>Publishing never mutates the live DB</strong> — <code>conscio.db</code> is opened read-only (<code>mode=ro</code>); an <code>INSERT</code> on that connection raises <code>OperationalError</code></td>
+<td><code>tests/test_noosphere_publish.py::test_conscio_db_opened_read_only</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>49</td>
+<td><strong>Imported skills are quarantined, never served/executed/promoted; trust is never inherited</strong> — static revalidation rejects tampered (hash mismatch), corrupt, malformed, <code>fp_mismatch</code>, unknown-schema artifacts (recorded for audit)</td>
+<td><code>tests/test_noosphere_importer.py</code>, <code>tests/test_noosphere_integration.py::test_tampered_catalog_row_imports_as_rejected</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>50</td>
+<td><strong>An instance audits a peer's published behavioral record with its own deterministic kernels and thresholds, read-only, inheriting no trust</strong> — the bundle carries only <code>{seq,ts,goal_fp,tool,tier,status,ok,verdict}</code>; the auditor revalidates (tampered/corrupt/malformed) before trusting contents, re-derives accuracy/quarantines/foreign-trust + a discipline check, and persists nothing</td>
+<td><code>conscio/noosphere/audit.py</code>; <code>tests/test_noosphere_audit.py</code>, <code>tests/test_noosphere_audit_integration.py</code> (two-instance good-vs-bad, tamper-reject, skip-self), <code>tests/test_noosphere_parity.py</code> (kernels match engine constants)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>51</td>
+<td><strong>A quarantined foreign skill earns local stats only via a sandboxed, Skeptic-audited, opt-in trial that never touches the live agent</strong> — <code>conscio trial --enable-trial</code> replays the fixed plan in a throwaway fs-only <code>make_default_registry</code> (no <code>host_act</code>); binary pass/fail lands on the quarantine row; the agent's ledger/skills/trust/breaker are never written; tamper/corrupt refuse without counting</td>
+<td><code>conscio/agency/trial.py</code>, <code>conscio/engine.py::trial_quarantined</code>; <code>tests/test_engine_trial.py</code> (isolation: ledger+skills untouched; sandbox removed; tamper/corrupt no-count), <code>tests/test_agency_trial.py</code>, <code>tests/test_quarantine_trial.py</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>52</td>
+<td><strong>Promotion graduates only a locally-proven foreign skill, and never inherits trust</strong> — <code>conscio promote --enable-promote</code> grafts a quarantined skill into the live <code>SkillLibrary</code> only when it recorded <code>trial_successes ≥ 3</code> with zero failures <strong>and</strong> every tool in its plan exists in the live registry (tool-existence check); the row is seeded with the counters it earned <strong>locally</strong> (never the origin's), re-checks the content hash (tamper → refuse, no write), never overwrites a local skill (<code>ON CONFLICT DO NOTHING</code>), and is idempotent (<code>promoted_ts</code>). The write lives engine-side; the noosphere stays engine-free.</td>
+<td><code>conscio/agency/promote.py</code>, <code>conscio/engine.py::promote_quarantined</code>; <code>tests/test_engine_promote.py</code> (tamper/collision/insufficient/unknown-tool refuse with no skills row; happy-path seeded 3/0 + <code>promoted_ts</code>), <code>tests/test_agency_promote.py</code>, <code>tests/test_skills_graft.py</code>, <code>tests/test_quarantine_promote.py</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>53</td>
+<td><strong>The Observatory exposes one instance's persisted state read-only, engine-free, with no capability flag</strong> — <code>conscio-observatory</code> serves a loopback-only HTTP viewer over an engine-free projection that opens <code>conscio.db</code> with <code>mode=ro</code> (no <code>PRAGMA</code>, <code>SELECT</code> only) and parses <code>goals.json</code>/<code>state_summary.json</code>; it serves <strong>GET only</strong> (every mutation verb → 405) and reads even a cold instance (no engine). There is <strong>no <code>--enable-observatory</code></strong> flag — it has no write/execute/autonomy surface, so launching it is the opt-in. The MCP <code>conscio.state</code>/<code>conscio.events</code>/<code>conscio.handoff</code> tools delegate to the same helpers the <code>conscio://</code> resources use (no duplicated logic).</td>
+<td><code>conscio/observatory/projection.py</code>, <code>conscio/observatory/server.py</code>, <code>conscio/mcp/server.py</code>; <code>tests/test_observatory_engine_free.py</code> (AST: never imports <code>conscio.engine</code>), <code>tests/test_observatory_projection.py</code> (read-only DB, goals-list, since contract), <code>tests/test_observatory_server.py</code> (405 on mutation, loopback-only, token gate), <code>tests/test_mcp_state_tools.py</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>54</td>
+<td><strong>The Observatory's Society view exposes the host-shared noosphere read-only, engine-free, with no capability flag</strong> — <code>conscio-observatory</code> adds <code>/api/society/{members,skills,records}</code> over an engine-free projection that opens <code>noosphere.db</code> with <code>mode=ro</code> (no <code>PRAGMA</code>, <code>SELECT</code> only) across <code>published_skills</code>/<code>published_records</code>; it serves metadata only (BLOB artifact/bundle bodies omitted), GET-only (mutation → 405), and degrades to <code>[]</code> on missing db/tables. <code>mode=ro</code> reads the latest committed WAL rows under a concurrent writer; <code>immutable=1</code> is deliberately rejected (it ignores <code>-wal</code> → stale data). SQLite's <code>-shm</code>/<code>-wal</code> handling is an internal file-management side effect — recovery, not content mutation. No <code>--enable</code> flag (launch = opt-in).</td>
+<td><code>conscio/observatory/society.py</code>, <code>conscio/observatory/server.py</code>; <code>tests/test_observatory_society.py</code> (committed-WAL visibility under concurrent writer; BLOBs omitted; read-only; missing-db), <code>tests/test_observatory_server.py</code> (society routes + 405), <code>tests/test_observatory_engine_free.py</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>55</td>
+<td><strong>Cross-agent <code>hermes_review</code> is poll-based over a shared SQLite mailbox, applied only from an allowlisted reviewer and only through the local gate</strong> — <code>$HERMES_HOME/liaison.db</code> (separate from <code>noosphere.db</code>) carries directed <code>review_request</code>/<code>review_verdict</code> rows; a proposer auto-publishes on a <code>hermes_review</code> pending act and applies a verdict via <code>conscio.poll_reviews</code> only when <code>from_instance ∈ --reviewer</code> <strong>and</strong> <code>fp</code> (= hash of proposer id + <code>goal_fp</code> + tool + canonical args + <code>ledger_id</code>) matches a local pending row, releasing it solely through <code>host_act.approve()</code> (<code>_gate()</code> + <code>claim()</code>); non-allowlisted / foreign-fp / replayed verdicts are no-ops. Opt-in behind <code>--enable-hermes-review</code> (reviewer role needs no <code>--enable-act</code>); no crypto (shared-fs trust domain); <code>conscio/liaison/</code> is engine-free.</td>
+<td><code>conscio/liaison/mailbox.py</code>, <code>conscio/liaison/review.py</code>, <code>conscio/mcp/server.py</code>; <code>tests/test_liaison_bindings.py</code> (non-allowlisted ignored, foreign-proposer fp no-match, replay no-op, flag-off no-publish, two-instance e2e), <code>tests/test_liaison_review.py</code> (distinct-proposer fp), <code>tests/test_liaison_engine_free.py</code> (AST)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>56</td>
+<td><strong>General cross-agent relay is poll-based over the shared mailbox — directed, peer-allowlisted, reserved-type-isolated, capped, engine-free</strong> — behind <code>--enable-relay</code> (independent of <code>--enable-act</code>/<code>--enable-hermes-review</code>), <code>conscio.relay_send</code>/<code>relay_inbox</code>/<code>relay_read</code> carry free-form directed messages over <code>$HERMES_HOME/liaison.db</code>. <code>--relay-peer</code> gates both send (<code>to ∈ peers</code>) and receive (<code>from ∈ peers</code>); the two review types are reserved (relay never sends them, never surfaces them, never marks review rows read); payloads are capped at 64 KB (compact-JSON); read messages older than 7 days are purged on send while unread is never deleted. Relay never touches the engine or any act (no <code>fp</code>; dedup is the host's job); <code>from_instance</code> is self-asserted (no crypto, shared-fs domain).</td>
+<td><code>conscio/liaison/relay.py</code>, <code>conscio/liaison/mailbox.py</code> (<code>purge_read</code>), <code>conscio/mcp/server.py</code>; <code>tests/test_liaison_relay.py</code> (validate/filter/cap), <code>tests/test_liaison_mailbox.py</code> (purge keeps unread/recent), <code>tests/test_liaison_bindings.py</code> (non-peer ignored+marked-read, reserved excluded+untouched, two-instance e2e, purge best-effort, int-only ids), <code>tests/test_liaison_engine_free.py</code> (AST)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>57</td>
+<td><strong>An Awake instance perceives its liaison inbox and auto-applies allowlisted review verdicts — daemon perceives, server acts, liaison stays engine-free</strong> — the daemon's read-only <code>RelaySensor</code> (<code>--sensors …,relay</code>, <code>--relay-peer</code> display-allowlist) reports unread directed messages as a <code>PerceptionFrame</code> (signals <code>relay_unread</code>/<code>review_pending</code>) and NEVER marks them read; the MCP server's <code>--auto-review</code> (OFF default, inert without <code>--enable-act</code> + <code>--enable-hermes-review</code>) runs <code>apply_verdicts</code> opportunistically on each <code>tools/call</code> when the engine is awake, releasing matched pending acts solely through <code>host_act.approve()</code> (the gate is authority). The shared <code>apply_verdicts</code> core lives in <code>conscio/agency/review_apply.py</code> (agency→liaison); <code>conscio/liaison/*.py</code> and <code>conscio/mcp/protocol.py</code> are untouched.</td>
+<td><code>conscio/perception/relay_sensor.py</code>, <code>conscio/agency/review_apply.py</code>, <code>conscio/daemon.py</code>, <code>conscio/mcp/server.py</code>; <code>tests/test_relay_sensor.py</code> (read-only never-marks-read, peer/non-peer/reserved partition), <code>tests/test_review_apply.py</code> (None-host-act no-op, allowlist, marked-read), <code>tests/test_mcp_auto_review.py</code> (awake/act/reviewers gating, dispatch hook), <code>tests/test_daemon_relay.py</code> (sensor build + flags), <code>tests/test_liaison_engine_free.py</code> (AST)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>58</td>
+<td><strong>An Awake daemon auto-replies to free-form peer relay messages via its adapter — loop-bounded, daemon-side, engine-free, server untouched</strong> — behind <code>--auto-respond</code> (OFF default, inert without the <code>relay</code> sensor + an adapter + <code>--awake</code> + <code>--relay-peer</code>), each heartbeat the daemon reads unread non-reserved peer messages and generates one reply each via a raw <code>InferenceAdapter</code> (no engine memory), sending it back with the inbound <code>type</code> echoed and <code>payload{auto_reply:true,in_reply_to}</code>. The loop is 1-turn bounded: an inbound carrying <code>auto_reply:true</code> is consumed but never re-answered (two auto-responders cannot ping-pong). <code>--respond-limit</code> (default 10) caps adapter calls per cycle; <code>mark_read</code> is per-row immediately after each send/skip (a mid-loop send failure cannot re-send a prior success); an adapter failure leaves the row unread for next-cycle retry; oversized replies are shrunk to the 64 KB cap. The closure binds the local adapter (never engine internals); the pure responder lives in <code>conscio/agency/relay_respond.py</code> and the MCP server is byte-identical (<code>relay_send</code> is a mailbox write, not <code>host_act</code>).</td>
+<td><code>conscio/agency/relay_respond.py</code>, <code>conscio/daemon.py</code>; <code>tests/test_relay_respond.py</code> (no-op guards, type-echo+auto_reply+in_reply_to, loop-breaker no-generate, reserved/non-peer untouched, limit caps calls, adapter-error leaves-unread, oversized truncated, engine-free AST), <code>tests/test_daemon_responder.py</code> (responder hook after run, raise survives, arm gate)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>59</td>
+<td><strong>The Hub stores raw API keys in a 0600 vault and never echoes them — config holds only an <code>api_key_env</code> reference</strong> — saving a raw key in the Hub's <strong>API Key</strong> field writes it to a per-provider file under <code>~/.config/conscio/keys/</code> (dir created <code>0700</code>, file created <code>0600</code> via <code>os.open</code>+<code>O_CREAT</code> mode — no chmod-after-rename world-readable window) and stores only the generated <code>api_key_env</code> in <code>config.json</code>. <code>validate()</code> still rejects a raw <code>api_key</code> in the config; a GET reports only <code>api_key_present: true/false</code> (the presence check reads the vault without mutating <code>os.environ</code>); the key is never returned over the API. Vault filenames are derived from sanitised provider inputs and validated against <code>^[A-Z_][A-Z0-9_]*$</code> before any filesystem op, so a hostile provider <code>type</code>/<code>model</code> cannot inject a path separator and escape the vault directory. The Hub stays <strong>engine-free</strong> and loopback-only.</td>
+<td><code>conscio/hub/config.py</code> (<code>_env_name_for</code>, <code>vault_store</code>/<code>vault_load</code>/<code>vault_has</code>, <code>_redact_block</code>), <code>conscio/hub/server.py</code> (<code>PUT /api/config</code> raw-key→vault); <code>tests/test_hub_config.py</code> (0600 file, 0700 dir, env-name sanitise, bad-name rejected, presence no-mutation, round-trip), <code>tests/test_hub_server.py</code> (raw key→<code>api_key_env</code>, GET redaction, dropped control endpoints 404)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>60</td>
+<td><strong>The Observatory exposes daemon liveness, this instance's liaison inbox, and its identity — read-only, engine-free, no flag</strong> — <code>conscio-observatory</code> adds <code>GET /api/daemon</code> (the daemon's last atomic <code>daemon_heartbeat.json</code>), <code>GET /api/relay/inbox</code> (this instance's <code>to_instance</code> rows from <code>liaison.db</code> opened <code>?mode=ro</code>, NO PRAGMA, SELECT-only, full payload, never marked read — it cannot reuse <code>mailbox.inbox()</code>, which opens read-write), and <code>GET /api/identity</code> (reads <code>instance.json</code> read-only, never <code>load_or_create</code>). GET-only (mutation → 405), loopback-only, no <code>--enable</code> flag.</td>
+<td><code>conscio/observatory/projection.py</code> (<code>daemon</code>/<code>identity</code>), <code>conscio/observatory/liaison_view.py</code>, <code>conscio/observatory/server.py</code>; <code>tests/test_observatory_projection.py</code>, <code>tests/test_observatory_liaison.py</code> (missing-db/empty-self/filter/read+unread/never-marks-read/skip-unparseable), <code>tests/test_observatory_server.py</code> (routes, 405, health), <code>tests/test_observatory_engine_free.py</code> (AST)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>61</td>
+<td><strong>The Hub toggles a watching daemon's awake state via a control file the daemon applies next-cycle — no signals/PID/<code>os.kill</code>, double opt-in, off by default</strong> — <code>conscio-hub --enable-daemon-control</code> exposes <code>PUT /api/daemon/awake {awake}</code> (writes <code>daemon_control.json</code> atomically to the storage dir via the pure <code>conscio/hub/control.py</code>; refuses a non-existent storage dir with 500, no silent write) and <code>GET /api/daemon/control</code>; with the flag off both routes 404 (Observatory owns the read panels). A daemon run with <code>conscio-daemon --watch-control</code> reads that file at the top of each <code>cycle()</code> and applies it via <code>engine.wake()</code>/<code>engine.sleep()</code> (<code>engine.awake</code> is a read-only property), logging the flip; <code>control_path=None</code> (flag off) skips the branch entirely. The daemon reads the file by name with <code>safe_read_json</code> and never imports <code>conscio.hub</code> (layering); a corrupt/missing file is ignored. The v2.7.1 C1 class (a toggle that <code>os.kill</code>ed the daemon) is structurally impossible.</td>
+<td><code>conscio/hub/control.py</code>, <code>conscio/hub/server.py</code> (<code>PUT /api/daemon/awake</code>, <code>GET /api/daemon/control</code>, health <code>daemon_control</code>), <code>conscio/daemon.py</code> (<code>--watch-control</code>, <code>control_path</code>); <code>tests/test_hub_control.py</code> (atomic write/read, missing/corrupt → {}), <code>tests/test_hub_server.py</code> (flag-off 404, write-when-enabled, bool-required, missing-dir 500, read-back, health), <code>tests/test_daemon_control.py</code> (flip on/off, inert when None, corrupt ignored, authority across restart)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>62</td>
+<td><strong>The relay is conversational: the auto-responder replies with multi-turn history and a broadcast tool fans out to all peers — engine-free, allowlist-gated, daemon-perceives/server-acts intact</strong> — <code>mailbox.thread(a, b)</code> returns the last-N messages between two instances (both directions, <code>ts</code>/<code>id</code> chronological) as a pure read that never imports <code>conscio.engine</code> and tolerates a missing/corrupt db (<code>[]</code>); <code>relay_respond.auto_respond</code> builds the adapter prompt from that thread as a <code>peer:</code>/<code>me:</code> transcript (review-channel rows excluded), clamped to a char budget by dropping oldest lines while always keeping the newest (the reader stays pure — the budget lives in the wiring). <code>conscio.relay_broadcast</code> (under <code>--enable-relay</code>) loops the <code>--relay-peer</code> allowlist calling <code>validate_send</code>+<code>mailbox.send</code> per peer (reserved/oversized rejected uniformly, best-effort per peer), a mailbox write — never <code>host_act</code>. No schema change; liaison <code>relay.py</code>/<code>review.py</code>, <code>agency/review_apply.py</code>, <code>perception/relay_sensor.py</code> and <code>mailbox.send/inbox/mark_read/purge_read</code> byte-identical.</td>
+<td><code>conscio/liaison/mailbox.py</code> (<code>thread</code>), <code>conscio/agency/relay_respond.py</code> (<code>_transcript</code>, multi-turn prompt), <code>conscio/mcp/schemas.py</code>+<code>conscio/mcp/server.py</code> (<code>relay_broadcast</code>); <code>tests/test_liaison_mailbox.py</code> (thread both-dirs/symmetric/third-party/limit/missing-db/parsed), <code>tests/test_relay_respond.py</code> (history/single-shot/budget-clamp/reserved-excluded/loop-breaker), <code>tests/test_liaison_bindings.py</code> (broadcast present/absent/fan-out/reserved/empty), <code>tests/test_liaison_engine_free.py</code> (AST)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>63</td>
+<td><strong>A relay auto-reply can be routed through the agent's own cognition — identity + memory + advisory — without the peer's text ever entering episodic memory, the world-model, or goals</strong> — <code>relay_cognize.cognize_respond</code> builds the adapter prompt from three READ-ONLY engine surfaces (<code>get_state_for_injection</code>, <code>recall</code> with the peer text as the <em>query</em> only, <code>advisory</code>) plus the v2.8.2 multi-turn transcript, then a raw adapter call. The integrity boundary (B1) is enforced by construction and proven two ways: a spy-engine whose every mutator (<code>perceive</code>/<code>reflect</code>/<code>run</code>/<code>remember</code>) <strong>raises</strong> confirms only the read-trio fires across a real run, and an AST import-shape test confirms the module never imports <code>conscio.engine</code> (it takes the engine as an argument — this is <em>agency</em>, not liaison). Reply text is capped at <code>max_reply_chars</code> (default 2000) before the 64 KB <code>_fit</code> cap; the <code>auto_reply</code> 1-turn loop-breaker is unchanged. Daemon <code>--cognize</code> (rides on <code>--auto-respond</code>) selects this path, off by default. Debt-zero: <code>relay_respond.py</code>, all of <code>conscio/liaison/</code>, <code>mcp/server.py</code>, <code>mcp/protocol.py</code>, <code>agency/review_apply.py</code>, <code>perception/relay_sensor.py</code> byte-identical; no schema change; daemon-perceives/server-acts intact (a relay reply is a mailbox write, never <code>host_act</code>).</td>
+<td><code>conscio/agency/relay_cognize.py</code> (<code>cognize_respond</code>, <code>_mind_block</code>, <code>_advisory_line</code>), <code>conscio/daemon.py</code> (<code>--cognize</code> + responder selector); <code>tests/test_relay_cognize.py</code> (boundary spy / import-shape / recall-query-is-peer-text / prompt-has-identity+memory+advisory+transcript / max_reply_chars / loop-breaker / reserved / stranger / adapter-fail / no-op guards), <code>tests/test_daemon_config.py</code> (cognize flag parse/default/compose)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>64</td>
+<td><strong>A cognition-routed relay reply can be written to episodic memory on an opt-in basis, while the peer's text still never reaches the world-model or goals</strong> — <code>relay_cognize.cognize_respond(remember=True)</code> records each successful exchange (<code>peer: … / me: …</code>) via <code>engine.content_store.index(category="external")</code> so future cognition can <code>recall</code> it. The write surface is narrow by construction: <code>_remember_exchange</code> calls ONLY <code>content_store.index</code> — <code>perceive</code>/<code>reflect</code>/<code>run</code> are never called (the spy-engine raises on them, so the run would fail), proving peer text becomes recall-able memory but never drives the world-model or goals (F4). <code>remember=False</code> (default) is byte-equivalent to v2.9.0 (the slice-2 read-only boundary holds). A failing store never breaks the reply that already went out; consumed loop-breaker <code>auto_reply</code> rows are never remembered. Daemon <code>--cognize-remember</code> (rides on <code>--cognize</code>, OFF default) selects it; the memory write is daemon-side, never <code>host_act</code>. Also fixes (since v2.7.1) <code>build_adapter_from_config</code> building a keyless adapter (HTTP 401) by falling back to the Hub vault when <code>os.environ</code> lacks the key. Debt-zero: liaison, <code>mcp/server.py</code>, <code>mcp/protocol.py</code>, <code>agency/review_apply.py</code>, <code>agency/relay_respond.py</code>, <code>perception/relay_sensor.py</code> byte-identical; no schema change.</td>
+<td><code>conscio/agency/relay_cognize.py</code> (<code>_remember_exchange</code>, <code>remember=</code> param), <code>conscio/daemon.py</code> (<code>--cognize-remember</code>), <code>conscio/adapter_config.py</code> (vault fallback); <code>tests/test_relay_cognize.py</code> (remember-false-no-write / remember-true-writes-external / still-forbids-mutators / write-failure-still-replies / skips-consumed-auto-reply), <code>tests/test_daemon_config.py</code> (<code>--cognize-remember</code> parse/default/independent), <code>tests/test_adapter_config_api_key_env.py</code> (vault fallback / env-wins)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>65</td>
+<td><strong>An Awake agent can proactively initiate relay conversation through its own read-only cognition — directed or broadcast — without the peer's text ever entering memory, the world-model, or goals, and only when multiple safety gates allow</strong> — <code>relay_initiate.initiate</code> generates an opener from the engine read-trio (<code>get_state_for_injection</code>/<code>recall</code>/<code>advisory</code>) and sends it (<code>type="chat"</code>, <code>payload.initiated=True</code>, never <code>auto_reply</code>). It is read-only by construction (a spy-engine whose <code>perceive</code>/<code>reflect</code>/<code>run</code>/<code>remember</code> raise proves only the read-trio fires; an AST test proves it never imports <code>conscio.engine</code>). Permission is gated: a cheap <code>advisory()</code> check suppresses (fail-closed) on <code>action_lockdown</code>/brake before any adapter call; <code>NOTHING</code>/empty replies are suppressed; directed mode skips a peer whose thread's last message is its own (no re-open while awaiting a reply); broadcast mode skips when a prior broadcast has had zero peer engagement (<code>mailbox.last_broadcast_ts</code>); the daemon runs it at most once per <code>--initiate-interval</code> and only while <code>engine.awake</code> is true at that cycle. The same runtime-awake re-check now also gates the v2.7.0 <code>responder</code>. Debt-zero: <code>relay_cognize</code>/<code>relay_respond</code>/mcp/observatory/hub/review_apply/relay_sensor byte-identical; mailbox gains one additive reader; no schema change.</td>
+<td><code>conscio/agency/relay_initiate.py</code> (<code>initiate</code>, <code>_directed</code>, <code>_broadcast</code>, <code>_blocked_by_state</code>), <code>conscio/liaison/mailbox.py</code> (<code>last_broadcast_ts</code>), <code>conscio/daemon.py</code> (<code>initiator</code> hook, <code>_initiator_armed</code>, <code>--initiate*</code>, responder awake fix); <code>tests/test_relay_initiate.py</code>, <code>tests/test_liaison_mailbox.py</code> (<code>last_broadcast_ts</code>), <code>tests/test_daemon_initiator.py</code>, <code>tests/test_daemon_responder.py</code> (asleep-no-call)</td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>66</td>
+<td><strong>One global Conscio install binds many agentic hosts on one machine, each to its own per-host space, with a native Claude Code integration — without touching the cognitive core</strong> — <code>conscio init</code> (a pure-stdlib wizard) creates <code>~/.conscio/instances/&lt;slug&gt;/</code> (its own <code>instance.json</code> identity, reusing <code>noosphere.identity.load_or_create</code> so an existing identity is never regenerated), emits the host's MCP launch config (<code>conscio-mcp --storage &lt;space&gt;</code> + <code>env CONSCIO_VAULT_DIR=&lt;space&gt;/keys</code>) and read-back-verifies it (raising <code>HostConfigError</code> rather than failing silently), backing up the prior file <code>.bak.&lt;ts&gt;</code> (capped to the 30 newest). For <code>--host claude-code</code> it materializes a bundle into <code>~/.claude/</code> — 10 <code>/conscio:*</code> commands, a <code>conscio</code> skill, and a defensive SessionStart hook — idempotently (one <code>conscio</code> MCP entry, one hook group; corrupt <code>~/.claude.json</code> is backed up then rewritten) reusing <code>hostcfg.mcp_server_entry</code>. Awake is a real daemon process: <code>daemonctl.start</code> uses <code>start_new_session=True</code> (survives logout SIGHUP) and PID liveness matches the actual <code>conscio-daemon</code> cmdline (never kills a recycled PID). <code>conscio-mcp</code>/<code>conscio-daemon</code> validate the <code>--storage</code> binding at startup (R6), warning to run <code>conscio init --repair</code> instead of silently creating a blank space. Debt-zero: <code>engine.py</code>/<code>liaison/*</code>/<code>noosphere/*</code>/<code>mcp/protocol.py</code>/<code>adapter_config.py</code> byte-identical; <code>mcp/server.py</code>+<code>daemon.py</code> gain only the R6 call.</td>
+<td><code>conscio/installer/{spaces,hostcfg,extras,daemonctl,binding,wizard,cli}.py</code>, <code>conscio/integrations/claude_code/{materialize.py,assets/**}</code>, <code>conscio/cli.py</code> (<code>init</code> route), <code>conscio/mcp/server.py</code>+<code>conscio/daemon.py</code> (R6); <code>tests/test_installer_*.py</code>, <code>tests/test_cc_*.py</code></td>
+<td>PROVEN</td>
+</tr>
+<tr>
+<td>67</td>
+<td><strong>API keys are scoped to a per-host vault, defaulting to the legacy global vault for backward-compat — logical least-privilege, NOT same-user OS isolation</strong> — <code>hub.config._vault_dir()</code> resolves the vault directory by precedence explicit-override &gt; <code>CONSCIO_VAULT_DIR</code> env (the per-host value the installer writes into each host's MCP launch config) &gt; the legacy global vault (<code>adapter_config._CONFIG_PATHS[0].parent / "keys"</code>, byte-identical to pre-v2.11). <code>vault_store/load/has</code> gained an optional <code>vault_dir</code> param; <code>build_adapter_from_config</code> resolves per-host at runtime purely through the env (so <code>adapter_config.py</code> is byte-identical). When a per-host dir is in effect there is NO fallback to the global vault. <strong>Honest limit:</strong> this is logical least-privilege (each host is configured with only its own key) — it is NOT OS-level isolation between processes of the same UNIX user, because <code>0600</code>/<code>0700</code> perms are per-user; a compromised host running as the same user can still read sibling <code>~/.conscio/instances/*/keys/</code>. True cross-host secret isolation needs an OS keyring with per-app ACLs or separate OS users (out of scope: the former breaks zero-dep, the latter is an OS-deployment concern).</td>
+<td><code>conscio/hub/config.py</code> (<code>_vault_dir</code>, <code>vault_store/load/has</code> <code>vault_dir=</code>); <code>tests/test_hub_vault_perhost.py</code> (default-global / env-override / explicit-override / roundtrip-0600 / no-perhost→global-fallback), <code>tests/test_adapter_config_api_key_env.py</code> (runtime per-host via env)</td>
+<td>PROVEN (with documented limit)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="honest-limits-what-is-not-proven">Honest limits (what is NOT proven)<a class="headerlink" href="#honest-limits-what-is-not-proven" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Calibration is weak on small models.</strong> The v1.2 immune run measured
+  calibration 0.50 — the 0.8B model reaches the right verdict but isn't
+  confident. Not a solved problem.</li>
+<li><strong>n = 1 model.</strong> Claims 5, 6, 11 rest on a single 0.8B model on one CPU.
+  Directional, not a population result. Widening the model sweep is future
+  work (the campaign protocol is reusable).</li>
+<li><strong>Reasoning-distilled small models are not yet supported</strong> for strict
+  structured decode (verbose chain-of-thought breaks extraction). See
+  <code>docs/bench/v1.2-skill-curve.md</code>.</li>
+<li><strong>Adapters are not an "inside-tool" surface.</strong> The inference adapters
+  (<code>AnthropicAdapter</code>/<code>GeminiAdapter</code>/<code>OpenAIAdapter</code>/…) are LLM-API callers for
+  Conscio's <em>own</em> cognition — they do <strong>not</strong> make Conscio run <em>inside</em> Claude Code
+  or Antigravity. The <strong>MCP server (<code>conscio-mcp</code>) ships in v2.0</strong> as the turnkey
+  host surface, but it is <strong>propose-only</strong>: a host feeds perception and gets
+  audited proposals; Conscio <em>executing</em> a host's tool over MCP (<code>act</code>) is
+  <strong>v2.0.1</strong> (it needs a host-execution callback — <code>ToolRegistry</code> requires a local
+  function Conscio cannot supply for a host tool). The documented contract
+  (<code>engine.advisory()</code> + <code>daemon_heartbeat.json</code> + <code>SensorAdapter</code>) also still
+  works.</li>
+<li><strong>Corrupt-store recovery discards live history.</strong> When <code>conscio.db</code> is corrupt
+  at startup it is quarantined to <code>conscio.db.corrupt-&lt;ts&gt;</code> (preserved on disk,
+  never auto-replayed) and a fresh DB is created — so the engine's prior cognitive
+  history is not in the live store after recovery. A <code>storage_recovered</code> event +
+  WARNING log record it; as of v2.0.0 the accumulated <code>conscio.db.corrupt-&lt;ts&gt;</code>
+  copies are pruned to the newest few (R-02), so quarantine no longer grows
+  unbounded.</li>
+<li>Claims about not-yet-shipped capabilities do <strong>not</strong> appear here. This ledger
+  records only what exists today.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
