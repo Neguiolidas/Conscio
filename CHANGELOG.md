@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.2.0] - 2026-07-22 — Inference
+
+Self-contained memory + inference layer. Adds 9 new modules, 6th evaluation axis,
+3 new MCP tools, and native embedding fallback.
+
+### Memory modules (9 new)
+
+- **KnowledgeGraph** (`conscio/kg.py`) — entities + triples SQLite, FK enforcement,
+  WAL mode, `add_entity`, `query_entity`, `query_relationship`, `timeline`.
+- **Hallways** (`conscio/hallways.py`) — wing → room → drawer hierarchy with
+  auto-created defaults (`default` wing/room), FK enforcement, stats.
+- **WingManager** (`conscio/wings.py`) — integrates Hallways + ContentStore;
+  filtered search by wing/room; index/check_exists/list_wings.
+- **VectorBackend** (`conscio/vector_backend.py`) — cosine search on SQLite BLOB
+  (array.array stdlib), optional numpy acceleration, zero external deps.
+- **Deduplicator** (`conscio/dedup.py`) — SHA256 NFKD + ASCII fold hash + Jaccard
+  bigram similarity. `compute_hash`, `is_duplicate`, `register`.
+- **EntityDetector** (`conscio/entity_detector.py`) — regex Unicode (PT accents:
+  São, João, Ção), detects persons/projects, domains, versions; KG integration.
+- **EmbeddingProvider** (`conscio/embedding.py`) — 3-tier fallback:
+  1. Ollama (if daemon running)
+  2. OpenAI-compatible API (LM Studio etc, if running)
+  3. sentence_transformers all-MiniLM-L6-v2 (NATIVE — no daemon, in-process,
+     384-dim, ~90MB cached)
+  4. None (graceful degradation)
+
+  Optional 768-dim: `CONSCIO_EMBED_MODEL=nomic-embed-text-v1.5 CONSCIO_EMBED_DIM=768`.
+- **Miner** (`conscio/miner.py`) — file + conversation + directory ingestion.
+  Supports .md/.txt/.jsonl. Paragraph splitting, JSONL turn parsing, os.walk with
+  skip dirs (.git, __pycache__, node_modules, .venv, etc). Dedup integrated.
+- **Migration** (`conscio/migration.py`) — `export_archive` (tar.gz with
+  ContentStore.db + kg.db + hallways.db + metadata.json), `import_archive`
+  (round-trip restore), `import_format_mempalace` (ChromaDB adapter — reads
+  `embedding_metadata.string_value` for `chroma:document`, `wing`, `room`).
+
+### Evaluation
+
+- **output_quality axis** (6th) — added to `evaluate()` when `output` is provided.
+  LLM-as-judge via engine adapter; heuristic fallback (word count + structure signals:
+  lists, headers, code blocks). Overall score now divides by `len(axes)` not hardcoded 5.
+
+### MCP tools (3 new)
+
+- `conscio.kg_query` — query KG for entity, relationships, timeline.
+- `conscio.wings_search` — search content with optional wing filter.
+- `conscio.export` — export memory to tar.gz archive.
+
+### Migration validated
+
+- **Real migration: 8551 drawers** from MemPalace ChromaDB → Conscio ContentStore.
+  30 wings, 127 rooms, 44.7 MB. FTS5 search: 3.7-8.7ms/query.
+
+### Performance (real benchmarks)
+
+- FTS5 search (8551 drawers): 3.7-8.7ms/query
+- KG query: <0.1ms
+- Export (17.2 MB tar.gz): 2.3s
+- Native embedding (384-dim): 0.12s/encode, load 3.2s from cache
+- ContentStore write: 4.4ms/doc
+- Concurrency: KG WAL mode supports 50 concurrent writes (5 threads) in 162ms
+
+### Exports
+
+- All 9 new modules exported from `conscio/__init__.py` and added to `__all__`.
+- `ContentStore.dump()` added (sqlite3 backup API).
+
+### Tests
+
+- **2523 passed, 3 skipped** (74 new tests: 8 entity_detector + 8 embedding + 8 miner +
+  5 migration + 3 mempalace import + 6 evaluate_quality + 8 embedding updated).
+
+---
+
 ## [3.1.0] - 2026-07-21 — Harness Efficiency Layer
 
 Based on "The Harness Effect" paper (Writer, 2026, arxiv:2607.06906).
