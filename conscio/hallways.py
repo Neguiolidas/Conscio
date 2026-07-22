@@ -131,7 +131,7 @@ class Hallways:
         self,
         wing: str = "default",
         room: str = "default",
-        drawer_id: int = None,
+        drawer_id: int | None = None,
     ) -> None:
         if drawer_id is None:
             raise ValueError("drawer_id required")
@@ -145,7 +145,7 @@ class Hallways:
                 )
 
     def list_drawers(
-        self, wing: str = None, room: str | None = None
+        self, wing: str | None = None, room: str | None = None
     ) -> list[int]:
         """List drawer_ids.
 

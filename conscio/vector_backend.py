@@ -22,6 +22,7 @@ try:
     import numpy as np
     _HAS_NUMPY = True
 except ImportError:
+    np = None  # type: ignore[assignment]
     _HAS_NUMPY = False
 
 
@@ -103,7 +104,7 @@ class VectorBackend:
         return arr.tolist()
 
     def _cosine(self, a: list[float], b: list[float]) -> float:
-        if _HAS_NUMPY:
+        if np is not None:
             ar = np.frombuffer(array.array("f", a).tobytes(), dtype=np.float32)
             br = np.frombuffer(array.array("f", b).tobytes(), dtype=np.float32)
             na = np.linalg.norm(ar)

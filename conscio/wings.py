@@ -90,7 +90,7 @@ class WingManager:
     def list_rooms(self, wing: str) -> list[str]:
         return self.hallways.list_rooms(wing)
 
-    def list_drawers(self, wing: str = None, room: Optional[str] = None) -> list[int]:
+    def list_drawers(self, wing: str | None = None, room: Optional[str] = None) -> list[int]:
         return self.hallways.list_drawers(wing=wing, room=room)
 
     # ── Deletion ────────────────────────────────────────────────────

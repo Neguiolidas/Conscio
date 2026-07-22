@@ -18,6 +18,7 @@ from typing import Optional
 
 from .content_store import ContentStore
 from .kg import KnowledgeGraph
+from .wings import WingManager
 from .hallways import Hallways
 
 
@@ -98,15 +99,15 @@ def import_archive(
                 # Use unique filename in target
                 cs_path = target / "content_store.db"
                 with open(cs_path, "wb") as out:
-                    out.write(tar.extractfile(member).read())
+                    out.write(tar.extractfile(member).read())  # type: ignore[union-attr]
             elif member.name == "kg.db":
                 kg_path = target / "kg.db"
                 with open(kg_path, "wb") as out:
-                    out.write(tar.extractfile(member).read())
+                    out.write(tar.extractfile(member).read())  # type: ignore[union-attr]
             elif member.name == "hallways.db":
                 hw_path = target / "hallways.db"
                 with open(hw_path, "wb") as out:
-                    out.write(tar.extractfile(member).read())
+                    out.write(tar.extractfile(member).read())  # type: ignore[union-attr]
 
     cs = ContentStore(db_path=cs_path) if cs_path else None
     kg = KnowledgeGraph(db_path=kg_path) if kg_path else None
@@ -116,7 +117,7 @@ def import_archive(
 
 def import_format_mempalace(
     chroma_db_dir: str | Path,
-    wing_manager: Optional["WingManager"] = None,  # noqa: F821
+    wing_manager: Optional[WingManager] = None,
 ) -> int:
     """Import drawers de ChromaDB MemPalace (chroma.sqlite3).
 
