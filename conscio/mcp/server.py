@@ -508,7 +508,7 @@ class Bindings:
         if cs_path is None or not cs_path.exists():
             return {"results": []}
         cs = ContentStore(db_path=cs_path)
-        wm = WingManager(hallways_db=hw_path, content_store=cs)
+        wm = WingManager(hallways_db=str(hw_path), content_store=cs)
         results = wm.search(query, wing=wing, limit=limit)
         items = [{"title": r.title, "content": r.content[:200], "rank": r.rank} for r in results]
         wm.close()

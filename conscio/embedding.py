@@ -113,7 +113,7 @@ class EmbeddingProvider:
             return None
         try:
             if hasattr(ed, "encode") and not hasattr(ed, "embed"):
-                v = ed.encode(text)
+                v = ed.encode(text)  # type: ignore[union-attr]  # type: ignore[union-attr]
                 return list(v) if v is not None else None
             v = ed.embed(text)
             return list(v) if v is not None else None
@@ -128,7 +128,7 @@ class EmbeddingProvider:
             return None
         try:
             if hasattr(ed, "encode") and not hasattr(ed, "embed"):
-                vecs = ed.encode(texts)
+                vecs = ed.encode(texts)  # type: ignore[union-attr]
                 return [list(v) for v in vecs] if vecs is not None else None
             if hasattr(ed, "embed_batch"):
                 vecs = ed.embed_batch(texts)
