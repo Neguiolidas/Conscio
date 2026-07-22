@@ -88,7 +88,6 @@ def test_hallways_stats(tmp_path):
 
 def test_hallways_dump(tmp_path):
     """Backup via sqlite3 backup API."""
-    import sqlite3, os
     hw = Hallways(db_path=tmp_path / "hw.db")
     hw.create_wing("test")
     target = tmp_path / "backup.db"

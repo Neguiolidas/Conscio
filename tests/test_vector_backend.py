@@ -52,7 +52,6 @@ def test_vector_store_score_ordering(tmp_path):
 
 def test_vector_store_nan_rejected(tmp_path):
     """Hostile review: NaN vector rejected."""
-    import math
     vb = VectorBackend(db_path=tmp_path / "vec.db", dimension=4)
     try:
         vb.add("nan", [float("nan"), 0.0, 0.0, 0.0])
