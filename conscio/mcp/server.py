@@ -498,7 +498,6 @@ class Bindings:
         """Search content by wing/room hierarchy."""
         from .wings import WingManager
         from .content_store import ContentStore
-        from .hallways import Hallways
         query = args.get("query", "")
         if not query:
             return {"error": "query required"}
@@ -527,7 +526,7 @@ class Bindings:
         sp = self.engine.storage if hasattr(self.engine, "storage") else None
         if sp is None:
             return {"error": "no storage_path configured"}
-        cs = self.engine.content_layer if hasattr(self.engine, "content_layer") else None
+        self.engine.content_layer if hasattr(self.engine, "content_layer") else None
         kg_path = sp / "kg.db" if (sp / "kg.db").exists() else None
         hw_path = sp / "hallways.db" if (sp / "hallways.db").exists() else None
         kg = KnowledgeGraph(db_path=kg_path) if kg_path else None
@@ -535,8 +534,10 @@ class Bindings:
         cs_obj = getattr(self.engine, "content_layer", None)
         store = getattr(cs_obj, "store", None) if cs_obj else None
         meta = export_archive(path, content_store=store, kg=kg, hallways=hw)
-        if kg: kg.close()
-        if hw: hw.close()
+        if kg:
+            kg.close()
+        if hw:
+            hw.close()
         return {"metadata": meta}
 
     def _feed(self, args: dict) -> dict:
