@@ -196,6 +196,10 @@ class Bindings:
                 rule_text=a.get("rule_text", ""),
                 rule_id=a.get("rule_id")),
             "conscio.health": lambda a: self.engine.health_check(),
+            # ── v3.2 Memory tools ──
+            "conscio.kg_query": lambda a: self._kg_query(a),
+            "conscio.wings_search": lambda a: self._wings_search(a),
+            "conscio.export": lambda a: self._export(a),
         }
         if self._act_enabled():
             ha = self.engine.host_act
@@ -467,6 +471,73 @@ class Bindings:
         return self.engine.cognitive_cycle(
             world_state=args.get("world_state", "") or "",
             act=self._act_enabled())
+
+    # ── v3.2 Memory tool handlers ────────────────────────────────────
+
+    def _kg_query(self, args: dict) -> dict:
+        """Query the Knowledge Graph for entity/relationship info."""
+        from .kg import KnowledgeGraph
+        name = args.get("name", "")
+        if not name:
+            return {"error": "name required"}
+        kg_path = self.engine.storage / "kg.db" if hasattr(self.engine, "storage") else None
+        if kg_path is None or not kg_path.exists():
+            return {"entity": None, "relationships": [], "timeline": []}
+        kg = KnowledgeGraph(db_path=kg_path)
+        entity = kg.query_entity(name)
+        relationships = kg.query_relationship(name)
+        timeline = kg.timeline(name)
+        kg.close()
+        return {
+            "entity": entity,
+            "relationships": [dict(r) for r in relationships] if relationships else [],
+            "timeline": [dict(t) for t in timeline] if timeline else [],
+        }
+
+    def _wings_search(self, args: dict) -> dict:
+        """Search content by wing/room hierarchy."""
+        from .wings import WingManager
+        from .content_store import ContentStore
+        from .hallways import Hallways
+        query = args.get("query", "")
+        if not query:
+            return {"error": "query required"}
+        wing = args.get("wing")
+        limit = int(args.get("limit", 5))
+        cs_path = self.engine.storage / "content_store.db" if hasattr(self.engine, "storage") else None
+        hw_path = self.engine.storage / "hallways.db" if hasattr(self.engine, "storage") else None
+        if cs_path is None or not cs_path.exists():
+            return {"results": []}
+        cs = ContentStore(db_path=cs_path)
+        wm = WingManager(hallways_db=hw_path, content_store=cs)
+        results = wm.search(query, wing=wing, limit=limit)
+        items = [{"label": r.label, "content": r.content[:200], "score": getattr(r, "score", None)} for r in results]
+        wm.close()
+        cs.close()
+        return {"results": items}
+
+    def _export(self, args: dict) -> dict:
+        """Export Conscio memory to tar.gz archive."""
+        from .migration import export_archive
+        from .kg import KnowledgeGraph
+        from .hallways import Hallways
+        path = args.get("path", "")
+        if not path:
+            return {"error": "path required"}
+        sp = self.engine.storage if hasattr(self.engine, "storage") else None
+        if sp is None:
+            return {"error": "no storage_path configured"}
+        cs = self.engine.content_layer if hasattr(self.engine, "content_layer") else None
+        kg_path = sp / "kg.db" if (sp / "kg.db").exists() else None
+        hw_path = sp / "hallways.db" if (sp / "hallways.db").exists() else None
+        kg = KnowledgeGraph(db_path=kg_path) if kg_path else None
+        hw = Hallways(db_path=hw_path) if hw_path else None
+        cs_obj = getattr(self.engine, "content_layer", None)
+        store = getattr(cs_obj, "store", None) if cs_obj else None
+        meta = export_archive(path, content_store=store, kg=kg, hallways=hw)
+        if kg: kg.close()
+        if hw: hw.close()
+        return {"metadata": meta}
 
     def _feed(self, args: dict) -> dict:
         event = self._require(args, "event")
