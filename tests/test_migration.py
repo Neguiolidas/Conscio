@@ -25,7 +25,8 @@ def test_export_metadata_json(tmp_path):
     wm.index(label="x", content="y", category="external", content_type="prose")
     out = tmp_path / "bk.tar.gz"
     export_archive(out, content_store=cs, hallways=wm.hallways)
-    import tarfile, json
+    import tarfile
+    import json
     with tarfile.open(out) as t:
         names = t.getnames()
         assert "metadata.json" in names
@@ -45,7 +46,9 @@ def test_import_round_trip(tmp_path):
     kg.add_entity("grolv.com.br", entity_type="domain")
     out = tmp_path / "bk.tar.gz"
     export_archive(out, content_store=cs, kg=kg, hallways=wm.hallways)
-    cs.close(); kg.close(); wm.hallways.close()
+    cs.close()
+    kg.close()
+    wm.hallways.close()
     dst = tmp_path / "dst"
     dst.mkdir()
     cs2, kg2, hw2 = import_archive(out, target_dir=dst)
@@ -53,7 +56,9 @@ def test_import_round_trip(tmp_path):
     assert len(results) >= 1
     ent = kg2.query_entity("grolv.com.br")
     assert ent is not None
-    cs2.close(); kg2.close(); hw2.close()
+    cs2.close()
+    kg2.close()
+    hw2.close()
 
 
 def test_export_empty(tmp_path):
@@ -71,7 +76,8 @@ def test_import_idempotent_no_duplicate(tmp_path):
     wm.index(label="t1", content="unique content xyz", category="external")
     archive = tmp_path / "bk.tar.gz"
     export_archive(archive, content_store=cs, hallways=wm.hallways)
-    cs.close(); wm.hallways.close()
+    cs.close()
+    wm.hallways.close()
     dst = tmp_path / "dst"
     dst.mkdir()
     cs2, _, _ = import_archive(archive, target_dir=dst)
