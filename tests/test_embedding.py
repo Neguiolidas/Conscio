@@ -14,16 +14,18 @@ def test_embedder_interface():
     from unittest.mock import MagicMock
     ep = EmbeddingProvider()
     mock = MagicMock()
-    mock.embed.return_value = [0.1] * 768
+    # SentenceTransformer interface: .encode()
+    mock.has_encode = True
+    mock.encode.return_value = [0.1] * 384
     ep._embedder = mock
     v = ep.embed("test")
-    assert len(v) == 768
+    assert len(v) == 384
 
 
 def test_embedder_dimension():
-    """Default dimension is 768 (nomic-embed-text-v1.5)."""
+    """Default dimension is 384 (all-MiniLM-L6-v2 native fallback)."""
     ep = EmbeddingProvider()
-    assert ep.default_dimension == 768
+    assert ep.default_dimension == 384
 
 
 def test_embedder_available_returns_bool():
@@ -42,9 +44,8 @@ def test_embedder_embed_batch_interface():
     from unittest.mock import MagicMock
     ep = EmbeddingProvider()
     mock = MagicMock()
-    mock.embed.return_value = [0.1] * 768
-    mock.embed_batch.return_value = [[0.1] * 768, [0.2] * 768]
+    mock.encode.return_value = [[0.1] * 384, [0.2] * 384]
     ep._embedder = mock
     vecs = ep.embed_batch(["test1", "test2"])
     assert len(vecs) == 2
-    assert all(len(v) == 768 for v in vecs)
+    assert all(len(v) == 384 for v in vecs)
