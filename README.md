@@ -14,16 +14,14 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.2` "Inference":**
-Self-contained memory + inference layer. Adds **9 new modules**: KnowledgeGraph
-(entities+triples SQLite), Hallways (wing/room/drawer hierarchy), VectorBackend
-(cosine search SQLite BLOB), Deduplicator (SHA256 NFKD + Jaccard), WingManager
-(Hallways + ContentStore integration), EntityDetector (regex Unicode), EmbeddingProvider
-(native sentence_transformers fallback — no daemon needed), Miner (file/conversation/
-directory ingestion), Migration (export/import tar.gz + MemPalace adapter). Plus
-**6th evaluation axis** (output_quality — LLM-as-judge + heuristic), **3 new MCP tools**
-(kg_query, wings_search, export), and **native embedding fallback** (all-MiniLM-L6-v2,
-384-dim, in-process — zero daemon dependency). 2523 tests, stdlib-only core.
+**Latest release — `v3.3` "Awake Maturity":**
+The Awake Mode now runs on real signals. Adds **FilesystemSensor** (mtime polling,
+depth-limited, summarize on flood), **GitSensor** (git log via subprocess, idempotent
+by commit hash), **GoalTemplates** (deterministic signal→goal mapping — zero LLM),
+**AwakeBudget** (tighter limits: 3 cycles, 20k tokens, 60s wall), and **NeurataBridge**
+(CLI subprocess bridge to Neurata — optional, zero coupling). The daemon pauses
+cognitive cycles when no sensor produces signal — no more token burn on empty
+perception. 2573 tests, stdlib-only core.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
@@ -87,6 +85,30 @@ with ConsciousnessEngine(model_name="kimi-k2.6") as engine:
 `reflect` is the **passive heart** and is never allowed to act. Everything that can
 change the world lives behind `act` and its safety gates — a separation that is
 non-negotiable (see [Safety rules](#safety-rules-non-negotiable)).
+
+---
+
+## When to use Conscio (MCP trigger rules)
+
+Conscio is a cognitive refinement layer, not a fact database. Calling it on every
+message wastes tokens and adds latency.
+
+**Call Conscio when the cost of being wrong is high:**
+
+- Pentest / security audit → `feed` + `cognitive_cycle`
+- Architectural decision → `decide` or `council`
+- Debugging → `investigate`
+- Multi-step delivery → `loop_gate` + `delivery_check`
+- Self-review of output → `evaluate` (5-axis rubric)
+- High-risk irreversible action → `council`
+
+**Do NOT call Conscio for** factual lookup, casual conversation, simple mechanical
+tasks, one-shot tool calls, or anything with no decision or judgment involved.
+
+**Decision rule:** cost of reversal. Cheap to undo → skip Conscio. Expensive to undo
+→ Conscio pays for itself.
+
+See [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules) for the full table.
 
 ---
 

@@ -2,7 +2,7 @@
 
 Self-awareness framework for AI agents. 100% local Python + SQLite FTS5. Zero external deps runtime (numpy optional for embeddings).
 
-**Version:** 3.2.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
+**Version:** 3.3.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
 
 ## Install
 
@@ -122,6 +122,14 @@ Cross-agent review channel: `conscio.reviews`, `conscio.review_approve`,
 Cross-agent messaging: `conscio.relay_send`, `conscio.relay_inbox`,
 `conscio.relay_read`, `conscio.relay_broadcast`. Reserved-type isolation from
 review channel. Payload cap 64KB, retention 7 days after read.
+
+### v3.3 — Gate tools
+
+- `conscio.decide(question, options)` — structural decision with ADR
+- `conscio.council(question)` — 3-voice deterministic review (architect, skeptic, pragmatist)
+- `conscio.loop_gate(world_state)` — act/block gate: last reflection, rationalization scan, proposal freshness
+- `conscio.delivery_check()` — verifies blockers, staleness, rationalization before shutdown
+- `conscio.investigate(topic)` — hypothesis scan over recent events
 
 ### Resources (read-only URIs)
 
@@ -341,6 +349,94 @@ export CONSCIO_EMBED_DIM=768
 ```
 
 Fallback chain: Ollama → OpenAI-compatible API → sentence_transformers (native) → None.
+
+## When to call Conscio (MCP trigger rules)
+
+Conscio is a cognitive refinement layer, not a fact database. Calling it on
+every message wastes tokens and adds latency. These rules prevent that.
+
+### CALL Conscio when the cost of being wrong is high
+
+| Scenario | Tool | Why |
+|---|---|---|
+| Pentest / security audit | `feed` + `cognitive_cycle` | Systematic coverage, no missed vectors |
+| Architectural decision | `decide` or `council` | Structured ADR, multi-voice review |
+| Debugging (investigate) | `investigate` | Hypothesis scan over recent events |
+| Multi-step delivery | `loop_gate` + `delivery_check` | Block before acting on stale/rationalized plans |
+| Self-review of output | `evaluate` | 5-axis rubric (accuracy, completeness, clarity, actionability, conciseness) |
+| High-risk irreversible action | `council` | 3-voice review before committing |
+
+### DO NOT call Conscio for
+
+- Factual lookup (use `web_search` or `recall` directly)
+- Casual conversation
+- Simple mechanical tasks (file copy, git add)
+- One-shot tool calls
+- Tasks with no decision or judgment involved
+
+### Criterion
+
+The decision rule is simple: **cost of reversal**. If undoing a wrong decision
+is cheap (rename a variable, fix a typo), Conscio adds overhead without value.
+If undoing is expensive (architectural lock-in, security exposure, multi-step
+delivery with no checkpoint), Conscio pays for itself.
+
+## Awake Mode with sensors (v3.3)
+
+The daemon's cognitive cycle now pauses when no sensor produces signal — it does
+not burn tokens spinning on empty perception. Two sensors ship with v3.3:
+
+```python
+from conscio.perception import FilesystemSensor, GitSensor
+
+# Watch a directory tree for mtime changes (created/modified/deleted)
+fs = FilesystemSensor("/path/to/project", depth=3, max_files=50)
+
+# Watch a git repo for new commits (idempotent by hash)
+git = GitSensor("/path/to/repo", timeout=5.0)
+
+# Plug into daemon
+from conscio.daemon import Daemon
+daemon = Daemon(engine=engine, sensors=[fs, git], ...)
+daemon.run()  # perceives only when something changes
+```
+
+Both sensors are read-only (`Risk.LOW`), never raise, and degrade to empty
+frames on errors (missing dir, no git binary, permission denied).
+
+### Goal generation (no LLM)
+
+When sensors detect changes, `GoalTemplates` maps signals to concrete goals
+deterministically:
+
+- `.py` file modified → "verificar se testes cobrem {file}"
+- New commit → "revisar diff {hash}"
+- > 4 files/commits → grouped summary
+- Test files modified → skipped (meta-recursion guard)
+
+```python
+from conscio.awake import goals_from_world_state
+
+goals = goals_from_world_state(world_state)
+# → ["verificar se testes cobrem /repo/src/app.py"]
+```
+
+### Neurata bridge (optional)
+
+If [Neurata](https://github.com/Neguiolidas/Neurata) is installed and in PATH,
+Conscio can query it for skill/capability inventory:
+
+```python
+from conscio.integrations import NeurataBridge
+
+bridge = NeurataBridge()
+if bridge.available:
+    result = bridge.query("firebase config")
+    # → {"ok": True, "results": [...]}
+```
+
+Without Neurata: `available=False`, all methods return `None`. Zero impact on
+Conscio operation.
 
 ## Where to read more
 
