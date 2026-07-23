@@ -26,6 +26,12 @@ class FilesystemSensor(SensorAdapter):
 
     Never raises — a missing directory or permission error degrades to an
     empty frame. stdlib only; no outbound network.
+
+    Known limitation: ``_baseline`` holds one ``float`` entry per file in
+    the scanned tree (path → mtime). It is never pruned, so watching a tree
+    with 100k files costs ~10 MB of resident memory. For most projects this
+    is negligible; if watching a monorepo with millions of files, consider
+    scoping to a subdirectory via ``depth``.
     """
 
     name = "filesystem"

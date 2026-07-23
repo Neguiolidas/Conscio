@@ -100,3 +100,19 @@ def test_idle_returns_empty_run_report():
         result = daemon.cycle()
         assert isinstance(result, RunReport)
         assert result.cycles == 0
+
+
+def test_signal_only_frame_not_idle():
+    """V5 fix: a frame with signals but no observations should NOT be idle."""
+    with tempfile.TemporaryDirectory() as d:
+        sensor = MockSensor([
+            PerceptionFrame(source="custom", observations=[],
+                            signals={"files_changed": 5.0})
+        ])
+        engine = MagicMock()
+        engine.awake = True
+        engine.run.return_value = RunReport()
+        daemon = _make_daemon(d, [sensor], engine)
+        daemon.cycle()
+        engine.run.assert_called_once()
+        assert daemon._idle_cycles == 0

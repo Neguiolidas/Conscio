@@ -110,7 +110,7 @@ class Daemon:
                             getattr(sensor, "name", sensor), exc)
         world_state = self.assemble(frames)
         # v3.3: pause cognitive cycle when no sensor produces signal
-        has_signal = any(f.observations for f in frames)
+        has_signal = any(f.observations or f.signals for f in frames)
         if not has_signal:
             self._idle_cycles += 1
             self._write_heartbeat()
