@@ -132,6 +132,8 @@ class FilesystemSensor(SensorAdapter):
                 self._scan_dir(Path(entry.path), depth + 1, out)
             elif entry.is_file(follow_symlinks=False):
                 try:
-                    out[str(Path(entry.path))] = entry.stat().st_mtime
+                    # follow_symlinks=False: don't stat symlink targets
+                    out[str(Path(entry.path))] = entry.stat(
+                        follow_symlinks=False).st_mtime
                 except OSError:
                     continue
