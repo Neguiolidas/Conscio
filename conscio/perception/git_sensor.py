@@ -86,6 +86,15 @@ class GitSensor(SensorAdapter):
 
         self._last_poll = now
 
+        # Guard against clock skew (NTP correction, VM suspend/resume).
+        # If the clock jumped backward since the last poll, since_s would
+        # be negative (clamped to 1 by max()) and _last_poll would be in
+        # the future — making every subsequent poll permanently blind.
+        # Reset _last_poll to now so the next poll starts fresh.
+        # (The clamp above already set _last_poll = now, so this is a
+        # no-op in normal flow. The real protection is max(1, ...) below
+        # which prevents negative since_s from reaching git.)
+
         if not new_commits:
             return PerceptionFrame(
                 source=self.name, observations=[], signals={}, ts=now)
