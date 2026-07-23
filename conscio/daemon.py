@@ -86,6 +86,7 @@ class Daemon:
         self.close_engine_on_shutdown = close_engine_on_shutdown
         self.cycles = 0
         self._last_report: Optional[RunReport] = None   # v1.6: last-cycle summary
+        self._idle_cycles: int = 0                       # v3.3: sensor-signal tracker
         self._stop = threading.Event()
         self._orig_handlers: dict[int, Any] = {}
 
@@ -108,6 +109,15 @@ class Daemon:
                 log.warning("sensor %r failed: %s",
                             getattr(sensor, "name", sensor), exc)
         world_state = self.assemble(frames)
+        # v3.3: pause cognitive cycle when no sensor produces signal
+        has_signal = any(f.observations for f in frames)
+        if not has_signal:
+            self._idle_cycles += 1
+            self._write_heartbeat()
+            if self._idle_cycles == 5:
+                log.warning("daemon idle — nenhum sensor produzindo signal")
+            return RunReport()
+        self._idle_cycles = 0
         if self.workspace is not None:
             try:
                 ws = self.workspace.poll()
@@ -226,6 +236,8 @@ class Daemon:
             "cycles": self.cycles,
             "awake": bool(getattr(self.engine, "awake", False)),
             "pid": os.getpid(),
+            "idle_cycles": self._idle_cycles,           # v3.3
+            "sensors_active": len(self.sensors),         # v3.3
         }
         # v1.6 (#5/#9): carry Conscio's output so a host can tail this file.
         if self._last_report is not None:
