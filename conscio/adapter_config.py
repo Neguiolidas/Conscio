@@ -94,5 +94,22 @@ def build_adapter_from_config(cfg: dict, *,
         return OpenAICompatAdapter(model=model,
                                     base_url=base_url or "http://localhost:8000/v1",
                                     api_key=api_key), atype
+    if atype == "multi-fallback":
+        from .agency.fallback_multi import MultiProviderFallbackAdapter
+        providers_raw = adapter_cfg.get("providers", [])
+        if not providers_raw or not isinstance(providers_raw, list):
+            log.warning("multi-fallback requires 'providers' list in config")
+            return None, None
+        # Fill api_key from parent if provider doesn't have one
+        for p in providers_raw:
+            if isinstance(p, dict) and not p.get("api_key") and api_key:
+                p["api_key"] = api_key
+        return MultiProviderFallbackAdapter(
+            providers=providers_raw,
+            retry_per_provider=adapter_cfg.get("retry_per_provider", 2),
+            backoff_base=adapter_cfg.get("backoff_base", 1.0),
+            backoff_max=adapter_cfg.get("backoff_max", 10.0),
+            timeout=adapter_cfg.get("timeout", 120.0),
+        ), atype
     log.warning("unknown adapter type %r in config; ignoring", atype)
     return None, None
