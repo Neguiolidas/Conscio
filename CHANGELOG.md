@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.3.0] - 2026-07-23 — Awake Maturity
+
+### Added
+
+- **FilesystemSensor** (`conscio.perception.filesystem_sensor`): read-only
+  mtime polling via `os.scandir()`, depth limit, ignorelist (.git,
+  __pycache__, .venv, etc.), summarises when delta > max_files,
+  never raises. Implements `SensorAdapter.perceive()`.
+- **GitSensor** (`conscio.perception.git_sensor`): read-only
+  `git log --since` via subprocess, idempotent by commit hash,
+  timeout-bounded (5 s), summarises when > 5 new commits. Implements
+  `SensorAdapter.perceive()`.
+- **GoalTemplates** (`conscio.awake.goal_templates`): deterministic
+  signal→goal mapping — .py modified → "verificar testes cobrem {file}",
+  new commit → "revisar diff {hash}". Skips test files (meta-recursion
+  guard). Groups > 4 files/commits. Zero LLM, zero random.
+- **AwakeBudget** (`conscio.awake.budget`): inherits `ActBudget`,
+  tighter defaults (max_cycles=3, max_tokens=20k, max_wall_s=60,
+  failure_rate=0.3).
+- **NeurataBridge** (`conscio.integrations.neurata`): CLI subprocess
+  bridge to Neurata. `shutil.which("neurata")` detection, contract
+  version probe, cache by context hash (60 s TTL), fallback graceful
+  (available=False → everything returns None). Conscio core never
+  imports neurata.
+- **Daemon idle gate**: `Daemon.cycle()` now pauses the cognitive cycle
+  when no sensor produces signal (empty observations). Writes heartbeat
+  with `idle_cycles`, `sensors_active`. Warning after 5 consecutive
+  idle cycles.
+- New packages: `conscio.awake`, `conscio.integrations`.
+
+### Tests
+
+- 50 new tests (12 filesystem, 8 git, 11 goal_templates, 4 awake_budget,
+  9 neurata_bridge, 6 daemon_idle).
+- Full suite: 2573 passed, 3 skipped.
+
 ## [3.2.0] - 2026-07-22 — Inference
 
 Self-contained memory + inference layer. Adds 9 new modules, 6th evaluation axis,
