@@ -89,18 +89,28 @@ class FilesystemSensor(SensorAdapter):
             return PerceptionFrame(
                 source=self.name, observations=[], signals={}, ts=now)
 
+        # v3.3.1: redact absolute paths to relative for observations
+        # (internal baseline keeps absolute for mtime tracking, but
+        # observations expose only relative paths to prevent leaking
+        # the host filesystem structure to downstream consumers).
+        def _rel(p: str) -> str:
+            try:
+                return str(Path(p).relative_to(self._path))
+            except ValueError:
+                return p  # outside root — keep as-is (edge case)
+
         signals: dict[str, float] = {"files_changed": float(total)}
 
         if total > self._max_files:
-            observations = [f"{total} files changed in {self._path}"]
+            observations = [f"{total} files changed"]
         else:
             observations: list[str] = []
             for p in created:
-                observations.append(f"created: {p}")
+                observations.append(f"created: {_rel(p)}")
             for p in modified:
-                observations.append(f"modified: {p}")
+                observations.append(f"modified: {_rel(p)}")
             for p in deleted:
-                observations.append(f"deleted: {p}")
+                observations.append(f"deleted: {_rel(p)}")
 
         return PerceptionFrame(
             source=self.name,
