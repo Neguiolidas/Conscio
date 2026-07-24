@@ -1,24 +1,29 @@
 """GitSensor — monitor git log for new commits (stdlib only, subprocess)."""
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import time
+from collections import OrderedDict
 from pathlib import Path
 
 from .sensor import PerceptionFrame, SensorAdapter
 from ..risk import Risk
 
 _MAX_COMMITS_LIST = 5
+_DEFAULT_MAX_SEEN = 10_000
+_MAX_GIT_TIMEOUT = 30.0
 
 
 class GitSensor(SensorAdapter):
     """Read-only pseudo-realtime ``git log`` poller for a single repo.
 
     Produces ``PerceptionFrame`` with observations like
-    ``commit <hash> by <author>: <subject>``. Idempotent via a ``_seen`` set
-    of commit hashes. When the number of new commits exceeds
-    ``_MAX_COMMITS_LIST``, observations are summarised.
+    ``commit <hash> by <author>: <subject>``. Idempotent via a bounded
+    ``_seen`` OrderedDict (LRU eviction at ``max_seen`` entries). When
+    the number of new commits exceeds ``_MAX_COMMITS_LIST``, observations
+    are summarised.
 
     Never raises — a missing ``.git``, absent binary or timeout degrades to
     an empty frame. stdlib only; no outbound network.
@@ -27,11 +32,16 @@ class GitSensor(SensorAdapter):
     name = "git"
     risk = Risk.LOW
 
-    def __init__(self, repo_path: str, *, timeout: float = 5.0) -> None:
+    def __init__(self, repo_path: str, *, timeout: float = 5.0,
+                 max_seen: int = _DEFAULT_MAX_SEEN) -> None:
         self._repo = Path(repo_path)
-        self._timeout = timeout
-        self._git_bin = "git"
-        self._seen: set[str] = set()
+        self._timeout = min(timeout, _MAX_GIT_TIMEOUT)
+        self._git_bin = shutil.which("git") or "git"
+        # Resolve git to absolute path to prevent PATH hijacking
+        if self._git_bin != "git":
+            self._git_bin = os.path.realpath(self._git_bin)
+        self._seen: OrderedDict[str, None] = OrderedDict()
+        self._max_seen = max_seen
         self._last_poll: float = 0.0
 
     # -- SensorAdapter --------------------------------------------------
@@ -59,7 +69,8 @@ class GitSensor(SensorAdapter):
                 [
                     self._git_bin, "-C", str(self._repo), "log",
                     f"--since={since_s}s",
-                    "--format=%H,%an,%s",
+                    # NUL-delimited to handle commas in author names/subjects
+                    "--format=%H%x00%an%x00%s",
                 ],
                 capture_output=True,
                 text=True,
@@ -75,29 +86,29 @@ class GitSensor(SensorAdapter):
 
         new_commits: list[tuple[str, str, str]] = []
         for line in proc.stdout.strip().splitlines():
-            parts = line.split(",", 2)
+            # Split on NUL (\x00) — handles commas in author names and subjects
+            parts = line.split("\x00")
             if len(parts) < 3:
                 continue
-            h, author, subject = parts
+            h, author, subject = parts[0], parts[1], parts[2]
             if h in self._seen:
                 continue
-            self._seen.add(h)
+            self._seen[h] = None
+            self._seen.move_to_end(h)  # LRU: most recent at end
             new_commits.append((h, author, subject))
 
-        self._last_poll = now
+        # Evict oldest entries when exceeding cap
+        while len(self._seen) > self._max_seen:
+            self._seen.popitem(last=False)  # evict oldest
 
-        # Guard against clock skew (NTP correction, VM suspend/resume).
-        # If the clock jumped backward since the last poll, since_s would
-        # be negative (clamped to 1 by max()) and _last_poll would be in
-        # the future — making every subsequent poll permanently blind.
-        # Reset _last_poll to now so the next poll starts fresh.
-        # (The clamp above already set _last_poll = now, so this is a
-        # no-op in normal flow. The real protection is max(1, ...) below
-        # which prevents negative since_s from reaching git.)
+        self._last_poll = now
 
         if not new_commits:
             return PerceptionFrame(
                 source=self.name, observations=[], signals={}, ts=now)
+
+        # Sort by hash for deterministic output
+        new_commits.sort(key=lambda x: x[0])
 
         if len(new_commits) > _MAX_COMMITS_LIST:
             observations = [f"{len(new_commits)} new commits"]

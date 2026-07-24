@@ -16,6 +16,8 @@ DEFAULT_IGNORE = (
     ".pytest_cache", ".ruff_cache", "dist", "build", ".tox",
 )
 
+_DEFAULT_MAX_BASELINE = 10_000
+
 
 class FilesystemSensor(SensorAdapter):
     """Read-only mtime poller for a directory tree.
@@ -23,15 +25,14 @@ class FilesystemSensor(SensorAdapter):
     Produces ``PerceptionFrame`` with observations like ``created: <path>``,
     ``modified: <path>``, ``deleted: <path>``. When the number of changes
     exceeds ``max_files``, observations are summarised to a single line.
+    Observations use relative paths (no absolute filesystem leakage).
 
     Never raises — a missing directory or permission error degrades to an
     empty frame. stdlib only; no outbound network.
 
-    Known limitation: ``_baseline`` holds one ``float`` entry per file in
-    the scanned tree (path → mtime). It is never pruned, so watching a tree
-    with 100k files costs ~10 MB of resident memory. For most projects this
-    is negligible; if watching a monorepo with millions of files, consider
-    scoping to a subdirectory via ``depth``.
+    ``max_baseline`` caps the number of tracked files. When the scanned tree
+    exceeds this limit, oldest entries (by mtime) are pruned to prevent
+    unbounded memory growth on large/long-running watches. Default 10k.
     """
 
     name = "filesystem"
@@ -44,11 +45,13 @@ class FilesystemSensor(SensorAdapter):
         depth: int = 3,
         ignorelist: tuple[str, ...] = DEFAULT_IGNORE,
         max_files: int = 50,
+        max_baseline: int = _DEFAULT_MAX_BASELINE,
     ) -> None:
         self._path = Path(path)
         self._depth = depth
         self._ignorelist = set(ignorelist)
         self._max_files = max_files
+        self._max_baseline = max_baseline
         self._baseline: dict[str, float] = {}
         self._warned = False
 
@@ -67,6 +70,15 @@ class FilesystemSensor(SensorAdapter):
         self._warned = False
         current = self._scan()
         old = self._baseline
+
+        # Prune baseline if exceeding cap (evict oldest by mtime)
+        if len(current) > self._max_baseline:
+            sorted_items = sorted(current.items(), key=lambda x: x[1])
+            keep = dict(sorted_items[-self._max_baseline:])
+            pruned = len(current) - len(keep)
+            if pruned and not self._warned:
+                log.info("baseline pruned %d entries (cap=%d)", pruned, self._max_baseline)
+            current = keep
 
         created: list[str] = []
         modified: list[str] = []
@@ -89,15 +101,16 @@ class FilesystemSensor(SensorAdapter):
             return PerceptionFrame(
                 source=self.name, observations=[], signals={}, ts=now)
 
-        # v3.3.1: redact absolute paths to relative for observations
-        # (internal baseline keeps absolute for mtime tracking, but
-        # observations expose only relative paths to prevent leaking
-        # the host filesystem structure to downstream consumers).
         def _rel(p: str) -> str:
             try:
                 return str(Path(p).relative_to(self._path))
             except ValueError:
-                return p  # outside root — keep as-is (edge case)
+                return p
+
+        # Sort for deterministic output (os.scandir order varies by FS)
+        created.sort()
+        modified.sort()
+        deleted.sort()
 
         signals: dict[str, float] = {"files_changed": float(total)}
 
@@ -142,7 +155,6 @@ class FilesystemSensor(SensorAdapter):
                 self._scan_dir(Path(entry.path), depth + 1, out)
             elif entry.is_file(follow_symlinks=False):
                 try:
-                    # follow_symlinks=False: don't stat symlink targets
                     out[str(Path(entry.path))] = entry.stat(
                         follow_symlinks=False).st_mtime
                 except OSError:
