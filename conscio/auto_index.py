@@ -19,9 +19,8 @@ Design:
 from __future__ import annotations
 
 import logging
-import time
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .engine import ConsciousnessEngine
@@ -63,22 +62,22 @@ class AutoIndexer:
         self._original_cognitive_cycle = getattr(self.engine, "cognitive_cycle", None)
 
         def _patched_reflect(world_state="", recent_events=None, confidence=0.5, anomalies=None):
-            result = self._original_reflect(world_state, recent_events, confidence, anomalies)
+            result = self._original_reflect(world_state, recent_events, confidence, anomalies)  # type: ignore[misc]
             self._on_reflect(result, world_state, anomalies or [])
             return result
 
-        self.engine._reflect_once = _patched_reflect
+        self.engine._reflect_once = _patched_reflect  # type: ignore[method-assign]
 
         # Also patch cognitive_cycle if available (for evaluate output)
         if self._original_cognitive_cycle:
             orig_cycle = self._original_cognitive_cycle
 
             def _patched_cycle(world_state="", budget=None, thought=None):
-                result = orig_cycle(world_state, budget, thought)
+                result = orig_cycle(world_state, budget, thought)  # type: ignore[misc]
                 self._on_cycle(result, world_state)
                 return result
 
-            self.engine.cognitive_cycle = _patched_cycle
+            self.engine.cognitive_cycle = _patched_cycle  # type: ignore[method-assign]
 
         self._installed = True
         log.info(
@@ -111,7 +110,7 @@ class AutoIndexer:
             content_parts.append(f"## World State\n\n{world_state.strip()}")
 
         if anomalies:
-            content_parts.append(f"## Anomalies Detected\n\n" + "\n".join(f"- {a}" for a in anomalies))
+            content_parts.append("## Anomalies Detected\n\n" + "\n".join(f"- {a}" for a in anomalies))
 
         # Add reflection fields
         reflection_text = result.get("reflection", "") or result.get("text", "") or ""

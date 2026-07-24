@@ -2,7 +2,7 @@
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from conscio.daemon import Daemon
 from conscio.perception.sensor import MockSensor, PerceptionFrame

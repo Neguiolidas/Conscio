@@ -1,11 +1,10 @@
 """Tests for v3.3.1 hostile review fixes — all pending issues."""
-import json
 import os
 import tempfile
 import subprocess
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from conscio.perception.filesystem_sensor import FilesystemSensor
 from conscio.perception.git_sensor import GitSensor
@@ -101,7 +100,7 @@ def test_deterministic_output():
         sensor2 = FilesystemSensor(d)
         sensor2.perceive()
         Path(d, "e.py").write_text("6")
-        f2 = sensor2.perceive()
+        sensor2.perceive()  # second call triggers delta
     # Both should have sorted observations
     assert f1.observations == sorted(f1.observations)
 

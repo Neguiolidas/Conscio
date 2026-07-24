@@ -21,8 +21,6 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional
 
 from .content_store import ContentStore
 from .kg import KnowledgeGraph
@@ -228,7 +226,6 @@ class KGBuilder:
             ).fetchall()
 
             for chunk_row in chunks:
-                chunk_id = chunk_row["rowid"]
                 content = chunk_row["content"] or ""
 
                 # Skip empty or very short content

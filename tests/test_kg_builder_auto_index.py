@@ -1,8 +1,5 @@
 """Tests for kg_builder and auto_index modules (v3.3.1)."""
 
-import json
-import tempfile
-from pathlib import Path
 
 import pytest
 
