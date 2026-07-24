@@ -1868,3 +1868,33 @@ determinism, add a dependency, or corrupt the vector store.
 - **AutoEvolution** — safe self-modification proposals with human approval gates.
 - **InnerMonologue** — reflection/observe/summarize loop.
 - 313 tests across 6 test files.
+
+## [3.3.1] - 2026-07-24 — Memory Audit + KG Builder + Auto-Index
+
+### Added
+
+- **KGBuilder** (`conscio.kg_builder`): regex-based entity extraction from
+  ContentStore into KnowledgeGraph. URLs, IPs, emails, file paths, tech
+  entities, versions, code identifiers. Co-occurrence triples. Incremental
+  with checkpoint. No external NLP deps.
+- **AutoIndexer** (`conscio.auto_index`): monkey-patches `engine._reflect_once`
+  to auto-index cognitive output (world state, anomalies, reflection text)
+  into ContentStore. Triggers KG builder every 10 cycles. Clean
+  install/uninstall lifecycle.
+- **MCP tools**: `conscio.enable_auto_index` and `conscio.kg_build`
+- **engine.enable_auto_index()**: one-call activation of both subsystems.
+
+### Fixed
+
+- **P1: EventBus split** — MCP `--storage` unified with daemon
+  (`~/.hermes/consciousness/`)
+- **P2: Daemon failure loop** — startup no longer deletes events/goals/actions;
+  fallback to reflect-only if adapter fails; budget threshold raised
+  (max_failure_rate=0.8, min_attempts=6)
+- **P3: KG was idle (0 triples)** — KGBuilder populates entities + triples
+- **P4: No auto-index** — AutoIndexer captures cognitive cycles in real-time
+- Daemon runner: stopped destructive `DELETE FROM events` on startup
+
+### Tests
+
+- 23 new tests (kg_builder + auto_index) — 2622 total, 3 skipped
