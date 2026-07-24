@@ -20,7 +20,7 @@ This is a read-only diagnostic — never modifies state, never emits events.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .engine import ConsciousnessEngine
@@ -90,9 +90,9 @@ class EvaluationReport:
 # ─── Public entry point ────────────────────────────────────────────────────────
 
 def evaluate(
-    engine: "ConsciousnessEngine",
+    engine: ConsciousnessEngine,
     task_description: str = "",
-    output: Optional[str] = None,
+    output: str | None = None,
 ) -> EvaluationReport:
     """Produce a 5-axis self-evaluation scorecard from the engine state.
 
@@ -160,7 +160,7 @@ def evaluate(
 
 # ─── Heuristics (deterministic, no LLM) ──────────────────────────────────────
 
-def _score_accuracy(engine: "ConsciousnessEngine") -> AxisScore:
+def _score_accuracy(engine: ConsciousnessEngine) -> AxisScore:
     """Accuracy = confidence × (1 - error_rate)."""
     try:
         conf = float(engine.meta.average_confidence())
@@ -212,7 +212,7 @@ def _score_accuracy(engine: "ConsciousnessEngine") -> AxisScore:
     return AxisScore("accuracy", score, evidence, improvement)
 
 
-def _score_completeness(engine: "ConsciousnessEngine") -> AxisScore:
+def _score_completeness(engine: ConsciousnessEngine) -> AxisScore:
     """Completeness = low stale backlog + goals are active and bounded."""
     try:
         stale = engine.world.stale_entities()
@@ -245,9 +245,7 @@ def _score_completeness(engine: "ConsciousnessEngine") -> AxisScore:
         score = 3
     elif stale_n <= 3 and active_n > 0:
         score = 4
-    elif stale_n <= 3:
-        score = 3
-    elif stale_n <= 10:
+    elif stale_n <= 3 or stale_n <= 10:
         score = 3
     elif stale_n <= 25:
         score = 2
@@ -264,7 +262,7 @@ def _score_completeness(engine: "ConsciousnessEngine") -> AxisScore:
     return AxisScore("completeness", score, evidence, improvement)
 
 
-def _score_clarity(engine: "ConsciousnessEngine") -> AxisScore:
+def _score_clarity(engine: ConsciousnessEngine) -> AxisScore:
     """Clarity = coherence score minus contradiction penalty."""
     try:
         coherence = engine.last_coherence
@@ -314,7 +312,7 @@ def _score_clarity(engine: "ConsciousnessEngine") -> AxisScore:
     return AxisScore("clarity", score, evidence, improvement)
 
 
-def _score_actionability(engine: "ConsciousnessEngine") -> AxisScore:
+def _score_actionability(engine: ConsciousnessEngine) -> AxisScore:
     """Actionability = can the user act immediately?
     Factors: pending proposals (block action), frequent errors (block path)."""
     try:
@@ -375,7 +373,7 @@ def _score_actionability(engine: "ConsciousnessEngine") -> AxisScore:
     return AxisScore("actionability", score, evidence, improvement)
 
 
-def _score_conciseness(engine: "ConsciousnessEngine", output: Optional[str]) -> AxisScore:
+def _score_conciseness(engine: ConsciousnessEngine, output: str | None) -> AxisScore:
     """Conciseness = output is short and not repetitious."""
     if not output:
         # Without output text, proxy from token tracker savings if available.
@@ -450,7 +448,7 @@ def _score_conciseness(engine: "ConsciousnessEngine", output: Optional[str]) -> 
 
 # ─── output_quality (6th axis) ────────────────────────────────────────────────
 
-def _score_output_quality(engine: "ConsciousnessEngine", output: str) -> AxisScore:
+def _score_output_quality(engine: ConsciousnessEngine, output: str) -> AxisScore:
     """Assess output quality via LLM-as-judge if available, else heuristic.
 
     With adapter: sends a judge prompt to the LLM and parses the score.

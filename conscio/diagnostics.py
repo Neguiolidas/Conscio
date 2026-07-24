@@ -144,8 +144,7 @@ def _pass_at_k(results: list[bool], k: int = 1) -> float:
     c = sum(results)
     if n == 0:
         return 0.0
-    if k > n:
-        k = n
+    k = min(k, n)
     if c == 0:
         return 0.0
     if n - c < k:

@@ -72,7 +72,7 @@ def _loop(statuses):
 
 
 def test_brake_trips_when_all_cycles_fail():
-    eng, loop = _loop([ActStatus.FAILED] * 20)
+    _eng, loop = _loop([ActStatus.FAILED] * 20)
     report = loop.run(ActBudget(max_cycles=20, max_wall_s=120.0,
                                 max_failure_rate=0.5, min_attempts=4))
     assert report.stopped == "failure_rate"
@@ -82,14 +82,14 @@ def test_brake_trips_when_all_cycles_fail():
 
 def test_brake_counts_rejected_as_failure():
     # skeptic_fail (the field loop) surfaces as REJECTED, not FAILED.
-    eng, loop = _loop([ActStatus.REJECTED] * 20)
+    _eng, loop = _loop([ActStatus.REJECTED] * 20)
     report = loop.run(ActBudget(max_cycles=20, max_wall_s=120.0,
                                 max_failure_rate=0.5, min_attempts=4))
     assert report.stopped == "failure_rate"
 
 
 def test_brake_does_not_trip_when_all_succeed():
-    eng, loop = _loop([ActStatus.EXECUTED] * 5)
+    _eng, loop = _loop([ActStatus.EXECUTED] * 5)
     report = loop.run(ActBudget(max_cycles=5, max_wall_s=120.0,
                                 max_failure_rate=0.5, min_attempts=4))
     assert report.stopped == "max_cycles"
@@ -99,7 +99,7 @@ def test_brake_does_not_trip_when_all_succeed():
 def test_brake_trips_at_exact_threshold_not_below():
     # Alternating FAIL/EXEC -> 2 fails / 4 cycles = 0.5, which is >= 0.5 -> trip.
     seq = [ActStatus.FAILED, ActStatus.EXECUTED] * 10
-    eng, loop = _loop(seq)
+    _eng, loop = _loop(seq)
     report = loop.run(ActBudget(max_cycles=20, max_wall_s=120.0,
                                 max_failure_rate=0.5, min_attempts=4))
     assert report.stopped == "failure_rate"

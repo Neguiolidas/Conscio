@@ -308,7 +308,7 @@ class SessionVectorStore:
     """
 
     def __init__(self, db_path: Path = RAG_DB, dim: int = EMBEDDING_DIM,
-                 embed_model: Optional[str] = None):
+                 embed_model: str | None = None):
         self.db_path = db_path
         self.dim = dim
         self.embed_model = embed_model
@@ -385,7 +385,7 @@ class SessionVectorStore:
         finally:
             conn.close()
 
-    def _emb_blob(self, embedding) -> Optional[bytes]:
+    def _emb_blob(self, embedding) -> bytes | None:
         """Pack an embedding to a float32 blob, dropping wrong-dim vectors.
 
         A vector whose length != the store's dim is incomparable with the rest of
@@ -424,8 +424,8 @@ class SessionVectorStore:
         conn.close()
 
     def search(self, query_embedding: list[float], limit: int = 5,
-               session_filter: Optional[str] = None,
-               role_filter: Optional[str] = None,
+               session_filter: str | None = None,
+               role_filter: str | None = None,
                min_score: float = 0.3) -> list[SearchResult]:
         """Search by cosine similarity.
 
@@ -649,8 +649,8 @@ class SessionRAG:
         return stats
 
     def search(self, query: str, limit: int = 5,
-               session_filter: Optional[str] = None,
-               role_filter: Optional[str] = None,
+               session_filter: str | None = None,
+               role_filter: str | None = None,
                min_score: float = 0.3) -> list[SearchResult]:
         """Semantic search over session history.
 

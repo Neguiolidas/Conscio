@@ -19,7 +19,7 @@ class _Goal:
 def _fake_engine(shard=None, goals=("ship recall layering",), entities=None):
     world = SimpleNamespace(
         list_entities=lambda limit=5: list(entities or []),
-        stale_entities=lambda: [],
+        stale_entities=list,
     )
     goals_mod = SimpleNamespace(active_goals=lambda: [_Goal(g) for g in goals])
     meta = SimpleNamespace(average_confidence=lambda: 0.5)

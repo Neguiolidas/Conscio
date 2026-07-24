@@ -35,7 +35,7 @@ class _TerminalIO:
         print(msg)
 
 
-def main(argv: "list[str] | None" = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="conscio init")
     p.add_argument("--host", choices=["claude-code", "antigravity", "other"],
                    default="other")

@@ -82,8 +82,8 @@ def test_initiator_none_is_noop(tmp_path):
 
 
 def test_initiator_arm_gate_predicate():
-    base = dict(initiate=True, relay_peer=["p"], has_adapter=True,
-                awake=True, sensors_spec="host,relay")
+    base = {"initiate": True, "relay_peer": ["p"], "has_adapter": True,
+                "awake": True, "sensors_spec": "host,relay"}
     assert _initiator_armed(**base) is True
     assert _initiator_armed(**{**base, "initiate": False}) is False
     assert _initiator_armed(**{**base, "relay_peer": []}) is False

@@ -2,8 +2,8 @@ from conscio.noosphere import artifact, record
 
 
 def _entry(**kw):
-    base = dict(seq=1, ts=1.0, goal_fp="ab12", tool="write", tier="low",
-                status="executed", ok=1, verdict="PASS")
+    base = {"seq": 1, "ts": 1.0, "goal_fp": "ab12", "tool": "write", "tier": "low",
+                "status": "executed", "ok": 1, "verdict": "PASS"}
     base.update(kw)
     return record.RecordEntry(**base)
 

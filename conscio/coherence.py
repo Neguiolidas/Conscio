@@ -20,7 +20,6 @@ docs/noosphere/coherence-engine-model.md.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 # --- Tunable constants (one-line knobs, like v0.5 LAYER_EPSILON) -------------
 
@@ -88,7 +87,7 @@ class CoherenceReport:
     score: float
     dimensions: dict
     dissonances: list
-    dominant: Optional[Dissonance]
+    dominant: Dissonance | None
 
     def marker(self) -> str:
         """Heartbeat/state marker text: '0.82' or '0.41 dominant: epistemic'."""
@@ -156,7 +155,7 @@ class CoherenceEngine:
         self.meta = meta
         self.world = world
 
-    def assess(self, recent_events: Optional[list] = None) -> CoherenceReport:
+    def assess(self, recent_events: list | None = None) -> CoherenceReport:
         dims = {
             "epistemic": round(epistemic_score(self.meta), 3),
             "reality": round(reality_score(self.world), 3),

@@ -14,7 +14,6 @@ import json
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 
 class Drive(Enum):
@@ -81,7 +80,7 @@ class Goal:
         drive: Drive,
         priority: GoalPriority = GoalPriority.MEDIUM,
         source: str = "internal",
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ):
         self.id = f"{drive.value}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
         self.description = description
@@ -140,7 +139,7 @@ class Goal:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Goal":
+    def from_dict(cls, data: dict) -> Goal:
         goal = cls(
             description=data["description"],
             drive=Drive(data["drive"]),
@@ -172,7 +171,7 @@ class GoalGenerator:
     def __init__(
         self,
         storage_path: Path,
-        drive_strengths: Optional[dict[Drive, float]] = None,
+        drive_strengths: dict[Drive, float] | None = None,
     ):
         self.path = storage_path / "goals.json"
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -206,7 +205,7 @@ class GoalGenerator:
 
     # --- Goal Generation from Drives ---
 
-    def generate_from_curiosity(self, anomaly: str, context: str = "", source: str = "internal") -> Optional[Goal]:
+    def generate_from_curiosity(self, anomaly: str, context: str = "", source: str = "internal") -> Goal | None:
         """
         Generate a curiosity-driven goal from an anomaly.
         
@@ -227,7 +226,7 @@ class GoalGenerator:
         self._add_goal(goal)
         return goal
 
-    def generate_from_maintenance(self, check_type: str, target: str, source: str = "internal") -> Optional[Goal]:
+    def generate_from_maintenance(self, check_type: str, target: str, source: str = "internal") -> Goal | None:
         """
         Generate a maintenance-driven goal.
         
@@ -247,7 +246,7 @@ class GoalGenerator:
         self._add_goal(goal)
         return goal
 
-    def generate_from_evolution(self, improvement: str, target: str = "", source: str = "internal") -> Optional[Goal]:
+    def generate_from_evolution(self, improvement: str, target: str = "", source: str = "internal") -> Goal | None:
         """
         Generate an evolution-driven goal.
         

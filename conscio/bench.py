@@ -20,10 +20,10 @@ import argparse
 import json
 import statistics
 import tempfile
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Callable
 
 from .agency import goal_fingerprint
 from .agency.actor import build_actor_prompt

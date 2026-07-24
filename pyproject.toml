@@ -75,6 +75,31 @@ version = {attr = "conscio.__version__"}
 conscio = ["py.typed", "hub/static/*", "observatory/static/*", "integrations/claude_code/assets/**/*", "USAGE.md"]
 
 # ── pyright (type checker — substitui mypy) ─────────────────────────
+# ── ruff (linter) ───────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# Rules that fail across the existing codebase — pre-existing patterns
+# (defensive exception handling, naive datetime in non-prod paths, etc.)
+ignore = [
+  "BLE001",   # blind except — intentional defensive pattern throughout
+  "DTZ001",   # datetime() without tzinfo — test fixtures only
+  "DTZ005",   # datetime.now() without tz — non-prod paths, tests
+  "DTZ006",   # datetime.fromtimestamp without tz — test fixtures
+  "S110",     # try-except-pass — defensive logging elsewhere
+  "S112",     # try-except-continue — relay/daemon resilience
+  "TRY004",   # ValueError vs TypeError — existing API contract
+  "RUF012",   # mutable class attr default — intentional in stubs/tests
+  "LOG015",   # root logger warning — content_layer uses stdlib logging
+  "PLW1510",  # subprocess.run without check — intentionally permissive in tests
+  "SIM102",   # nested if — readability in import-scan tests
+  "SIM113",   # enumerate vs manual count — intercepter counter logic
+  "B017",     # pytest.raises(Exception) — frozen dataclass test
+  "EXE001",   # shebang — hooks need it
+]
+
 [tool.pyright]
 include = ["conscio"]
 pythonVersion = "3.10"

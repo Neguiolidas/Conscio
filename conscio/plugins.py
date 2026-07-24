@@ -20,13 +20,14 @@ from __future__ import annotations
 
 import importlib.metadata as _im
 import warnings
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 __all__ = [
-    "load_entry_points",
     "discover_adapters",
     "discover_sensors",
     "discover_tools",
+    "load_entry_points",
 ]
 
 
@@ -39,7 +40,7 @@ def load_entry_points(group: str) -> dict[str, Any]:
     for ep in _im.entry_points().select(group=group):
         try:
             found[ep.name] = ep.load()
-        except Exception as exc:  # noqa: BLE001 — isolate one bad plugin
+        except Exception as exc:
             warnings.warn(
                 f"conscio: skipping plugin '{ep.name}' in group '{group}': "
                 f"{exc!r}", stacklevel=2)
@@ -52,7 +53,7 @@ def _typed(group: str, predicate: Callable[[Any], bool], what: str
     for name, obj in load_entry_points(group).items():
         try:
             ok = predicate(obj)
-        except Exception:  # noqa: BLE001 — a hostile predicate target
+        except Exception:
             ok = False
         if ok:
             out[name] = obj

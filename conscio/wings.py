@@ -7,8 +7,6 @@ Protocol G notes:
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from .content_store import ContentStore
 from .hallways import Hallways
 
@@ -18,10 +16,10 @@ class WingManager:
 
     def __init__(
         self,
-        hallways_db: Optional[str] = None,
-        hallways: Optional[Hallways] = None,
-        content_store: Optional[ContentStore] = None,
-        content_store_db: Optional[str] = None,
+        hallways_db: str | None = None,
+        hallways: Hallways | None = None,
+        content_store: ContentStore | None = None,
+        content_store_db: str | None = None,
     ):
         self.hallways = hallways or Hallways(db_path=hallways_db)
         if content_store is None:
@@ -37,7 +35,6 @@ class WingManager:
         # Heuristic: if caller passed content_store, they manage lifetime
         # We close it regardless — avoids resource leak. Caller can re-pass.
         # Actually, let's track ownership:
-        pass
 
     # ── Index ────────────────────────────────────────────────────────
 
@@ -66,7 +63,7 @@ class WingManager:
 
     # ── Search ──────────────────────────────────────────────────────
 
-    def search(self, query: str, wing: Optional[str] = None, limit: int = 5):
+    def search(self, query: str, wing: str | None = None, limit: int = 5):
         """Search content via ContentStore.search. Optionally filter by wing.
 
         ContentStore.search() does not support source_id filtering, so when
@@ -91,7 +88,7 @@ class WingManager:
     def list_rooms(self, wing: str) -> list[str]:
         return self.hallways.list_rooms(wing)
 
-    def list_drawers(self, wing: str | None = None, room: Optional[str] = None) -> list[int]:
+    def list_drawers(self, wing: str | None = None, room: str | None = None) -> list[int]:
         return self.hallways.list_drawers(wing=wing, room=room)
 
     # ── Deletion ────────────────────────────────────────────────────

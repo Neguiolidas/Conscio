@@ -35,7 +35,7 @@ _RATIONALIZATION_PATTERNS = [
 ]
 
 
-def _check_closed(engine: "ConsciousnessEngine") -> None:
+def _check_closed(engine: ConsciousnessEngine) -> None:
     """Raise RuntimeError if engine has been closed."""
     if getattr(engine, "_closed", False):
         raise RuntimeError("Cannot call gate tool on a closed engine")
@@ -55,7 +55,7 @@ COUNCIL_VOTES = ("proceed", "hold", "veto")
 # ── decide() ─────────────────────────────────────────────────────────
 
 def decide(
-    engine: "ConsciousnessEngine",
+    engine: ConsciousnessEngine,
     *,
     title: str = "",
     context: str = "",
@@ -124,7 +124,7 @@ def decide(
 # ── council() ────────────────────────────────────────────────────────
 
 def council(
-    engine: "ConsciousnessEngine",
+    engine: ConsciousnessEngine,
     question: str = "",
     context: str = "",
     options: list[str] | None = None,
@@ -154,9 +154,7 @@ def council(
 
     if vetoes >= 2:
         recommendation = "veto"
-    elif holds >= 2:
-        recommendation = "hold"
-    elif vetoes >= 1:
+    elif holds >= 2 or vetoes >= 1:
         recommendation = "hold"
     else:
         recommendation = "proceed"
@@ -176,7 +174,7 @@ def council(
 
 
 def _voice_architect(
-    engine: "ConsciousnessEngine",
+    engine: ConsciousnessEngine,
     question: str,
     context: str,
     options: list[str] | None,
@@ -220,7 +218,7 @@ def _voice_architect(
 
 
 def _voice_skeptic(
-    engine: "ConsciousnessEngine",
+    engine: ConsciousnessEngine,
     question: str,
     context: str,
     options: list[str] | None,
@@ -269,7 +267,7 @@ def _voice_skeptic(
 
 
 def _voice_pragmatist(
-    engine: "ConsciousnessEngine",
+    engine: ConsciousnessEngine,
     question: str,
     context: str,
     options: list[str] | None,
@@ -316,7 +314,7 @@ def _voice_pragmatist(
 
 
 def _voice_critic(
-    engine: "ConsciousnessEngine",
+    engine: ConsciousnessEngine,
     question: str,
     context: str,
     options: list[str] | None,
@@ -365,7 +363,7 @@ def _voice_critic(
 
 
 def _critic_deterministic(
-    engine: "ConsciousnessEngine",
+    engine: ConsciousnessEngine,
     question: str,
     context: str,
     options: list[str] | None,
@@ -393,7 +391,7 @@ def _critic_deterministic(
     return concerns
 
 
-def _get_adapter(engine: "ConsciousnessEngine"):
+def _get_adapter(engine: ConsciousnessEngine):
     """Get the LLM adapter from the engine if awake and attached."""
     if not engine.awake:
         return None
@@ -407,7 +405,7 @@ def _get_adapter(engine: "ConsciousnessEngine"):
 # ── loop_gate() ───────────────────────────────────────────────────────
 
 def loop_gate(
-    engine: "ConsciousnessEngine",
+    engine: ConsciousnessEngine,
     *,
     task: str = "",
     frequency: str = "",
@@ -454,7 +452,7 @@ def loop_gate(
 
 # ── delivery_check() ─────────────────────────────────────────────────
 
-def delivery_check(engine: "ConsciousnessEngine") -> dict:
+def delivery_check(engine: ConsciousnessEngine) -> dict:
     """Pre-close quality gate: rationalization, stale libs, disk space.
 
     Checks:
@@ -519,7 +517,7 @@ def delivery_check(engine: "ConsciousnessEngine") -> dict:
 # ── investigate() ────────────────────────────────────────────────────
 
 def investigate(
-    engine: "ConsciousnessEngine",
+    engine: ConsciousnessEngine,
     *,
     target: str = "",
     action_type: str = "",

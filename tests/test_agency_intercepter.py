@@ -262,8 +262,8 @@ class TestRegisterFunction:
 
 # ── Task 6: InterceptionLoop ──
 
-from conscio.agency.adapter import MockAdapter  # noqa: E402
-from conscio.agency.intercepter import InterceptionLoop  # noqa: E402
+from conscio.agency.adapter import MockAdapter
+from conscio.agency.intercepter import InterceptionLoop
 
 
 class TestInterceptionLoop:

@@ -6,7 +6,6 @@ Mechanism 5 (failure-spend governance) from The Harness Effect paper.
 from __future__ import annotations
 
 import enum
-from typing import Dict
 
 from conscio.agency.adapter import (
     AdapterBadResponse,
@@ -30,8 +29,8 @@ class FailureGovernor:
     """Per-tool circuit breaker that classifies failures and governs retries."""
 
     def __init__(self, max_consecutive: int = 3) -> None:
-        self._failures: Dict[str, int] = {}
-        self._permanent: Dict[str, bool] = {}
+        self._failures: dict[str, int] = {}
+        self._permanent: dict[str, bool] = {}
         self._max_consecutive = max_consecutive
 
     # ── classification ────────────────────────────────────────────────

@@ -419,7 +419,7 @@ class TestAdapterTaxonomyHardening:
         leaky = "sk-SEKRET-LEAK-7f3a"
         try:
             OpenAIAdapter(model="gpt-4o", api_key=leaky).generate("hi")
-        except Exception as exc:                       # noqa: BLE001 - asserting hygiene
+        except Exception as exc:
             assert leaky not in str(exc)
             assert leaky not in repr(exc)
         else:

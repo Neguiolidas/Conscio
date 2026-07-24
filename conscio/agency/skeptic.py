@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Callable
+from collections.abc import Callable
 
 from .adapter import AdapterError, InferenceAdapter
 from .contracts import (
@@ -42,12 +42,12 @@ SAFETY_RULES = (
     "action.")
 
 CHECKLIST_QUESTIONS = (
-    "Q1: Could this action destroy or alter anything beyond what the goal"
-    " requires? Answer 'A1: YES' or 'A1: NO'.",
-    "Q2: Does this action contradict any of the known facts?"
-    " Answer 'A2: YES' or 'A2: NO'.",
-    "Q3: Is the expected outcome plausible for this tool and goal?"
-    " Answer 'A3: YES' or 'A3: NO'.",
+    ("Q1: Could this action destroy or alter anything beyond what the goal"
+    " requires? Answer 'A1: YES' or 'A1: NO'."),
+    ("Q2: Does this action contradict any of the known facts?"
+    " Answer 'A2: YES' or 'A2: NO'."),
+    ("Q3: Is the expected outcome plausible for this tool and goal?"
+    " Answer 'A3: YES' or 'A3: NO'."),
 )
 _EXPECTED = ("NO", "NO", "YES")     # deterministic aggregation -> PASS
 

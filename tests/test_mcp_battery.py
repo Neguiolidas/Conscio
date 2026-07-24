@@ -180,7 +180,7 @@ def _call(d, name, args, _id=1):
 
 
 def test_act_executable_then_report(tmp_path):
-    d, b, e, s = _wired(tmp_path)
+    d, _b, e, s = _wired(tmp_path)
     try:
         out = _call(d, "conscio.act", {"intent": {
             "tool": "deploy", "args": {"env": "prod"},
@@ -195,7 +195,7 @@ def test_act_executable_then_report(tmp_path):
 
 
 def test_act_idempotency_key_returns_prior(tmp_path):
-    d, b, e, s = _wired(tmp_path)
+    d, _b, e, s = _wired(tmp_path)
     try:
         intent = {"tool": "deploy", "args": {"env": "prod"}, "rationale": "r",
                   "expected_outcome": "o", "idempotency_key": "k1"}
@@ -224,7 +224,7 @@ def test_act_absent_when_disabled_is_method_not_found(tmp_path):
 
 
 def test_act_tools_reject_bad_typed_args(tmp_path):
-    d, b, e, s = _wired(tmp_path)
+    d, _b, e, s = _wired(tmp_path)
     try:
         def _err(name, args):
             return d.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -240,7 +240,7 @@ def test_act_tools_reject_bad_typed_args(tmp_path):
 
 
 def test_fuzz_act_never_crashes(tmp_path):
-    d, b, e, s = _wired(tmp_path)
+    d, _b, e, s = _wired(tmp_path)
     try:
         bads = [{}, {"intent": 5}, {"intent": {"tool": "deploy"}},
                 {"intent": {"tool": "deploy", "args": {}, "rationale": "r",
@@ -258,7 +258,7 @@ def test_fuzz_act_never_crashes(tmp_path):
 
 
 def test_act_high_risk_pending_approve_report(tmp_path):
-    d, b, e, s = _wired(tmp_path)
+    d, _b, e, s = _wired(tmp_path)
     try:
         e.enable_host_act([{"name": "deploy",
                             "params": {"env": {"type": "str", "required": True}},

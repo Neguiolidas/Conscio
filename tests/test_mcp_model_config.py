@@ -30,12 +30,12 @@ def test_cli_model_beats_config(monkeypatch):
 
 
 def test_env_used_when_no_arg_no_config(monkeypatch):
-    monkeypatch.setattr(ac, "load_config", lambda: {})
+    monkeypatch.setattr(ac, "load_config", dict)
     monkeypatch.setenv("CONSCIO_MODEL", "glm-5.1")
     assert srv._resolve_model(Namespace(model=None)) == "glm-5.1"
 
 
 def test_raises_when_nothing_specified(monkeypatch):
-    monkeypatch.setattr(ac, "load_config", lambda: {})
+    monkeypatch.setattr(ac, "load_config", dict)
     with pytest.raises(ValueError):
         srv._resolve_model(Namespace(model=None))

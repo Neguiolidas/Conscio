@@ -20,7 +20,7 @@ _ENV_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 # ── Key vault: stores raw API keys in the per-host vault dir ──────
 # (env-name safety uses _valid_env_name, defined below alongside _check_adapter)
-def _vault_dir(override: "str | os.PathLike[str] | None" = None) -> Path:
+def _vault_dir(override: str | os.PathLike[str] | None = None) -> Path:
     """Resolve the key-vault directory.
 
     Precedence: explicit override > CONSCIO_VAULT_DIR env (per-host, set by the
@@ -48,7 +48,7 @@ def _env_name_for(provider_type: str, model: str = "") -> str:
 
 
 def vault_store(env_name: str, raw_key: str, *,
-                vault_dir: "str | os.PathLike[str] | None" = None) -> None:
+                vault_dir: str | os.PathLike[str] | None = None) -> None:
     """Store a raw API key in the vault. Refuses unsafe names (I1).
 
     The file is created 0600 *before* any content is written (I2 — no
@@ -71,7 +71,7 @@ def vault_store(env_name: str, raw_key: str, *,
 
 
 def vault_load(env_name: str, *,
-               vault_dir: "str | os.PathLike[str] | None" = None) -> str | None:
+               vault_dir: str | os.PathLike[str] | None = None) -> str | None:
     """Load a raw API key from env (preferred) or vault. None on bad name.
 
     ``vault_dir`` selects a per-host vault (R2). When a per-host dir is in
@@ -92,7 +92,7 @@ def vault_load(env_name: str, *,
 
 
 def vault_has(env_name: str, *,
-              vault_dir: "str | os.PathLike[str] | None" = None) -> bool:
+              vault_dir: str | os.PathLike[str] | None = None) -> bool:
     """True if a key exists in env or vault — WITHOUT mutating os.environ (M2)."""
     if not _valid_env_name(env_name):
         return False

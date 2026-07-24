@@ -18,7 +18,6 @@ import threading
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 
 def _utcnow() -> str:
@@ -45,7 +44,7 @@ class Deduplicator:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._threshold = similarity_threshold
         self._lock = threading.Lock()
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
         self._init_db()
 
     def _conn_get(self) -> sqlite3.Connection:

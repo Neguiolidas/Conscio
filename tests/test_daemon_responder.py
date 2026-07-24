@@ -62,8 +62,8 @@ def test_responder_none_is_noop(tmp_path):
 
 
 def test_arm_gate_predicate():
-    base = dict(auto_respond=True, relay_peer=["p"], has_adapter=True,
-                awake=True, sensors_spec="host,relay")
+    base = {"auto_respond": True, "relay_peer": ["p"], "has_adapter": True,
+                "awake": True, "sensors_spec": "host,relay"}
     assert _responder_armed(**base) is True
     assert _responder_armed(**{**base, "auto_respond": False}) is False
     assert _responder_armed(**{**base, "relay_peer": []}) is False

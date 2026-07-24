@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +106,7 @@ class EmbeddingProvider:
         """Return True if any embedder is available."""
         return self.get_embedder() is not None
 
-    def embed(self, text: str) -> Optional[list[float]]:
+    def embed(self, text: str) -> list[float] | None:
         """Embed text. Returns None if no embedder available."""
         ed = self.get_embedder()
         if ed is None:
@@ -122,7 +121,7 @@ class EmbeddingProvider:
             logger.warning(f"embed failed: {e}")
             return None
 
-    def embed_batch(self, texts: list[str]) -> Optional[list[list[float]]]:
+    def embed_batch(self, texts: list[str]) -> list[list[float]] | None:
         """Batch embed. Returns None if no embedder available."""
         ed = self.get_embedder()
         if ed is None:

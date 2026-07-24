@@ -48,8 +48,8 @@ def _write_generic(io: PromptIO, slug: str, flags: dict, model, ts: str,
         io.echo(hostcfg.generic_snippet(slug, flags=flags, model=model))
 
 
-def run_with(io: PromptIO, *, host: str, repair: bool, model: "str | None",
-             ts: str, label: "str | None" = None) -> int:
+def run_with(io: PromptIO, *, host: str, repair: bool, model: str | None,
+             ts: str, label: str | None = None) -> int:
     cfg: Path | None = None
     if repair and host == "claude-code":
         # repair rebinds the EXISTING space: recover slug + model from the

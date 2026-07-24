@@ -9,7 +9,6 @@ Ported concept from MemPalace entity_detector.py, drastically simplified:
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 from .kg import KnowledgeGraph
 
@@ -33,7 +32,7 @@ _STOPWORDS = {
 class EntityDetector:
     """Detect entities (persons, projects, domains, versions) in text."""
 
-    def __init__(self, kg: Optional[KnowledgeGraph] = None):
+    def __init__(self, kg: KnowledgeGraph | None = None):
         self.kg = kg
 
     def detect(self, text: str) -> list[dict]:

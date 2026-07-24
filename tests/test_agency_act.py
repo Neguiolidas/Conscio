@@ -102,7 +102,7 @@ class TestProposeFlow:
         assert ledger.get(report.ledger_id)["goal_text"] == "organize notes"
 
     def test_unknown_tool_fails_cycle(self, tmp_path):
-        pipeline, ledger, _ = _pipeline(
+        pipeline, _ledger, _ = _pipeline(
             tmp_path, MockAdapter(script=[_proposal_json(tool="ghost")]))
         report = pipeline.act(_state())
         assert report.status is ActStatus.FAILED

@@ -16,11 +16,11 @@ from .agency import (
     MockAdapter,
     OllamaAdapter,
     OpenAIAdapter,
-    OpenAICompatAdapter,  # noqa: F401
+    OpenAICompatAdapter,
 )
 from .content_store import ContentStore
 from .context_manager import ContextManager, ContextMode
-from .dedup import Deduplicator  # noqa: F401
+from .dedup import Deduplicator
 from .diagnostics import (  # noqa: F401
     EVAL_BENCHMARK,
     EVAL_CAPABILITY,
@@ -30,10 +30,10 @@ from .diagnostics import (  # noqa: F401
     rules_distill,
 )
 from .dreaming import DreamCycle, DreamReport
-from .embedding import EmbeddingProvider  # noqa: F401
+from .embedding import EmbeddingProvider
 from .engine import ConsciousnessEngine
-from .entity_detector import EntityDetector  # noqa: F401
-from .evaluation import AxisScore, EvaluationReport, evaluate  # noqa: F401
+from .entity_detector import EntityDetector
+from .evaluation import AxisScore, EvaluationReport, evaluate
 from .event_bus import EventBus
 from .gates import (  # noqa: F401
     ADR_VALID_STATUSES,
@@ -45,23 +45,23 @@ from .gates import (  # noqa: F401
     investigate,
     loop_gate,
 )
-from .hallways import Hallways  # noqa: F401
+from .hallways import Hallways
 
 # ── v3.2 Memory modules ──
-from .kg import KnowledgeGraph  # noqa: F401
+from .kg import KnowledgeGraph
 from .metabolic import MetabolicContext, MetabolicState
 from .migrate import Migrator
-from .migration import (  # noqa: F401
+from .migration import (
     export_archive,
     import_archive,
     import_format_mempalace,
 )
-from .miner import Miner  # noqa: F401
+from .miner import Miner
 from .models import ModelRegistry
 from .output_filter import FilterPipeline, build_pipeline_from_dict
 from .perception import (
     AgentSensor,
-    HostSensor,  # noqa: F401
+    HostSensor,
     MockSensor,
     PerceptionFrame,
     SensorAdapter,
@@ -80,7 +80,7 @@ from .session_lifecycle import SessionSummary, record_session_lifecycle
 from .structural import (
     CommunitySummary,
     GraphNode,
-    Hyperedge,  # noqa: F401
+    Hyperedge,
     StructuralDistiller,
     StructuralError,
     StructuralSignal,
@@ -88,7 +88,7 @@ from .structural import (
 from .structural_consent import (
     ConsentScope,
     StructuralConsent,
-    sync_structure,  # noqa: F401
+    sync_structure,
 )
 from .structural_drift import (
     StructuralDelta,
@@ -96,14 +96,14 @@ from .structural_drift import (
     StructuralDriftStore,
     StructuralFreshness,
     compute_delta,
-    compute_freshness,  # noqa: F401
+    compute_freshness,
     drift_path,
     read_head_commit,
 )
 from .token_tracker import TokenTracker
-from .vector_backend import VectorBackend  # noqa: F401
-from .wings import WingManager  # noqa: F401
-from .workspace import EnvClass, Workspace, WorkspaceContext  # noqa: F401
+from .vector_backend import VectorBackend
+from .wings import WingManager
+from .workspace import EnvClass, Workspace, WorkspaceContext
 
 # Plugin discovery lives under `conscio.plugins` (discover_adapters/sensors/tools)
 # — kept out of the top-level namespace to keep this import light.
@@ -114,69 +114,69 @@ from .workspace import EnvClass, Workspace, WorkspaceContext  # noqa: F401
 # SessionRAG directly when you know it's available.
 
 __all__ = [
- "ConsciousnessEngine",
- "ContextManager",
- "ContextMode",
- "ModelRegistry",
- "ContentStore",
- "EventBus",
- "FilterPipeline",
- "build_pipeline_from_dict",
- "TokenTracker",
- "Migrator",
- "SessionSummary",
- "record_session_lifecycle",
- "MetabolicContext",
- "MetabolicState",
- "DreamCycle",
- "DreamReport",
- "MockAdapter",
- "OllamaAdapter",
- "LlamaCppAdapter",
- "OpenAICompatAdapter",
- "OpenAIAdapter",
- "AnthropicAdapter",
- "GeminiAdapter",
- "Risk",
- "SensorAdapter",
- "HostSensor",
- "AgentSensor",
- "Workspace",
- "WorkspaceContext",
- "EnvClass",
- "PerceptionFrame",
- "MockSensor",
- "StructuralDistiller",
- "StructuralSignal",
- "Hyperedge",
- "CommunitySummary",
- "GraphNode",
- "StructuralError",
- "ConsentScope",
- "StructuralConsent",
- "sync_structure",
- "StructuralDigest",
- "StructuralDelta",
- "StructuralFreshness",
- "StructuralDriftStore",
- "compute_delta",
- "compute_freshness",
- "read_head_commit",
- "drift_path",
- # v2.15 — self-evaluation rubric (ECC agent-self-evaluation mapping)
- "evaluate",
- "EvaluationReport",
- "AxisScore",
- # v3.2 — memory modules (autocontido)
- "KnowledgeGraph",
- "Hallways",
- "WingManager",
- "VectorBackend",
- "Deduplicator",
- "EntityDetector",
- "EmbeddingProvider",
- "Miner",
- "export_archive",
- "import_archive",
- "import_format_mempalace",
+    "AgentSensor",
+    "AnthropicAdapter",
+    "AxisScore",
+    "CommunitySummary",
+    "ConsciousnessEngine",
+    "ConsentScope",
+    "ContentStore",
+    "ContextManager",
+    "ContextMode",
+    "Deduplicator",
+    "DreamCycle",
+    "DreamReport",
+    "EmbeddingProvider",
+    "EntityDetector",
+    "EnvClass",
+    "EvaluationReport",
+    "EventBus",
+    "FilterPipeline",
+    "GeminiAdapter",
+    "GraphNode",
+    "Hallways",
+    "HostSensor",
+    "Hyperedge",
+    # v3.2 — memory modules (autocontido)
+    "KnowledgeGraph",
+    "LlamaCppAdapter",
+    "MetabolicContext",
+    "MetabolicState",
+    "Migrator",
+    "Miner",
+    "MockAdapter",
+    "MockSensor",
+    "ModelRegistry",
+    "OllamaAdapter",
+    "OpenAIAdapter",
+    "OpenAICompatAdapter",
+    "PerceptionFrame",
+    "Risk",
+    "SensorAdapter",
+    "SessionSummary",
+    "StructuralConsent",
+    "StructuralDelta",
+    "StructuralDigest",
+    "StructuralDistiller",
+    "StructuralDriftStore",
+    "StructuralError",
+    "StructuralFreshness",
+    "StructuralSignal",
+    "TokenTracker",
+    "VectorBackend",
+    "WingManager",
+    "Workspace",
+    "WorkspaceContext",
+    "build_pipeline_from_dict",
+    "compute_delta",
+    "compute_freshness",
+    "drift_path",
+    # v2.15 — self-evaluation rubric (ECC agent-self-evaluation mapping)
+    "evaluate",
+    "export_archive",
+    "import_archive",
+    "import_format_mempalace",
+    "read_head_commit",
+    "record_session_lifecycle",
+    "sync_structure",
 ]

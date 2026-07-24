@@ -16,7 +16,6 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 
 def _utcnow() -> str:
@@ -30,7 +29,7 @@ class Hallways:
         self.db_path = Path(db_path) if db_path else Path.home() / ".conscio" / "runtime" / "hallways.db"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
         self._init_db()
         # Auto-create default wing/room (Protocol G fix)
         self.create_wing("default")

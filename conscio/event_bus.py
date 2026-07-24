@@ -18,7 +18,6 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import Optional
 
 from .constants import DEFAULT_DB_PATH
 from .timeutil import naive_utcnow
@@ -316,7 +315,7 @@ class EventBus:
         """Shortcut: recent anomaly events."""
         return self.query(type="anomaly", limit=limit)
 
-    def get(self, event_id: int) -> Optional[Event]:
+    def get(self, event_id: int) -> Event | None:
         """Get a single event by ID."""
         row = self.db.execute(
             """

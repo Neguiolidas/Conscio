@@ -26,7 +26,7 @@ class TestCompletenessEvidence:
 
     def test_zero_stale_zero_active_says_no_commitment(self, engine):
         result = evaluate(engine, "fresh")
-        comp = [a for a in result.axes if a.axis == "completeness"][0]
+        comp = next(a for a in result.axes if a.axis == "completeness")
         assert comp.score == 3
         assert "no stale entities" in comp.evidence
         assert "0 active goal(s)" in comp.evidence
@@ -37,7 +37,7 @@ class TestCompletenessEvidence:
         # Generate a goal
         engine.goals.generate_from_curiosity("test anomaly", context="test")
         result = evaluate(engine, "with goals")
-        comp = [a for a in result.axes if a.axis == "completeness"][0]
+        comp = next(a for a in result.axes if a.axis == "completeness")
         assert comp.score == 5
         assert "active goal" in comp.evidence
 
@@ -51,14 +51,14 @@ class TestConcisenessLongUniqueText:
     def test_5000_unique_words_not_scored_2(self, engine):
         text = " ".join([f"word{i}" for i in range(5000)])
         result = evaluate(engine, "long task", output=text)
-        conc = [a for a in result.axes if a.axis == "conciseness"][0]
+        conc = next(a for a in result.axes if a.axis == "conciseness")
         assert conc.score >= 3, f"5000 unique words should not score below 3, got {conc.score}"
         assert "redundant" in conc.evidence or "very long" in conc.evidence
 
     def test_5000_repetitive_words_scored_2(self, engine):
         text = "hello world " * 2500  # 5000 words, high repetition
         result = evaluate(engine, "repetitive task", output=text)
-        conc = [a for a in result.axes if a.axis == "conciseness"][0]
+        conc = next(a for a in result.axes if a.axis == "conciseness")
         assert conc.score == 2
         assert "redundancy" in conc.evidence
 
@@ -75,14 +75,14 @@ class TestContradictionDetection:
         engine.world.add_entity("the-sky", "observation", state="red")
 
         result = evaluate(engine, "contradiction test")
-        clarity = [a for a in result.axes if a.axis == "clarity"][0]
+        clarity = next(a for a in result.axes if a.axis == "clarity")
         assert "1 contradiction" in clarity.evidence
 
     def test_no_contradiction_single_state(self, engine):
         engine.world.add_entity("the-sky", "observation", state="blue")
 
         result = evaluate(engine, "no contradiction")
-        clarity = [a for a in result.axes if a.axis == "clarity"][0]
+        clarity = next(a for a in result.axes if a.axis == "clarity")
         assert "no contradictions" in clarity.evidence or "0 contradiction" in clarity.evidence
 
 

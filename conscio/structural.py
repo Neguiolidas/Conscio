@@ -23,7 +23,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from .guards import clamp_int
 
@@ -53,7 +53,7 @@ class GraphNode:
     file_type: str
     source_file: str
     source_location: str
-    community: Optional[int]
+    community: int | None
 
 
 @dataclass(frozen=True)
@@ -118,7 +118,7 @@ class StructuralDistiller:
         self._content_hash = content_hash
         self._by_id = {n.id: n for n in nodes}
         self._he_by_id = {h.id: h for h in hyperedges}
-        self._comm_cache: Optional[tuple[CommunitySummary, ...]] = None
+        self._comm_cache: tuple[CommunitySummary, ...] | None = None
 
     # ── construction ────────────────────────────────────────────────────────────
     @classmethod
@@ -128,7 +128,7 @@ class StructuralDistiller:
         *,
         max_bytes: int = DEFAULT_MAX_BYTES,
         max_nodes: int = DEFAULT_MAX_NODES,
-    ) -> "StructuralDistiller":
+    ) -> StructuralDistiller:
         """Load + validate a ``graph.json``. Size is checked BEFORE parsing."""
         p = Path(path)
         try:
@@ -152,9 +152,9 @@ class StructuralDistiller:
         data: Any,
         *,
         source_path: str = "<dict>",
-        raw_bytes: Optional[bytes] = None,
+        raw_bytes: bytes | None = None,
         max_nodes: int = DEFAULT_MAX_NODES,
-    ) -> "StructuralDistiller":
+    ) -> StructuralDistiller:
         """Validate + project an in-memory graph dict."""
         if not isinstance(data, dict):
             raise StructuralError("graph must be a JSON object")
@@ -261,7 +261,7 @@ class StructuralDistiller:
             communities=self._communities(),
         )
 
-    def lookup(self, key: str) -> Optional[dict[str, Any]]:
+    def lookup(self, key: str) -> dict[str, Any] | None:
         """Resolve a node / hyperedge / community id to detail; None on miss.
 
         Resolution order: node id, then hyperedge id, then (for an all-digit key)

@@ -11,8 +11,9 @@ reflect() itself stays untouched (P6).
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 PROBATION_EPOCH = 25      # reflect() cycles between probation probes
 WARMUP_MIN_ROWS = 10      # below this many ledger rows the floor of 1 applies

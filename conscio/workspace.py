@@ -22,10 +22,10 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Mapping, Optional
 
 # Environment hints (best-effort, never networked). Presence of any key marks the
 # class; explicit CONSCIO_ENV_CLASS overrides all detection.
@@ -71,10 +71,10 @@ class WorkspaceContext:
     change. `environ` is injectable for testing (defaults to ``os.environ``).
     """
 
-    def __init__(self, *, explicit_root: Optional[str | Path] = None,
-                 env: Optional[EnvClass] = None,
-                 emit: Optional[Callable[..., object]] = None,
-                 environ: Optional[Mapping[str, str]] = None) -> None:
+    def __init__(self, *, explicit_root: str | Path | None = None,
+                 env: EnvClass | None = None,
+                 emit: Callable[..., object] | None = None,
+                 environ: Mapping[str, str] | None = None) -> None:
         self._environ: Mapping[str, str] = (
             environ if environ is not None else os.environ)
         self.explicit_root = Path(explicit_root) if explicit_root else None
@@ -100,7 +100,7 @@ class WorkspaceContext:
         return Path.cwd().resolve()
 
     @staticmethod
-    def _git_root(start: Path) -> Optional[Path]:
+    def _git_root(start: Path) -> Path | None:
         cur = start.resolve()
         for candidate in (cur, *cur.parents):
             if (candidate / ".git").exists():

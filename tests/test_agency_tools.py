@@ -105,7 +105,7 @@ class TestMemoryAndEvents:
         reg = make_default_registry(sandbox_root=sandbox, content_store=store)
         result = reg.dispatch("memory_note", {"text": "remember this"})
         assert result.ok and store.notes
-        label, content, category = store.notes[0]
+        _label, content, category = store.notes[0]
         assert content == "remember this" and category == "external"
 
     def test_emit_event_uses_external_type(self, sandbox):

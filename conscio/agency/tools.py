@@ -10,9 +10,10 @@ sandbox root.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from ..risk import Risk  # re-exported for backward compatibility (see conscio.risk)
 from .contracts import ToolResult

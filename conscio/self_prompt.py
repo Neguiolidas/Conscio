@@ -56,7 +56,7 @@ class SelfPrompt:
         return self.question
 
 
-def generate_self_prompts(meta, world, coherence_report, recent_events=None) -> list["SelfPrompt"]:
+def generate_self_prompts(meta, world, coherence_report, recent_events=None) -> list[SelfPrompt]:
     """
     Introspect internal state → SelfPrompts ranked by severity (desc).
 
