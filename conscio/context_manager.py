@@ -18,7 +18,6 @@ from typing import Optional
 from .guards import atomic_write_text, safe_read_json
 from .models import ContextMode, ModelRegistry
 
-
 # Maximum percentage of available context that consciousness state can occupy
 CONTEXT_BUDGET_PCT = 0.02  # 2% of available context for consciousness state
 

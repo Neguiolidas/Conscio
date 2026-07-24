@@ -5,8 +5,12 @@ import pytest
 
 from conscio.content_store import ContentStore
 from conscio.kg import KnowledgeGraph
-from conscio.kg_builder import KGBuilder, extract_entities, build_triples, ExtractedEntity
-
+from conscio.kg_builder import (
+    ExtractedEntity,
+    KGBuilder,
+    build_triples,
+    extract_entities,
+)
 
 # ── extract_entities ───────────────────────────────────────────────────
 

@@ -12,7 +12,10 @@ B-010: a session with a NULL `title` column makes format_handoff evaluate
 import sqlite3
 
 from conscio.session_lifecycle import (
-    SessionSummary, format_handoff, format_heartbeat, record_session_lifecycle,
+    SessionSummary,
+    format_handoff,
+    format_heartbeat,
+    record_session_lifecycle,
 )
 
 

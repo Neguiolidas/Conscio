@@ -570,6 +570,7 @@ def test_argparser_accepts_relay_flags():
 def test_relay_broadcast_send_failure_isolated(tmp_path, monkeypatch):
     # docstring contract: a failing peer never aborts the rest
     import sqlite3 as _sq
+
     import conscio.mcp.server as srv
     db = tmp_path / "liaison.db"
     b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,

@@ -7,8 +7,8 @@ an explicit CLI model still wins.
 """
 import pytest
 
-from conscio.cli import main
 import conscio.adapter_config as ac
+from conscio.cli import main
 
 
 @pytest.fixture(autouse=True)

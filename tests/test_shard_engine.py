@@ -1,7 +1,7 @@
 # tests/test_shard_engine.py
 from conscio.context_manager import ConsciousnessState, ContextManager, ContextMode
 from conscio.engine import ConsciousnessEngine
-from conscio.shard_engine import Shard, infer_shard, ShardEngine, _event_text
+from conscio.shard_engine import Shard, ShardEngine, _event_text, infer_shard
 
 
 class _BusStub:

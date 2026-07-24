@@ -1,6 +1,5 @@
 """Tests for DedupBlocks + SecretMask filter stages."""
-from conscio.output_filter import DedupBlocks, SecretMask, build_stage, FilterPipeline
-
+from conscio.output_filter import DedupBlocks, FilterPipeline, SecretMask, build_stage
 
 # ── DedupBlocks ──
 

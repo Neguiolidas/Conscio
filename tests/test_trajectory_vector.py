@@ -1,8 +1,12 @@
 # tests/test_trajectory_vector.py
 from types import SimpleNamespace
+
 from conscio.session_lifecycle import (
-    SessionSummary, enrich_with_conscio, format_heartbeat, format_handoff,
     HB_MAX_CHARS,
+    SessionSummary,
+    enrich_with_conscio,
+    format_handoff,
+    format_heartbeat,
 )
 from conscio.shard_engine import Shard
 

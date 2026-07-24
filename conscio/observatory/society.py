@@ -12,7 +12,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from ..guards import clamp_int   # leaf util; not conscio.engine
+from ..guards import clamp_int  # leaf util; not conscio.engine
 
 
 class SocietyProjection:

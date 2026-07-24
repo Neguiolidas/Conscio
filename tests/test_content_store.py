@@ -10,9 +10,14 @@ from datetime import timedelta
 
 import pytest
 
+from conscio.content_store import (
+    VALID_CATEGORIES,
+    VALID_CONTENT_TYPES,
+    ContentStore,
+    SearchResult,
+    SourceInfo,
+)
 from conscio.timeutil import naive_utcnow
-
-from conscio.content_store import ContentStore, SearchResult, SourceInfo, VALID_CATEGORIES, VALID_CONTENT_TYPES
 
 
 @pytest.fixture

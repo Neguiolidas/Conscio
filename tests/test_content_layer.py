@@ -1,6 +1,7 @@
 # tests/test_content_layer.py
 from types import SimpleNamespace
-from conscio.content_layer import ContentLayer, layer_of, layer_sort_key, LAYER_EPSILON
+
+from conscio.content_layer import LAYER_EPSILON, ContentLayer, layer_of, layer_sort_key
 
 
 def _result(category, content_type, rank):

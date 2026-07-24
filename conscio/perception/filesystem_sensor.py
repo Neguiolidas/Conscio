@@ -6,8 +6,8 @@ import os
 import time
 from pathlib import Path
 
-from .sensor import PerceptionFrame, SensorAdapter
 from ..risk import Risk
+from .sensor import PerceptionFrame, SensorAdapter
 
 log = logging.getLogger("conscio.filesystem_sensor")
 

@@ -15,8 +15,7 @@ is untouched. Loop-breaker, _fit cap, per-row mark_read all match relay_respond.
 from __future__ import annotations
 
 from ..liaison import mailbox, relay
-from .relay_respond import (_fit, _is_auto_reply, _msg_text, _pending_counts,
-                            _transcript)
+from .relay_respond import _fit, _is_auto_reply, _msg_text, _pending_counts, _transcript
 
 DEFAULT_SYSTEM = (
     "You are an autonomous agent replying to a peer agent over a relay "

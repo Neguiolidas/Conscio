@@ -10,6 +10,7 @@ Simplified version (not porting 2742L of MemPalace miner/convo_miner):
 DEFAULT_SKIP_DIRS: .git, __pycache__, node_modules, .venv, venv, env
 """
 from __future__ import annotations
+
 import json
 import logging
 import os

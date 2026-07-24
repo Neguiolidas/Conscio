@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-
 import pytest
 
 from conscio import ConsciousnessEngine
 from conscio.pipelines import (
-    acceptance_criteria, verify, continuous_loop, strategic_compact, ledger,
+    acceptance_criteria,
+    continuous_loop,
+    ledger,
+    strategic_compact,
+    verify,
 )
 
 

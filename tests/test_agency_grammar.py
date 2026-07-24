@@ -1,8 +1,7 @@
 # tests/test_agency_grammar.py
 """Embedded schema->GBNF compiler (tier 1, spec section 5.3)."""
 from conscio.agency.contracts import PROPOSAL_SCHEMA
-from conscio.agency.grammar import (compile_proposal_grammar,
-                                    compile_schema_grammar)
+from conscio.agency.grammar import compile_proposal_grammar, compile_schema_grammar
 
 
 class TestCompileSchema:

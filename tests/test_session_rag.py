@@ -3,7 +3,10 @@ import numpy as np
 import pytest
 
 from conscio.session_rag import (
-    SessionChunker, SessionVectorStore, SessionRAG, Chunk,
+    Chunk,
+    SessionChunker,
+    SessionRAG,
+    SessionVectorStore,
 )
 
 

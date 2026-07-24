@@ -1,8 +1,11 @@
 # tests/test_agency_promote.py
 import json
 
-from conscio.agency.promote import (MIN_PROMOTE_PASSES, PromoteDecision,
-                                     evaluate_promotion)
+from conscio.agency.promote import (
+    MIN_PROMOTE_PASSES,
+    PromoteDecision,
+    evaluate_promotion,
+)
 
 
 class _Reg:

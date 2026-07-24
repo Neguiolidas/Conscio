@@ -1,7 +1,7 @@
 """TDD for CompactionCheckpoint + CheckpointChain (v3.1 Ato 2)."""
 import json
 
-from conscio.checkpoint import CompactionCheckpoint, CheckpointChain
+from conscio.checkpoint import CheckpointChain, CompactionCheckpoint
 
 
 class TestCompactionCheckpoint:

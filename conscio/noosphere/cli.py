@@ -8,8 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from . import (audit, catalog, identity, importer, publish, quarantine,
-               record_publish)
+from . import audit, catalog, identity, importer, publish, quarantine, record_publish
 from .paths import quarantine_db_path, resolve_noosphere, resolve_storage
 
 

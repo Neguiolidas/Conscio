@@ -25,8 +25,8 @@ import subprocess
 import time
 from collections.abc import Sequence
 
-from .sensor import PerceptionFrame, SensorAdapter
 from ..risk import Risk
+from .sensor import PerceptionFrame, SensorAdapter
 
 
 def _read_meminfo() -> dict[str, int]:

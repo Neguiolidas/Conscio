@@ -20,12 +20,17 @@ from enum import Enum
 from typing import Any, Callable
 
 from conscio.context_manager import ConsciousnessState
-
 from conscio.prompt_zones import build_zoned_prompt
+
 from .adapter import InferenceAdapter
 from .breaker import CircuitBreaker
-from .contracts import (PROPOSAL_SCHEMA, ActionProposal, AuditVerdict,
-                        ToolResult, validate)
+from .contracts import (
+    PROPOSAL_SCHEMA,
+    ActionProposal,
+    AuditVerdict,
+    ToolResult,
+    validate,
+)
 from .fingerprint import goal_fingerprint
 from .gateway import GatewayError, OutputGateway
 from .ledger import ActionLedger
@@ -68,7 +73,7 @@ class ActPipeline:
                  executable_fn: Callable[[str], bool] | None = None,
                  intercept_enabled: bool = False,
                  skill_summary_fn: Callable[[], str] | None = None):
-        from .loop import GoalArbiter      # runtime: loop imports this module
+        from .loop import GoalArbiter  # runtime: loop imports this module
 
         self.adapter = adapter
         self.registry = registry

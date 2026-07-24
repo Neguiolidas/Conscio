@@ -5,8 +5,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from conscio.agency.adapter import AdapterBadResponse, AdapterConnectionError
 from conscio.agency import adapters
+from conscio.agency.adapter import AdapterBadResponse, AdapterConnectionError
 from conscio.agency.adapters import (
     AnthropicAdapter,
     GeminiAdapter,

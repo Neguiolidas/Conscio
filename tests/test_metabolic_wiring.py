@@ -13,8 +13,8 @@ machine-consumable signal. These tests pin the wiring:
 Hermetic: no LLM, no Ollama (RAG disabled), token pressure injected via
 engine.session_tokens_used.
 """
-from conscio.engine import ConsciousnessEngine
 from conscio.content_layer import _RAG_DISABLED
+from conscio.engine import ConsciousnessEngine
 
 
 def _engine(tmp_path):

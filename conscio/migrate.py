@@ -21,7 +21,6 @@ from pathlib import Path
 
 from .timeutil import naive_utcnow
 
-
 # ─── Constants ──────────────────────────────────────────────────────────
 
 DEFAULT_STORAGE_PATH = Path.home() / ".hermes" / "consciousness"

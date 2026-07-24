@@ -18,9 +18,8 @@ import sqlite3
 from datetime import timedelta
 from pathlib import Path
 
-from .timeutil import naive_utcnow
 from .constants import DEFAULT_DB_PATH
-
+from .timeutil import naive_utcnow
 
 # ─── Constants ──────────────────────────────────────────────────────────
 

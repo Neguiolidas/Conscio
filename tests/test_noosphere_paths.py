@@ -1,5 +1,6 @@
 # tests/test_noosphere_paths.py
 from pathlib import Path
+
 from conscio.noosphere import paths
 
 

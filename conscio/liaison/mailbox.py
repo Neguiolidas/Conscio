@@ -31,7 +31,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_to
 
 
 def default_db() -> Path:
-    from ..noosphere.paths import hermes_home          # pure leaf; not the engine
+    from ..noosphere.paths import hermes_home  # pure leaf; not the engine
     return hermes_home() / "liaison.db"
 
 

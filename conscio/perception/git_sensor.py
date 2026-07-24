@@ -8,8 +8,8 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 
-from .sensor import PerceptionFrame, SensorAdapter
 from ..risk import Risk
+from .sensor import PerceptionFrame, SensorAdapter
 
 _MAX_COMMITS_LIST = 5
 _DEFAULT_MAX_SEEN = 10_000

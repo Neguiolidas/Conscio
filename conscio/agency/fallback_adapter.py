@@ -13,11 +13,10 @@ Usage:
 """
 from __future__ import annotations
 
-
 from .adapter import (
+    AdapterBadResponse,
     AdapterCaps,
     AdapterError,
-    AdapterBadResponse,
     InferenceAdapter,
     InferenceResult,
 )

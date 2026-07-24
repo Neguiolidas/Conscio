@@ -1,5 +1,5 @@
 # tests/test_world_contradictions.py
-from conscio.world_model import WorldModel, STATE_LOG_MAX
+from conscio.world_model import STATE_LOG_MAX, WorldModel
 
 
 class FakeDetector:

@@ -21,11 +21,10 @@ Theory: Claude_Sentience (Dave Shapiro) — ontological coherence.
 """
 from __future__ import annotations
 
+import logging
 import math
 
 from .axis_pack import load_axes
-
-import logging
 
 logger = logging.getLogger(__name__)
 

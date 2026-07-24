@@ -1,7 +1,9 @@
 import json
+
 import pytest
-from conscio.integrations.claude_code import materialize
+
 from conscio.installer import spaces
+from conscio.integrations.claude_code import materialize
 
 
 @pytest.fixture(autouse=True)

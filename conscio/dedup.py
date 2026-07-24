@@ -10,6 +10,7 @@ Schema:
     dedup_registry(hash TEXT PK, content TEXT, registered_at TEXT)
 """
 from __future__ import annotations
+
 import hashlib
 import re
 import sqlite3

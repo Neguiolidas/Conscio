@@ -1,8 +1,8 @@
 """Tests for engine.recall() cross-session memory + reflect integration."""
 import pytest
 
-from conscio.engine import ConsciousnessEngine
 from conscio.content_layer import _RAG_DISABLED
+from conscio.engine import ConsciousnessEngine
 
 
 @pytest.fixture
@@ -73,8 +73,8 @@ def test_reflect_injects_past_context(engine, monkeypatch):
 
 
 def test_recall_prioritizes_processing_layer_on_near_tie(tmp_path):
-    from conscio.engine import ConsciousnessEngine
     from conscio.content_layer import _RAG_DISABLED
+    from conscio.engine import ConsciousnessEngine
     eng = ConsciousnessEngine(model_name="claude-opus-4-8", storage_path=tmp_path)
     eng.content_layer._session_rag = _RAG_DISABLED  # hermetic: no Ollama probe
 

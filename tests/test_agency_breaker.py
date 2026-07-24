@@ -4,8 +4,11 @@ import time as _time
 
 import pytest
 
-from conscio.agency.breaker import (DEFAULT_MAX_RETRIES,
-                                    GLOBAL_LOCKDOWN_QUORUM, CircuitBreaker)
+from conscio.agency.breaker import (
+    DEFAULT_MAX_RETRIES,
+    GLOBAL_LOCKDOWN_QUORUM,
+    CircuitBreaker,
+)
 from conscio.agency.ledger import ActionLedger
 
 

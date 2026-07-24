@@ -1,8 +1,9 @@
 # tests/test_agency_host_act.py
 import pytest
+
+from conscio.agency.contracts import AuditVerdict
 from conscio.agency.host_act import HostActChannel
 from conscio.agency.ledger import ActionLedger
-from conscio.agency.contracts import AuditVerdict
 from conscio.agency.tools import registry_from_manifest
 
 

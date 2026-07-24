@@ -10,8 +10,8 @@ from argparse import Namespace
 
 import pytest
 
-import conscio.mcp.server as srv
 import conscio.adapter_config as ac
+import conscio.mcp.server as srv
 
 
 @pytest.fixture(autouse=True)

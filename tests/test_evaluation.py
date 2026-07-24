@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from conscio import ConsciousnessEngine, evaluate, EvaluationReport, AxisScore
+from conscio import AxisScore, ConsciousnessEngine, EvaluationReport, evaluate
 from conscio.evaluation import _band
-
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 

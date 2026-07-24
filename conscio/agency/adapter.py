@@ -9,8 +9,8 @@ is the deterministic backend used by the entire test suite.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 

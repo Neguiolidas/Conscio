@@ -1,14 +1,16 @@
 """Tests for OpenAI-compatible embedding — generic embedder for LM Studio, vLLM, llama.cpp, etc."""
 import json
 import sqlite3
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
 from conscio.session_rag import (
-    OpenAICompatibleEmbedder, OllamaEmbedder, SessionVectorStore, Chunk,
+    Chunk,
+    OllamaEmbedder,
+    OpenAICompatibleEmbedder,
+    SessionVectorStore,
 )
-
 
 # ── OpenAI-compatible embedder ──
 

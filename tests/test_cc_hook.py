@@ -1,6 +1,7 @@
 import pathlib
 import subprocess
 import sys
+
 import conscio.integrations.claude_code as cc
 
 HOOK = (pathlib.Path(cc.__file__).parent / "assets" / "hooks"

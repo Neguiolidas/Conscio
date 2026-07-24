@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-
 import pytest
 
 from conscio import ConsciousnessEngine
 from conscio.diagnostics import (
-    context_budget, eval_harness, rules_distill,
-    EVAL_CAPABILITY, _pass_at_k,
+    EVAL_CAPABILITY,
+    _pass_at_k,
+    context_budget,
+    eval_harness,
+    rules_distill,
 )
 
 

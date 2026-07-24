@@ -10,21 +10,20 @@ import pytest
 
 from conscio.output_filter import (
     HAS_YAML,
-    StripAnsi,
-    Replace,
-    MatchOutput,
+    STAGE_REGISTRY,
     FilterLines,
-    TruncateLines,
+    FilterPipeline,
     HeadTail,
+    MatchOutput,
     MaxLines,
     OnEmpty,
-    FilterPipeline,
-    build_stage,
-    build_pipeline_from_dict,
+    Replace,
+    StripAnsi,
+    TruncateLines,
     build_pipeline_from_config,
-    STAGE_REGISTRY,
+    build_pipeline_from_dict,
+    build_stage,
 )
-
 
 # ─── Test Data ──────────────────────────────────────────────────────────
 

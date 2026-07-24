@@ -7,9 +7,13 @@ import sqlite3
 
 import pytest
 
-from conscio.agency.act import ActStatus, ActPipeline
-from conscio.agency.adapter import (AdapterError, InferenceAdapter,
-                                    AdapterCaps, MockAdapter)
+from conscio.agency.act import ActPipeline, ActStatus
+from conscio.agency.adapter import (
+    AdapterCaps,
+    AdapterError,
+    InferenceAdapter,
+    MockAdapter,
+)
 from conscio.agency.breaker import CircuitBreaker
 from conscio.agency.ledger import ActionLedger
 from conscio.agency.tools import Risk, ToolRegistry

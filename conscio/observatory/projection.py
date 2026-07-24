@@ -11,7 +11,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from ..guards import clamp_int, safe_read_json   # leaf utils; not conscio.engine
+from ..guards import clamp_int, safe_read_json  # leaf utils; not conscio.engine
 
 
 def _read_json_list(path: Path) -> list[dict]:

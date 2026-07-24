@@ -1,6 +1,6 @@
 # tests/test_dream_coherence.py
-from conscio.engine import ConsciousnessEngine
 from conscio.coherence import CoherenceReport, Dissonance
+from conscio.engine import ConsciousnessEngine
 
 
 def _ontological_low():

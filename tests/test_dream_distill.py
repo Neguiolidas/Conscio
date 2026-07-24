@@ -10,8 +10,8 @@ import pytest
 from conscio.agency.act import goal_fingerprint
 from conscio.agency.ledger import ActionLedger
 from conscio.agency.skills import SkillLibrary
-from conscio.engine import ConsciousnessEngine
 from conscio.content_layer import _RAG_DISABLED
+from conscio.engine import ConsciousnessEngine
 
 GOAL = "Investigate: anomaly in sandbox notes"
 

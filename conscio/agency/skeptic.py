@@ -19,8 +19,13 @@ import re
 from typing import Callable
 
 from .adapter import AdapterError, InferenceAdapter
-from .contracts import (VERDICT_SCHEMA, ActionProposal, AuditVerdict,
-                        validate, verdict_from_dict)
+from .contracts import (
+    VERDICT_SCHEMA,
+    ActionProposal,
+    AuditVerdict,
+    validate,
+    verdict_from_dict,
+)
 from .gateway import repair_json
 
 SKEPTIC_PERSONA = (

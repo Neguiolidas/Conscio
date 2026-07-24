@@ -3,9 +3,9 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from conscio.timeutil import naive_utcnow
-from conscio.engine import ConsciousnessEngine
 from conscio.dreaming import DreamCycle, DreamReport
+from conscio.engine import ConsciousnessEngine
+from conscio.timeutil import naive_utcnow
 
 
 @pytest.fixture

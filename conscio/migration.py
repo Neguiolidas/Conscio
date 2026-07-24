@@ -9,6 +9,7 @@ Formato tar.gz:
 Round-trip: export→import produces DBs equivalent (ContentStore dedup via content_hash).
 """
 from __future__ import annotations
+
 import io
 import json
 import tarfile
@@ -17,9 +18,9 @@ from pathlib import Path
 from typing import Optional
 
 from .content_store import ContentStore
+from .hallways import Hallways
 from .kg import KnowledgeGraph
 from .wings import WingManager
-from .hallways import Hallways
 
 
 def _utcnow() -> str:

@@ -1,6 +1,7 @@
 # tests/test_noosphere_importer.py
 import json
-from conscio.noosphere import importer, catalog, artifact, quarantine
+
+from conscio.noosphere import artifact, catalog, importer, quarantine
 
 
 def _catalog_row(*, iid="A", goal_text="deploy", tamper=False, fp=None,

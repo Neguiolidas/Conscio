@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 from conscio import __version__
-from conscio.cli import main, _storage
+from conscio.cli import _storage, main
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 

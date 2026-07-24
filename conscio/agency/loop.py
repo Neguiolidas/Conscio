@@ -17,8 +17,8 @@ from typing import Any
 
 from conscio.metabolic import MetabolicContext, MetabolicState
 
-from .act import ActReport, ActStatus
 from . import goal_fingerprint
+from .act import ActReport, ActStatus
 
 # Lexical hints linking a coherence dimension to goal verbs (P4).
 DISSONANCE_HINTS: dict[str, tuple[str, ...]] = {

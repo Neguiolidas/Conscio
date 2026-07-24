@@ -9,20 +9,19 @@ from datetime import timedelta
 
 import pytest
 
-from conscio.timeutil import naive_utcnow
-
 from conscio.event_bus import (
-    EventBus,
-    Event,
-    VALID_TYPES,
-    VALID_CATEGORIES,
+    DEDUP_WINDOW_SECONDS,
     PRIORITY_CRITICAL,
     PRIORITY_HIGH,
-    PRIORITY_NORMAL,
     PRIORITY_LOW,
+    PRIORITY_NORMAL,
     PRIORITY_TRIVIAL,
-    DEDUP_WINDOW_SECONDS,
+    VALID_CATEGORIES,
+    VALID_TYPES,
+    Event,
+    EventBus,
 )
+from conscio.timeutil import naive_utcnow
 
 
 @pytest.fixture

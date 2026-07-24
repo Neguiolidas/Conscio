@@ -1,4 +1,5 @@
 import pathlib
+
 import conscio.integrations.claude_code as cc
 
 ASSETS = pathlib.Path(cc.__file__).parent / "assets"

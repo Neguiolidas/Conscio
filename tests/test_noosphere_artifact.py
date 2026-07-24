@@ -1,5 +1,6 @@
 # tests/test_noosphere_artifact.py
 import hashlib
+
 from conscio.noosphere import artifact
 
 

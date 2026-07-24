@@ -5,9 +5,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from .jsonrpc import (INTERNAL_ERROR, INVALID_PARAMS, INVALID_REQUEST,
-                      METHOD_NOT_FOUND, InvalidParams, MethodNotFound,
-                      make_error, make_response)
+from .jsonrpc import (
+    INTERNAL_ERROR,
+    INVALID_PARAMS,
+    INVALID_REQUEST,
+    METHOD_NOT_FOUND,
+    InvalidParams,
+    MethodNotFound,
+    make_error,
+    make_response,
+)
 
 SUPPORTED_PROTOCOLS = ["2024-11-05", "2025-03-26", "2025-06-18"]
 

@@ -1,7 +1,7 @@
 # tests/test_self_prompt_state.py
-from conscio.context_manager import ContextManager, ConsciousnessState
+from conscio.context_manager import ConsciousnessState, ContextManager
 from conscio.models import ContextMode
-from conscio.session_lifecycle import SessionSummary, format_heartbeat, format_handoff
+from conscio.session_lifecycle import SessionSummary, format_handoff, format_heartbeat
 
 
 def test_state_fields_roundtrip(tmp_path):

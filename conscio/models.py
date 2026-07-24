@@ -8,12 +8,12 @@ what model it's running on and how much context it has available.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import struct
-import urllib.request
 import urllib.error
-import logging
+import urllib.request
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path

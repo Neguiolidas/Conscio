@@ -3,7 +3,6 @@ import pytest
 
 from conscio.hub import providers
 
-
 # ---------------------------------------------------------------------------
 # Task 6: BUILTIN, KNOWN_MODELS, plugins(), catalog()
 # ---------------------------------------------------------------------------

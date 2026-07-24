@@ -1,7 +1,9 @@
 # tests/test_noosphere_publish.py
 import sqlite3
+
 import pytest
-from conscio.noosphere import publish, catalog, artifact
+
+from conscio.noosphere import artifact, catalog, publish
 
 
 def _seed_skills(db_path, rows):

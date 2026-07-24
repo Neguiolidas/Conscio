@@ -7,11 +7,11 @@ Ported concept from MemPalace entity_detector.py, drastically simplified:
 - KG integration: store detected entities in KnowledgeGraph (no inferred relations)
 """
 from __future__ import annotations
+
 import re
 from typing import Optional
 
 from .kg import KnowledgeGraph
-
 
 # Word-boundary regex with Unicode letter support (handles á, ç, ã, etc)
 _CAPITAL_PATTERN = re.compile(r"\b[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿA-ZÀ-ÖØ-Þ]+\b", re.UNICODE)

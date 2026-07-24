@@ -6,6 +6,7 @@ Protocol G notes:
 - Default category='external' (matches VALID_CATEGORIES).
 """
 from __future__ import annotations
+
 from typing import Optional
 
 from .content_store import ContentStore

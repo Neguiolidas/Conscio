@@ -1,7 +1,7 @@
 """TDD: Import MemPalace format."""
 from conscio.content_store import ContentStore
-from conscio.wings import WingManager
 from conscio.migration import import_format_mempalace
+from conscio.wings import WingManager
 
 
 def test_import_mempalace_missing_dir(tmp_path):

@@ -1,8 +1,7 @@
 """Skeptic phase tests (F2) — clean call, fail-closed, two modes."""
 from conscio.agency.adapter import AdapterCaps, MockAdapter
 from conscio.agency.contracts import ActionProposal
-from conscio.agency.skeptic import (Skeptic, build_skeptic_prompt,
-                                    parse_checklist)
+from conscio.agency.skeptic import Skeptic, build_skeptic_prompt, parse_checklist
 
 
 def _proposal(tool="fs_read", args=None):

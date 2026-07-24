@@ -20,7 +20,6 @@ from conscio.engine import ConsciousnessEngine
 from conscio.world_model import PREDICTIONS_MAX, WorldModel
 
 
-
 def _preds(wm, keyword=""):
     """Read predictions straight from persisted state (replaces removed accessor)."""
     preds = wm._data["predictions"]

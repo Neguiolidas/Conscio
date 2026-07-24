@@ -8,11 +8,11 @@ import sqlite3
 import pytest
 
 from conscio import ConsciousnessEngine
-from conscio.engine import _RAG_DISABLED
 from conscio.agency.act import ActReport, ActStatus, goal_fingerprint
 from conscio.agency.adapter import MockAdapter
 from conscio.agency.skills import SkillLibrary
 from conscio.context_manager import ConsciousnessState
+from conscio.engine import _RAG_DISABLED
 
 GOAL = "write a memory note about the anomaly"
 CHECKLIST_PASS = "A1: NO\nA2: NO\nA3: YES"

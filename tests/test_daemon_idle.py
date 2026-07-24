@@ -4,9 +4,9 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from conscio.agency.loop import RunReport
 from conscio.daemon import Daemon
 from conscio.perception.sensor import MockSensor, PerceptionFrame
-from conscio.agency.loop import RunReport
 
 
 def _make_daemon(d, sensors, engine=None):

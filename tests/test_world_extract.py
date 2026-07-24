@@ -4,8 +4,8 @@ The extractor is a pure function: no clock, no rng, no I/O, no LLM. The same
 world_state must always yield the same entities (stable names are what make
 reality-tracking's prev_state→state comparison meaningful).
 """
-from conscio.world_extract import extract_entities, extract_relations
 from conscio.mcp.schemas import event_to_frame
+from conscio.world_extract import extract_entities, extract_relations
 
 
 def test_extracts_string_fact():

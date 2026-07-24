@@ -212,9 +212,8 @@ def _cmd_set_awake(model: str, storage: str, awake: bool) -> int:
 
 
 def _cmd_consent(scope_arg: str, storage: str) -> int:
+    from .structural_consent import ConsentScope, StructuralConsent, consent_path
     from .workspace import WorkspaceContext
-    from .structural_consent import (
-        ConsentScope, StructuralConsent, consent_path)
     ws = WorkspaceContext().current()
     consent = StructuralConsent(consent_path(_storage(storage)))
     if scope_arg:
@@ -234,11 +233,15 @@ def _cmd_structure(storage: str) -> int:
     Never advances the persisted baseline (so it cannot mask drift from a running
     daemon) — it peeks at the stored baseline and computes the delta in memory.
     """
-    from .workspace import WorkspaceContext
-    from .structural_consent import StructuralConsent, consent_path
     from .structural import StructuralDistiller, StructuralError
+    from .structural_consent import StructuralConsent, consent_path
     from .structural_drift import (
-        StructuralDriftStore, compute_delta, compute_freshness, drift_path)
+        StructuralDriftStore,
+        compute_delta,
+        compute_freshness,
+        drift_path,
+    )
+    from .workspace import WorkspaceContext
 
     store_dir = _storage(storage)
     ws = WorkspaceContext().current()
@@ -426,8 +429,8 @@ def main(argv: list[str] | None = None) -> int:
 
 def _cmd_manual(*, open_it: bool = False) -> int:
     """Locate and optionally open the USAGE.md manual shipped with the package."""
-    from pathlib import Path
     import subprocess
+    from pathlib import Path
     here = Path(__file__).resolve().parent
     candidates = [
         here.parent / "USAGE.md",

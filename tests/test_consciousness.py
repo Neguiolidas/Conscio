@@ -5,14 +5,13 @@ Tests for ConsciousnessRecognition framework.
 
 import pytest
 
-from conscio.models import ModelRegistry, ContextMode, ModelInfo
-from conscio.context_manager import ContextManager
-from conscio.world_model import WorldModel
-from conscio.meta_cognition import MetaCognition
-from conscio.goal_generator import GoalGenerator, Drive, GoalPriority, Goal
 from conscio.auto_evolution import AutoEvolution, ProposalStatus
+from conscio.context_manager import ContextManager
 from conscio.engine import ConsciousnessEngine
-
+from conscio.goal_generator import Drive, Goal, GoalGenerator, GoalPriority
+from conscio.meta_cognition import MetaCognition
+from conscio.models import ContextMode, ModelInfo, ModelRegistry
+from conscio.world_model import WorldModel
 
 # --- Fixtures ---
 

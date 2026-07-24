@@ -1,5 +1,5 @@
 # tests/test_contradiction_detector.py
-from conscio.semantic import SemanticEngine, ContradictionDetector
+from conscio.semantic import ContradictionDetector, SemanticEngine
 
 
 class StubEmbedder:
