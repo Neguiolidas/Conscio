@@ -114,8 +114,8 @@ class EmbeddingProvider:
         try:
             if hasattr(ed, "encode") and not hasattr(ed, "embed"):
                 v = ed.encode(text)  # type: ignore[union-attr]  # type: ignore[union-attr]
-                return list(v) if v is not None else None
-            v = ed.embed(text)
+                return list(v) if v is not None else None  # type: ignore[arg-type]
+            v = ed.embed(text)  # type: ignore[union-attr]
             return list(v) if v is not None else None
         except Exception as e:
             logger.warning(f"embed failed: {e}")
@@ -129,11 +129,11 @@ class EmbeddingProvider:
         try:
             if hasattr(ed, "encode") and not hasattr(ed, "embed"):
                 vecs = ed.encode(texts)  # type: ignore[union-attr]
-                return [list(v) for v in vecs] if vecs is not None else None
+                return [list(v) for v in vecs] if vecs is not None else None  # type: ignore[arg-type]
             if hasattr(ed, "embed_batch"):
-                vecs = ed.embed_batch(texts)
-                return [list(v) for v in vecs] if vecs else None
-            return [list(ed.embed(t)) for t in texts]
+                vecs = ed.embed_batch(texts)  # type: ignore[union-attr]
+                return [list(v) for v in vecs] if vecs else None  # type: ignore[arg-type]
+            return [list(ed.embed(t)) for t in texts]  # type: ignore[union-attr]
         except Exception as e:
             logger.warning(f"embed_batch failed: {e}")
             return None
