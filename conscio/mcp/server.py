@@ -200,6 +200,10 @@ class Bindings:
             "conscio.kg_query": lambda a: self._kg_query(a),
             "conscio.wings_search": lambda a: self._wings_search(a),
             "conscio.export": lambda a: self._export(a),
+            # ── v3.3.1 Auto-index + KG builder ──
+            "conscio.enable_auto_index": lambda a: self.engine.enable_auto_index(
+                run_kg_builder=a.get("run_kg_builder", True)),
+            "conscio.kg_build": lambda a: self._kg_build(a),
         }
         if self._act_enabled():
             ha = self.engine.host_act
@@ -493,6 +497,25 @@ class Bindings:
             "relationships": [dict(r) for r in relationships] if relationships else [],
             "timeline": [dict(t) for t in timeline] if timeline else [],
         }
+
+    def _kg_build(self, args: dict) -> dict:
+        """Run KG builder incrementally to extract entities from ContentStore."""
+        from conscio.content_store import ContentStore
+        from conscio.kg import KnowledgeGraph
+        from conscio.kg_builder import KGBuilder
+
+        sp = self.engine.storage if hasattr(self.engine, "storage") else None
+        if sp is None:
+            return {"error": "no storage_path configured"}
+
+        cs = ContentStore(db_path=sp / "content_store.db")
+        kg = KnowledgeGraph(db_path=sp / "kg.db")
+        builder = KGBuilder(cs, kg)
+        limit = int(args.get("limit", 500))
+        result = builder.run(limit=limit)
+        kg.close()
+        cs.close()
+        return result
 
     def _wings_search(self, args: dict) -> dict:
         """Search content by wing/room hierarchy."""

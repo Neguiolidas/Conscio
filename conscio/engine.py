@@ -25,6 +25,8 @@ from .world_extract import extract_entities, extract_relations
 from .meta_cognition import MetaCognition
 from .goal_generator import GoalGenerator, Drive
 from .auto_evolution import AutoEvolution
+from .auto_index import AutoIndexer
+from .kg_builder import KGBuilder
 from .content_store import ContentStore
 from .event_bus import EventBus
 from .shard_engine import ShardEngine
@@ -177,6 +179,10 @@ class ConsciousnessEngine:
         self.goals = GoalGenerator(self.storage, drives)
 
         self.evolution = AutoEvolution(self.storage)
+
+        # v3.3.1: Auto-Indexer + KG Builder (lazy, installed on demand)
+        self._auto_indexer: Optional[AutoIndexer] = None
+        self._kg_builder: Optional[KGBuilder] = None
 
         # --- v0.2: SQLite-backed modules (shared DB) ---
         db_path = self.storage / "conscio.db"
@@ -714,6 +720,43 @@ class ConsciousnessEngine:
                 category="consciousness",
                 data={"awake": value},
             )
+
+    def enable_auto_index(self, run_kg_builder: bool = True) -> dict:
+        """Install the auto-indexer and optional KG builder.
+
+        Patches _reflect_once to index cognitive output into ContentStore
+        automatically after each reflection cycle.
+
+        Args:
+            run_kg_builder: If True, also run KG entity extraction every 10 cycles
+
+        Returns:
+            dict with status info
+        """
+        from .content_store import ContentStore
+        from .kg import KnowledgeGraph
+        from .kg_builder import KGBuilder
+
+        self.content_store = ContentStore(db_path=self.storage / "content_store.db")
+        kg = KnowledgeGraph(db_path=self.storage / "kg.db")
+
+        if run_kg_builder:
+            self._kg_builder = KGBuilder(self.content_store, kg)
+            # Run initial batch
+            initial_result = self._kg_builder.run(limit=500)
+        else:
+            initial_result = {"entities_added": 0, "triples_added": 0, "sources_scanned": 0}
+
+        self._auto_indexer = AutoIndexer(self, kg_builder=self._kg_builder)
+        self._auto_indexer.install()
+
+        return {
+            "auto_index": True,
+            "kg_builder": run_kg_builder,
+            "initial_entities": initial_result["entities_added"],
+            "initial_triples": initial_result["triples_added"],
+            "initial_sources_scanned": initial_result["sources_scanned"],
+        }
 
     def get_state_for_injection(self) -> str:
         """
