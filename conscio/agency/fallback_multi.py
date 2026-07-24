@@ -60,6 +60,26 @@ _DEFAULT_BACKOFF_BASE = 1.0
 _DEFAULT_BACKOFF_MAX = 10.0
 _DEFAULT_TIMEOUT = 120.0
 
+# Patterns to strip from error messages to prevent credential leakage
+_SENSITIVE_PATTERNS = (
+    "Bearer ", "Authorization:", "api_key=", "api-key:",
+    "nvapi-", "sk-", "ng-",
+)
+
+
+def _sanitize_exc(exc: Exception) -> str:
+    """Strip credentials from exception messages before logging."""
+    msg = str(exc)
+    for pat in _SENSITIVE_PATTERNS:
+        idx = msg.find(pat)
+        if idx >= 0:
+            # Replace everything from the pattern to the next space or end
+            end = msg.find(" ", idx + len(pat))
+            if end < 0:
+                end = len(msg)
+            msg = msg[:idx] + pat + "[REDACTED]" + msg[end:]
+    return msg
+
 
 @dataclass
 class ProviderConfig:
@@ -185,12 +205,15 @@ class MultiProviderFallbackAdapter(InferenceAdapter):
                         self._backoff_base * (2 ** attempt),
                         self._backoff_max,
                     )
+                    # Sanitize error message: strip any Authorization header
+                    # or api_key that an API might echo in error responses
+                    safe_msg = _sanitize_exc(exc)
                     log.warning(
                         "provider %d (%s @ %s) failed on attempt %d/%d: "
                         "%s — retrying in %.1fs",
                         idx, cfg.model, cfg.base_url,
                         attempt + 1, self._retry_per_provider,
-                        exc, wait,
+                        safe_msg, wait,
                     )
                     if attempt < self._retry_per_provider - 1:
                         time.sleep(wait)
