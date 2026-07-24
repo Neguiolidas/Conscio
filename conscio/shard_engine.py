@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Optional
 
 
 class Shard(Enum):
@@ -68,7 +67,7 @@ def _event_text(event: dict) -> str:
     return " ".join(parts).lower()
 
 
-def infer_shard(events: list[dict], window: int = DEFAULT_WINDOW) -> Optional[Shard]:
+def infer_shard(events: list[dict], window: int = DEFAULT_WINDOW) -> Shard | None:
     """
     Infer the dominant cognitive shard from the most recent `window` events.
 
@@ -78,7 +77,7 @@ def infer_shard(events: list[dict], window: int = DEFAULT_WINDOW) -> Optional[Sh
     keyword appeared in the most-recent (lowest-index) event.
     """
     scores: dict[Shard, int] = {s: 0 for s in Shard}
-    recency: dict[Shard, Optional[int]] = {s: None for s in Shard}
+    recency: dict[Shard, int | None] = {s: None for s in Shard}
 
     for idx, event in enumerate(events[:window]):
         text = _event_text(event)
@@ -89,13 +88,11 @@ def infer_shard(events: list[dict], window: int = DEFAULT_WINDOW) -> Optional[Sh
                 if recency[shard] is None:      # first = newest contributing event
                     recency[shard] = idx
 
-    best: Optional[Shard] = None
+    best: Shard | None = None
     for shard in Shard:                          # stable enum order as final fallback
         if scores[shard] == 0:
             continue
-        if best is None:
-            best = shard
-        elif scores[shard] > scores[best]:
+        if best is None or scores[shard] > scores[best]:
             best = shard
         elif scores[shard] == scores[best]:
             rs, rb = recency[shard], recency[best]
@@ -114,9 +111,9 @@ class ShardEngine:
     def __init__(self, event_bus, window: int = DEFAULT_WINDOW):
         self._bus = event_bus
         self._window = window
-        self.current: Optional[Shard] = None
+        self.current: Shard | None = None
 
-    def update(self, events: list[dict]) -> Optional[Shard]:
+    def update(self, events: list[dict]) -> Shard | None:
         new = infer_shard(events, self._window)
         if new is not None and new != self.current:
             self._bus.emit(

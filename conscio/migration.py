@@ -15,7 +15,6 @@ import json
 import tarfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from .content_store import ContentStore
 from .hallways import Hallways
@@ -29,9 +28,9 @@ def _utcnow() -> str:
 
 def export_archive(
     path: str | Path,
-    content_store: Optional[ContentStore] = None,
-    kg: Optional[KnowledgeGraph] = None,
-    hallways: Optional[Hallways] = None,
+    content_store: ContentStore | None = None,
+    kg: KnowledgeGraph | None = None,
+    hallways: Hallways | None = None,
 ) -> dict:
     """Serialize Conscio memory em tar.gz. Components opcional (None = skip).
 
@@ -54,7 +53,7 @@ def export_archive(
             content_store.dump(p)
             tar.add(p, arcname="content_store.db")
             p.unlink()
-            stats = getattr(content_store, "stats", lambda: {})() or {}
+            stats = getattr(content_store, "stats", dict)() or {}
             metadata["components"]["content_store"] = {"stats": stats}
         if kg is not None:
             p = tmpdir / "_conscio_export_kg.db"
@@ -82,7 +81,7 @@ def export_archive(
 
 def import_archive(
     path: str | Path, target_dir: str | Path
-) -> tuple[Optional[ContentStore], Optional[KnowledgeGraph], Optional[Hallways]]:
+) -> tuple[ContentStore | None, KnowledgeGraph | None, Hallways | None]:
     """Restaurar tar.gz em DBs abertos. Retorna instancias (cs, kg, hw) — None se ausente."""
     path = Path(path)
     target = Path(target_dir)
@@ -118,7 +117,7 @@ def import_archive(
 
 def import_format_mempalace(
     chroma_db_dir: str | Path,
-    wing_manager: Optional[WingManager] = None,
+    wing_manager: WingManager | None = None,
 ) -> int:
     """Import drawers de ChromaDB MemPalace (chroma.sqlite3).
 

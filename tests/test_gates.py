@@ -146,7 +146,7 @@ class TestCouncil:
     def test_critic_deterministic_fallback(self, engine):
         # No adapter attached — critic should fall back to deterministic
         result = council(engine, question="Should we delete prod DB?")
-        critic = [v for v in result["voices"] if v["role"] == "critic"][0]
+        critic = next(v for v in result["voices"] if v["role"] == "critic")
         assert "analysis" in critic
         assert len(critic["analysis"]) > 0
 

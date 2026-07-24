@@ -13,14 +13,16 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any
 
 from .auto_evolution import AutoEvolution
 from .auto_index import AutoIndexer
 from .coherence import COHERENCE_EVENT_THRESHOLD, CoherenceEngine, CoherenceReport
-from .content_layer import _RAG_DISABLED as _RAG_DISABLED  # re-export (one sentinel)
-from .content_layer import ContentLayerManager
+from .content_layer import (
+    ContentLayerManager,
+)
 from .content_store import ContentStore
 from .context_manager import ContextManager
 from .dreaming import DreamRecommendation
@@ -74,7 +76,7 @@ _OUTPUT_MAX_WIDTH = 8000
 _REFLECT_COUNT_LIMIT = 100_000
 
 
-def _quarantine_if_corrupt(db_path: Path) -> Optional[Path]:
+def _quarantine_if_corrupt(db_path: Path) -> Path | None:
     """If ``db_path`` exists but is not a usable sqlite DB, move it aside so a fresh
     one is created — power-loss-mid-write or a garbage file must never crash
     construction (I-S4). The corrupt file (and any ``-wal``/``-shm``) is PRESERVED
@@ -125,8 +127,9 @@ def _prune_quarantine(db_path: Path, keep: int = 3) -> None:
                 pass
 
 # RAG-disable sentinel is OWNED by content_layer and re-exported via the import
-# above, so `from conscio.engine import _RAG_DISABLED` yields the SAME object the
+# below, so `from conscio.engine import _RAG_DISABLED` yields the SAME object the
 # ContentLayerManager gate compares against (one sentinel, not two).
+from .content_layer import _RAG_DISABLED  # noqa: F401 — re-exported for tests
 
 
 class ConsciousnessEngine:
@@ -154,11 +157,11 @@ class ConsciousnessEngine:
     def __init__(
         self,
         model_name: str,
-        context_window: Optional[int] = None,
-        storage_path: Optional[str | Path] = None,
-        drive_strengths: Optional[dict[str, float]] = None,
-        voice_preset: Optional[str] = None,
-        base_url: Optional[str] = None,
+        context_window: int | None = None,
+        storage_path: str | Path | None = None,
+        drive_strengths: dict[str, float] | None = None,
+        voice_preset: str | None = None,
+        base_url: str | None = None,
         autodetect: bool = True,
         adaptive_reflection: bool = False,
         max_reflection_cycles: int = 3,
@@ -189,8 +192,8 @@ class ConsciousnessEngine:
         self.evolution = AutoEvolution(self.storage)
 
         # v3.3.1: Auto-Indexer + KG Builder (lazy, installed on demand)
-        self._auto_indexer: Optional[AutoIndexer] = None
-        self._kg_builder: Optional[KGBuilder] = None
+        self._auto_indexer: AutoIndexer | None = None
+        self._kg_builder: KGBuilder | None = None
 
         # --- v0.2: SQLite-backed modules (shared DB) ---
         db_path = self.storage / "conscio.db"
@@ -215,7 +218,7 @@ class ConsciousnessEngine:
         # Built once; reused by dream Reconcile and the opt-in output stage.
         self._semantic = SemanticEngine()
         self._contradiction_detector = ContradictionDetector(self._semantic)
-        self.last_coherence: Optional[CoherenceReport] = None
+        self.last_coherence: CoherenceReport | None = None
         self.dream_recommended = DreamRecommendation(False, None, None)
         # #147: Mitosis advisory — True at FATIGUE/CRITICAL context pressure.
         self.handoff_recommended = False
@@ -260,11 +263,11 @@ class ConsciousnessEngine:
         # v0.9+: External token usage tracking — set by the adapter/gateway
         # to report real session token consumption. Falls back to injection
         # size when unset (see context_manager.total_tokens_approx docstring).
-        self.session_tokens_used: Optional[int] = None
+        self.session_tokens_used: int | None = None
 
         # v2.13: Adaptive reflection gate (opt-in)
         self.adaptive_reflection = adaptive_reflection
-        self.reflection_gate: Optional[ReflectionGate] = None
+        self.reflection_gate: ReflectionGate | None = None
         if adaptive_reflection:
             self.reflection_gate = ReflectionGate(
                 max_cycles=max_reflection_cycles,
@@ -273,14 +276,14 @@ class ConsciousnessEngine:
         # v1.7: structural cognition — optional, opt-in. No graph is loaded by
         # default, so injection/lookup/advisory stay inert until the host calls
         # load_structure(). Keeps cognition (reflect()) entirely untouched.
-        self._distiller: Optional[StructuralDistiller] = None
-        self._structural_signal: Optional[StructuralSignal] = None
+        self._distiller: StructuralDistiller | None = None
+        self._structural_signal: StructuralSignal | None = None
         # v1.8: structural drift — temporal awareness over the ingested snapshot.
         # Tracked only when load_structure() is given a workspace_id; the store is
         # built lazily and keyed per Workspace.id (the engine owns the watermark).
-        self._structural_delta: Optional[StructuralDelta] = None
-        self._structural_freshness: Optional[StructuralFreshness] = None
-        self._drift_store: Optional[StructuralDriftStore] = None
+        self._structural_delta: StructuralDelta | None = None
+        self._structural_freshness: StructuralFreshness | None = None
+        self._drift_store: StructuralDriftStore | None = None
 
     # --- Meta-Cognition → Goal Generator Feed ---
 
@@ -328,9 +331,9 @@ class ConsciousnessEngine:
     def reflect(
         self,
         world_state: str = "",
-        recent_events: Optional[list[str]] = None,
+        recent_events: list[str] | None = None,
         confidence: float = 0.5,
-        anomalies: Optional[list[str]] = None,
+        anomalies: list[str] | None = None,
     ) -> dict:
         """
         Run a complete reflection cycle.
@@ -421,9 +424,9 @@ class ConsciousnessEngine:
     def _reflect_once(
         self,
         world_state: str = "",
-        recent_events: Optional[list[str]] = None,
+        recent_events: list[str] | None = None,
         confidence: float = 0.5,
-        anomalies: Optional[list[str]] = None,
+        anomalies: list[str] | None = None,
     ) -> dict:
         """
         Run a single reflection cycle (original reflect() logic).
@@ -794,8 +797,8 @@ class ConsciousnessEngine:
         *,
         max_bytes: int = DEFAULT_MAX_BYTES,
         max_nodes: int = DEFAULT_MAX_NODES,
-        workspace_id: Optional[str] = None,
-        root: Optional[str | Path] = None,
+        workspace_id: str | None = None,
+        root: str | Path | None = None,
     ) -> StructuralSignal:
         """Load + distill a Graphify ``graph.json`` (data, never code; R10).
 
@@ -820,7 +823,7 @@ class ConsciousnessEngine:
         return self._structural_signal
 
     def _track_drift(
-        self, workspace_id: str, root: Optional[str | Path], sig: StructuralSignal
+        self, workspace_id: str, root: str | Path | None, sig: StructuralSignal
     ) -> None:
         store = self._drift_store or StructuralDriftStore(drift_path(self.storage))
         self._drift_store = store
@@ -843,18 +846,18 @@ class ConsciousnessEngine:
         except Exception as exc:                       # passive signal — never fatal
             logger.debug("structure:changed emit failed: %s", exc)
 
-    def structural_signal(self) -> Optional[StructuralSignal]:
+    def structural_signal(self) -> StructuralSignal | None:
         """The distilled signal of the loaded graph, or None if none loaded."""
         return self._structural_signal
 
-    def structural_delta(self) -> Optional[StructuralDelta]:
+    def structural_delta(self) -> StructuralDelta | None:
         """Drift of the last loaded graph vs its prior baseline (v1.8).
 
         None unless the graph was loaded with a ``workspace_id``. Read-only,
         no-LLM — an ``advisory()`` sibling."""
         return self._structural_delta
 
-    def structural_freshness(self) -> Optional[StructuralFreshness]:
+    def structural_freshness(self) -> StructuralFreshness | None:
         """Freshness of the last loaded graph vs the repo HEAD (v1.8).
 
         None unless the graph was loaded with both a ``workspace_id`` and a
@@ -871,13 +874,13 @@ class ConsciousnessEngine:
         self._structural_delta = None
         self._structural_freshness = None
 
-    def structural_lookup(self, key: str) -> Optional[dict[str, Any]]:
+    def structural_lookup(self, key: str) -> dict[str, Any] | None:
         """On-demand drill-down: resolve a node / hyperedge / community id to
         detail (read-only, no-LLM, no-mutation — an ``advisory()`` sibling).
         Returns None when no graph is loaded or the id is unknown."""
         return self._distiller.lookup(key) if self._distiller is not None else None
 
-    def _structural_advisory(self) -> Optional[dict[str, Any]]:
+    def _structural_advisory(self) -> dict[str, Any] | None:
         sig = self._structural_signal
         if sig is None:
             return None
@@ -935,7 +938,7 @@ class ConsciousnessEngine:
             "recommendations": recommendations,
         }
 
-    def _last_brake_message(self) -> Optional[str]:
+    def _last_brake_message(self) -> str | None:
         """Most recent aggregate failure-rate brake message, if any (#8).
 
         Read-only scan of recent system events; returns None when no brake has
@@ -956,7 +959,7 @@ class ConsciousnessEngine:
         self,
         query: str,
         k: int = 3,
-        categories: Optional[list[str]] = None,
+        categories: list[str] | None = None,
     ) -> list[str]:
         """
         Retrieve relevant past context across sessions.
@@ -976,8 +979,8 @@ class ConsciousnessEngine:
 
     # --- World Model Interactions ---
 
-    def perceive(self, world_state: str, entities: Optional[dict] = None,
-                 relations: Optional[list] = None) -> None:
+    def perceive(self, world_state: str, entities: dict | None = None,
+                 relations: list | None = None) -> None:
         """
         Update the world model with perceived state.
 
@@ -1028,7 +1031,7 @@ class ConsciousnessEngine:
         self,
         event_type: str,
         context: dict,
-    ) -> Optional["SessionSummary"]:
+    ) -> SessionSummary | None:
         """
         Record a session lifecycle event through Conscio.
 
@@ -1043,7 +1046,7 @@ class ConsciousnessEngine:
         """
         return self.session_lifecycle.record_session(event_type, context)
 
-    def dream(self, dry_run: bool = False) -> "DreamReport":
+    def dream(self, dry_run: bool = False) -> DreamReport:
         """
         Run a consolidation cycle (Noosphere "Dreaming").
 
@@ -1561,7 +1564,7 @@ class ConsciousnessEngine:
         return self._proposal_result(proposal, verdict)
 
     def propose_plan(self, goal: str,
-                     tools: Optional[list[dict]] = None) -> dict:
+                     tools: list[dict] | None = None) -> dict:
         """Generate ONE audited action from a goal (Actor), constrained to the
         host's declared tool vocabulary. Never executes; not free-form."""
         from .agency import goal_fingerprint
@@ -1573,8 +1576,8 @@ class ConsciousnessEngine:
             return self._no_adapter_result()
         if not tools:
             return {"verdict": "FAIL",
-                    "reasons": ["propose_plan requires a declared tool "
-                                "vocabulary"],
+                    "reasons": [("propose_plan requires a declared tool "
+                                "vocabulary")],
                     "risk_flags": [], "confidence": 0.0, "proposal": None}
         catalog = "\n".join(f"- {t['name']}: {t.get('description', '')}"
                             for t in tools)
@@ -1763,9 +1766,9 @@ class ConsciousnessEngine:
                 "insight": "; ".join(parts)}
 
     def cognitive_cycle(self, world_state: str = "",
-                        recent_events: Optional[list[str]] = None,
+                        recent_events: list[str] | None = None,
                         confidence: float = 0.5,
-                        anomalies: Optional[list[str]] = None,
+                        anomalies: list[str] | None = None,
                         *, act: bool = True) -> dict:
         """One explicit, useful cognitive pass — the reflect loop, surfaced.
 

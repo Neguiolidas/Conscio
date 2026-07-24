@@ -226,7 +226,6 @@ class TestStrategicCompact:
         engine.event_bus.query(type="pipeline:compact")
         # Only events from previous tests might exist, but this call shouldn't add one
         # We can't easily test this in isolation, so skip strict check
-        pass
 
 
 # ── ledger ────────────────────────────────────────────────────────────

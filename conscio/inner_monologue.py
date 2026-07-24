@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from .context_manager import ContextManager
 from .models import ContextMode
@@ -145,8 +144,8 @@ class InnerMonologue:
         mode = self.ctx.mode
 
         # Start with the essentials
-        parts = [f"I am running on {self.ctx.model_info.name} "
-                 f"({self.ctx.model_info.context_window//1000}k ctx, {mode.value} mode)."]
+        parts = [(f"I am running on {self.ctx.model_info.name} "
+                 f"({self.ctx.model_info.context_window//1000}k ctx, {mode.value} mode).")]
 
         # Confidence
         conf_word = "high" if confidence > 0.7 else "moderate" if confidence > 0.4 else "low"
@@ -191,7 +190,7 @@ class InnerMonologue:
 
         return path
 
-    def last_reflection(self, n: int = 1) -> Optional[str]:
+    def last_reflection(self, n: int = 1) -> str | None:
         """Retrieve the last N reflections from disk."""
         files = sorted(self.reflections_dir.glob("*.md"), reverse=True)
         if not files:

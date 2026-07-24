@@ -122,20 +122,20 @@ class TestEvaluateFresh:
 class TestEvaluateWithOutput:
     def test_short_output_low_conciseness(self, engine):
         result = evaluate(engine, "test", output="hi")
-        conciseness = [a for a in result.axes if a.axis == "conciseness"][0]
+        conciseness = next(a for a in result.axes if a.axis == "conciseness")
         assert conciseness.score == 2
         assert "too short" in conciseness.evidence
 
     def test_medium_output_high_conciseness(self, engine):
         text = " ".join([f"word{i}" for i in range(100)])  # 100 unique words
         result = evaluate(engine, "test", output=text)
-        conciseness = [a for a in result.axes if a.axis == "conciseness"][0]
+        conciseness = next(a for a in result.axes if a.axis == "conciseness")
         assert conciseness.score >= 3
 
     def test_long_repetitive_output_low_conciseness(self, engine):
         text = "hello world " * 500  # very repetitive
         result = evaluate(engine, "test", output=text)
-        conciseness = [a for a in result.axes if a.axis == "conciseness"][0]
+        conciseness = next(a for a in result.axes if a.axis == "conciseness")
         assert conciseness.score <= 3
 
 
@@ -161,7 +161,7 @@ class TestEvaluateAfterErrors:
             engine.event_bus.emit("error", "consciousness", {"pattern": "API timeout"})
 
         result = evaluate(engine, "with errors")
-        accuracy = [a for a in result.axes if a.axis == "accuracy"][0]
+        accuracy = next(a for a in result.axes if a.axis == "accuracy")
         # With 5 errors out of ~5 recent events, error rate is high → accuracy drops
         assert accuracy.score <= 3
 
@@ -172,7 +172,7 @@ class TestEvaluateAfterErrors:
         # (we just add it — staleness depends on age threshold)
 
         result = evaluate(engine, "with stale")
-        completeness = [a for a in result.axes if a.axis == "completeness"][0]
+        completeness = next(a for a in result.axes if a.axis == "completeness")
         # At least the evidence should mention stale entities
         assert "stale" in completeness.evidence.lower() or completeness.score >= 3
 

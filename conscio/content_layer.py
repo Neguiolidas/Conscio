@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import Optional
 
 # Sentinel: setting _session_rag to this disables RAG permanently
 _RAG_DISABLED = object()
@@ -119,7 +118,7 @@ class ContentLayerManager:
         self,
         query: str,
         k: int = 3,
-        categories: Optional[list[str]] = None,
+        categories: list[str] | None = None,
     ) -> list[str]:
         """
         Retrieve relevant past context across sessions.
@@ -188,8 +187,8 @@ class ContentLayerManager:
         ordered = sorted(scores, key=lambda kk: -scores[kk])
         return [display[kk] for kk in ordered[:k]]
     
-    def perceive(self, world_state: str, entities: Optional[dict] = None,
-                 relations: Optional[list] = None) -> None:
+    def perceive(self, world_state: str, entities: dict | None = None,
+                 relations: list | None = None) -> None:
         """
         Update the world model with perceived state.
 

@@ -47,7 +47,7 @@ def _well_typed_entry(d: object) -> bool:
     if not _is_int(d.get("seq")):
         return False
     ts = d.get("ts")
-    if not ((isinstance(ts, (int, float)) and not isinstance(ts, bool))):
+    if not (isinstance(ts, (int, float)) and not isinstance(ts, bool)):
         return False
     if not (isinstance(d.get("goal_fp"), str) and d["goal_fp"]):
         return False
@@ -57,9 +57,7 @@ def _well_typed_entry(d: object) -> bool:
     if d.get("status") not in _VALID_STATUS:
         return False
     ok = d.get("ok")
-    if ok is not None and not (ok in (0, 1) and not isinstance(ok, bool)):
-        return False
-    return True
+    return not (ok is not None and not (ok in (0, 1) and not isinstance(ok, bool)))
 
 
 def well_typed_bundle(body: object) -> bool:

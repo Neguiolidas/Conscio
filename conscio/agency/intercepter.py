@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import ast
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .adapter import InferenceAdapter, InferenceResult
@@ -355,7 +356,7 @@ class InterceptionLoop:
 
     def __init__(
         self,
-        adapter: "InferenceAdapter",  # noqa: F821 — string ref to adapter.InferenceAdapter
+        adapter: InferenceAdapter,
         intercepter: Intercepter,
         max_iterations: int = 3,
         emit_fn: Callable[..., Any] | None = None,
@@ -374,7 +375,7 @@ class InterceptionLoop:
         max_tokens: int = 512,
         temperature: float = 0.2,
         stop: list[str] | None = None,
-    ) -> "InferenceResult":  # noqa: F821
+    ) -> InferenceResult:
         observations: list[str] = []
         total_tokens_in = 0
         total_tokens_out = 0

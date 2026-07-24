@@ -18,7 +18,6 @@ import hashlib
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from .constants import DEFAULT_DB_PATH
 from .timeutil import naive_utcnow
@@ -60,7 +59,7 @@ class SourceInfo:
     chunk_count: int
     indexed_at: str
     source_category: str
-    content_hash: Optional[str] = None
+    content_hash: str | None = None
 
 
 # ─── Constants ──────────────────────────────────────────────────────────
@@ -496,7 +495,7 @@ class ContentStore:
             for r in rows
         ]
 
-    def get_source(self, source_id: int) -> Optional[SourceInfo]:
+    def get_source(self, source_id: int) -> SourceInfo | None:
         """Get source metadata."""
         row = self.db.execute(
             "SELECT id, label, chunk_count, indexed_at, source_category, content_hash FROM sources WHERE id = ?",

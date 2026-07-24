@@ -21,7 +21,7 @@ import json
 import logging
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -88,8 +88,8 @@ class StructuralConsent:
         self._save()
 
     def graph_path_for(
-        self, workspace: Any, scope: Optional[ConsentScope] = None
-    ) -> Optional[Path]:
+        self, workspace: Any, scope: ConsentScope | None = None
+    ) -> Path | None:
         """Resolve the consented graph path for ``workspace``, or None.
 
         Returns a path only when the (explicit or stored) scope permits ingestion

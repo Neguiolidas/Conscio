@@ -14,7 +14,7 @@ import json
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .meta_cognition import MetaCognition
@@ -56,8 +56,8 @@ class EvolutionProposal:
         self.risk_level = risk_level
         self.status = ProposalStatus.PENDING
         self.created_at = datetime.now().isoformat()
-        self.reviewed_at: Optional[str] = None
-        self.applied_at: Optional[str] = None
+        self.reviewed_at: str | None = None
+        self.applied_at: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -74,7 +74,7 @@ class EvolutionProposal:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "EvolutionProposal":
+    def from_dict(cls, data: dict) -> EvolutionProposal:
         p = cls(
             evolution_type=EvolutionType(data["type"]),
             description=data["description"],
@@ -212,7 +212,7 @@ class AutoEvolution:
 
     # --- Auto-observation from MetaCognition ---
 
-    def observe_errors(self, meta_cognition: "MetaCognition") -> list[EvolutionProposal]:
+    def observe_errors(self, meta_cognition: MetaCognition) -> list[EvolutionProposal]:
         """
         Observe error patterns from MetaCognition and auto-propose fixes.
 
@@ -256,7 +256,7 @@ class AutoEvolution:
 
     # --- Review & Approval ---
 
-    def approve(self, proposal_id: str) -> Optional[EvolutionProposal]:
+    def approve(self, proposal_id: str) -> EvolutionProposal | None:
         """Approve a pending proposal. Returns None if not found or not pending."""
         for p in self._proposals:
             if p.id == proposal_id and p.status == ProposalStatus.PENDING:
@@ -266,7 +266,7 @@ class AutoEvolution:
                 return p
         return None
 
-    def reject(self, proposal_id: str, reason: str = "") -> Optional[EvolutionProposal]:
+    def reject(self, proposal_id: str, reason: str = "") -> EvolutionProposal | None:
         """Reject a pending proposal."""
         for p in self._proposals:
             if p.id == proposal_id and p.status == ProposalStatus.PENDING:
@@ -277,7 +277,7 @@ class AutoEvolution:
                 return p
         return None
 
-    def mark_applied(self, proposal_id: str) -> Optional[EvolutionProposal]:
+    def mark_applied(self, proposal_id: str) -> EvolutionProposal | None:
         """Mark an approved proposal as successfully applied."""
         for p in self._proposals:
             if p.id == proposal_id and p.status == ProposalStatus.APPROVED:
@@ -287,7 +287,7 @@ class AutoEvolution:
                 return p
         return None
 
-    def mark_rolled_back(self, proposal_id: str) -> Optional[EvolutionProposal]:
+    def mark_rolled_back(self, proposal_id: str) -> EvolutionProposal | None:
         """Mark an applied proposal as rolled back (reverted)."""
         for p in self._proposals:
             if p.id == proposal_id and p.status == ProposalStatus.APPLIED:

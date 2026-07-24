@@ -10,5 +10,12 @@ from .git_sensor import GitSensor
 from .host_sensor import HostSensor
 from .sensor import MockSensor, PerceptionFrame, SensorAdapter
 
-__all__ = ["SensorAdapter", "PerceptionFrame", "MockSensor", "HostSensor",
-           "AgentSensor", "FilesystemSensor", "GitSensor"]
+__all__ = [
+           "AgentSensor",
+           "FilesystemSensor",
+           "GitSensor",
+           "HostSensor",
+           "MockSensor",
+           "PerceptionFrame",
+           "SensorAdapter",
+]

@@ -16,7 +16,6 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 # Optional numpy for fast cosine
 try:
@@ -48,7 +47,7 @@ class VectorBackend:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.dimension = dimension
         self._lock = threading.Lock()
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
         self._init_db()
 
     def _conn_get(self) -> sqlite3.Connection:

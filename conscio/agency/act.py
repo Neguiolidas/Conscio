@@ -15,9 +15,10 @@ profile-driven tool visibility (max_visible_tools).
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 from conscio.context_manager import ConsciousnessState
 from conscio.prompt_zones import build_zoned_prompt

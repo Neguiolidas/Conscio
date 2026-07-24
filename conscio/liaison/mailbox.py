@@ -75,11 +75,11 @@ def inbox(db: Path, to_instance: str, *, types: list[str] | None = None,
     except sqlite3.Error:
         return []
     try:
-        sql = ["SELECT id, from_instance, to_instance, type, payload, ts, read_ts"
-               " FROM messages WHERE to_instance=?"]
+        sql = [("SELECT id, from_instance, to_instance, type, payload, ts, read_ts"
+               " FROM messages WHERE to_instance=?")]
         params: list = [to_instance]
         if types:
-            sql.append(" AND type IN (%s)" % ",".join("?" * len(types)))
+            sql.append(" AND type IN ({})".format(",".join("?" * len(types))))
             params += list(types)
         if unread_only:
             sql.append(" AND read_ts IS NULL")
@@ -185,8 +185,7 @@ def mark_read(db: Path, ids: list[int], read_ts: float | None = None) -> int:
     ts = time.time() if read_ts is None else read_ts
     try:
         cur = conn.execute(
-            "UPDATE messages SET read_ts=? WHERE read_ts IS NULL AND id IN (%s)"
-            % ",".join("?" * len(ids)), [ts, *ids])
+            "UPDATE messages SET read_ts=? WHERE read_ts IS NULL AND id IN ({})".format(",".join("?" * len(ids))), [ts, *ids])
         conn.commit()
         return cur.rowcount
     finally:

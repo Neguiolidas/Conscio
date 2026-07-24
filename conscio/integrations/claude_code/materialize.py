@@ -45,8 +45,8 @@ def _copy_tree(src: Path, dst: Path) -> int:
 
 
 def materialize(slug: str, *, flags: dict, model, ts: str, io=None,
-                claude_dir: "Path | None" = None,
-                claude_json: "Path | None" = None) -> dict:
+                claude_dir: Path | None = None,
+                claude_json: Path | None = None) -> dict:
     cdir = _claude_dir(claude_dir)
     cjson = claude_json_path(claude_json)
     a = assets_root()

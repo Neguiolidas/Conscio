@@ -9,7 +9,7 @@ from pathlib import Path
 _log = logging.getLogger("conscio.installer.binding")
 
 
-def validate_binding(storage, *, log: "logging.Logger | None" = None) -> bool:
+def validate_binding(storage, *, log: logging.Logger | None = None) -> bool:
     log = log or _log
     if not storage:
         return True                       # default storage; nothing to validate

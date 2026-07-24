@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from .guards import atomic_write_text, safe_read_json
 from .models import ContextMode, ModelRegistry
@@ -69,7 +68,7 @@ class ConsciousnessState:
     metabolic: str = ""               # Optional metabolic tier note, e.g. "FATIGUE 61%"
     reflection_quality: str = ""      # Optional meta-reflect label: HIGH/MEDIUM/LOW
     shard: str = ""                   # Optional active cognitive mode, e.g. "ENGINEER"
-    coherence: Optional[float] = None  # Optional aggregate coherence [0,1]; None=not computed
+    coherence: float | None = None  # Optional aggregate coherence [0,1]; None=not computed
     coherence_note: str = ""           # Dominant dissonance dimension, e.g. "epistemic"
     voice: str = ""                    # Active voice preset name, e.g. "coherence-style"
     self_prompt: str = ""              # Top self-prompt question (v0.7)
@@ -158,9 +157,9 @@ class ContextManager:
     def __init__(
         self,
         model_name: str,
-        context_window: Optional[int] = None,
-        storage_path: Optional[str | Path] = None,
-        base_url: Optional[str] = None,
+        context_window: int | None = None,
+        storage_path: str | Path | None = None,
+        base_url: str | None = None,
         autodetect: bool = True,
     ):
         # Auto-detect context by default: host-state reads (config, LM Studio,
@@ -182,19 +181,19 @@ class ContextManager:
         self,
         state_summary: str = "",
         last_reflection: str = "",
-        active_goals: Optional[list[str]] = None,
+        active_goals: list[str] | None = None,
         world_model_snippet: str = "",
         meta_cognition: str = "",
         metabolic: str = "",
         reflection_quality: str = "",
         shard: str = "",
-        coherence: Optional[float] = None,
+        coherence: float | None = None,
         coherence_note: str = "",
         voice: str = "",
         self_prompt: str = "",
         dream_recommended: str = "",
-        action_lockdown: Optional[bool] = None,
-        awake: Optional[bool] = None,
+        action_lockdown: bool | None = None,
+        awake: bool | None = None,
     ) -> ConsciousnessState:
         """
         Build a ConsciousnessState, trimming each component to fit the budget.

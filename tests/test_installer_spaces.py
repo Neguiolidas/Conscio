@@ -18,7 +18,7 @@ def test_ensure_space_creates_then_reuses():
     assert created1 is True
     assert d1.is_dir() and (d1 / "instance.json").is_file()
     assert (spaces.vault_dir("claude-code")) == d1 / "keys"
-    d2, id2, created2 = spaces.ensure_space("claude-code")
+    _d2, id2, created2 = spaces.ensure_space("claude-code")
     assert created2 is False
     assert id2.instance_id == id1.instance_id          # identity preserved
 

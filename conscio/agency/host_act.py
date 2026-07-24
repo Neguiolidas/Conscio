@@ -8,7 +8,8 @@ TrustMatrix; takes a host-owned ToolRegistry (registry_from_manifest)."""
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ..guards import clamp_int
 from ..risk import Risk

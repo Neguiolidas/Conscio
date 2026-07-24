@@ -8,7 +8,8 @@ the OVERSIZE sentinel, so nothing oversized is ever held in memory.
 """
 from __future__ import annotations
 
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600

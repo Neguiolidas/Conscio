@@ -49,8 +49,8 @@ class AgentSensor(SensorAdapter):
         if not self.source.exists():
             return PerceptionFrame(
                 source="agent",
-                observations=[f"agent '{self.peer_name}': "
-                              f"source unavailable ({self.source})"])
+                observations=[(f"agent '{self.peer_name}': "
+                              f"source unavailable ({self.source})")])
         observations.append(f"peer: {self.peer_name}")
         self._read_state(observations, signals)
         self._read_handoff(observations)

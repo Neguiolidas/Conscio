@@ -19,18 +19,18 @@ class TestGatewayIntercepterIntegration:
 
     def test_gateway_without_intercepter(self):
         """Existing behavior: no intercepter → adapter.generate() called directly."""
-        adapter = MockAdapter(script=['{"tool": "think", "args": {}, '
+        adapter = MockAdapter(script=[('{"tool": "think", "args": {}, '
                                       '"rationale": "test", '
-                                      '"expected_outcome": "ok"}'])
+                                      '"expected_outcome": "ok"}')])
         gw = OutputGateway(adapter)
         result = gw.request_action("prompt", PROPOSAL_SCHEMA)
         assert isinstance(result, ActionProposal)
 
     def test_gateway_with_intercepter_no_tags(self):
         """Intercepter present but no tags → single generate, clean pass-through."""
-        adapter = MockAdapter(script=['{"tool": "think", "args": {}, '
+        adapter = MockAdapter(script=[('{"tool": "think", "args": {}, '
                                       '"rationale": "test", '
-                                      '"expected_outcome": "ok"}'])
+                                      '"expected_outcome": "ok"}')])
         gw = OutputGateway(adapter, intercepter=Intercepter())
         result = gw.request_action("prompt", PROPOSAL_SCHEMA)
         assert isinstance(result, ActionProposal)
@@ -40,10 +40,10 @@ class TestGatewayIntercepterIntegration:
         # First generate: output has a tag.
         # Second generate (after intercept+reinject): clean JSON.
         adapter = MockAdapter(script=[
-            '{"tool": "calc", "args": {"result": "[INTERCEPT: 2+2]"}, '
-            '"rationale": "test", "expected_outcome": "ok"}',
-            '{"tool": "calc", "args": {"result": 4}, '
-            '"rationale": "test", "expected_outcome": "ok"}',
+            ('{"tool": "calc", "args": {"result": "[INTERCEPT: 2+2]"}, '
+            '"rationale": "test", "expected_outcome": "ok"}'),
+            ('{"tool": "calc", "args": {"result": 4}, '
+            '"rationale": "test", "expected_outcome": "ok"}'),
         ])
         gw = OutputGateway(adapter, intercepter=Intercepter())
         result = gw.request_action("prompt", PROPOSAL_SCHEMA)
@@ -52,8 +52,8 @@ class TestGatewayIntercepterIntegration:
     def test_t1_skips_intercepter(self):
         """T1 (grammar/GBNF) bypasses intercepter entirely."""
         adapter = MockAdapter(script=[
-            '{"tool": "think", "args": {}, '
-            '"rationale": "test", "expected_outcome": "ok"}',
+            ('{"tool": "think", "args": {}, '
+            '"rationale": "test", "expected_outcome": "ok"}'),
         ])
         intercepter = Intercepter()
         gw = OutputGateway(adapter, intercepter=intercepter, tier="T1")
@@ -66,8 +66,8 @@ class TestGatewayIntercepterIntegration:
     def test_max_intercept_iterations_param(self):
         """max_intercept_iterations flows to InterceptionLoop."""
         adapter = MockAdapter(script=[
-            '{"tool": "think", "args": {}, '
-            '"rationale": "test", "expected_outcome": "ok"}',
+            ('{"tool": "think", "args": {}, '
+            '"rationale": "test", "expected_outcome": "ok"}'),
         ])
         gw = OutputGateway(adapter, intercepter=Intercepter(),
                            max_intercept_iterations=5)
@@ -102,8 +102,8 @@ class TestPromptZonesIntegration:
         from conscio.prompt_zones import PromptZones
 
         adapter = MockAdapter(script=[
-            '{"tool": "think", "args": {}, '
-            '"rationale": "test", "expected_outcome": "ok"}',
+            ('{"tool": "think", "args": {}, '
+            '"rationale": "test", "expected_outcome": "ok"}'),
         ])
         gw = OutputGateway(adapter)
         pz = PromptZones(
@@ -118,8 +118,8 @@ class TestPromptZonesIntegration:
         from conscio.prompt_zones import PromptZones
 
         script = [
-            '{"tool": "think", "args": {}, '
-            '"rationale": "test", "expected_outcome": "ok"}',
+            ('{"tool": "think", "args": {}, '
+            '"rationale": "test", "expected_outcome": "ok"}'),
         ]
         pz = PromptZones(stable="hello", volatile="world")
 
@@ -191,8 +191,8 @@ class TestParseKv:
 class TestGatewayT2:
     def test_decodes_clean_json_first_try(self):
         mock = MockAdapter(script=[
-            '{"tool": "fs_read", "args": {"path": "a"}, '
-            '"rationale": "r", "expected_outcome": "e"}'])
+            ('{"tool": "fs_read", "args": {"path": "a"}, '
+            '"rationale": "r", "expected_outcome": "e"}')])
         gw = OutputGateway(mock, max_retries=2)
         p = gw.request_action("BASE", PROPOSAL_SCHEMA, goal_id="g1")
         assert isinstance(p, ActionProposal) and p.tool == "fs_read"

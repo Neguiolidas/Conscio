@@ -26,8 +26,9 @@ import os
 import signal
 import threading
 import time
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, Callable, Optional, Sequence
+from typing import Any
 
 from .agency.loop import ActBudget, RunReport
 from .guards import safe_read_json
@@ -55,16 +56,16 @@ def _pid_alive(pid: int) -> bool:
 
 class Daemon:
     def __init__(self, engine: Any, sensors: Sequence[SensorAdapter], *,
-                 interval: float = 5.0, budget: Optional[ActBudget] = None,
-                 on_cycle: Optional[Callable[[list, RunReport], Any]] = None,
-                 responder: Optional[Callable[[], list]] = None,
-                 initiator: Optional[Callable[[], list]] = None,
+                 interval: float = 5.0, budget: ActBudget | None = None,
+                 on_cycle: Callable[[list, RunReport], Any] | None = None,
+                 responder: Callable[[], list] | None = None,
+                 initiator: Callable[[], list] | None = None,
                  initiate_interval: float = 300.0,
                  workspace: Any = None,
                  consent: Any = None,
-                 pidfile: Optional[str | Path] = None,
-                 heartbeat_path: Optional[str | Path] = None,
-                 control_path: Optional[str | Path] = None,
+                 pidfile: str | Path | None = None,
+                 heartbeat_path: str | Path | None = None,
+                 control_path: str | Path | None = None,
                  close_engine_on_shutdown: bool = True) -> None:
         self.engine = engine
         self.sensors = list(sensors)
@@ -74,10 +75,10 @@ class Daemon:
         self.responder = responder                      # v2.7.0: relay auto-reply
         self.initiator = initiator                      # v2.10.0: proactive init
         self.initiate_interval = float(initiate_interval)
-        self._last_initiate: Optional[float] = None       # None = never initiated
+        self._last_initiate: float | None = None       # None = never initiated
         self.workspace = workspace
         self.consent = consent                          # v1.7.2: structural consent
-        self._synced_ws_id: Optional[str] = None        # re-sync only on ws change
+        self._synced_ws_id: str | None = None        # re-sync only on ws change
         storage = Path(getattr(engine, "storage", "."))
         self.pidfile = Path(pidfile) if pidfile else storage / "daemon.pid"
         self.heartbeat_path = (Path(heartbeat_path) if heartbeat_path
@@ -85,7 +86,7 @@ class Daemon:
         self.control_path = Path(control_path) if control_path else None
         self.close_engine_on_shutdown = close_engine_on_shutdown
         self.cycles = 0
-        self._last_report: Optional[RunReport] = None   # v1.6: last-cycle summary
+        self._last_report: RunReport | None = None   # v1.6: last-cycle summary
         self._idle_cycles: int = 0                       # v3.3: sensor-signal tracker
         self._stop = threading.Event()
         self._orig_handlers: dict[int, Any] = {}
@@ -266,7 +267,7 @@ class Daemon:
 
 # ── entry point (conscio-daemon) ───────────────────────────────────────────────
 
-def _build_sensors(spec: str, *, agent_source: Optional[str],
+def _build_sensors(spec: str, *, agent_source: str | None,
                    liaison_db=None, self_id: str = "",
                    relay_peers: Sequence[str] = ()) -> list[SensorAdapter]:
     from .perception import AgentSensor, HostSensor
@@ -410,7 +411,7 @@ def _arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     from .engine import ConsciousnessEngine
     from .structural_consent import StructuralConsent, consent_path
     from .workspace import WorkspaceContext
@@ -483,7 +484,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 from .agency import relay_cognize
                 _engine = engine                        # R1: bind LOCAL engine
                 _remember = args.cognize_remember       # v2.9.1
-                responder = lambda: relay_cognize.cognize_respond(  # noqa: E731
+                responder = lambda: relay_cognize.cognize_respond(
                     _engine, _adapter, liaison_db, self_id, _peers,
                     limit=args.respond_limit, remember=_remember)
                 log.info("relay cognize-respond armed (peers=%d, limit=%d, "
@@ -491,7 +492,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                          _remember)
             else:
                 from .agency import relay_respond
-                responder = lambda: relay_respond.auto_respond(   # noqa: E731
+                responder = lambda: relay_respond.auto_respond(
                     _adapter, liaison_db, self_id, _peers,
                     limit=args.respond_limit)
                 log.info("relay auto-respond armed (peers=%d, limit=%d)",

@@ -12,7 +12,6 @@ import json
 import math
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 from .guards import atomic_write_text, read_json_dict
 
@@ -91,7 +90,7 @@ class WorldModel:
     # --- Entities ---
 
     def add_entity(self, name: str, entity_type: str,
-                   attributes: Optional[dict] = None,
+                   attributes: dict | None = None,
                    state: str = "") -> None:
         """Add or update an entity in the world model.
 
@@ -143,7 +142,7 @@ class WorldModel:
         ]
         self._save()
 
-    def get_entity(self, name: str) -> Optional[dict]:
+    def get_entity(self, name: str) -> dict | None:
         """Get an entity by name."""
         return self._data["entities"].get(name)
 
@@ -395,7 +394,7 @@ class WorldModel:
         decay = math.exp(-RELEVANCE_DECAY_LAMBDA * hours_since_update)
         return current_relevance * decay
 
-    def entropy(self, name: str, _relevance: Optional[float] = None) -> float:
+    def entropy(self, name: str, _relevance: float | None = None) -> float:
         """
         Entropy score in [0, 1] for an entity. Higher = more disordered.
 
@@ -438,7 +437,7 @@ class WorldModel:
         """
         now = datetime.now()
         updated = 0
-        for name, info in self._data["entities"].items():
+        for info in self._data["entities"].values():
             try:
                 last = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
                 hours = (now - last).total_seconds() / 3600

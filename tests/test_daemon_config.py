@@ -7,7 +7,7 @@ import json
 from types import SimpleNamespace
 
 import conscio.adapter_config as ac
-import conscio.daemon as daemon
+from conscio import daemon
 
 
 class TestLoadConfig:
@@ -72,7 +72,7 @@ class TestBuildAdapterFromConfig:
 
 class TestBuildAdapterFromCli:
     def _args(self, **kw):
-        base = dict(adapter="openai", adapter_model=None, base_url=None)
+        base = {"adapter": "openai", "adapter_model": None, "base_url": None}
         base.update(kw)
         return SimpleNamespace(**base)
 

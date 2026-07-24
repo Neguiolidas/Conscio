@@ -3,16 +3,16 @@ graph.json; zero runtime dep). Obsidian/MemPalace are added here later as
 their own opt-in plugin packages WITHOUT touching the wizard."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 
 @dataclass(frozen=True)
 class Extra:
     name: str
     summary: str
-    optional_dep: "str | None"
+    optional_dep: str | None
     enable: Callable[[Path], list[str]]
 
 

@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from ..guards import safe_read_json
 from . import spaces
@@ -28,7 +28,7 @@ class HostConfigError(RuntimeError):
     pass
 
 
-def mcp_server_entry(slug: str, *, flags: dict, model: "str | None") -> dict:
+def mcp_server_entry(slug: str, *, flags: dict, model: str | None) -> dict:
     args = ["--storage", str(spaces.space_dir(slug))]
     if model:
         args += ["--model", model]
@@ -40,7 +40,7 @@ def mcp_server_entry(slug: str, *, flags: dict, model: "str | None") -> dict:
 
 
 def upsert_conscio_entry(o: dict, slug: str, *, flags: dict,
-                         model: "str | None") -> None:
+                         model: str | None) -> None:
     """Replace the conscio MCP entry, preserving user-added env keys on the
     old entry (ours win on conflict). Args are fully owned by the flags."""
     entry = mcp_server_entry(slug, flags=flags, model=model)
@@ -62,7 +62,7 @@ def _entry_args(config_path: Path) -> list:
     return args if isinstance(args, list) else []
 
 
-def _arg_value(config_path: Path, flag: str) -> "str | None":
+def _arg_value(config_path: Path, flag: str) -> str | None:
     args = _entry_args(config_path)
     for i, a in enumerate(args[:-1]):
         if a == flag:
@@ -81,13 +81,13 @@ def existing_flags(config_path: Path) -> dict:
     return {inv[a]: True for a in _entry_args(config_path) if a in inv}
 
 
-def existing_model(config_path: Path) -> "str | None":
+def existing_model(config_path: Path) -> str | None:
     """Recover --model from an existing conscio entry — a --repair without
     --model must not strip the configured model. None when absent/corrupt."""
     return _arg_value(config_path, "--model")
 
 
-def existing_slug(config_path: Path) -> "str | None":
+def existing_slug(config_path: Path) -> str | None:
     """Recover the bound space slug from an existing entry's --storage arg —
     --repair must rebind the SAME space, never mint a new one."""
     v = _arg_value(config_path, "--storage")
@@ -104,7 +104,7 @@ def _prune_backups(path: Path) -> None:
 
 
 def backup_then_write_json(path: Path, *, mutate: Callable[[dict], None],
-                           verify: Callable[[dict], bool], ts: str) -> "Path | None":
+                           verify: Callable[[dict], bool], ts: str) -> Path | None:
     path = Path(path)
     backup = None
     obj: dict = {}
@@ -138,8 +138,8 @@ def backup_then_write_json(path: Path, *, mutate: Callable[[dict], None],
     return backup
 
 
-def write_claude_code(slug: str, *, flags: dict, model: "str | None",
-                      config_path: Path, ts: str) -> "Path | None":
+def write_claude_code(slug: str, *, flags: dict, model: str | None,
+                      config_path: Path, ts: str) -> Path | None:
     def mutate(o: dict) -> None:
         upsert_conscio_entry(o, slug, flags=flags, model=model)
     return backup_then_write_json(
@@ -147,7 +147,7 @@ def write_claude_code(slug: str, *, flags: dict, model: "str | None",
         verify=lambda o: "conscio" in o.get("mcpServers", {}), ts=ts)
 
 
-def generic_snippet(slug: str, *, flags: dict, model: "str | None") -> str:
+def generic_snippet(slug: str, *, flags: dict, model: str | None) -> str:
     return json.dumps(
         {"mcpServers": {"conscio": mcp_server_entry(slug, flags=flags,
                                                     model=model)}},

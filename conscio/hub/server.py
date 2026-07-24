@@ -181,7 +181,7 @@ def route(method: str, path: str, query: dict, body: dict | None,
     return _err(404, "not found", path)
 
 
-def _bind_vault_dir(vault_dir: "str | None") -> None:
+def _bind_vault_dir(vault_dir: str | None) -> None:
     """Point every vault_* call in this process at a per-host vault (R2).
     The installer binds each host's MCP/daemon to a space vault via
     CONSCIO_VAULT_DIR; a Hub managing that space's keys must be launched with

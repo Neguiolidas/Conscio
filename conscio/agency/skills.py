@@ -196,9 +196,9 @@ class SkillLibrary:
         exemplar teaches tool/arg choice, not response syntax)."""
         steps = json.loads(row["plan_template"])
         total = row["successes"] + row["failures"]
-        rate = int(round(100 * row["successes"] / total)) if total else 100
-        lines = [f"Past successful plan for a similar goal "
-                 f"(success rate {rate}%, used {row['uses']}x):"]
+        rate = round(100 * row["successes"] / total) if total else 100
+        lines = [(f"Past successful plan for a similar goal "
+                 f"(success rate {rate}%, used {row['uses']}x):")]
         for step in steps:
             if tier == "T3":
                 lines.append(f"TOOL: {step['tool']}")

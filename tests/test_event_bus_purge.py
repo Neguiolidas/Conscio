@@ -39,7 +39,7 @@ def test_purge_collapses_same_type_and_hash_keeping_newest(bus):
     hashes = [r["data_hash"] for r in rows]
     assert hashes == ["hashA", "hashB"]
     # the surviving hashA row is the NEWEST (12:02)
-    surviving_a = [r for r in rows if r["data_hash"] == "hashA"][0]
+    surviving_a = next(r for r in rows if r["data_hash"] == "hashA")
     assert surviving_a["timestamp"] == (base + timedelta(minutes=2)).isoformat()
 
 

@@ -29,7 +29,7 @@ def pid_file(slug: str) -> Path:
     return spaces.DAEMONS_ROOT() / f"{slug}.pid"
 
 
-def _read_pid(slug: str) -> "int | None":
+def _read_pid(slug: str) -> int | None:
     try:
         return int(pid_file(slug).read_text().strip())
     except (OSError, ValueError):
@@ -62,7 +62,7 @@ def is_running(slug: str) -> bool:
     return any(m in cmd for m in _MARKERS)
 
 
-def start(slug: str, *, extra_args: "list[str]") -> int:
+def start(slug: str, *, extra_args: list[str]) -> int:
     if is_running(slug):
         return _read_pid(slug) or -1
     pf = pid_file(slug)

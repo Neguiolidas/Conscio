@@ -27,7 +27,6 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from .structural import StructuralSignal
 from .timeutil import naive_utcnow
@@ -66,7 +65,7 @@ class StructuralDigest:
     seen_at: str                    # naive UTC iso, when this baseline was recorded
 
     @classmethod
-    def from_signal(cls, sig: StructuralSignal) -> "StructuralDigest":
+    def from_signal(cls, sig: StructuralSignal) -> StructuralDigest:
         return cls(
             commit=sig.built_at_commit,
             content_hash=sig.content_hash,
@@ -89,7 +88,7 @@ class StructuralDigest:
         }
 
     @classmethod
-    def from_json(cls, d: object) -> Optional["StructuralDigest"]:
+    def from_json(cls, d: object) -> StructuralDigest | None:
         """Rebuild from a stored dict; None if malformed (fail-tolerant)."""
         if not isinstance(d, dict):
             return None
@@ -184,7 +183,7 @@ class StructuralDelta:
 
 
 def compute_delta(
-    prev: Optional[StructuralDigest], signal: StructuralSignal
+    prev: StructuralDigest | None, signal: StructuralSignal
 ) -> StructuralDelta:
     """Compare a persisted baseline against a fresh signal (PURE).
 
@@ -234,7 +233,7 @@ def compute_delta(
 class StructuralFreshness:
     """Graph commit vs the repo's current HEAD."""
     graph_commit: str
-    head_commit: Optional[str]      # None when .git is unreadable / not a repo
+    head_commit: str | None      # None when .git is unreadable / not a repo
 
     @property
     def known(self) -> bool:
@@ -259,12 +258,12 @@ class StructuralFreshness:
         }
 
 
-def _clean_sha(value: object) -> Optional[str]:
+def _clean_sha(value: object) -> str | None:
     s = str(value or "").strip()
     return s if _SHA_RE.match(s) else None
 
 
-def read_head_commit(root: str | Path) -> Optional[str]:
+def read_head_commit(root: str | Path) -> str | None:
     """Read the current HEAD commit sha from ``root/.git`` — PURE, never raises.
 
     Handles a normal ``.git`` directory, a detached HEAD, a ``packed-refs``
@@ -347,7 +346,7 @@ class StructuralDriftStore:
         except OSError as exc:
             log.warning("structural drift store save failed: %s", exc)
 
-    def get(self, workspace_id: str) -> Optional[StructuralDigest]:
+    def get(self, workspace_id: str) -> StructuralDigest | None:
         return self._map.get(workspace_id)
 
     def put(self, workspace_id: str, digest: StructuralDigest) -> None:

@@ -2,9 +2,9 @@ from conscio.noosphere import record_catalog as rc
 
 
 def _row(iid="A", sha="h1", **kw):
-    base = dict(origin_instance_id=iid, origin_label="labelA", published_ts=1.0,
-                content_sha256=sha, entry_count=2, window_first_ts=1.0,
-                window_last_ts=2.0, bundle_json=b'{"x":1}', schema_version=1)
+    base = {"origin_instance_id": iid, "origin_label": "labelA", "published_ts": 1.0,
+                "content_sha256": sha, "entry_count": 2, "window_first_ts": 1.0,
+                "window_last_ts": 2.0, "bundle_json": b'{"x":1}', "schema_version": 1}
     base.update(kw)
     return rc.RecordRow(**base)
 

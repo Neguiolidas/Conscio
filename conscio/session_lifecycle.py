@@ -18,7 +18,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from .timeutil import naive_utcnow
 
@@ -117,7 +117,7 @@ class SessionSummary:
     trajectory: str = ""
     vibes: str = ""
     identity_anchor: str = ""
-    coherence: Optional[float] = None
+    coherence: float | None = None
     coherence_note: str = ""
     voice: str = ""
     self_prompt: str = ""
@@ -255,22 +255,20 @@ def _extract_keywords(text: str, max_kw: int = 5) -> list[str]:
         "quem","cujo","cuja","cujos","cujas","tal","tais","quanto","quantos",
         "tantos","tanta","tantas","vez","vezes","bem","mal","melhor","pior",
         "ser","estar","ter","haver","ir","vir","fazer","dizer","ver","dar",
-        "preciso","precisa","quero","quer","foi","foram","tem","tinha","ter",
-        "devemos","deve","devia","podemos","pode","podia","vamos","vai","vão",
+        "preciso","precisa","quero","quer","foi","foram","tem","tinha","devemos","deve","devia","podemos","pode","podia","vamos","vai","vão",
         # EN stopwords
-        "the","a","an","is","are","was","were","be","been","to","of","and",
-        "in","that","it","for","on","with","as","by","at","from","or","this",
-        "but","not","have","has","had","do","does","did","will","would","can",
-        "could","should","may","might","shall","if","then","than","so","no",
-        "up","out","just","also","more","some","any","all","each","every",
-        "very","too","also","only","about","into","over","after","before",
+        "the","an","is","are","was","were","be","been","to","of","and",
+        "in","that","it","for","on","with","by","at","from","or","this",
+        "but","not","have","has","had","does","did","will","would","can",
+        "could","should","may","might","shall","if","then","than","so","up","out","just","also","more","some","any","all","each","every",
+        "very","too","only","about","into","over","after","before",
         # Greetings/fillers (high-frequency, zero info)
         "bom","boa","dia","tarde","noite","olá","hello","hi","hey",
         "obrigado","obrigada","valeu","thanks","thank","please",
         "entendi","entende","ok","tá","ta","sim","claro","certo",
         "senhor","senhora","hermet","hermes",
-        "vou","vamos","deixe","deixar","aqui","agora","hoje",
-        "verificar","ver","verificar","funcionou","feito",
+        "vou","deixe","deixar","aqui","agora","hoje",
+        "verificar","funcionou","feito",
         "panorama","diagnóstico","pronto","resumo","relatou",
     }
     # Strip markdown, code, punctuation, URLs
@@ -886,9 +884,8 @@ class SessionLifecycle:
         elif event_type == "session:end":
             if self.on_session_end:
                 self.on_session_end(event_type, context)
-        elif event_type == "session:reset":
-            if self.on_session_reset:
-                self.on_session_reset(event_type, context)
+        elif event_type == "session:reset" and self.on_session_reset:
+            self.on_session_reset(event_type, context)
 
     def record_session(self, event_type: str, context: dict) -> SessionSummary | None:
         return record_session_lifecycle(

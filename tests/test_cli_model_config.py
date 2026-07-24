@@ -33,7 +33,7 @@ def test_explicit_cli_model_beats_config(monkeypatch, tmp_path, capsys):
 
 
 def test_env_used_when_no_config(monkeypatch, tmp_path, capsys):
-    monkeypatch.setattr(ac, "load_config", lambda: {})
+    monkeypatch.setattr(ac, "load_config", dict)
     monkeypatch.setenv("CONSCIO_MODEL", "glm-5.1")
     rc = main(["info", "--storage", str(tmp_path)])
     assert rc == 0

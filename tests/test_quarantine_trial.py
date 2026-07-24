@@ -6,13 +6,13 @@ from conscio.noosphere.quarantine import QuarantineRow
 
 
 def _row(**kw) -> QuarantineRow:
-    base = dict(
-        content_sha256="abc", origin_instance_id="o1", origin_label="A",
-        published_ts=1.0, importer_instance_id="i1", imported_ts=2.0,
-        goal_fp="fp", goal_text="deploy", tool_seq='["fs_write"]',
-        plan_template='[{"tool":"fs_write","args":{},"rationale":"r"}]',
-        artifact_json=b"{}", import_status="quarantined",
-        revalidation_result="ok", revalidation_error="", schema_version=1)
+    base = {
+        "content_sha256": "abc", "origin_instance_id": "o1", "origin_label": "A",
+        "published_ts": 1.0, "importer_instance_id": "i1", "imported_ts": 2.0,
+        "goal_fp": "fp", "goal_text": "deploy", "tool_seq": '["fs_write"]',
+        "plan_template": '[{"tool":"fs_write","args":{},"rationale":"r"}]',
+        "artifact_json": b"{}", "import_status": "quarantined",
+        "revalidation_result": "ok", "revalidation_error": "", "schema_version": 1}
     base.update(kw)
     return QuarantineRow(**base)
 

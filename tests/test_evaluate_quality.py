@@ -55,7 +55,7 @@ def test_evaluate_output_quality_has_rationale():
     with tempfile.TemporaryDirectory() as d:
         eng = ConsciousnessEngine(model_name="t", storage_path=d)
         result = evaluate(eng, task_description="test", output="Test output")
-        oq = [a for a in result.axes if a.axis == "output_quality"][0]
+        oq = next(a for a in result.axes if a.axis == "output_quality")
         assert oq.evidence is not None
         eng.close()
 
@@ -65,6 +65,6 @@ def test_evaluate_output_quality_score_range():
     with tempfile.TemporaryDirectory() as d:
         eng = ConsciousnessEngine(model_name="t", storage_path=d)
         result = evaluate(eng, task_description="test", output="Test output")
-        oq = [a for a in result.axes if a.axis == "output_quality"][0]
+        oq = next(a for a in result.axes if a.axis == "output_quality")
         assert 1 <= oq.score <= 5
         eng.close()

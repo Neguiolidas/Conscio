@@ -23,10 +23,9 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Optional
 
 
-def safe_read_json(path: Path) -> Optional[dict]:
+def safe_read_json(path: Path) -> dict | None:
     """Return the JSON object at ``path`` as a dict, or None on ANY problem:
     missing file, OSError, binary / non-UTF-8 content (UnicodeDecodeError),
     malformed JSON, or valid JSON that is not an object. Never raises — so a

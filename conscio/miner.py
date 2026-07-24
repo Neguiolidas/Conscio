@@ -15,7 +15,6 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 from .dedup import Deduplicator
 from .wings import WingManager
@@ -36,7 +35,7 @@ BINARY_EXT = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".webp",
 class Miner:
     """File + conversation ingestor."""
 
-    def __init__(self, wing_manager: WingManager, dedup: Optional[Deduplicator] = None):
+    def __init__(self, wing_manager: WingManager, dedup: Deduplicator | None = None):
         self.wm = wing_manager
         # Use shared dedup db if provided; else standalone next to content_store
         if dedup is None:

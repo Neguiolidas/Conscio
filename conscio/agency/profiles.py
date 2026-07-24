@@ -148,21 +148,21 @@ def _p5(raw: str) -> bool:
 
 PROBES = (
     ("p1_flat_json",
-     'Return ONLY this exact JSON object, nothing else: '
-     '{"status": "ok", "count": 3}', _p1),
+     ('Return ONLY this exact JSON object, nothing else: '
+     '{"status": "ok", "count": 3}'), _p1),
     ("p2_nested",
-     'Return ONLY a JSON object with one key "plan" whose value is an '
+     ('Return ONLY a JSON object with one key "plan" whose value is an '
      'object with a string key "tool" and a list-of-strings key "steps". '
-     'No other keys, no prose.', _p2),
+     'No other keys, no prose.'), _p2),
     ("p3_enum",
-     'Return ONLY a JSON object {"color": X} where X is exactly one of: '
-     '"red", "green", "blue". No prose.', _p3),
+     ('Return ONLY a JSON object {"color": X} where X is exactly one of: '
+     '"red", "green", "blue". No prose.'), _p3),
     ("p4_negative",
-     'Return ONLY a JSON object with a single key "name" whose value is '
-     '"probe". Do NOT include any other field. No prose.', _p4),
+     ('Return ONLY a JSON object with a single key "name" whose value is '
+     '"probe". Do NOT include any other field. No prose.'), _p4),
     ("p5_kv_line",
-     "Respond with EXACTLY these two lines and nothing else:\n"
-     "TOOL: fs_read\nWHY: probe", _p5),
+     ("Respond with EXACTLY these two lines and nothing else:\n"
+     "TOOL: fs_read\nWHY: probe"), _p5),
 )
 
 

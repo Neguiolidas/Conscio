@@ -125,8 +125,7 @@ def extract_entities(text: str) -> list[ExtractedEntity]:
     # Code identifiers (snake_case function/variable names)
     for m in _CODE_IDENTIFIER.finditer(text):
         ident = m.group()
-        if ident.endswith("("):
-            ident = ident[:-1]
+        ident = ident.removesuffix("(")
         if len(ident) >= 4 and "_" in ident:
             found[ident] = "identifier"
 

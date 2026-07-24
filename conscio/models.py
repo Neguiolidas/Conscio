@@ -17,7 +17,6 @@ import urllib.request
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +174,7 @@ class ModelRegistry:
     ]
 
     @classmethod
-    def _read_config_context(cls, model_name: str) -> Optional[int]:
+    def _read_config_context(cls, model_name: str) -> int | None:
         """Read context_window from the conscio JSON config file.
 
         Config format (JSON), nested or flat:
@@ -233,7 +232,7 @@ class ModelRegistry:
 
     @classmethod
     def query_context_from_endpoint(cls, base_url: str,
-                                    model_name: str) -> Optional[int]:
+                                    model_name: str) -> int | None:
         """Query an OpenAI-compatible /v1/models endpoint for context_length.
 
         Returns the context_length if found, None otherwise.
@@ -274,7 +273,7 @@ class ModelRegistry:
     ]
 
     @classmethod
-    def query_context_from_lmstudio(cls, model_name: str) -> Optional[int]:
+    def query_context_from_lmstudio(cls, model_name: str) -> int | None:
         """Read active context_length from LM Studio conversation state.
 
         LM Studio stores the loaded model's contextLength in its conversation
@@ -332,7 +331,7 @@ class ModelRegistry:
         return best_ctx
 
     @classmethod
-    def _read_gguf_context_length(cls, gguf_path: str) -> Optional[int]:
+    def _read_gguf_context_length(cls, gguf_path: str) -> int | None:
         """Read context_length (architectural max) from GGUF file metadata."""
         try:
             with open(gguf_path, "rb") as f:
@@ -428,7 +427,7 @@ class ModelRegistry:
 
     @classmethod
     def query_context_from_gguf(cls, model_name: str,
-                                search_dirs: Optional[list] = None) -> Optional[int]:
+                                search_dirs: list | None = None) -> int | None:
         """Search local directories for a GGUF model and read its context_length.
 
         Scans ``*.gguf`` stores (LM Studio, raw downloads). Ollama keeps models as
@@ -457,7 +456,7 @@ class ModelRegistry:
         return None
 
     @classmethod
-    def lookup(cls, model_name: str) -> Optional[ModelInfo]:
+    def lookup(cls, model_name: str) -> ModelInfo | None:
         """
         Look up a model by name or alias.
         
@@ -495,8 +494,8 @@ class ModelRegistry:
         return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
     @classmethod
-    def detect(cls, model_name: str, context_window: Optional[int] = None,
-               base_url: Optional[str] = None,
+    def detect(cls, model_name: str, context_window: int | None = None,
+               base_url: str | None = None,
                autodetect: bool = True) -> ModelInfo:
         """Resolve ModelInfo — auto-detect context by default.
 
@@ -684,7 +683,7 @@ class ModelRegistry:
 
     @classmethod
     def register(cls, name: str, context_window: int,
-                 strengths: Optional[list[str]] = None,
+                 strengths: list[str] | None = None,
                  notes: str = "") -> ModelInfo:
         """Register a new model in the registry."""
         mode = cls.detect_mode(context_window)

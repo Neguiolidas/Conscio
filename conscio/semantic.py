@@ -185,7 +185,7 @@ class ContradictionDetector:
     states share one contradiction rule: lexical negation OR axis opposition.
     """
 
-    def __init__(self, semantic: "SemanticEngine | None" = None):
+    def __init__(self, semantic: SemanticEngine | None = None):
         self.semantic = semantic
 
     def _contradict(self, a: str, b: str) -> bool:
