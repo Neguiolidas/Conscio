@@ -51,8 +51,10 @@ class NeurataBridge:
             return
 
         # Probe: bypass the available gate (we haven't decided yet)
-        probe = self._run("doctor")
-        if probe is None:
+        # Tolerate non-zero exit codes — neurata doctor returns exit 1 on warnings
+        # (e.g., stale index) but still emits valid JSON with contract_version.
+        probe = self._run_raw("doctor")
+        if probe is None or not probe.stdout:
             self.available = False
             return
         try:
@@ -120,6 +122,10 @@ class NeurataBridge:
             return None
 
     def _run(self, *args: str) -> subprocess.CompletedProcess | None:
+        return self._run_raw(*args, strict=True)
+
+    def _run_raw(self, *args: str, strict: bool = False) -> subprocess.CompletedProcess | None:
+        """Run neurata CLI. If strict, return None on non-zero exit."""
         full_args = [self._binary, *args, "--json"]
         try:
             proc = subprocess.run(
@@ -130,6 +136,6 @@ class NeurataBridge:
             )
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
             return None
-        if proc.returncode != 0:
+        if strict and proc.returncode != 0:
             return None
         return proc
