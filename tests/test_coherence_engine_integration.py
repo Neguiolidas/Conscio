@@ -1,6 +1,6 @@
 # tests/test_coherence_engine_integration.py
-from conscio.engine import ConsciousnessEngine
 from conscio.coherence import CoherenceReport, Dissonance
+from conscio.engine import ConsciousnessEngine
 
 
 def _engine(tmp_path, **kw):

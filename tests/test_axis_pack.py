@@ -1,6 +1,9 @@
 # tests/test_axis_pack.py
 from conscio.axis_pack import (
-    load_axes, resolve_axis_packs, available_axis_packs, DEFAULT_PACKS,
+    DEFAULT_PACKS,
+    available_axis_packs,
+    load_axes,
+    resolve_axis_packs,
 )
 
 

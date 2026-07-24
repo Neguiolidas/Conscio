@@ -16,8 +16,15 @@ def no_network(monkeypatch):
 
 
 def test_full_cycle_offline(no_network, tmp_path):
-    from conscio.agency import (ActPipeline, ActStatus, CircuitBreaker,
-                                MockAdapter, ActionLedger, Risk, ToolRegistry)
+    from conscio.agency import (
+        ActionLedger,
+        ActPipeline,
+        ActStatus,
+        CircuitBreaker,
+        MockAdapter,
+        Risk,
+        ToolRegistry,
+    )
 
     registry = ToolRegistry()
     registry.register("echo", lambda text: text,

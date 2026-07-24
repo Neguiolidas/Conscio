@@ -1,5 +1,5 @@
-from conscio.awake.budget import AwakeBudget
 from conscio.agency.loop import ActBudget
+from conscio.awake.budget import AwakeBudget
 
 
 def test_defaults():

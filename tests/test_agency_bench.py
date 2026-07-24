@@ -67,8 +67,11 @@ class TestRunBench:
             build_adapter("warp-drive")
 
     def test_adapter_specs_parse(self):
-        from conscio.agency.adapters import (LlamaCppAdapter, OllamaAdapter,
-                                             OpenAICompatAdapter)
+        from conscio.agency.adapters import (
+            LlamaCppAdapter,
+            OllamaAdapter,
+            OpenAICompatAdapter,
+        )
         assert isinstance(build_adapter("ollama:hermes3"), OllamaAdapter)
         assert isinstance(build_adapter("llamacpp"), LlamaCppAdapter)
         openai = build_adapter("openai:qwen@http://localhost:9999/v1")

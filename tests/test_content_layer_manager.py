@@ -1,17 +1,17 @@
 """Tests for ContentLayerManager — k validation, recall, perceive, session_rag, layer_sort."""
-import pytest
-from unittest.mock import MagicMock
 from dataclasses import dataclass
+from unittest.mock import MagicMock
+
+import pytest
 
 from conscio.content_layer import (
-    ContentLayerManager,
-    ContentLayer,
-    MAX_K,
     LAYER_EPSILON,
+    MAX_K,
+    ContentLayer,
+    ContentLayerManager,
     layer_of,
     layer_sort_key,
 )
-
 
 # ── Test doubles ──────────────────────────────────────────────────────────
 
@@ -576,12 +576,12 @@ class TestRagDisabledSentinelShared:
     """
 
     def test_sentinel_identity_is_shared(self):
-        from conscio.engine import _RAG_DISABLED as via_engine
         from conscio.content_layer import _RAG_DISABLED as via_cl
+        from conscio.engine import _RAG_DISABLED as via_engine
         assert via_engine is via_cl
 
     def test_engine_sentinel_actually_disables_rag(self, tmp_path):
-        from conscio.engine import ConsciousnessEngine, _RAG_DISABLED
+        from conscio.engine import _RAG_DISABLED, ConsciousnessEngine
         eng = ConsciousnessEngine("glm-5.1", storage_path=tmp_path)
         try:
             eng.content_layer._session_rag = _RAG_DISABLED

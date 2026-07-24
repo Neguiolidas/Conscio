@@ -1,11 +1,10 @@
 import os
-import time
-import tempfile
 import subprocess
+import tempfile
+import time
 from pathlib import Path
 
 from conscio.perception.git_sensor import GitSensor
-
 
 _GIT_ENV = {
     **os.environ,

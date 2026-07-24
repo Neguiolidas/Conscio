@@ -9,6 +9,7 @@ Schema:
     vectors(id TEXT PK, embedding BLOB, dimension INT, created_at TEXT)
 """
 from __future__ import annotations
+
 import array
 import math
 import sqlite3

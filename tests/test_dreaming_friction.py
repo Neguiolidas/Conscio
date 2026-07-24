@@ -1,10 +1,10 @@
 # tests/test_dreaming_friction.py
 from datetime import datetime, timedelta
 
-from conscio.timeutil import naive_utcnow
-from conscio.engine import ConsciousnessEngine
 from conscio.content_layer import _RAG_DISABLED
 from conscio.dreaming import DreamCycle
+from conscio.engine import ConsciousnessEngine
+from conscio.timeutil import naive_utcnow
 
 
 def _engine(tmp_path):

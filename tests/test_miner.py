@@ -1,7 +1,7 @@
 """TDD: Miner — file + conversation ingestion."""
+from conscio.content_store import ContentStore
 from conscio.miner import Miner
 from conscio.wings import WingManager
-from conscio.content_store import ContentStore
 
 
 def test_miner_file(tmp_path):

@@ -317,8 +317,12 @@ def _initiator_armed(*, initiate: bool, relay_peer, has_adapter: bool,
 def _build_adapter_from_cli(args, fallback_model: str):
     """Build an InferenceAdapter from CLI --adapter flag."""
     from .agency.adapters import (
-        AnthropicAdapter, GeminiAdapter, LMStudioAdapter,
-        OllamaAdapter, OpenAIAdapter, OpenAICompatAdapter,
+        AnthropicAdapter,
+        GeminiAdapter,
+        LMStudioAdapter,
+        OllamaAdapter,
+        OpenAIAdapter,
+        OpenAICompatAdapter,
     )
     adapter_model = args.adapter_model or fallback_model
     if args.adapter == "lmstudio":
@@ -408,11 +412,11 @@ def _arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     from .engine import ConsciousnessEngine
-    from .workspace import WorkspaceContext
     from .structural_consent import StructuralConsent, consent_path
+    from .workspace import WorkspaceContext
 
     args = _arg_parser().parse_args(argv)
-    from .installer.binding import validate_binding          # R6
+    from .installer.binding import validate_binding  # R6
     validate_binding(args.storage)
 
     # ── merge config (config < env < CLI) ──
@@ -457,8 +461,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     self_id = ""
     liaison_db = None
     if "relay" in [s.strip() for s in sensors_spec.split(",")]:
-        from .noosphere.identity import load_or_create
         from .liaison import mailbox
+        from .noosphere.identity import load_or_create
         self_id = load_or_create(engine.storage).instance_id
         liaison_db = args.liaison_db or mailbox.default_db()
     sensors = _build_sensors(sensors_spec, agent_source=args.agent_source,

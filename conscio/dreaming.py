@@ -19,7 +19,6 @@ from datetime import timedelta
 
 from .timeutil import naive_utcnow
 
-
 MIN_ENTITY_MATCH_LEN = 3   # friction ignores 1-2 char entity names (would over-defer)
 
 

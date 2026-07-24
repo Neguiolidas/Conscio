@@ -12,6 +12,7 @@ NOTE: force_no_network is for testing — disables all network probes,
 returns None from all embed calls.
 """
 from __future__ import annotations
+
 import logging
 import os
 from typing import Optional

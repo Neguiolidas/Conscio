@@ -1,6 +1,7 @@
 # tests/test_noosphere_integration.py
 import sqlite3
-from conscio.noosphere import publish, importer, quarantine
+
+from conscio.noosphere import importer, publish, quarantine
 
 
 def _seed(db_path, goal="deploy"):

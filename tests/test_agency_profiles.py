@@ -1,9 +1,14 @@
 # tests/test_agency_profiles.py
 """ProbeSuite/ModelProfile — empirical capability measurement (5.10)."""
 from conscio.agency.adapter import AdapterCaps, MockAdapter
-from conscio.agency.profiles import (VISIBLE_TOOLS_SMALL, ModelProfile,
-                                     ProbeSuite, choose_tier,
-                                     max_visible_tools, skeptic_mode)
+from conscio.agency.profiles import (
+    VISIBLE_TOOLS_SMALL,
+    ModelProfile,
+    ProbeSuite,
+    choose_tier,
+    max_visible_tools,
+    skeptic_mode,
+)
 
 ALL_PASS = [
     '{"status": "ok", "count": 3}',                       # P1 flat echo

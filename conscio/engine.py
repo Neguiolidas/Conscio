@@ -16,41 +16,49 @@ import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
-from .timeutil import naive_utcnow, naive_utc_from_epoch
-
-from .context_manager import ContextManager
-from .inner_monologue import InnerMonologue
-from .world_model import WorldModel
-from .world_extract import extract_entities, extract_relations
-from .meta_cognition import MetaCognition
-from .goal_generator import GoalGenerator, Drive
 from .auto_evolution import AutoEvolution
 from .auto_index import AutoIndexer
-from .kg_builder import KGBuilder
-from .content_store import ContentStore
-from .event_bus import EventBus
-from .shard_engine import ShardEngine
-from .coherence import CoherenceEngine, CoherenceReport, COHERENCE_EVENT_THRESHOLD
-from .voice_preset import resolve_voice_preset
-from .self_prompt import generate_self_prompts
-from .dreaming import DreamRecommendation
-from .semantic import SemanticEngine, ContradictionDetector
-from .reflection_gate import ReflectionGate, GateContext, MAX_ENTITIES_FOR_CONTRADICTION
-from .output_filter import build_pipeline_from_dict
-from .token_tracker import TokenTracker
-from .content_layer import ContentLayerManager
+from .coherence import COHERENCE_EVENT_THRESHOLD, CoherenceEngine, CoherenceReport
 from .content_layer import _RAG_DISABLED as _RAG_DISABLED  # re-export (one sentinel)
-from .session_lifecycle import SessionLifecycle
+from .content_layer import ContentLayerManager
+from .content_store import ContentStore
+from .context_manager import ContextManager
+from .dreaming import DreamRecommendation
+from .event_bus import EventBus
+from .goal_generator import Drive, GoalGenerator
+from .inner_monologue import InnerMonologue
+from .kg_builder import KGBuilder
+from .meta_cognition import MetaCognition
 from .metabolic import MetabolicContext
+from .output_filter import build_pipeline_from_dict
+from .reflection_gate import MAX_ENTITIES_FOR_CONTRADICTION, GateContext, ReflectionGate
+from .self_prompt import generate_self_prompts
+from .semantic import ContradictionDetector, SemanticEngine
+from .session_lifecycle import SessionLifecycle
 from .session_rag_factory import create_session_rag
+from .shard_engine import ShardEngine
 from .structural import (
-    StructuralDistiller, StructuralSignal, render_structural, structural_budget,
-    DEFAULT_MAX_BYTES, DEFAULT_MAX_NODES,
+    DEFAULT_MAX_BYTES,
+    DEFAULT_MAX_NODES,
+    StructuralDistiller,
+    StructuralSignal,
+    render_structural,
+    structural_budget,
 )
 from .structural_drift import (
-    StructuralDelta, StructuralDigest, StructuralDriftStore, StructuralFreshness,
-    compute_delta, compute_freshness, drift_path,
+    StructuralDelta,
+    StructuralDigest,
+    StructuralDriftStore,
+    StructuralFreshness,
+    compute_delta,
+    compute_freshness,
+    drift_path,
 )
+from .timeutil import naive_utc_from_epoch, naive_utcnow
+from .token_tracker import TokenTracker
+from .voice_preset import resolve_voice_preset
+from .world_extract import extract_entities, extract_relations
+from .world_model import WorldModel
 
 if TYPE_CHECKING:
     from .dreaming import DreamReport
@@ -1538,8 +1546,7 @@ class ConsciousnessEngine:
 
     def propose_action(self, intent: dict) -> dict:
         """Audit an explicit host intent with the Skeptic. Never executes."""
-        from .agency.contracts import (PROPOSAL_SCHEMA, proposal_from_dict,
-                                        validate)
+        from .agency.contracts import PROPOSAL_SCHEMA, proposal_from_dict, validate
         pipe = getattr(self, "_act_pipeline", None)
         if pipe is None or pipe.skeptic is None:
             return self._no_adapter_result()
@@ -1680,9 +1687,13 @@ class ConsciousnessEngine:
             return None
         if self._model_profile is not None and not force:
             return self._model_profile
-        from .agency.profiles import (ProbeSuite, choose_tier,
-                                      max_visible_tools, skeptic_mode,
-                                      prompt_complexity)
+        from .agency.profiles import (
+            ProbeSuite,
+            choose_tier,
+            max_visible_tools,
+            prompt_complexity,
+            skeptic_mode,
+        )
         suite = ProbeSuite(self._act_pipeline.adapter,
                            self.storage / "conscio.db")
         try:

@@ -1,5 +1,6 @@
 # tests/test_noosphere_identity.py
 import pytest
+
 from conscio.noosphere import identity
 
 

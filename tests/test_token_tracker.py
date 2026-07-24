@@ -9,11 +9,10 @@ from datetime import timedelta
 import pytest
 
 from conscio.timeutil import naive_utcnow
-
 from conscio.token_tracker import (
-    TokenTracker,
     CHARS_PER_TOKEN,
     VALID_SOURCES,
+    TokenTracker,
 )
 
 

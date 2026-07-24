@@ -1,6 +1,6 @@
 # tests/test_recursive_loop_integration.py
-from conscio.engine import ConsciousnessEngine
 from conscio.coherence import CoherenceReport, Dissonance
+from conscio.engine import ConsciousnessEngine
 
 
 def _low_ontological():

@@ -22,25 +22,33 @@ import statistics
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
-
 from types import SimpleNamespace
 from typing import Callable
 
 from .agency import goal_fingerprint
 from .agency.actor import build_actor_prompt
-from .prompt_zones import build_zoned_prompt
-from .agency.adapter import (AdapterCaps, AdapterError, Meter, MeteredAdapter,
-                             MockAdapter)
-from .agency.adapters import (LlamaCppAdapter, LMStudioAdapter, OllamaAdapter,
-                              OpenAICompatAdapter)
+from .agency.adapter import (
+    AdapterCaps,
+    AdapterError,
+    Meter,
+    MeteredAdapter,
+    MockAdapter,
+)
+from .agency.adapters import (
+    LlamaCppAdapter,
+    LMStudioAdapter,
+    OllamaAdapter,
+    OpenAICompatAdapter,
+)
 from .agency.contracts import PROPOSAL_SCHEMA, ActionProposal, validate
 from .agency.gateway import GatewayError, OutputGateway
 from .agency.ledger import ActionLedger
-from .agency.profiles import ProbeSuite, choose_tier, skeptic_mode, max_visible_tools
+from .agency.profiles import ProbeSuite, choose_tier, max_visible_tools, skeptic_mode
 from .agency.skeptic import Skeptic
 from .agency.skills import SkillLibrary
 from .agency.tools import Risk, make_default_registry
 from .context_manager import ConsciousnessState
+from .prompt_zones import build_zoned_prompt
 
 GOALS = ("Investigate: anomaly in sandbox notes",
          "Maintenance: verify consistency of stored notes",

@@ -4,12 +4,12 @@
 Origin: Think-Vetor DSL concept (CromIA). Reimplemented from scratch.
 """
 import os
+
 import pytest
 
 from conscio.agency.intercepter import (
     Intercepter,
 )
-
 
 # ── Task 1: tag scanner + empty text ──
 

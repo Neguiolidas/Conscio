@@ -23,8 +23,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .sensor import PerceptionFrame, SensorAdapter
 from ..risk import Risk
+from .sensor import PerceptionFrame, SensorAdapter
 
 # Handoff artifact names — mirror SessionLifecycle's HANDOFF_PATH / HEARTBEAT_PATH.
 _HANDOFF_NAMES = ("_session_handoff.md", "_latest_heartbeat.md")

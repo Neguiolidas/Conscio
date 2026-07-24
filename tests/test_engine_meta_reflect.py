@@ -1,6 +1,6 @@
 # tests/test_engine_meta_reflect.py
-from conscio.engine import ConsciousnessEngine
 from conscio.content_layer import _RAG_DISABLED
+from conscio.engine import ConsciousnessEngine
 
 
 def _engine(tmp_path):

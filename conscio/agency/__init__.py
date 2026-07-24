@@ -9,20 +9,37 @@ Capabilities are measured (ProbeSuite), never assumed.
 Core stays zero-deps (stdlib + sqlite3); HTTP adapters use urllib only.
 """
 from .act import ActPipeline, ActReport, ActStatus
-from .adapter import (AdapterCaps, AdapterError, InferenceAdapter,
-                      InferenceResult, Meter, MeteredAdapter, MockAdapter)
-from .adapters import (AnthropicAdapter, GeminiAdapter, LlamaCppAdapter,
-                       OllamaAdapter, OpenAIAdapter, OpenAICompatAdapter)
+from .adapter import (
+                      AdapterCaps,
+                      AdapterError,
+                      InferenceAdapter,
+                      InferenceResult,
+                      Meter,
+                      MeteredAdapter,
+                      MockAdapter,
+)
+from .adapters import (
+                      AnthropicAdapter,
+                      GeminiAdapter,
+                      LlamaCppAdapter,
+                      OllamaAdapter,
+                      OpenAIAdapter,
+                      OpenAICompatAdapter,
+)
 from .breaker import DEFAULT_MAX_RETRIES, CircuitBreaker
 from .contracts import ActionProposal, AuditVerdict, ToolResult, validate
 from .fingerprint import goal_fingerprint
 from .gateway import GatewayError, OutputGateway
 from .grammar import compile_proposal_grammar, compile_schema_grammar
 from .ledger import ActionLedger
-from .loop import (DISSONANCE_HINTS, ActBudget, AutonomyLoop, GoalArbiter,
-                   RunReport)
-from .profiles import (ModelProfile, ProbeSuite, choose_tier,
-                       max_visible_tools, skeptic_mode)
+from .loop import DISSONANCE_HINTS, ActBudget, AutonomyLoop, GoalArbiter, RunReport
+from .profiles import (
+                      ModelProfile,
+                      ProbeSuite,
+                      choose_tier,
+                      max_visible_tools,
+                      skeptic_mode,
+)
 from .skeptic import Skeptic
 from .skills import SkillLibrary
 from .tools import Risk, ToolRegistry, make_default_registry

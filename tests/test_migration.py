@@ -1,9 +1,9 @@
 """TDD: Migration — export/import tar.gz round-trip."""
 from conscio.content_store import ContentStore
-from conscio.kg import KnowledgeGraph
 from conscio.hallways import Hallways
-from conscio.wings import WingManager
+from conscio.kg import KnowledgeGraph
 from conscio.migration import export_archive, import_archive
+from conscio.wings import WingManager
 
 
 def test_export_creates_tarball(tmp_path):
@@ -25,8 +25,8 @@ def test_export_metadata_json(tmp_path):
     wm.index(label="x", content="y", category="external", content_type="prose")
     out = tmp_path / "bk.tar.gz"
     export_archive(out, content_store=cs, hallways=wm.hallways)
-    import tarfile
     import json
+    import tarfile
     with tarfile.open(out) as t:
         names = t.getnames()
         assert "metadata.json" in names

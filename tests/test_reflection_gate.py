@@ -4,15 +4,14 @@ from __future__ import annotations
 import pytest
 
 from conscio.reflection_gate import (
+    CoherenceHeuristic,
+    ConfidenceHeuristic,
+    ContradictionHeuristic,
     GateContext,
     GateDecision,
-    ReflectionGate,
-    ConfidenceHeuristic,
-    CoherenceHeuristic,
-    ContradictionHeuristic,
     NoveltyHeuristic,
+    ReflectionGate,
 )
-
 
 # ── GateContext ──────────────────────────────────────────────────────────
 

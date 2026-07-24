@@ -1,7 +1,8 @@
 """TDD for PromptZones + build_zoned_prompt (v3.1 Ato 1)."""
 import pytest
-from conscio.prompt_zones import PromptZones, build_zoned_prompt
+
 from conscio.context_manager import ConsciousnessState
+from conscio.prompt_zones import PromptZones, build_zoned_prompt
 
 
 def test_prompt_zones_creation():

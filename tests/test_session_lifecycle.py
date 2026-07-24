@@ -17,26 +17,25 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from conscio.content_store import ContentStore
+from conscio.event_bus import VALID_CATEGORIES, VALID_TYPES, EventBus
 from conscio.session_lifecycle import (
-    SessionSummary,
-    strip_noise,
-    is_noise,
-    extract_intents,
-    extract_actions,
-    extract_reasoning,
-    infer_topics,
-    format_heartbeat,
-    format_handoff,
-    enrich_with_conscio,
-    record_session_lifecycle,
-    get_latest_session,
-    get_session_by_id,
     HB_MAX_CHARS,
     SKIP_PREFIXES,
+    SessionSummary,
+    enrich_with_conscio,
+    extract_actions,
+    extract_intents,
+    extract_reasoning,
+    format_handoff,
+    format_heartbeat,
+    get_latest_session,
+    get_session_by_id,
+    infer_topics,
+    is_noise,
+    record_session_lifecycle,
+    strip_noise,
 )
-from conscio.event_bus import EventBus, VALID_TYPES, VALID_CATEGORIES
-from conscio.content_store import ContentStore
-
 
 # ─── Fixtures ──────────────────────────────────────────────────────────────
 

@@ -12,7 +12,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _isolate_conscio_config(monkeypatch, tmp_path_factory):
     nowhere = tmp_path_factory.mktemp("no_conscio_cfg") / "config.json"
-    import conscio.models as _m
     import conscio.adapter_config as _ac
+    import conscio.models as _m
     monkeypatch.setattr(_m.ModelRegistry, "_CONFIG_PATHS", [nowhere], raising=False)
     monkeypatch.setattr(_ac, "_CONFIG_PATHS", [nowhere], raising=False)

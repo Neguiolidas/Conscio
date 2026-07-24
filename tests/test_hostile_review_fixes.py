@@ -1,15 +1,14 @@
 """Tests for v3.3.1 hostile review fixes — all pending issues."""
 import os
-import tempfile
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from unittest.mock import patch
 
+from conscio.agency.fallback_multi import _sanitize_exc
 from conscio.perception.filesystem_sensor import FilesystemSensor
 from conscio.perception.git_sensor import GitSensor
-from conscio.agency.fallback_multi import _sanitize_exc
-
 
 _GIT_ENV = {
     **os.environ,

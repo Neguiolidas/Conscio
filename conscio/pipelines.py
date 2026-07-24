@@ -471,7 +471,7 @@ def _produce_checkpoint(engine: ConsciousnessEngine, compact_result: dict) -> di
 
     Returns the checkpoint dict with checkpoint_id for traceability.
     """
-    from conscio.checkpoint import CompactionCheckpoint, CheckpointChain
+    from conscio.checkpoint import CheckpointChain, CompactionCheckpoint
 
     chain = CheckpointChain(
         engine.storage / "checkpoints.db",

@@ -12,6 +12,7 @@ Schema:
             valid_from, valid_to, confidence, source, extracted_at)
 """
 from __future__ import annotations
+
 import json
 import sqlite3
 import threading

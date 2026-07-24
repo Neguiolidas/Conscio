@@ -22,7 +22,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-
 # --- Tunable constants (one-line knobs, like v0.5 LAYER_EPSILON) -------------
 
 _WEIGHTS = {

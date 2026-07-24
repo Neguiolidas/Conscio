@@ -1,5 +1,6 @@
 # tests/test_quarantine_trial.py
 import sqlite3
+
 from conscio.noosphere import quarantine
 from conscio.noosphere.quarantine import QuarantineRow
 

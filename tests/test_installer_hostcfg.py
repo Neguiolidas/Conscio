@@ -1,5 +1,7 @@
 import json
+
 import pytest
+
 from conscio.installer import hostcfg, spaces
 
 

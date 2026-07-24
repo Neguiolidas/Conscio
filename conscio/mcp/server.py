@@ -15,14 +15,21 @@ from conscio import __version__
 from conscio.engine import ConsciousnessEngine
 from conscio.workspace import WorkspaceContext
 
-from . import jsonrpc as j
-from .protocol import SUPPORTED_PROTOCOLS, Dispatcher
-from .schemas import (ACT_TOOL_DEFS, BASE_TOOL_DEFS, LIAISON_TOOL_DEFS,
-                      RELAY_TOOL_DEFS, RESOURCE_DEFS, derive_event_id,
-                      event_to_frame, validate_event)
-from .seen import SeenStore
 from ..agency import review_apply
 from ..liaison import mailbox, relay, review
+from . import jsonrpc as j
+from .protocol import SUPPORTED_PROTOCOLS, Dispatcher
+from .schemas import (
+    ACT_TOOL_DEFS,
+    BASE_TOOL_DEFS,
+    LIAISON_TOOL_DEFS,
+    RELAY_TOOL_DEFS,
+    RESOURCE_DEFS,
+    derive_event_id,
+    event_to_frame,
+    validate_event,
+)
+from .seen import SeenStore
 
 # v2.6.3 #2: floor between auto-review SQL polls so --auto-review does not open a
 # liaison SELECT on every single tool call in a chatty session. host_act.approve
@@ -519,8 +526,8 @@ class Bindings:
 
     def _wings_search(self, args: dict) -> dict:
         """Search content by wing/room hierarchy."""
-        from conscio.wings import WingManager
         from conscio.content_store import ContentStore
+        from conscio.wings import WingManager
         query = args.get("query", "")
         if not query:
             return {"error": "query required"}
@@ -540,9 +547,9 @@ class Bindings:
 
     def _export(self, args: dict) -> dict:
         """Export Conscio memory to tar.gz archive."""
-        from conscio.migration import export_archive
-        from conscio.kg import KnowledgeGraph
         from conscio.hallways import Hallways
+        from conscio.kg import KnowledgeGraph
+        from conscio.migration import export_archive
         path = args.get("path", "")
         if not path:
             return {"error": "path required"}
@@ -905,7 +912,10 @@ def _sync_structure_at_startup(engine, workspace) -> str:
     Returns sync_structure's status verb, or ``skip:<err>``.
     """
     from conscio.structural_consent import (
-        StructuralConsent, consent_path, sync_structure)
+        StructuralConsent,
+        consent_path,
+        sync_structure,
+    )
     try:
         consent = StructuralConsent(consent_path(engine.storage))
         return sync_structure(engine, workspace, consent)
@@ -915,7 +925,7 @@ def _sync_structure_at_startup(engine, workspace) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
-    from conscio.installer.binding import validate_binding   # R6
+    from conscio.installer.binding import validate_binding  # R6
     validate_binding(args.storage)
     try:
         model_name = _resolve_model(args)

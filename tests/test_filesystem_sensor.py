@@ -1,6 +1,6 @@
 import os
-import time
 import tempfile
+import time
 from pathlib import Path
 
 from conscio.perception.filesystem_sensor import FilesystemSensor

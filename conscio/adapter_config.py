@@ -51,8 +51,12 @@ def build_adapter_from_config(cfg: dict, *,
         return None, None
 
     from .agency.adapters import (
-        AnthropicAdapter, GeminiAdapter, LMStudioAdapter,
-        OllamaAdapter, OpenAIAdapter, OpenAICompatAdapter,
+        AnthropicAdapter,
+        GeminiAdapter,
+        LMStudioAdapter,
+        OllamaAdapter,
+        OpenAIAdapter,
+        OpenAICompatAdapter,
     )
 
     model = adapter_cfg.get("model") or fallback_model

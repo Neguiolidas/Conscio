@@ -12,8 +12,8 @@ from datetime import datetime
 
 import pytest
 
-from conscio.engine import ConsciousnessEngine
 from conscio.content_layer import _RAG_DISABLED
+from conscio.engine import ConsciousnessEngine
 
 
 def _seed(engine, n_events=10_000, n_entities=1_000):

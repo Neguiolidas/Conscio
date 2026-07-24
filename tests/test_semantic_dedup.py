@@ -1,5 +1,5 @@
 # tests/test_semantic_dedup.py
-from conscio.output_filter import SemanticDedup, STAGE_REGISTRY, build_stage
+from conscio.output_filter import STAGE_REGISTRY, SemanticDedup, build_stage
 from conscio.semantic import SemanticEngine
 
 

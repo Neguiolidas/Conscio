@@ -12,9 +12,10 @@ production bugs that made ``z-ai/glm-5.2`` resolve to the wrong window:
 Plus the regression guard: ``glm-5.2`` must NEVER collapse to ``glm-5`` (200k).
 """
 import json
+
 import pytest
 
-from conscio.models import ModelRegistry, ContextMode
+from conscio.models import ContextMode, ModelRegistry
 
 
 @pytest.fixture(autouse=True)

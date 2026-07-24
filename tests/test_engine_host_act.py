@@ -1,6 +1,6 @@
 # tests/test_engine_host_act.py
-from conscio.engine import ConsciousnessEngine
 from conscio.agency import MockAdapter
+from conscio.engine import ConsciousnessEngine
 
 
 def _eng(tmp_path):

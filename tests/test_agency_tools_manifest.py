@@ -1,5 +1,6 @@
 # tests/test_agency_tools_manifest.py
 import pytest
+
 from conscio.agency.tools import registry_from_manifest
 from conscio.risk import Risk
 

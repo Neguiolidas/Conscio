@@ -14,7 +14,7 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from ..guards import clamp_int   # leaf util; not conscio.engine
+from ..guards import clamp_int  # leaf util; not conscio.engine
 
 log = logging.getLogger(__name__)
 

@@ -3,10 +3,10 @@
 import json
 
 from conscio import ConsciousnessEngine
-from conscio.engine import _RAG_DISABLED
 from conscio.agency.adapter import MockAdapter
 from conscio.agency.loop import ActBudget
 from conscio.context_manager import ConsciousnessState
+from conscio.engine import _RAG_DISABLED
 
 ALL_PASS_PROBES = [
     '{"status": "ok", "count": 3}',

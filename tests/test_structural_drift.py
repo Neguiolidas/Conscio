@@ -9,7 +9,6 @@ allowed (R10 by spirit — pure data + stdlib only).
 import json
 import pathlib
 
-
 from conscio.structural import StructuralDistiller, StructuralSignal
 from conscio.structural_drift import (
     DRIFT_FILENAME,

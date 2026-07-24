@@ -426,7 +426,9 @@ class InterceptionLoop:
         # Max iterations reached — return the adapter's last result text,
         # but with cumulative metering.  We cannot reuse ``result`` directly
         # because its metering fields are per-call; build a fresh one.
-        from .adapter import InferenceResult  # local import — avoid cycle at module load
+        from .adapter import (
+            InferenceResult,  # local import — avoid cycle at module load
+        )
         return InferenceResult(
             text=intercept_result.text if intercept_result else "",
             tokens_in=total_tokens_in,

@@ -213,8 +213,8 @@ class OpenAICompatibleEmbedder:
 
     def embed(self, text: str) -> list[float]:
         """Get embedding for a single text (OpenAI format)."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         payload = json.dumps({
             "model": self.model,
@@ -265,8 +265,8 @@ class OllamaEmbedder:
 
     def embed(self, text: str) -> list[float]:
         """Get embedding for a single text (Ollama format)."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         payload = json.dumps({
             "model": self.model,

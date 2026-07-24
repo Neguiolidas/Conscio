@@ -1,6 +1,6 @@
 # tests/test_self_prompt.py
-from conscio.self_prompt import generate_self_prompts, SelfPrompt, _SIGNAL_DRIVE
 from conscio.coherence import CoherenceReport, Dissonance
+from conscio.self_prompt import _SIGNAL_DRIVE, SelfPrompt, generate_self_prompts
 
 
 class _Meta:

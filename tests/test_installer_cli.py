@@ -1,4 +1,5 @@
 import pytest
+
 from conscio import cli as top_cli
 from conscio.installer import wizard
 
@@ -114,6 +115,7 @@ def test_repair_preserves_granted_flags(tmp_path, monkeypatch):
 
 def test_initiate_consent_goes_to_daemon_not_mcp(tmp_path, monkeypatch):
     import json
+
     from conscio.installer import daemonctl
     monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
     monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
@@ -151,6 +153,7 @@ def test_repair_rebinds_existing_space_not_a_new_one(tmp_path, monkeypatch):
     # pre-Reach default labels produced doubled slugs; repair must rebind the
     # space the config already points at, never mint a fresh empty mind
     import json
+
     from conscio.installer import spaces
     monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
     monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
@@ -169,6 +172,7 @@ def test_repair_rebinds_existing_space_not_a_new_one(tmp_path, monkeypatch):
 
 def test_repair_preserves_model(tmp_path, monkeypatch):
     import json
+
     from conscio.installer import spaces
     monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
     monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
@@ -187,6 +191,7 @@ def test_repair_preserves_model(tmp_path, monkeypatch):
 
 def test_repair_recovers_legacy_initiate_consent(tmp_path, monkeypatch):
     import json
+
     from conscio.installer import spaces
     monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
     monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))

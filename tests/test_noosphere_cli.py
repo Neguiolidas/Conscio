@@ -1,5 +1,6 @@
 # tests/test_noosphere_cli.py
 import sqlite3
+
 from conscio.noosphere import cli, quarantine
 
 

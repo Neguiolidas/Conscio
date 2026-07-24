@@ -1,8 +1,11 @@
 """TDD tests for FailureClass enum + FailureGovernor (Conscio v3.1)."""
 
-from conscio.agency.adapter import AdapterTimeout, AdapterConnectionError, AdapterBadResponse
+from conscio.agency.adapter import (
+    AdapterBadResponse,
+    AdapterConnectionError,
+    AdapterTimeout,
+)
 from conscio.failure import FailureClass, FailureGovernor
-
 
 # ── classify ──────────────────────────────────────────────────────────
 

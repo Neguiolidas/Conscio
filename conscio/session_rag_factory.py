@@ -15,8 +15,8 @@ init logic is defined exactly once.
 from __future__ import annotations
 
 import logging
-import urllib.request
 import urllib.error
+import urllib.request
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,9 @@ def create_session_rag():
     """
     try:
         from .session_rag import (
-            SessionRAG, OpenAICompatibleEmbedder, OllamaEmbedder,
+            OllamaEmbedder,
+            OpenAICompatibleEmbedder,
+            SessionRAG,
         )
     except ImportError:
         logger.debug("session_rag module unavailable — RAG provider disabled")

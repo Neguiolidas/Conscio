@@ -1,5 +1,5 @@
 # tests/test_semantic_engine.py
-from conscio.semantic import SemanticEngine, AXIS_THRESHOLD, AXIS_MARGIN
+from conscio.semantic import AXIS_MARGIN, AXIS_THRESHOLD, SemanticEngine
 
 
 class StubEmbedder:

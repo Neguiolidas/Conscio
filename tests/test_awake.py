@@ -16,9 +16,9 @@ import json
 
 from conscio.agency.adapter import MockAdapter
 from conscio.agency.loop import ActBudget
+from conscio.content_layer import _RAG_DISABLED
 from conscio.context_manager import ConsciousnessState
 from conscio.engine import ConsciousnessEngine
-from conscio.content_layer import _RAG_DISABLED
 
 _PROBES = [
     '{"status": "ok", "count": 3}',

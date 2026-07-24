@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-
 import pytest
 
 from conscio import ConsciousnessEngine
 from conscio.gates import (
     COUNCIL_VOTES,
-    decide,
     council,
-    loop_gate,
+    decide,
     delivery_check,
     investigate,
+    loop_gate,
 )
 
 

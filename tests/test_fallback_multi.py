@@ -1,5 +1,6 @@
 """Tests for MultiProviderFallbackAdapter — multi-provider fallback chain."""
 from unittest.mock import MagicMock
+
 import pytest
 
 from conscio.agency.adapter import (

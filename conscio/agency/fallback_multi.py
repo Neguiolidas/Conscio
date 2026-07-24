@@ -45,10 +45,10 @@ from typing import Any
 
 from .adapter import (
     AdapterBadResponse,
+    AdapterCaps,
     AdapterConnectionError,
     AdapterError,
     AdapterTimeout,
-    AdapterCaps,
     InferenceAdapter,
     InferenceResult,
 )

@@ -8,7 +8,11 @@ from __future__ import annotations
 import enum
 from typing import Dict
 
-from conscio.agency.adapter import AdapterTimeout, AdapterConnectionError, AdapterBadResponse
+from conscio.agency.adapter import (
+    AdapterBadResponse,
+    AdapterConnectionError,
+    AdapterTimeout,
+)
 
 
 class FailureClass(enum.Enum):

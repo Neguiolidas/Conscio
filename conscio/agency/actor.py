@@ -9,6 +9,7 @@ current ConsciousnessState, never from previous cycles.
 few_shot is the v1.1 SkillLibrary hook: F1 callers pass an empty list.
 """
 from __future__ import annotations
+
 from conscio.context_manager import ConsciousnessState
 
 # v3.1: ACTOR_PERSONA moved to prompt_zones.py, re-exported for compat

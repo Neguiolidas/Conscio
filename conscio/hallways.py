@@ -11,6 +11,7 @@ Schema:
     drawer_assignments(drawer_id INT, wing TEXT, room TEXT, assigned_at)
 """
 from __future__ import annotations
+
 import sqlite3
 import threading
 from datetime import datetime, timezone

@@ -11,16 +11,16 @@ Supports configurable paths via `handoff_dir` and `session_db` parameters.
 
 from __future__ import annotations
 
-import sqlite3
+import logging
 import os
 import re
-import logging
+import sqlite3
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Optional
 
 from .timeutil import naive_utcnow
-from dataclasses import dataclass, field
-from typing import Optional, Any
 
 logger = logging.getLogger(__name__)
 
@@ -768,9 +768,9 @@ def record_session_lifecycle(
     # 3. Enrich via Conscio
     own_engine = engine is None
     if own_engine:
+        from .adapter_config import load_config
         from .engine import ConsciousnessEngine
         from .models import resolve_model_name
-        from .adapter_config import load_config
         # Recorded session model wins; then config.json 'model'; then env
         # (same precedence as the daemon/MCP/CLI). Never crash a resume when
         # no model is configured — degrade to an empty name.

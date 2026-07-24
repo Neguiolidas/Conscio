@@ -20,9 +20,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from .timeutil import naive_utcnow
 from .constants import DEFAULT_DB_PATH
-
+from .timeutil import naive_utcnow
 
 # ─── Data Classes ───────────────────────────────────────────────────────
 

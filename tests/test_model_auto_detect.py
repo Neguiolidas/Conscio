@@ -1,10 +1,11 @@
 """Tests for ModelRegistry auto-detect context from endpoint."""
 import json
 import struct
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from conscio.models import ModelRegistry, ContextMode
+import pytest
+
+from conscio.models import ContextMode, ModelRegistry
 
 
 def _gguf_key(key: str) -> bytes:
@@ -258,8 +259,8 @@ class TestJsonConfig:
         assert ModelRegistry.detect("whatever-1", autodetect=True).context_window == 128_000
 
     def test_no_yaml_dependency_in_import_graph(self):
-        import sys
         import importlib
+        import sys
         sys.modules.pop("yaml", None)
         importlib.import_module("conscio.models")
         assert "yaml" not in sys.modules
