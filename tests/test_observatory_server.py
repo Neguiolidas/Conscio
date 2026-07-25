@@ -62,7 +62,7 @@ KP = FakeKnowledge()
 def _route(method, path, query=None, *, token=None, auth=None):
     return srv.route(method, path, query or {}, projection=P, society=S,
                      liaison=L, structural=SP, knowledge=KP,
-                     token=token, auth=auth)
+                     token=token, auth=auth, workspace_root=None)
 
 
 def test_check_host_refuses_non_loopback():

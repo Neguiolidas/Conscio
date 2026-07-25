@@ -1,12 +1,12 @@
 """Tests for structural + knowledge endpoints in route()."""
 from __future__ import annotations
 
-from conscio.observatory.knowledge_view import KnowledgeProjection
-from conscio.observatory.liaison_view import LiaisonProjection
-from conscio.observatory.projection import Projection
 from conscio.observatory.server import route
+from conscio.observatory.projection import Projection
 from conscio.observatory.society import SocietyProjection
+from conscio.observatory.liaison_view import LiaisonProjection
 from conscio.observatory.structural_view import StructuralProjection
+from conscio.observatory.knowledge_view import KnowledgeProjection
 
 
 def _projections(tmp_path):
