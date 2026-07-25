@@ -1,14 +1,12 @@
 """Hostile review — try to break v3.4 implementation."""
-import json
 import sqlite3
-from pathlib import Path
 
-from conscio.observatory.structural_view import StructuralProjection
 from conscio.observatory.knowledge_view import KnowledgeProjection
-from conscio.observatory.server import route
-from conscio.observatory.projection import Projection
-from conscio.observatory.society import SocietyProjection
 from conscio.observatory.liaison_view import LiaisonProjection
+from conscio.observatory.projection import Projection
+from conscio.observatory.server import route
+from conscio.observatory.society import SocietyProjection
+from conscio.observatory.structural_view import StructuralProjection
 
 
 def _projections(storage):

@@ -1,5 +1,5 @@
 """generator_version field on StructuralSignal (v3.4 B3)."""
-from conscio.structural import StructuralSignal, StructuralDistiller
+from conscio.structural import StructuralDistiller, StructuralSignal
 
 
 def test_signal_has_generator_version_default():
@@ -23,7 +23,9 @@ def test_signal_generator_version_explicit():
 
 
 def test_distiller_reads_generator_version_from_graph():
-    import json, tempfile, os
+    import json
+    import os
+    import tempfile
     graph = {
         "generator_version": "graphify-1.2.0",
         "nodes": [{"id": "n1", "label": "a.py"}],
@@ -41,7 +43,9 @@ def test_distiller_reads_generator_version_from_graph():
 
 
 def test_distiller_reads_generator_version_from_metadata():
-    import json, tempfile, os
+    import json
+    import os
+    import tempfile
     graph = {
         "nodes": [{"id": "n1", "label": "a.py"}],
         "hyperedges": [],

@@ -5,11 +5,11 @@ Baseline: raw adapter.generate() calls — no Conscio pipeline.
 Conscio: full conscio-bench with agency pipeline (gateway, skeptic, breaker, audit).
 """
 import json
-import tempfile
-from pathlib import Path
 
 # We'll use subprocess to call conscio-bench with the right adapter
 import subprocess
+import tempfile
+from pathlib import Path
 
 print("=== Full Benchmark: Qwen3.5-0.8B ===")
 print()

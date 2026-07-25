@@ -1,6 +1,7 @@
 """Baseline: raw Qwen 0.8B calls without Conscio pipeline."""
 import json
 import time
+
 from conscio.agency.adapters import LMStudioAdapter
 
 adapter = LMStudioAdapter(model="qwen3.5-0.8b", base_url="http://localhost:1234/v1")

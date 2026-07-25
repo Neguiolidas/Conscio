@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Real ablation test with Qwen 0.8B via LM Studio."""
+import tempfile
 import time
 from pathlib import Path
-import tempfile
 
 from conscio.agency.adapters import LMStudioAdapter
-from conscio.agency.gateway import OutputGateway
 from conscio.agency.contracts import PROPOSAL_SCHEMA
-from conscio.token_account import TokenLedger
-from conscio.prompt_zones import build_zoned_prompt
+from conscio.agency.gateway import OutputGateway
 from conscio.context_manager import ConsciousnessState
+from conscio.prompt_zones import build_zoned_prompt
+from conscio.token_account import TokenLedger
 
 print("=== Ablation Study: Qwen3.5-0.8B on LM Studio ===")
 print()
