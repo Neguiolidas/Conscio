@@ -22,6 +22,8 @@ from .. import __version__
 from .liaison_view import LiaisonProjection
 from .projection import Projection
 from .society import SocietyProjection
+from .structural_view import StructuralProjection
+from .knowledge_view import KnowledgeProjection
 
 _STATIC = Path(__file__).parent / "static"
 _STATIC_WHITELIST = {"index.html", "app.js", "style.css"}
@@ -57,6 +59,8 @@ def _int(query: dict, key: str, default: int) -> int:
 
 def route(method: str, path: str, query: dict, *, projection: Projection,
           society: SocietyProjection, liaison: LiaisonProjection,
+          structural: StructuralProjection,
+          knowledge: KnowledgeProjection,
           token: str | None, auth: str | None) -> Resp:
     # read-only: no mutation verb is ever served
     if method not in ("GET", "HEAD"):
@@ -100,6 +104,28 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
         self_id = str(projection.identity().get("instance_id") or "")
         return Resp(200, liaison.inbox(self_id, limit=_int(query, "limit", 50)))
 
+    # ── structural + knowledge (v3.4) ──────────────────────────
+    if path == "/api/structural/drift":
+        return Resp(200, structural.drift_timeline(
+            limit=_int(query, "limit", 20)))
+    if path == "/api/structural/freshness":
+        return Resp(200, structural.freshness(
+            root=query.get("root")))
+    if path == "/api/structural/graph":
+        return Resp(200, structural.graph(
+            root=query.get("root")))
+    if path == "/api/knowledge/entities":
+        return Resp(200, knowledge.entities(
+            limit=_int(query, "limit", 100)))
+    if path == "/api/knowledge/relationships":
+        return Resp(200, knowledge.relationships(
+            entity=query.get("entity"),
+            limit=_int(query, "limit", 100)))
+    if path == "/api/knowledge/timeline":
+        entity = query.get("entity", "")
+        return Resp(200, knowledge.timeline(
+            entity=entity, limit=_int(query, "limit", 20)))
+
     if path == "/" or path.startswith("/static/"):
         name = "index.html" if path == "/" else path.rsplit("/", 1)[-1]
         if name not in _STATIC_WHITELIST:
@@ -135,12 +161,16 @@ def make_server(host: str, port: int, token: str | None,
     projection = Projection(storage)
     society = SocietyProjection(noosphere)
     liaison_proj = LiaisonProjection(liaison)
+    structural = StructuralProjection(storage)
+    knowledge = KnowledgeProjection(storage)
 
     class _H(Handler):
         _token = token
         _projection = projection
         _society = society
         _liaison = liaison_proj
+        _structural = structural
+        _knowledge = knowledge
 
     return ThreadingHTTPServer((host, port), _H)
 
@@ -150,6 +180,8 @@ class Handler(BaseHTTPRequestHandler):
     _projection: Projection | None = None
     _society: SocietyProjection | None = None
     _liaison: LiaisonProjection | None = None
+    _structural: StructuralProjection | None = None
+    _knowledge: KnowledgeProjection | None = None
 
     def log_message(self, *a):                 # never log (urls may carry tokens)
         pass
@@ -160,11 +192,14 @@ class Handler(BaseHTTPRequestHandler):
         proj = self._projection
         soc = self._society
         liai = self._liaison
-        if proj is None or soc is None or liai is None:   # always set by make_server
+        struct = self._structural
+        know = self._knowledge
+        if proj is None or soc is None or liai is None or struct is None or know is None:
             return self._send(_err(500, "internal error", "no projection"))
         try:
             resp = route(method, parsed.path, query, projection=proj,
-                         society=soc, liaison=liai, token=self._token,
+                         society=soc, liaison=liai, structural=struct,
+                         knowledge=know, token=self._token,
                          auth=self.headers.get("Authorization"))
         except Exception as exc:               # no traceback leak
             resp = _err(500, "internal error", type(exc).__name__)
