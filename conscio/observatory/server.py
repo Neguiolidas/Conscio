@@ -61,7 +61,8 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
           society: SocietyProjection, liaison: LiaisonProjection,
           structural: StructuralProjection,
           knowledge: KnowledgeProjection,
-          token: str | None, auth: str | None) -> Resp:
+          token: str | None, auth: str | None,
+          workspace_root: str | None = None) -> Resp:
     # read-only: no mutation verb is ever served
     if method not in ("GET", "HEAD"):
         return _err(405, "method not allowed", method)
@@ -127,10 +128,7 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
             entity=entity, limit=_int(query, "limit", 20)))
 
     if path == "/graph":
-        # Serve graphify-out/graph.html from the workspace root (v3.5)
-        root = query.get("root")
-        if not root:
-            return _err(400, "bad request", "root query param required")
+        root = query.get("root") or workspace_root or "."
         gpath = Path(root) / "graphify-out" / "graph.html"
         if not gpath.exists():
             return _err(404, "not found",
@@ -140,6 +138,51 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
         except OSError:
             return _err(404, "not found", "cannot read graph.html")
         return Resp(200, body=data, content_type="text/html")
+
+    # v3.4.2: project discovery + per-project graph serving
+    if path == "/api/projects":
+        root = workspace_root
+        if not root or not Path(root).is_dir():
+            return Resp(200, [])
+        projects = []
+        try:
+            for entry in sorted(Path(root).iterdir()):
+                if not entry.is_dir():
+                    continue
+                gj = entry / "graphify-out" / "graph.json"
+                if not gj.exists():
+                    continue
+                try:
+                    raw = json.loads(gj.read_text())
+                    nodes = len(raw.get("nodes", []))
+                    links = len(raw.get("links", []))
+                except Exception:
+                    nodes, links = 0, 0
+                projects.append({
+                    "id": entry.name,
+                    "name": entry.name,
+                    "path": str(entry),
+                    "has_graph": True,
+                    "node_count": nodes,
+                    "link_count": links,
+                })
+        except (OSError, PermissionError):
+            pass
+        return Resp(200, projects)
+
+    import re as _re
+    m = _re.match(r"^/api/projects/([^/]+)/graph$", path)
+    if m:
+        pid = m.group(1)
+        root = workspace_root or "."
+        gj = Path(root) / pid / "graphify-out" / "graph.json"
+        if not gj.exists():
+            return _err(404, "not found", f"project '{pid}' has no graph.json")
+        try:
+            raw = json.loads(gj.read_text())
+        except Exception as exc:
+            return _err(500, "parse error", type(exc).__name__)
+        return Resp(200, raw)
 
     if path == "/" or path.startswith("/static/"):
         name = "index.html" if path == "/" else path.rsplit("/", 1)[-1]
@@ -221,7 +264,8 @@ class Handler(BaseHTTPRequestHandler):
             resp = route(method, parsed.path, query, projection=proj,
                          society=soc, liaison=liai, structural=struct,
                          knowledge=know, token=self._token,
-                         auth=self.headers.get("Authorization"))
+                         auth=self.headers.get("Authorization"),
+                         workspace_root=self._workspace_root)
         except Exception as exc:               # no traceback leak
             resp = _err(500, "internal error", type(exc).__name__)
         self._send(resp, body=(method != "HEAD"))   # HEAD: headers only

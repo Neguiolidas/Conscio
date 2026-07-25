@@ -80,7 +80,8 @@ def test_post_blocked_on_structural(tmp_path):
     proj, soc, liai, sp, kp = _projections(tmp_path)
     resp = route("POST", "/api/structural/graph", {},
                  projection=proj, society=soc, liaison=liai,
-                 structural=sp, knowledge=kp, token=None, auth=None)
+                 structural=sp, knowledge=kp, token=None, auth=None,
+                 workspace_root=None)
     assert resp.status == 405
 
 
@@ -88,7 +89,8 @@ def test_delete_blocked_on_knowledge(tmp_path):
     proj, soc, liai, sp, kp = _projections(tmp_path)
     resp = route("DELETE", "/api/knowledge/entities", {},
                  projection=proj, society=soc, liaison=liai,
-                 structural=sp, knowledge=kp, token=None, auth=None)
+                 structural=sp, knowledge=kp, token=None, auth=None,
+                 workspace_root=None)
     assert resp.status == 405
 
 
@@ -97,7 +99,8 @@ def test_token_required_when_set(tmp_path):
     resp = route("GET", "/api/structural/drift", {},
                  projection=proj, society=soc, liaison=liai,
                  structural=sp, knowledge=kp,
-                 token="secret", auth=None)
+                 token="secret", auth=None,
+                 workspace_root=None)
     assert resp.status == 401
 
 
@@ -105,7 +108,8 @@ def test_404_on_unknown_path(tmp_path):
     proj, soc, liai, sp, kp = _projections(tmp_path)
     resp = route("GET", "/api/nonexistent", {},
                  projection=proj, society=soc, liaison=liai,
-                 structural=sp, knowledge=kp, token=None, auth=None)
+                 structural=sp, knowledge=kp, token=None, auth=None,
+                 workspace_root=None)
     assert resp.status == 404
 
 
