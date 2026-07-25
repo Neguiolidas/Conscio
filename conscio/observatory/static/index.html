@@ -2,38 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Conscio Observatory</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<div id="sidebar">
   <header>
-    <h1>Conscio Observatory</h1>
-    <p class="note">Read-only. Shows last-persisted state (may lag the live engine).</p>
-    <p class="note">Society tabs show last-published peer state from the shared noosphere.</p>
-    <label>Token <input id="token" type="password" placeholder="optional"></label>
+    <h2>Observatory</h2>
+    <button class="hamburger" onclick="App.toggleSidebar()" title="Close sidebar">✕</button>
   </header>
-  <nav>
-    <button data-tab="events">Logs</button>
-    <button data-tab="goals">Goals</button>
-    <button data-tab="actions">Actions</button>
-    <button data-tab="skills">Skills</button>
-    <button data-tab="state">State</button>
-    <button data-tab="daemon">Daemon</button>
-    <button data-tab="relay">Relay</button>
-    <button data-tab="identity">Identity</button>
-    <button data-tab="society_members">Society</button>
-    <button data-tab="society_skills">Soc. Skills</button>
-    <button data-tab="society_records">Soc. Records</button>
-    <button data-tab="structural">Structural</button>
-    <button data-tab="knowledge">Knowledge</button>
-    <button data-tab="graphview">Graph View</button>
-  </nav>
-  <main><pre id="out">loading\u2026</pre></main>
-  <script src="/static/d3.min.js"></script>
-  <script src="/static/structural.js"></script>
-  <script src="/static/knowledge.js"></script>
-  <script src="/static/graphview.js"></script>
-  <script src="/static/app.js"></script>
+  <div id="project-list"></div>
+  <nav id="tabs"></nav>
+</div>
+<div id="main">
+  <div id="topbar">
+    <button class="hamburger" onclick="App.toggleSidebar()" title="Open sidebar">☰</button>
+    <h1 id="title">Observatory</h1>
+    <span class="project-badge" id="project-badge"></span>
+  </div>
+  <div id="content"></div>
+</div>
+<script src="/static/d3.min.js"></script>
+<script src="/static/app.js"></script>
 </body>
 </html>
