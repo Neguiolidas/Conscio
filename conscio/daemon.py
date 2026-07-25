@@ -66,7 +66,8 @@ class Daemon:
                  pidfile: str | Path | None = None,
                  heartbeat_path: str | Path | None = None,
                  control_path: str | Path | None = None,
-                 close_engine_on_shutdown: bool = True) -> None:
+                 close_engine_on_shutdown: bool = True,
+                 auto_reindex: bool = False) -> None:
         self.engine = engine
         self.sensors = list(sensors)
         self.interval = interval
@@ -85,6 +86,7 @@ class Daemon:
                                else storage / "daemon_heartbeat.json")
         self.control_path = Path(control_path) if control_path else None
         self.close_engine_on_shutdown = close_engine_on_shutdown
+        self.auto_reindex = auto_reindex            # v3.4: opt-in reindex
         self.cycles = 0
         self._last_report: RunReport | None = None   # v1.6: last-cycle summary
         self._idle_cycles: int = 0                       # v3.3: sensor-signal tracker
@@ -144,6 +146,23 @@ class Daemon:
                                           "head_commit": fr.head_commit})
                         except Exception:
                             pass  # drift check never kills the loop
+                    # v3.4: auto-reindex if opt-in and graphify binary present
+                    if self.auto_reindex and status.startswith("loaded:"):
+                        try:
+                            from .structural_drift import compute_freshness
+                            gc = (self.engine._structural_signal.built_at_commit
+                                  if hasattr(self.engine, "_structural_signal") else "")
+                            fr = compute_freshness(ws.root, gc)
+                            if fr.is_stale:
+                                import shutil
+                                graphify = shutil.which("graphify")
+                                if graphify:
+                                    import subprocess
+                                    subprocess.run([graphify, "generate", ws.root],
+                                                  capture_output=True, timeout=30)
+                                    log.info("auto-reindex triggered for %s", ws.id[:8])
+                        except Exception as exc:
+                            log.warning("auto-reindex failed: %s", exc)
             except Exception as exc:
                 log.warning("workspace/consent sync failed: %s", exc)
         result = self.engine.run(self.budget, world_state=world_state)
