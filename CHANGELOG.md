@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.4.1] - 2026-07-25 — Council Auto-Reflect Fix
+
+### Fixed
+
+- **Council auto-reflect**: when `last_coherence` is None (fresh install,
+  only note/feed used, no reflect called), council now automatically
+  runs `engine.reflect()` before convening voices. Previously the
+  Architect voice would always veto with "Cannot assess structural
+  integrity without coherence data", blocking council on installations
+  that only used `conscio_note`/`conscio_feed` without ever calling
+  `conscio_reflect` or `conscio_cognitive_cycle`. Non-fatal: reflect
+  failure does not block council.
+
+---
+
 ## [3.4.0] - 2026-07-25 — Graphify Observatory
 
 ### Added

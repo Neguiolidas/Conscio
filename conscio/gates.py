@@ -140,6 +140,16 @@ def council(
         raise ValueError("question is required")
 
     _check_closed(engine)
+
+    # v3.4.1: auto-reflect when last_coherence is None
+    # note()/feed() deposit events but don't run coherence assessment.
+    # Without this, Architect always vetoes on fresh installations.
+    if getattr(engine, "last_coherence", None) is None:
+        try:
+            engine.reflect()
+        except Exception:
+            pass  # reflect failure should not block council
+
     voices = [
         _voice_architect(engine, question, context, options),
         _voice_skeptic(engine, question, context, options),
