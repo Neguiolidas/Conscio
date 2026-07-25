@@ -121,6 +121,21 @@ def _build_parser() -> argparse.ArgumentParser:
     p_manual.add_argument(
         "--open", action="store_true",
         help="also try to open the manual with the system pager/editor")
+
+    # v3.5: observatory subcommand
+    p_obs = sub.add_parser(
+        "observatory",
+        help="start the read-only Observatory web UI (loopback only)")
+    p_obs.add_argument("--host", default="127.0.0.1",
+                       help="bind host (loopback only, default: 127.0.0.1)")
+    p_obs.add_argument("--port", type=int, default=8788,
+                       help="bind port (default: 8788)")
+    p_obs.add_argument("--root", default=".",
+                       help="workspace root for graphify-out/graph.html (default: cwd)")
+    p_obs.add_argument("--token", default=None,
+                       help="optional bearer token for API access")
+    p_obs.add_argument("--storage", default="",
+                       help="storage dir (default: ~/.hermes)")
     return parser
 
 
@@ -423,8 +438,39 @@ def main(argv: list[str] | None = None) -> int:
                             args.enable_promote)
     if args.command == "manual":
         return _cmd_manual(open_it=getattr(args, "open", False))
+    if args.command == "observatory":
+        return _cmd_observatory(host=args.host, port=args.port,
+                                root=args.root, token=args.token,
+                                storage=args.storage)
     parser.print_help()
     return 2
+
+
+def _cmd_observatory(*, host: str, port: int, root: str,
+                     token: str | None, storage: str) -> int:
+    """Start the read-only Observatory web UI (loopback only)."""
+    from pathlib import Path
+
+    from .observatory.server import make_server
+    if storage:
+        storage_path = Path(storage).expanduser()
+    else:
+        storage_path = Path.home() / ".hermes" / "consciousness"
+    noo = storage_path / "noo.db"
+    liai = storage_path / "liai.db"
+    root_abs = str(Path(root).expanduser().resolve())
+    srv = make_server(host, port, token, storage_path, noo, liai,
+                      workspace_root=root_abs)
+    print(f"Conscio Observatory: http://{host}:{port}")
+    print(f"  workspace root: {root_abs}")
+    print(f"  graph view: http://{host}:{port}/graph")
+    print("  Ctrl+C to stop")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\nshutting down...")
+        srv.shutdown()
+    return 0
 
 
 def _cmd_manual(*, open_it: bool = False) -> int:
