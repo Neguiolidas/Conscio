@@ -129,6 +129,21 @@ class Daemon:
                     status = sync_structure(self.engine, ws, self.consent)
                     self._synced_ws_id = ws.id
                     log.info("structure sync [%s]: %s", ws.id[:8], status)
+                    # v3.4: emit structure:changed event when drift detected
+                    if status.startswith("loaded:"):
+                        try:
+                            from .structural_drift import compute_freshness
+                            gc = (self.engine._structural_signal.built_at_commit
+                                  if hasattr(self.engine, "_structural_signal") else "")
+                            fr = compute_freshness(ws.root, gc)
+                            if fr.is_stale:
+                                self.engine.event_bus.emit(
+                                    type="structure:changed", category="system",
+                                    data={"workspace_id": ws.id,
+                                          "graph_commit": fr.graph_commit,
+                                          "head_commit": fr.head_commit})
+                        except Exception:
+                            pass  # drift check never kills the loop
             except Exception as exc:
                 log.warning("workspace/consent sync failed: %s", exc)
         result = self.engine.run(self.budget, world_state=world_state)
