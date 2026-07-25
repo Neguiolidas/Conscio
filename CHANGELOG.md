@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.5.0] - 2026-07-25 — Observatory Graph View
+
+### Added
+
+- **`/graph` endpoint**: serves `graphify-out/graph.html` from the
+  workspace root. This is the graphify-generated interactive vis-network
+  visualization (zoom/pan/search/communities). The Observatory proxies
+  it as-is — Conscio does not recreate the UI, it serves what graphify
+  already produces.
+- **`conscio observatory` CLI subcommand**: starts the Observatory web
+  server with `--host`, `--port`, `--root`, `--token`, `--storage` flags.
+  `--root` sets the workspace root for graphify-out/graph.html.
+- **"Graph View" tab** in Observatory frontend: opens the graphify
+  graph.html in an iframe inside the Observatory.
+- `make_server()` accepts `workspace_root` kwarg for the `/graph` fallback.
+
+### Changed
+
+- The Observatory's role is now clear: it serves freshness/drift/KG
+  debug data (its own endpoints) AND proxies the graphify graph.html
+  (rich interactive UI). Conscio does not bundle graphify — the user
+  installs graphify separately and runs `graphify update <project>`.
+
+---
+
 ## [3.4.1] - 2026-07-25 — Council Auto-Reflect Fix
 
 ### Fixed

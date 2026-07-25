@@ -26,7 +26,7 @@ from .society import SocietyProjection
 from .structural_view import StructuralProjection
 
 _STATIC = Path(__file__).parent / "static"
-_STATIC_WHITELIST = {"index.html", "app.js", "style.css", "d3.min.js", "structural.js", "knowledge.js"}
+_STATIC_WHITELIST = {"index.html", "app.js", "style.css", "d3.min.js", "structural.js", "knowledge.js", "graphview.js"}
 _CONTENT_TYPES = {".html": "text/html", ".js": "application/javascript",
                   ".css": "text/css"}
 _DEFAULT_STORAGE = Path.home() / ".hermes" / "consciousness"
@@ -126,6 +126,21 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
         return Resp(200, knowledge.timeline(
             entity=entity, limit=_int(query, "limit", 20)))
 
+    if path == "/graph":
+        # Serve graphify-out/graph.html from the workspace root (v3.5)
+        root = query.get("root")
+        if not root:
+            return _err(400, "bad request", "root query param required")
+        gpath = Path(root) / "graphify-out" / "graph.html"
+        if not gpath.exists():
+            return _err(404, "not found",
+                        "graph.html not found — run `graphify update <root>` first")
+        try:
+            data = gpath.read_bytes()
+        except OSError:
+            return _err(404, "not found", "cannot read graph.html")
+        return Resp(200, body=data, content_type="text/html")
+
     if path == "/" or path.startswith("/static/"):
         name = "index.html" if path == "/" else path.rsplit("/", 1)[-1]
         if name not in _STATIC_WHITELIST:
@@ -156,7 +171,8 @@ def _check_host(host: str) -> None:
 
 def make_server(host: str, port: int, token: str | None,
                 storage: Path, noosphere: Path,
-                liaison: Path) -> ThreadingHTTPServer:
+                liaison: Path, *,
+                workspace_root: str | None = None) -> ThreadingHTTPServer:
     _check_host(host)
     projection = Projection(storage)
     society = SocietyProjection(noosphere)
@@ -171,6 +187,7 @@ def make_server(host: str, port: int, token: str | None,
         _liaison = liaison_proj
         _structural = structural
         _knowledge = knowledge
+        _workspace_root = workspace_root or str(Path.cwd())
 
     return ThreadingHTTPServer((host, port), _H)
 
@@ -182,6 +199,7 @@ class Handler(BaseHTTPRequestHandler):
     _liaison: LiaisonProjection | None = None
     _structural: StructuralProjection | None = None
     _knowledge: KnowledgeProjection | None = None
+    _workspace_root: str = "."
 
     def log_message(self, *a):                 # never log (urls may carry tokens)
         pass
@@ -196,6 +214,9 @@ class Handler(BaseHTTPRequestHandler):
         know = self._knowledge
         if proj is None or soc is None or liai is None or struct is None or know is None:
             return self._send(_err(500, "internal error", "no projection"))
+        # v3.5: inject workspace_root fallback for /graph
+        if parsed.path == "/graph" and "root" not in query:
+            query["root"] = self._workspace_root
         try:
             resp = route(method, parsed.path, query, projection=proj,
                          society=soc, liaison=liai, structural=struct,
