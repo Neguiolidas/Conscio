@@ -8,6 +8,7 @@ Usage:
 
 import json
 import sys
+
 from conscio.engine import ConsciousnessEngine
 
 

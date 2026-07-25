@@ -1,5 +1,6 @@
 """Tests for StructuralProjection — read-only drift + freshness + graph views."""
 from __future__ import annotations
+
 import json
 from pathlib import Path
 

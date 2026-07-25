@@ -11,8 +11,8 @@ from pathlib import Path
 from ..guards import clamp_int
 from ..structural_drift import (
     StructuralDriftStore,
-    drift_path,
     compute_freshness,
+    drift_path,
 )
 
 
