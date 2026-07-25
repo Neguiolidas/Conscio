@@ -26,7 +26,7 @@ from .society import SocietyProjection
 from .structural_view import StructuralProjection
 
 _STATIC = Path(__file__).parent / "static"
-_STATIC_WHITELIST = {"index.html", "app.js", "style.css", "d3.min.js", "structural.js", "knowledge.js", "graphview.js"}
+_STATIC_WHITELIST = {"index.html", "app.js", "style.css", "d3.min.js"}
 _CONTENT_TYPES = {".html": "text/html", ".js": "application/javascript",
                   ".css": "text/css"}
 _DEFAULT_STORAGE = Path.home() / ".hermes" / "consciousness"
