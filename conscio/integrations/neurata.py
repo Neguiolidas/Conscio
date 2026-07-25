@@ -80,10 +80,24 @@ class NeurataBridge:
         args = ["query", q, "--limit", str(limit)]
         return self._cached("query", context_hash, args)
 
-    def deposit(self, body: str, **meta: str) -> dict | None:
+    def deposit(self, body: str, *,
+                title: str | None = None,
+                type: str | None = None,
+                env: str | None = None,
+                agent: str | None = None,
+                session: str | None = None) -> dict | None:
+        """Deposit content into Neurata. Maps to the CLI's supported flags."""
         args = ["deposit", body]
-        for k, v in meta.items():
-            args.extend([f"--{k}", str(v)])
+        if title is not None:
+            args.extend(["--title", title])
+        if type is not None:
+            args.extend(["--type", type])
+        if env is not None:
+            args.extend(["--env", env])
+        if agent is not None:
+            args.extend(["--agent", agent])
+        if session is not None:
+            args.extend(["--session", session])
         return self._run_json(*args)  # deposits are not cached
 
     def shelf_insights(self) -> dict | None:
