@@ -38,11 +38,11 @@ class KnowledgeProjection:
             return []
         try:
             conn = self._ro()
-        except sqlite3.OperationalError:
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
             return []
         try:
             return [dict(r) for r in conn.execute(sql, params).fetchall()]
-        except sqlite3.OperationalError:
+        except (sqlite3.OperationalError, sqlite3.DatabaseError):
             return []
         finally:
             conn.close()

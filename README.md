@@ -95,7 +95,7 @@ message wastes tokens and adds latency.
 
 **Call Conscio when the cost of being wrong is high:**
 
-- Pentest / security audit → `feed` + `cognitive_cycle`
+- Security audit → `feed` + `cognitive_cycle`
 - Architectural decision → `decide` or `council`
 - Debugging → `investigate`
 - Multi-step delivery → `loop_gate` + `delivery_check`

@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.4.0] - 2026-07-25 — Graphify Observatory
+
+### Added
+
+- **StructuralProjection** (`conscio.observatory.structural_view`):
+  read-only view of StructuralDriftStore with `drift_timeline()`,
+  `freshness()` (via compute_freshness), and `graph()` endpoints.
+- **KnowledgeProjection** (`conscio.observatory.knowledge_view`):
+  read-only view of kg.db with `entities()`, `relationships()`,
+  `timeline()` endpoints. Opens with mode=ro, never writes.
+- **6 new API endpoints** in observatory route():
+  `/api/structural/drift`, `/api/structural/freshness`,
+  `/api/structural/graph`, `/api/knowledge/entities`,
+  `/api/knowledge/relationships`, `/api/knowledge/timeline`.
+- **3 new tabs** in Observatory frontend: Structural, Knowledge.
+- **Freshness card** showing graph commit vs head commit + stale status.
+- **D3.js v7** inline (no build step, no CDN, 280KB local).
+- **StructuralSignal.generator_version** field (default "unknown"):
+  reads from graph.json metadata or top-level key.
+- **Daemon emits `structure:changed`** event when drift detected
+  after sync_structure loads a graph and compute_freshness() reports
+  stale. Non-fatal — never kills the loop.
+- **auto-reindex opt-in** (`Daemon(auto_reindex=True)`, default OFF):
+  triggers `graphify generate` on staleness when graphify binary is
+  on PATH. Non-fatal: failure logged, not raised.
+
+### Fixed
+
+- KnowledgeProjection handles corrupt/missing kg.db gracefully
+  (catches both OperationalError and DatabaseError).
+
+---
+
 ## [3.3.0] - 2026-07-23 — Awake Maturity
 
 ### Added
