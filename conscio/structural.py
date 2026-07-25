@@ -90,6 +90,7 @@ class StructuralSignal:
     link_count: int
     hyperedges: tuple[Hyperedge, ...]
     communities: tuple[CommunitySummary, ...]
+    generator_version: str = "unknown"  # v3.4: from graph.json
 
 
 class StructuralDistiller:
@@ -109,6 +110,7 @@ class StructuralDistiller:
         built_at_commit: str,
         source_path: str,
         content_hash: str,
+        generator_version: str = "unknown",
     ) -> None:
         self._nodes = nodes
         self._hyperedges = hyperedges
@@ -116,6 +118,7 @@ class StructuralDistiller:
         self._built_at_commit = built_at_commit
         self._source_path = source_path
         self._content_hash = content_hash
+        self._generator_version = generator_version
         self._by_id = {n.id: n for n in nodes}
         self._he_by_id = {h.id: h for h in hyperedges}
         self._comm_cache: tuple[CommunitySummary, ...] | None = None
@@ -183,6 +186,17 @@ class StructuralDistiller:
             canonical = json.dumps(data, sort_keys=True, default=str).encode("utf-8")
             content_hash = hashlib.sha256(canonical).hexdigest()[:16]
 
+        # v3.4: read generator_version from metadata or top-level
+        gen_ver = "unknown"
+        if isinstance(data, dict):
+            meta = data.get("metadata") or data.get("meta") or {}
+            if isinstance(meta, dict):
+                gv = meta.get("generator_version")
+                if gv is not None:
+                    gen_ver = str(gv)
+            if "generator_version" in data:
+                gen_ver = str(data["generator_version"])
+
         return cls(
             nodes=nodes,
             hyperedges=hyperedges,
@@ -190,6 +204,7 @@ class StructuralDistiller:
             built_at_commit=str(data.get("built_at_commit", "")),
             source_path=source_path,
             content_hash=content_hash,
+            generator_version=gen_ver,
         )
 
     # ── projection (defensive: bad items skipped, never fatal) ───────────────────
@@ -259,6 +274,7 @@ class StructuralDistiller:
             link_count=self._link_count,
             hyperedges=tuple(self._hyperedges),
             communities=self._communities(),
+            generator_version=self._generator_version,
         )
 
     def lookup(self, key: str) -> dict[str, Any] | None:
