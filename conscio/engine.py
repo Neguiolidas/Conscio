@@ -1513,6 +1513,8 @@ class ConsciousnessEngine:
                 pass
         self._closed = True
         for mod in (self.content_store, self.event_bus, self.token_tracker, self.vector_backend):
+            if mod is None:
+                continue
             try:
                 mod.close()
             except Exception:
