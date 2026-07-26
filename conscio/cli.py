@@ -115,6 +115,21 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="share skills across same-host instances "
                         "(see: conscio noosphere --help)")
 
+    p_ingest = sub.add_parser(
+        "ingest",
+        help="ingest a file or directory into ContentStore (+ vector search)")
+    p_ingest.add_argument("path", help="file or directory to ingest (recursive)")
+    p_ingest.add_argument("--category", default="reference",
+                          help="ContentStore category (default: reference)")
+    p_ingest.add_argument("--chunk-size", type=int, default=2000,
+                          help="max chars per chunk (default: 2000)")
+    p_ingest.add_argument("--overlap", type=float, default=0.2,
+                          help="fraction of chunk_size to overlap between "
+                               "chunks (default: 0.2)")
+    p_ingest.add_argument("--model", default=DEFAULT_MODEL)
+    p_ingest.add_argument("--storage", default="",
+                          help="storage dir (default: ~/.hermes)")
+
     p_manual = sub.add_parser(
         "manual",
         help="print the location of the usage manual (USAGE.md shipped with the package)")
@@ -383,6 +398,41 @@ def _cmd_promote(model: str, storage: str, quarantine_id: int,
     return 1
 
 
+def _cmd_ingest(path: str, category: str, chunk_size: int, overlap: float,
+                model: str, storage: str) -> int:
+    """Ingest a file/directory into ContentStore via engine.ingest_directory().
+
+    Prints a simple progress line every 500 files, then emits a `host:event`
+    on the EventBus with the ingest summary (best-effort — never fails the
+    command if the emit itself raises).
+    """
+    from .engine import ConsciousnessEngine
+    eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage))
+    try:
+        def _progress(processed: int, total: int) -> None:
+            if total and (processed % 500 == 0 or processed == total):
+                print(f"  ingest: {processed}/{total} files processed")
+
+        result = eng.ingest_directory(
+            path, category=category, chunk_size=chunk_size, overlap=overlap,
+            progress_callback=_progress,
+        )
+        print(f"ingest complete: {result['ingested']} ingested, "
+              f"{result['skipped']} skipped, {result['failed']} failed "
+              f"of {result['total']} files ({result['duration_s']}s)")
+        try:
+            eng.event_bus.emit(
+                type="host:event", category="system",
+                data={"event": "ingest_directory", "path": str(path),
+                      "category": category, **result},
+            )
+        except Exception:
+            pass
+    finally:
+        eng.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -440,6 +490,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "promote":
         return _cmd_promote(args.model, args.storage, args.quarantine,
                             args.enable_promote)
+    if args.command == "ingest":
+        return _cmd_ingest(args.path, args.category, args.chunk_size,
+                           args.overlap, args.model, args.storage)
     if args.command == "manual":
         return _cmd_manual(open_it=getattr(args, "open", False))
     if args.command == "observatory":
