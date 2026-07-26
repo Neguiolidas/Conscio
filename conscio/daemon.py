@@ -33,7 +33,7 @@ from typing import Any
 from .agency.loop import ActBudget, RunReport
 from .guards import safe_read_json
 from .perception import PerceptionFrame, SensorAdapter
-from .structural_consent import sync_structure
+from .structural_consent import ConsentScope, sync_structure
 
 log = logging.getLogger("conscio.daemon")
 
@@ -128,6 +128,26 @@ class Daemon:
                 # (STABLE syncs once; SWITCHING syncs on each switch — cheap).
                 if (self.consent is not None and ws is not None
                         and ws.id != self._synced_ws_id):
+                    # v3.4.2: interactive consent — if no consent for this
+                    # workspace but graph.json exists, emit consent:request.
+                    # The agent layer (Hermes/CLI) intercepts and asks the user.
+                    # In YOLO/bypass mode, the agent auto-approves.
+                    from .structural_consent import GRAPH_RELPATH
+                    graph_file = ws.root / GRAPH_RELPATH if hasattr(ws, 'root') else None
+                    if (graph_file and graph_file.exists()
+                            and self.consent.scope_for(ws.id) == ConsentScope.OFF):
+                        try:
+                            self.engine.event_bus.emit(
+                                type="consent:request", category="system",
+                                data={"workspace_id": ws.id,
+                                      "root": str(ws.root),
+                                      "graph_path": str(graph_file),
+                                      "node_count_hint": "unknown"},
+                                priority=5,
+                            )
+                            log.info("consent:request emitted for %s", ws.id[:8])
+                        except Exception:
+                            pass  # event bus must not kill the loop
                     status = sync_structure(self.engine, ws, self.consent)
                     self._synced_ws_id = ws.id
                     log.info("structure sync [%s]: %s", ws.id[:8], status)
@@ -442,6 +462,10 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="honor daemon_control.json in the storage dir "
                              "(the Hub awake toggle); OFF default. Awake makes "
                              "an act-capable daemon autonomous.")
+    parser.add_argument("--yolo", action="store_true",
+                        help="auto-approve structural consent for any workspace "
+                             "without asking. Equivalent to bypass mode — all "
+                             "workspaces with graph.json are auto-allowed.")
     return parser
 
 
@@ -507,6 +531,20 @@ def main(argv: Sequence[str] | None = None) -> int:
               if args.budget_cycles else None)
     workspace = WorkspaceContext(emit=engine.event_bus.emit)
     consent = StructuralConsent(consent_path(engine.storage))   # v1.7.2
+
+    # v3.4.2: --yolo auto-approves structural consent for any workspace
+    if args.yolo:
+        # Scan for any workspace with graph.json and auto-grant
+        from pathlib import Path as _P
+
+        from .workspace import WorkspaceContext as _WC
+        _yolo_root = _P.cwd()
+        _yolo_ws = _WC(explicit_root=_yolo_root, emit=lambda *a, **k: None)
+        _yolo_w = _yolo_ws.current()
+        if consent.scope_for(_yolo_w.id) == ConsentScope.OFF:
+            consent.grant(_yolo_w.id, ConsentScope.PROJECT)
+            log.warning("YOLO: auto-granted consent for %s (%s)",
+                        _yolo_w.id[:8], _yolo_w.root)
     responder = None                                            # v2.7.0
     if args.auto_respond:
         if _responder_armed(auto_respond=True, relay_peer=args.relay_peer,

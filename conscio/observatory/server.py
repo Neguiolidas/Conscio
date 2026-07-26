@@ -140,6 +140,19 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
         return Resp(200, body=data, content_type="text/html")
 
     # v3.4.2: project discovery + per-project graph serving
+    if path == "/api/consent":
+        # v3.4.2: interactive consent status for all known workspaces
+        from ..structural_consent import StructuralConsent, consent_path
+        cp = consent_path(projection.storage)
+        consent = StructuralConsent(cp)
+        # Return all consent entries
+        entries = [
+            {"workspace_id": wid, "scope": s.value,
+             "granted": s.value != "off"}
+            for wid, s in consent._map.items()
+        ]
+        return Resp(200, entries)
+
     if path == "/api/projects":
         root = query.get("root") or workspace_root
         if not root or not Path(root).is_dir():
