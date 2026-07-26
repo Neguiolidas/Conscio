@@ -495,6 +495,23 @@ class ConsciousnessEngine:
                 "prune_stale", f"{len(stale)} stale entities: {', '.join(stale[:3])}"
             )
 
+        # v3.4.2: if awake and no executable goals exist, spawn a periodic
+        # maintenance goal so the daemon's act() can actually run and
+        # produce artifacts (skills via distill, noosphere publications).
+        # Without this, the daemon wakes, finds only diagnostic goals,
+        # fails every cycle, and trips the failure-rate brake.
+        if self._state.awake:
+            has_executable = any(
+                g.status == "active" and g.executable
+                for g in self.goals._goals
+            )
+            if not has_executable:
+                self.goals.generate_from_maintenance(
+                    "daemon_check",
+                    "host health check — run diagnostics and record state",
+                    source="daemon",
+                )
+
         # 4. PREDICT — forward if-then persistence predictions for recently
         # changed entities (v0.9 wiring: the docstring promised this stage but
         # nothing implemented it). The next perceive() settles them via
@@ -1734,6 +1751,9 @@ class ConsciousnessEngine:
             return RunReport(stopped="no adapter attached")
         self.probe()
         loop = AutonomyLoop(self, self._act_pipeline, self._act_meter)
+        if budget is None and self.awake:
+            from .awake.budget import AwakeBudget
+            budget = AwakeBudget()
         return loop.run(budget or ActBudget(), world_state=world_state)
 
     # --- v2.14: the cognitive cycle (an explicit, useful reflect loop) ---
