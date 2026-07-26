@@ -7,28 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [3.5.0] - 2026-07-25 — Observatory Graph View
+## [3.4.2] - 2026-07-25 — Observatory UI Rework
 
 ### Added
 
-- **`/graph` endpoint**: serves `graphify-out/graph.html` from the
-  workspace root. This is the graphify-generated interactive vis-network
-  visualization (zoom/pan/search/communities). The Observatory proxies
-  it as-is — Conscio does not recreate the UI, it serves what graphify
-  already produces.
+- **`/api/projects` endpoint**: scans the workspace root (`--root` CLI flag)
+  for subdirectories containing `graphify-out/graph.json`. Returns project
+  name, node count, link count for each.
+- **`/api/projects/<id>/graph` endpoint**: serves a project's `graph.json`
+  directly. No database storage — reads from filesystem.
+- **`/graph` endpoint**: serves `graphify-out/graph.html` (graphify's
+  vis-network HTML) from the workspace root for full graphify compatibility.
 - **`conscio observatory` CLI subcommand**: starts the Observatory web
   server with `--host`, `--port`, `--root`, `--token`, `--storage` flags.
-  `--root` sets the workspace root for graphify-out/graph.html.
-- **"Graph View" tab** in Observatory frontend: opens the graphify
-  graph.html in an iframe inside the Observatory.
-- `make_server()` accepts `workspace_root` kwarg for the `/graph` fallback.
+  `--root` sets the workspace root for project discovery and
+  graphify-out/graph.html serving.
+- **Frontend rework**: complete UI overhaul with sidebar, project selector,
+  and D3.js Canvas graph visualisation. No frameworks, ~15KB of new JS/CSS.
+- **Sidebar with hamburger toggle**: collapsible navigation with project
+  list and debug tab buttons.
+- **Project selector**: lists all projects discovered in the workspace
+  root. Clicking loads the project's graph in the Canvas viewer.
+- **D3.js Canvas graph renderer**: draws graphs on a `<canvas>` element
+  (not SVG) for performance with large datasets. Uses quadtree force
+  simulation (O(n log n)) with alpha decay. Includes:
+  - Radial gradient glow on nodes
+  - Hover highlighting (node + connected links)
+  - FPS monitor (reduces detail below 15fps)
+  - Freshness card overlay
+  - Resize handler
+- **Fullscreen graph mode**: graph occupies 100% of the available area.
+- **Graph data never enters the Conscio database**: `graph.json` stays on
+  disk in the project's `graphify-out/` directory. The Observatory only
+  serves it via HTTP. The database (conscio.db) is untouched.
 
 ### Changed
 
-- The Observatory's role is now clear: it serves freshness/drift/KG
-  debug data (its own endpoints) AND proxies the graphify graph.html
-  (rich interactive UI). Conscio does not bundle graphify — the user
-  installs graphify separately and runs `graphify update <project>`.
+- `route()` now accepts optional `workspace_root` parameter.
+- `make_server()` accepts `workspace_root` kwarg.
+- `_STATIC_WHITELIST` reduced to core files only (index.html, app.js,
+  style.css, d3.min.js).
+- Old tab-specific JS files (structural.js, knowledge.js, graphview.js)
+  remain in the static directory but are no longer loaded from index.html.
 
 ---
 
