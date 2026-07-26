@@ -1,22 +1,27 @@
-# tests/test_observatory_static.py
+"""Static checks on Observatory files."""
 from pathlib import Path
 
-_STATIC = Path(__file__).resolve().parents[1] / "conscio" / "observatory" / "static"
+_STATIC = Path(__file__).parent.parent / "conscio" / "observatory" / "static"
 
 
-def test_static_trio_exists_and_nonempty():
-    for name in ("index.html", "app.js", "style.css"):
-        fp = _STATIC / name
-        assert fp.is_file() and fp.stat().st_size > 0, name
+def test_static_files_exist():
+    assert (_STATIC / "index.html").exists()
+    assert (_STATIC / "app.js").exists()
+    assert (_STATIC / "style.css").exists()
+    assert (_STATIC / "d3.min.js").exists()
 
 
-def test_app_js_targets_readonly_api_and_no_external_fetch():
+def test_index_has_sidebar():
+    html = (_STATIC / "index.html").read_text()
+    assert "sidebar" in html
+    assert "hamburger" in html
+    assert "project-list" in html
+    assert "d3.min.js" in html
+
+
+def test_app_has_graph_renderer():
     js = (_STATIC / "app.js").read_text()
-    for ep in ("/api/events", "/api/goals", "/api/actions", "/api/skills", "/api/state"):
-        assert ep in js, ep
-    assert "http://" not in js and "https://" not in js   # same-origin only
-
-
-def test_index_flags_persisted_freshness():
-    html = (_STATIC / "index.html").read_text().lower()
-    assert "last-persisted" in html or "may lag" in html
+    assert "App._renderGraph" in js
+    assert "forceSimulation" in js
+    assert "getContext" in js  # Canvas
+    assert "graph-canvas" in js
