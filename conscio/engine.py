@@ -1074,8 +1074,15 @@ class ConsciousnessEngine:
                 after each file. Exceptions from it are logged, never raised.
 
         Returns:
-            {"total": N, "ingested": N, "skipped": N, "failed": N,
-             "duration_s": float}
+            {"total": N, "ingested": N, "duplicate": N, "skipped": N,
+             "failed": N, "duration_s": float}
+
+            `ingested` counts files that actually produced chunks; files whose
+            content_hash was already indexed are counted in `duplicate`, NOT
+            in `ingested`. This distinction is load-bearing: a second run over
+            an unchanged corpus must report ingested=0/duplicate=N, otherwise
+            a no-op re-run looks identical to a real ingest and cannot be used
+            as evidence that ingestion works.
         """
         start = time.monotonic()
         root = Path(path)
@@ -1086,11 +1093,12 @@ class ConsciousnessEngine:
             files = sorted(p for p in root.rglob("*") if p.is_file())
         else:
             logger.warning("ingest_directory: path does not exist: %s", root)
-            return {"total": 0, "ingested": 0, "skipped": 0, "failed": 0,
+            return {"total": 0, "ingested": 0, "duplicate": 0, "skipped": 0,
+                    "failed": 0,
                     "duration_s": round(time.monotonic() - start, 4)}
 
         total = len(files)
-        ingested = skipped = failed = 0
+        ingested = duplicate = skipped = failed = 0
 
         for i, file_path in enumerate(files, start=1):
             try:
@@ -1107,7 +1115,7 @@ class ConsciousnessEngine:
                 continue
 
             try:
-                self.content_store.index(
+                result = self.content_store.index_ex(
                     label=str(file_path),
                     content=text,
                     category=category,
@@ -1115,7 +1123,10 @@ class ConsciousnessEngine:
                     chunk_size=chunk_size,
                     overlap=overlap,
                 )
-                ingested += 1
+                if result.is_new_content:
+                    ingested += 1
+                else:
+                    duplicate += 1
             except Exception as e:
                 logger.warning("ingest_directory: failed to index %s: %s", file_path, e)
                 failed += 1
@@ -1127,6 +1138,7 @@ class ConsciousnessEngine:
         return {
             "total": total,
             "ingested": ingested,
+            "duplicate": duplicate,
             "skipped": skipped,
             "failed": failed,
             "duration_s": round(time.monotonic() - start, 4),

@@ -421,8 +421,25 @@ def _cmd_ingest(path: str, category: str, chunk_size: int, overlap: float,
             progress_callback=_progress,
         )
         print(f"ingest complete: {result['ingested']} ingested, "
+              f"{result.get('duplicate', 0)} duplicate, "
               f"{result['skipped']} skipped, {result['failed']} failed "
               f"of {result['total']} files ({result['duration_s']}s)")
+        # NFR evidence, printed by the run that produces it: total on-disk
+        # footprint (conscio.db + vectors.db + sidecars) and how many chunks
+        # actually reached the vector index. Without these, "did the ingest
+        # meet NFR2 / did embeddings really happen" needs a separate probe.
+        try:
+            st = eng.content_store.stats()
+            line = (f"  store: {st['chunk_count']} chunks, "
+                    f"{st['db_size_mb']}MB total on disk")
+            if "vector_count" in st:
+                line += (f" ({st['vector_db_size_mb']}MB vectors, "
+                         f"{st['vector_count']} embedded)")
+            else:
+                line += " (vector backend off)"
+            print(line)
+        except Exception:
+            logger.warning("_cmd_ingest: stats readout failed", exc_info=True)
         try:
             eng.event_bus.emit(
                 type="host:event", category="system",

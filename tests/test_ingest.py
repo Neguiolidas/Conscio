@@ -91,9 +91,35 @@ class TestIngestDirectory:
 
     def test_nonexistent_path_returns_zeroed_result(self, engine, tmp_path):
         result = engine.ingest_directory(tmp_path / "does-not-exist")
-        assert result == {"total": 0, "ingested": 0, "skipped": 0, "failed": 0,
-                           "duration_s": result["duration_s"]}
+        assert result == {"total": 0, "ingested": 0, "duplicate": 0,
+                          "skipped": 0, "failed": 0,
+                          "duration_s": result["duration_s"]}
         assert result["total"] == 0
+
+    def test_reingest_of_unchanged_corpus_counts_duplicates_not_ingested(
+        self, engine, tmp_path
+    ):
+        """A no-op re-run must be distinguishable from a real ingest.
+
+        Regression guard for the review finding: index() used to return only a
+        source_id, so ingest_directory counted every already-indexed file as
+        "ingested" — a second run over an unchanged corpus reported the same
+        headline number as the first, making that number useless as evidence.
+        """
+        corpus = tmp_path / "corpus"
+        corpus.mkdir()
+        for i in range(3):
+            (corpus / f"doc{i}.md").write_text(f"# Doc {i}\n\nbody {i}\n", encoding="utf-8")
+
+        first = engine.ingest_directory(corpus)
+        assert first["ingested"] == 3
+        assert first["duplicate"] == 0
+
+        second = engine.ingest_directory(corpus)
+        assert second["total"] == 3
+        assert second["ingested"] == 0
+        assert second["duplicate"] == 3
+        assert second["failed"] == 0
 
     def test_empty_file_is_skipped(self, engine, tmp_path):
         corpus = tmp_path / "corpus"

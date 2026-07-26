@@ -705,6 +705,127 @@ class TestEdgeCases:
         assert len(results) > 0
 
 
+# ─── Vector wiring (I4 / M1 / M3) ───────────────────────────────────────
+
+
+class _FakeVectorBackend:
+    """Minimal VectorBackend stand-in that records what it was handed."""
+
+    def __init__(self, db_path):
+        self.db_path = db_path
+        self.rows = {}
+
+    def add(self, vid, vec, category=None):
+        self.rows[vid] = (vec, category)
+
+    def stats(self):
+        return {"vectors": len(self.rows), "dimension": 2}
+
+
+class _RecordingPipeline:
+    """EmbeddingPipeline stand-in: counts calls, forwards to the backend."""
+
+    def __init__(self, backend):
+        self.vector_backend = backend
+        self.batch_calls = 0
+        self.chunk_calls = 0
+        self.enabled = True
+
+    def embed_chunk(self, chunk_id, text):
+        self.chunk_calls += 1
+        self.vector_backend.add(chunk_id, [1.0, 0.0])
+        return [1.0, 0.0]
+
+    def embed_batch(self, chunks, category=None):
+        self.batch_calls += 1
+        for cid, _text in chunks:
+            self.vector_backend.add(cid, [1.0, 0.0], category=category)
+        return [[1.0, 0.0] for _ in chunks]
+
+
+@pytest.fixture
+def vector_store(tmp_path):
+    backend = _FakeVectorBackend(tmp_path / "vectors.db")
+    pipeline = _RecordingPipeline(backend)
+    s = ContentStore(
+        db_path=tmp_path / "test_conscio.db",
+        vector_backend=backend,
+        embeddings=pipeline,
+    )
+    yield s, backend, pipeline
+    s.close()
+
+
+class TestVectorWiring:
+    def test_index_embeds_in_one_batch_call_per_document(self, vector_store):
+        """I4: one model/store round-trip per document, not one per chunk.
+
+        A per-chunk call is what made ingestion cost N model invocations and
+        N fsyncs; the batch path is the whole reason target-scale ingest can
+        fit the time budget.
+        """
+        store, backend, pipeline = vector_store
+        long_text = "\n\n".join(f"Paragraph number {i} with content." for i in range(40))
+        store.index("multi", long_text, "reference", chunk_size=200)
+
+        assert pipeline.chunk_calls == 0, "per-chunk embedding path must be gone"
+        assert pipeline.batch_calls == 1
+        assert len(backend.rows) > 1, "every chunk should still get its own vector"
+
+    def test_index_passes_category_to_vector_rows(self, vector_store):
+        """M2/C1: category is denormalized so scoped recall can pre-filter."""
+        store, backend, _ = vector_store
+        store.index("cat", "some reference content here", "reference")
+        assert backend.rows
+        assert all(cat == "reference" for _vec, cat in backend.rows.values())
+
+    def test_duplicate_index_does_not_re_embed(self, vector_store):
+        """Re-indexing identical content must not pay the embedding cost again."""
+        store, _backend, pipeline = vector_store
+        store.index("dup", "identical body text", "reference")
+        assert pipeline.batch_calls == 1
+        result = store.index_ex("dup", "identical body text", "reference")
+        assert result.status == "duplicate"
+        assert result.chunks_added == 0
+        assert pipeline.batch_calls == 1
+
+    def test_embedding_failure_never_breaks_fts_ingestion(self, tmp_path):
+        """Vector path is best-effort: FTS5 rows must survive an embed blowup."""
+        class _Exploding:
+            enabled = True
+            def embed_batch(self, chunks, category=None):
+                raise RuntimeError("model down")
+
+        backend = _FakeVectorBackend(tmp_path / "vectors.db")
+        s = ContentStore(db_path=tmp_path / "c.db",
+                         vector_backend=backend, embeddings=_Exploding())
+        try:
+            s.index("resilient", "content that must still be searchable", "reference")
+            assert s.search("searchable")
+        finally:
+            s.close()
+
+    def test_stats_counts_vector_db_in_total_size(self, vector_store, tmp_path):
+        """M1: NFR2 is a budget on the whole store, so stats must include vectors.db."""
+        store, backend, _ = vector_store
+        store.index("sized", "some content", "reference")
+
+        vec_file = tmp_path / "vectors.db"
+        vec_file.write_bytes(b"x" * (3 * 1024 * 1024))  # 3MB of "vectors"
+
+        st = store.stats()
+        assert st["vector_count"] == len(backend.rows)
+        assert st["vector_db_size_mb"] >= 2.9
+        # Total must be strictly larger than the FTS db alone.
+        fts_only_mb = store._files_for(store.db_path) / 1024 / 1024
+        assert st["db_size_mb"] >= fts_only_mb + 2.9
+
+    def test_stats_without_vector_backend_omits_vector_keys(self, store):
+        st = store.stats()
+        assert "vector_count" not in st
+        assert st["db_size_mb"] >= 0
+
+
 # ─── Private Method Tests ───────────────────────────────────────────────
 
 
