@@ -161,16 +161,14 @@ class TestRecallSignatureUnchangedWithVectorBackend:
         assert isinstance(out, list)
 
 
-class TestVectorsOffByDefault:
-    """v3.6 fix: VectorBackend/EmbeddingPipeline must be opt-in
-    (CONSCIO_VECTORS), same pattern as CONSCIO_SEMANTIC_DEDUP. An install
-    that already has Ollama/sentence-transformers available must not
-    silently start embedding on every content_store.index() call just from
-    upgrading to v3.6 — that's a real behavior/latency change for existing
-    users this feature must not impose by default."""
+class TestVectorsAutoDetect:
+    """v3.6.1: VectorBackend auto-detects sentence_transformers.
+    CONSCIO_VECTORS=0 forces disable. When env absent and dep available,
+    vectors auto-enable. This test class mocks the import to control behavior."""
 
-    def test_vector_backend_none_without_env_var(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("CONSCIO_VECTORS", raising=False)
+    def test_vector_backend_none_with_env_zero(self, tmp_path, monkeypatch):
+        """CONSCIO_VECTORS=0 disables even if dep is available."""
+        monkeypatch.setenv("CONSCIO_VECTORS", "0")
         e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
         try:
             e.content_layer._session_rag = _RAG_DISABLED
@@ -178,7 +176,6 @@ class TestVectorsOffByDefault:
             assert e.embedding_pipeline is None
             assert e.content_store.vector_backend is None
             assert e.content_store.embeddings is None
-            # stats() must not advertise a vector index that doesn't exist.
             assert "vector_count" not in e.content_store.stats()
         finally:
             e.close()

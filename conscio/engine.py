@@ -10,6 +10,7 @@ The central coordinator that:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sqlite3
@@ -300,28 +301,16 @@ class ConsciousnessEngine:
         )
         self.voice_preset = resolve_voice_preset(effective_voice)
 
-        # v3.6: vector-search side channel (VectorBackend + EmbeddingPipeline),
-        # wired straight into ContentStore's own vector_backend/embeddings
-        # params (Task 2) so index() actually embeds each chunk. Opt-in via
-        # CONSCIO_VECTORS, same pattern as CONSCIO_SEMANTIC_DEDUP below: an
-        # install that already has Ollama/sentence-transformers available
-        # must not silently start embedding every content_store.index() call
-        # (session summaries, reflections, dreams) just from upgrading to
-        # v3.6 — that's a real latency/behavior change for existing users,
-        # not something this feature should impose by default. Set
-        # CONSCIO_VECTORS=1 (or true/yes/on) to enable, e.g. before running
-        # `conscio ingest`. When enabled: construction never touches the
-        # network — EmbeddingProvider probes lazily on first embed() call and
-        # falls back to None (no-op) when no embedder is actually available,
-        # so this still degrades gracefully. Kept as a sibling file under the
-        # same storage root as conscio.db so both stay under one checkable
-        # DB-size budget.
-        vectors_enabled = os.getenv("CONSCIO_VECTORS", "").strip().lower() in ("1", "true", "yes", "on")
+        # v3.6.1: vector-search auto-detect.
+        # CONSCIO_VECTORS env var: "0" = force disable, "1" = force enable,
+        # absent = auto-detect (try import sentence_transformers).
+        # When enabled: construction never touches the network — EmbeddingProvider
+        # probes lazily on first embed() call and falls back to None (no-op)
+        # when no embedder is actually available, so this degrades gracefully.
+        # Kept as a sibling file under the same storage root as conscio.db.
         self.vector_backend: VectorBackend | None = None
         self.embedding_pipeline: EmbeddingPipeline | None = None
-        if vectors_enabled:
-            self.vector_backend = VectorBackend(db_path=self.storage / "vectors.db", dimension=384)
-            self.embedding_pipeline = EmbeddingPipeline(vector_backend=self.vector_backend, dimension=384)
+        self._init_vectors()
         self.content_store = ContentStore(
             db_path=db_path,
             vector_backend=self.vector_backend,
@@ -1500,6 +1489,41 @@ class ConsciousnessEngine:
                     min_occurrences=min_occurrences, rule_text=rule_text,
                     rule_id=rule_id)
 
+    # --- v3.6.1: Vector auto-detect ---
+
+    def _init_vectors(self) -> None:
+        """
+        Configure VectorBackend + EmbeddingPipeline based on CONSCIO_VECTORS env var:
+        - "0" → force disable (FTS5-only even if dep available)
+        - "1"/"true"/"yes"/"on" → force enable (construct VectorBackend regardless)
+        - absent → auto-detect: try import sentence_transformers, enable if available
+        """
+        env = os.getenv("CONSCIO_VECTORS", "").strip().lower()
+        if env in ("0", "false", "no", "off"):
+            logger.info("CONSCIO_VECTORS=%s — vectors disabled by env", env)
+            return
+        if env in ("1", "true", "yes", "on"):
+            self.vector_backend = VectorBackend(
+                db_path=self.storage / "vectors.db", dimension=384
+            )
+            self.embedding_pipeline = EmbeddingPipeline(
+                vector_backend=self.vector_backend, dimension=384
+            )
+            logger.info("CONSCIO_VECTORS=%s — vectors force-enabled", env)
+            return
+        # Auto-detect: try import sentence_transformers
+        try:
+            import sentence_transformers  # noqa: F401
+            self.vector_backend = VectorBackend(
+                db_path=self.storage / "vectors.db", dimension=384
+            )
+            self.embedding_pipeline = EmbeddingPipeline(
+                vector_backend=self.vector_backend, dimension=384
+            )
+            logger.info("Vectors auto-enabled (sentence_transformers available)")
+        except ImportError:
+            logger.info("sentence_transformers not available — FTS5 only")
+
     # --- Lifecycle / Resource Cleanup ---
 
     def close(self) -> None:
@@ -1970,6 +1994,16 @@ class ConsciousnessEngine:
             self._act_pipeline.gateway.tier = choose_tier(profile)
             self._act_pipeline.max_visible_tools = max_visible_tools(profile)
             self._act_pipeline.prompt_complexity = prompt_complexity(profile)
+            # v3.6: allow daemon_control to override prompt complexity to 'full'
+            if self.storage:
+                ctrl = Path(self.storage) / "daemon_control.json"
+                if ctrl.exists():
+                    try:
+                        overrides = json.loads(ctrl.read_text())
+                        if overrides.get("prompt_complexity") == "full":
+                            self._act_pipeline.prompt_complexity = "full"
+                    except (json.JSONDecodeError, OSError):
+                        pass
             if (not getattr(self, "_skeptic_mode_explicit", False)
                     and self._act_pipeline.skeptic is not None):
                 self._act_pipeline.skeptic.mode = skeptic_mode(profile)

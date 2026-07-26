@@ -263,8 +263,15 @@ class Migrator:
 
         count = 0
 
-        # Entities
-        for entity in data.get("entities", []):
+        # Entities. WorldModel's actual on-disk schema keys entities by name
+        # (dict); older/foreign exports use a list of {"name": ...} dicts.
+        # Support both.
+        entities = data.get("entities", {})
+        entity_iter = (
+            ({"name": name, **info} for name, info in entities.items())
+            if isinstance(entities, dict) else entities
+        )
+        for entity in entity_iter:
             name = entity.get("name", f"entity_{count}")
             existing = self.db.execute(
                 "SELECT name FROM world_entities WHERE name = ?", (name,)
@@ -283,13 +290,14 @@ class Migrator:
                     entity.get("type", "unknown"),
                     json.dumps(entity.get("state", {}), default=str),
                     float(entity.get("relevance", 1.0)),
-                    entity.get("updated_at", naive_utcnow().isoformat()),
+                    entity.get("updated_at") or entity.get("last_updated") or naive_utcnow().isoformat(),
                     entity.get("created_at", naive_utcnow().isoformat()),
                 ),
             )
             count += 1
 
-        # Relations
+        # Relations. WorldModel writes {"from", "relation", "to"}; older/
+        # foreign exports use {"source", "target", "relation_type"}.
         for rel in data.get("relations", []):
             self.db.execute(
                 """
@@ -297,9 +305,9 @@ class Migrator:
                 VALUES (?, ?, ?, ?)
                 """,
                 (
-                    rel.get("source", ""),
-                    rel.get("target", ""),
-                    rel.get("relation_type", "related_to"),
+                    rel.get("source") or rel.get("from", ""),
+                    rel.get("target") or rel.get("to", ""),
+                    rel.get("relation_type") or rel.get("relation") or "related_to",
                     naive_utcnow().isoformat(),
                 ),
             )
