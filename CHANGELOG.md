@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.6.0] - 2026-07-26 — KnowledgeStore
+
+### Added
+
+- **Semantic chunking** (`ContentStore._chunk_content`): dispatch by exact
+  `content_type` — `"yaml"` splits on `---` document boundaries,
+  `"markdown"` splits on heading boundaries (`^#{1,3}\s`), everything else
+  (`"prose"` default, `"code"`, `"metric"`, `"log"`) splits on paragraph
+  boundaries. New categories `pentest`, `reference`, `payload`.
+- **Vector embeddings** (`EmbeddingPipeline`, `VectorBackend`): batched
+  embed-and-store on ingest, with dimension reconciliation (adopts the
+  embedder's real dimension on an empty store; refuses silent corruption on
+  mismatch against a populated one) and hash-based dedup. Opt-in via
+  `CONSCIO_VECTORS=1` (default off — matches the `CONSCIO_SEMANTIC_DEDUP`
+  precedent, so existing installs don't silently start embedding on every
+  `index()` call).
+- **`VectorBackend.search()`** rewritten from a per-row Python scan to
+  batched numpy scoring (20-60x faster at 20k+ vectors), plus a denormalized
+  `category` column for SQL-side pre-filtering.
+- **`HybridRetriever`**: fuses `ContentStore` FTS5 (lexical) with
+  `VectorBackend` (dense) results via Reciprocal Rank Fusion. Wired into
+  `ContentLayerManager.recall()` as a third fused source alongside
+  ContentStore-FTS5 and SessionRAG — degrades to lexical-only when no
+  vector backend/embedder is configured or available, never raises.
+  `engine.recall()`'s public signature and `list[str]` return type are
+  unchanged (production callers: `mcp/server.py`, `agency/relay_cognize.py`,
+  and engine's own reflect/goal/dream paths).
+- **`conscio ingest <path>`** CLI command: bulk-ingest a directory
+  (`--category`, `--chunk-size`, `--overlap`, `--model`, `--storage`), with
+  binary/oversized-file guarding and hidden-directory pruning.
+
+### Fixed
+
+- Re-ingesting the same document no longer leaves orphaned vectors (deleted
+  before re-index, same logical transaction as the FTS5 side).
+- Embedding failures during ingest are now counted and reported (`failed`)
+  instead of silently swallowed.
+- `HybridRetriever.vector_only_search()` now pushes `category` into the
+  vector search itself instead of filtering after the fact — a
+  category-scoped recall no longer risks under-filling (or zeroing) the
+  dense leg when another category dominates the unfiltered top-k.
+
 ## [3.5.0] - 2026-07-26 — Observatory + Daemon + Consent
 
 ### Added
