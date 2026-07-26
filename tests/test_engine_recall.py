@@ -100,12 +100,22 @@ def test_recall_prioritizes_processing_layer_on_near_tie(tmp_path):
 
 class TestRecallSignatureUnchangedWithVectorBackend:
     """Regression guard (v3.6): wiring VectorBackend/EmbeddingPipeline/
-    HybridRetriever into ConsciousnessEngine by default must NOT change
-    engine.recall()'s public contract. Production callers — mcp/server.py
-    ("snippets" key), agency/relay_cognize.py, and engine.py's own
-    reflect/goal/dream paths — depend on the exact signature (query, k=3,
-    categories=None) and on a list[str] return, not list[SearchResult].
+    HybridRetriever into ConsciousnessEngine (opt-in via CONSCIO_VECTORS,
+    same pattern as CONSCIO_SEMANTIC_DEDUP — off by default so existing
+    installs don't silently start embedding on every index() call) must NOT
+    change engine.recall()'s public contract. Production callers —
+    mcp/server.py ("snippets" key), agency/relay_cognize.py, and engine.py's
+    own reflect/goal/dream paths — depend on the exact signature (query,
+    k=3, categories=None) and on a list[str] return, not list[SearchResult].
     """
+
+    @pytest.fixture
+    def engine(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CONSCIO_VECTORS", "1")
+        e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
+        e.content_layer._session_rag = _RAG_DISABLED  # hermetic (no Ollama probe)
+        yield e
+        e.close()
 
     def test_signature_unchanged(self, engine):
         import inspect
@@ -149,3 +159,37 @@ class TestRecallSignatureUnchangedWithVectorBackend:
     def test_categories_param_still_accepted_with_hybrid_wired(self, engine):
         out = engine.recall("anything at all", k=1, categories=["reflection"])
         assert isinstance(out, list)
+
+
+class TestVectorsOffByDefault:
+    """v3.6 fix: VectorBackend/EmbeddingPipeline must be opt-in
+    (CONSCIO_VECTORS), same pattern as CONSCIO_SEMANTIC_DEDUP. An install
+    that already has Ollama/sentence-transformers available must not
+    silently start embedding on every content_store.index() call just from
+    upgrading to v3.6 — that's a real behavior/latency change for existing
+    users this feature must not impose by default."""
+
+    def test_vector_backend_none_without_env_var(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CONSCIO_VECTORS", raising=False)
+        e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
+        try:
+            e.content_layer._session_rag = _RAG_DISABLED
+            assert e.vector_backend is None
+            assert e.embedding_pipeline is None
+            assert e.content_store.vector_backend is None
+            assert e.content_store.embeddings is None
+            # stats() must not advertise a vector index that doesn't exist.
+            assert "vector_count" not in e.content_store.stats()
+        finally:
+            e.close()
+
+    def test_vector_backend_present_with_env_var(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CONSCIO_VECTORS", "1")
+        e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
+        try:
+            e.content_layer._session_rag = _RAG_DISABLED
+            assert e.vector_backend is not None
+            assert e.embedding_pipeline is not None
+            assert e.content_store.vector_backend is e.vector_backend
+        finally:
+            e.close()

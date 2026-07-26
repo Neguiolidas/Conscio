@@ -302,15 +302,26 @@ class ConsciousnessEngine:
 
         # v3.6: vector-search side channel (VectorBackend + EmbeddingPipeline),
         # wired straight into ContentStore's own vector_backend/embeddings
-        # params (Task 2) so index() actually embeds each chunk. Construction
-        # never touches the network — EmbeddingProvider probes lazily on
-        # first embed() call and falls back to None (no-op) when no embedder
-        # (Ollama / OpenAI-compat / sentence-transformers) is available, so
-        # this degrades gracefully with zero behavior change when none is
-        # installed. Kept as a sibling file under the same storage root as
-        # conscio.db so both stay under one checkable DB-size budget.
-        self.vector_backend = VectorBackend(db_path=self.storage / "vectors.db", dimension=384)
-        self.embedding_pipeline = EmbeddingPipeline(vector_backend=self.vector_backend, dimension=384)
+        # params (Task 2) so index() actually embeds each chunk. Opt-in via
+        # CONSCIO_VECTORS, same pattern as CONSCIO_SEMANTIC_DEDUP below: an
+        # install that already has Ollama/sentence-transformers available
+        # must not silently start embedding every content_store.index() call
+        # (session summaries, reflections, dreams) just from upgrading to
+        # v3.6 — that's a real latency/behavior change for existing users,
+        # not something this feature should impose by default. Set
+        # CONSCIO_VECTORS=1 (or true/yes/on) to enable, e.g. before running
+        # `conscio ingest`. When enabled: construction never touches the
+        # network — EmbeddingProvider probes lazily on first embed() call and
+        # falls back to None (no-op) when no embedder is actually available,
+        # so this still degrades gracefully. Kept as a sibling file under the
+        # same storage root as conscio.db so both stay under one checkable
+        # DB-size budget.
+        vectors_enabled = os.getenv("CONSCIO_VECTORS", "").strip().lower() in ("1", "true", "yes", "on")
+        self.vector_backend: VectorBackend | None = None
+        self.embedding_pipeline: EmbeddingPipeline | None = None
+        if vectors_enabled:
+            self.vector_backend = VectorBackend(db_path=self.storage / "vectors.db", dimension=384)
+            self.embedding_pipeline = EmbeddingPipeline(vector_backend=self.vector_backend, dimension=384)
         self.content_store = ContentStore(
             db_path=db_path,
             vector_backend=self.vector_backend,
