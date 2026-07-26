@@ -146,6 +146,45 @@ def _detect_ingest_content_type(file_path: Path) -> str:
     return _INGEST_CONTENT_TYPE_BY_EXT.get(file_path.suffix.lower(), "prose")
 
 
+_INGEST_BINARY_SNIFF_BYTES = 8192
+
+
+def _looks_binary(file_path: Path, sniff_bytes: int = _INGEST_BINARY_SNIFF_BYTES) -> bool:
+    """Best-effort binary-content sniff for ingest_directory().
+
+    Reads the first `sniff_bytes` of the file and treats the presence of a
+    NUL byte as proof of non-text content. This is deliberately content-based
+    rather than an extension allowlist: reference corpora meant for ingestion
+    (e.g. pentest-technique collections) mix markdown/text with PNGs, JPEGs,
+    PDFs, ZIPs and other binaries whose extensions can't be exhaustively
+    enumerated, whereas a real text/markdown/yaml/source file essentially
+    never contains a NUL byte in its first few KB. Any read failure here is
+    treated as "not binary" — the caller's own read attempt (which already
+    handles OSError) is the source of truth for whether the file is actually
+    readable.
+    """
+    try:
+        with file_path.open("rb") as fh:
+            chunk = fh.read(sniff_bytes)
+    except OSError:
+        return False
+    return b"\x00" in chunk
+
+
+def _iter_ingest_files(root: Path):
+    """Walk `root` recursively, skipping hidden directories.
+
+    Any directory component starting with "." (`.git`, `.svn`, `.venv`, ...)
+    is pruned before os.walk descends into it, so pointing ingest_directory()
+    at a git checkout never pulls .git's pack/object internals into the
+    knowledge store.
+    """
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        for name in filenames:
+            yield Path(dirpath) / name
+
+
 def _report_ingest_progress(callback, processed: int, total: int) -> None:
     """Best-effort progress callback invocation — must never interrupt ingest."""
     if callback is None:
@@ -1053,6 +1092,7 @@ class ConsciousnessEngine:
         chunk_size: int = 2000,
         overlap: float = 0.2,
         progress_callback: Callable[[int, int], None] | None = None,
+        max_file_size_mb: float = 5.0,
     ) -> dict:
         """
         Ingest all files under `path` into ContentStore (and, as a side
@@ -1065,6 +1105,17 @@ class ConsciousnessEngine:
         own content_hash check — re-running ingest_directory() on unchanged
         files does not duplicate chunks.
 
+        Directory walks skip hidden directories (any path component starting
+        with ".", e.g. `.git`, `.svn`) and, per file, skip anything above
+        `max_file_size_mb` or that sniffs as binary (NUL byte in the first
+        few KB — see `_looks_binary`). This matters because ingest_directory
+        is meant to run over arbitrary reference corpora (docs, code,
+        pentest-technique collections, ...) that mix text with images, PDFs,
+        archives and VCS internals; without these guards every binary byte
+        stream gets decoded as text (`errors="ignore"`) and indexed as
+        garbage chunks/vectors, bloating the store with noise that also
+        pollutes recall() results.
+
         Args:
             path: File or directory to ingest.
             category: ContentStore category for every ingested file.
@@ -1072,6 +1123,9 @@ class ConsciousnessEngine:
             overlap: Fraction of chunk_size to overlap between chunks.
             progress_callback: Optional callable(processed, total) invoked
                 after each file. Exceptions from it are logged, never raised.
+            max_file_size_mb: Files larger than this are skipped without
+                being read. Default 5.0 MB is generous for text/markdown/code
+                reference material while still rejecting large binaries.
 
         Returns:
             {"total": N, "ingested": N, "duplicate": N, "skipped": N,
@@ -1083,14 +1137,20 @@ class ConsciousnessEngine:
             an unchanged corpus must report ingested=0/duplicate=N, otherwise
             a no-op re-run looks identical to a real ingest and cannot be used
             as evidence that ingestion works.
+
+            `skipped` also counts files skipped for being oversized, binary,
+            or empty — these are not read/indexing failures, so they are
+            never counted in `failed`, but they must still show up somewhere
+            in the totals rather than silently vanishing from `total`.
         """
         start = time.monotonic()
         root = Path(path)
+        max_file_size_bytes = max_file_size_mb * 1024 * 1024
 
         if root.is_file():
             files = [root]
         elif root.is_dir():
-            files = sorted(p for p in root.rglob("*") if p.is_file())
+            files = sorted(_iter_ingest_files(root))
         else:
             logger.warning("ingest_directory: path does not exist: %s", root)
             return {"total": 0, "ingested": 0, "duplicate": 0, "skipped": 0,
@@ -1101,6 +1161,28 @@ class ConsciousnessEngine:
         ingested = duplicate = skipped = failed = 0
 
         for i, file_path in enumerate(files, start=1):
+            try:
+                size_bytes = file_path.stat().st_size
+            except OSError as e:
+                logger.warning("ingest_directory: could not stat %s: %s", file_path, e)
+                failed += 1
+                _report_ingest_progress(progress_callback, i, total)
+                continue
+
+            if size_bytes > max_file_size_bytes:
+                logger.info(
+                    "ingest_directory: skipping %s (%.1f MB > %.1f MB cap)",
+                    file_path, size_bytes / (1024 * 1024), max_file_size_mb,
+                )
+                skipped += 1
+                _report_ingest_progress(progress_callback, i, total)
+                continue
+
+            if _looks_binary(file_path):
+                skipped += 1
+                _report_ingest_progress(progress_callback, i, total)
+                continue
+
             try:
                 text = file_path.read_text(encoding="utf-8", errors="ignore")
             except OSError as e:
