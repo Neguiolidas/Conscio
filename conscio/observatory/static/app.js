@@ -63,12 +63,30 @@
       el.innerHTML = "";
       if (!ps.length) { el.style.display = "none"; return; }
       el.style.display = "";
-      ps.forEach(function (p) {
-        var d = document.createElement("div");
-        d.className = "project-item";
-        d.innerHTML = '<span class="dot"></span><span>' + p.name + "</span><span style=\"margin-left:auto;color:#666;font-size:11px\">" + p.node_count + "n</span>";
-        d.addEventListener("click", function () { App.selectProject(p); });
-        el.appendChild(d);
+      // Fetch consent status
+      fetch("/api/consent").then(function (r2) { return r2.json(); }).then(function (consents) {
+        var consentMap = {};
+        consents.forEach(function (c) { consentMap[c.workspace_id] = c; });
+        ps.forEach(function (p) {
+          var d = document.createElement("div");
+          d.className = "project-item";
+          // consent icon
+          var ci = p.ws_id && consentMap[p.ws_id] ? (consentMap[p.ws_id].granted ? "\u2705" : "\u26d4") : "";
+          d.innerHTML = '<span class="dot"></span><span>' + p.name + "</span>" +
+            (ci ? '<span style="margin-left:4px;font-size:10px" title="consent: ' + (consentMap[p.ws_id] ? consentMap[p.ws_id].scope : "unknown") + '">' + ci + '</span>' : "") +
+            '<span style="margin-left:auto;color:#666;font-size:11px">' + p.node_count + "n</span>";
+          d.addEventListener("click", function () { App.selectProject(p); });
+          el.appendChild(d);
+        });
+      }).catch(function () {
+        // fallback without consent
+        ps.forEach(function (p) {
+          var d = document.createElement("div");
+          d.className = "project-item";
+          d.innerHTML = '<span class="dot"></span><span>' + p.name + "</span><span style=\"margin-left:auto;color:#666;font-size:11px\">" + p.node_count + "n</span>";
+          d.addEventListener("click", function () { App.selectProject(p); });
+          el.appendChild(d);
+        });
       });
     }).catch(function () {});
   };
