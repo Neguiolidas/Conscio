@@ -136,6 +136,10 @@ def _build_parser() -> argparse.ArgumentParser:
                        help="optional bearer token for API access")
     p_obs.add_argument("--storage", default="",
                        help="storage dir (default: ~/.hermes)")
+    p_obs.add_argument("--noosphere", default="",
+                       help="noosphere.db path (default: ~/.hermes/noosphere.db)")
+    p_obs.add_argument("--liaison-db", default="",
+                       help="liaison.db path (default: ~/.hermes/liaison.db)")
     return parser
 
 
@@ -441,23 +445,26 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "observatory":
         return _cmd_observatory(host=args.host, port=args.port,
                                 root=args.root, token=args.token,
-                                storage=args.storage)
+                                storage=args.storage,
+                                noosphere=args.noosphere,
+                                liaison_db=args.liaison_db)
     parser.print_help()
     return 2
 
 
 def _cmd_observatory(*, host: str, port: int, root: str,
-                     token: str | None, storage: str) -> int:
+                     token: str | None, storage: str,
+                     noosphere: str = "", liaison_db: str = "") -> int:
     """Start the read-only Observatory web UI (loopback only)."""
     from pathlib import Path
 
-    from .observatory.server import make_server
+    from .observatory.server import _DEFAULT_LIAISON, _DEFAULT_NOOSPHERE, make_server
     if storage:
         storage_path = Path(storage).expanduser()
     else:
         storage_path = Path.home() / ".hermes" / "consciousness"
-    noo = storage_path / "noo.db"
-    liai = storage_path / "liai.db"
+    noo = Path(noosphere).expanduser() if noosphere else _DEFAULT_NOOSPHERE
+    liai = Path(liaison_db).expanduser() if liaison_db else _DEFAULT_LIAISON
     root_abs = str(Path(root).expanduser().resolve())
     srv = make_server(host, port, token, storage_path, noo, liai,
                       workspace_root=root_abs)
