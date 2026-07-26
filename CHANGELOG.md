@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.6.1] - 2026-07-26 — Gap Close
+
+### Added
+
+- **Tombstone tracking**: new `source_tombstones` table, `_mark_stale()` for
+  content-changed detection, and `search(include_stale=False)` filter.
+- **CLI `conscio search`**: query ContentStore from terminal (`conscio search
+  <query> [--k N] [--category <cat>]`).
+
+### Changed
+
+- **CONSCIO_VECTORS auto-detect**: engine tries `import sentence_transformers`
+  at init; if available, vectors auto-enable. `CONSCIO_VECTORS=0` forces FTS5-only.
+  `CONSCIO_VECTORS=1` still force-enables (backward compat).
+- **README/USAGE updated**: release label now `v3.6.1`, opt-in language replaced
+  by auto-detect throughout all docs.
+
 ## [3.6.0] - 2026-07-26 — KnowledgeStore
 
 ### Added
