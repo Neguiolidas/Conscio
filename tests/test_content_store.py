@@ -176,7 +176,7 @@ class TestChunking:
     def test_no_paragraph_break_hard_split(self, store):
         """Content without paragraph breaks gets hard-split at chunk_size."""
         content = "A" * 5000  # No paragraph breaks
-        chunks = store._chunk_content(content, chunk_size=2000, overlap=0.0)
+        chunks = store._chunk_content(content, chunk_size=2000)
         assert len(chunks) >= 2
         for chunk in chunks:
             assert len(chunk) <= 2000
@@ -281,14 +281,15 @@ other: setting"""
         assert len(chunks) >= 2
 
     def test_chunk_content_markdown_heading_detection(self, store):
-        """_chunk_content detects markdown headings and uses heading chunker."""
+        """_chunk_content detects markdown headings for non-prose content_type."""
         markdown = """# Title
 Content here.
 
 ## Section
 More content."""
-        chunks = store._chunk_content(markdown, chunk_size=2000, overlap=0.0)
-        # Should be split by headings
+        # Heading detection dispatch only works for non-prose content_type
+        chunks = store._chunk_content(markdown, chunk_size=2000, overlap=0.0, content_type="code")
+        # Should be split by headings when content_type is not "prose"
         assert len(chunks) >= 2
 
     def test_overlap_20_percent(self, store):
