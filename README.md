@@ -56,7 +56,7 @@ with ConsciousnessEngine(model_name="kimi-k2.6") as engine:
     )
     injection = engine.get_state_for_injection   # compact state for context injection
     engine.world.add_entity("server", "system", state="healthy")
-    hits = engine.recall("latency incidents")       # cross-session memory (FTS5 + optional RAG)
+    hits = engine.recall("latency incidents")       # cross-session memory (FTS5 + optional RAG/vector)
 
     # v2.15 — 5-axis self-evaluation (accuracy, completeness, clarity, actionability, conciseness)
     report = engine.evaluate
@@ -136,6 +136,12 @@ See [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules) for the full tab
   pass@k reliability metrics, and rule distillation from skills/events/decisions.
 - **Stores & retrieves knowledge** — FTS5 BM25 dual-index with RRF merging; optional
   semantic recall; KnowledgeGraph with entities, triples, and timeline.
+- **Semantic chunking + vector search (v3.6)** — `ContentStore` splits by heading
+  (markdown), `---` boundary (yaml), or paragraph (everything else); optional
+  embedding pipeline + `VectorBackend` (batched numpy cosine search) fused into
+  `recall()` via `HybridRetriever` (RRF, lexical + dense). Opt-in via
+  `CONSCIO_VECTORS=1` — off by default, no behavior/cost change for existing
+  installs. `conscio ingest <path>` bulk-indexes a directory.
 - **Organizes memory in wings and rooms** — Hallways hierarchy: wing → room →
   drawer, with auto-created defaults and FK enforcement; WingManager integrates
   Hallways + ContentStore for filtered search.
@@ -359,7 +365,7 @@ augment tool calls before they reach the engine.
                                                               │
   ConsciousnessEngine  (orchestrator · lifecycle · injection) │
    ├─ Witness        InnerMonologue · WorldModel · MetaCognition · GoalGenerator
-   ├─ Substrate      ContentStore (FTS5 BM25 + RRF) · EventBus (38 event types) · FilterPipeline
+   ├─ Substrate      ContentStore (FTS5 BM25 + RRF) · VectorBackend + HybridRetriever (opt-in) · EventBus (38 event types) · FilterPipeline
    ├─ Continuity     SessionLifecycle (6-step handoff) · SessionRAG (optional)
    ├─ Metabolism     MetabolicContext · DreamCycle (release→prune→…→distill)
    ├─ Coherence      CoherenceEngine · semantic reconciliation

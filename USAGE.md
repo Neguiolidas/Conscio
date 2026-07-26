@@ -95,7 +95,8 @@ proposed actions, but never executes. The host stays sovereign over execution.
 - `conscio.feed(event, session_tokens?)` — perceive + reflect, returns advisory
 - `conscio.note(event)` — log raw event (no reflect)
 - `conscio.advisory()` — current cognitive state (read-only)
-- `conscio.recall(query, k?, categories?)` — retrieve past context (FTS5 + RAG)
+- `conscio.recall(query, k?, categories?)` — retrieve past context (FTS5 + RAG +
+  optional vector, opt-in via `CONSCIO_VECTORS=1`)
 - `conscio.state()` — ConsciousnessState snapshot
 - `conscio.events(type?, category?, since?, limit?)` — recent events
 - `conscio.handoff()` — latest session handoff
@@ -175,7 +176,8 @@ diagnostic:budget diagnostic:eval diagnostic:rule
 
 **EventBus (5):** `system`, `trading`, `consciousness`, `external`, `session`
 
-**ContentStore (8):** adds `reflection`, `perception`, `error`
+**ContentStore (11):** adds `reflection`, `perception`, `error`, plus v3.6
+`pentest`, `reference`, `payload`
 
 Project names like `"neurata"` are NOT valid categories. Use `"consciousness"`
 with a `[project-name]` prefix in the summary/data.
@@ -193,6 +195,8 @@ conscio awake                      # enter R9 (autonomous)
 conscio sleep                      # leave R9
 conscio trial <path>               # trial quarantined skill
 conscio promote <path>             # promote trialed skill
+conscio ingest <path>               # bulk-index a directory into ContentStore
+                                    # (--category --chunk-size --overlap --model --storage)
 conscio init                       # interactive installer (per-host space)
 conscio bench --help               # inference benchmark
 conscio-daemon --awake             # persistent heartbeat
@@ -238,6 +242,12 @@ with ContentStore() as store:
     store.index(label="auth-bug", content="recursion fix", category="error")
     results = store.search("recursion", limit=5)
 
+# v3.6 — bulk directory ingest with semantic chunking (CLI: conscio ingest <path>)
+engine.ingest_directory("./docs", category="reference")
+
+# v3.6 — vector search is opt-in (off by default, no cost/behavior change)
+# CONSCIO_VECTORS=1 python -m conscio.cli ingest ./docs --category reference
+
 # EventBus: emit() returns int (event_id); query() to retrieve
 with EventBus() as bus:
     eid = bus.emit("error", "trading", {"pattern": "API timeout"})
@@ -277,6 +287,9 @@ engine.attach_adapter(intercept_enabled=True)
    `conscio.perception.sensor`.
 10. **`reflect()` is advisory (read-only)**. `act()` / `dispatch()` is executive.
     Never merge these — architectural rule #1.
+11. **Vector search is opt-in** — set `CONSCIO_VECTORS=1` or `engine.vector_backend`
+    stays `None` and `recall()` falls back to FTS5+RAG only (existing installs
+    don't silently start embedding on every `index()` call).
 
 ## Memory modules (KG, Hallways, Embeddings, Miner, Migration)
 
