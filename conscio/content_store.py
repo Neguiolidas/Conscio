@@ -66,7 +66,7 @@ class SourceInfo:
 # ─── Constants ──────────────────────────────────────────────────────────
 
 VALID_CATEGORIES = {"reflection", "perception", "trading", "system", "error", "consciousness", "external", "session", "pentest", "reference", "payload"}
-VALID_CONTENT_TYPES = {"prose", "code", "metric", "log", "yaml"}
+VALID_CONTENT_TYPES = {"prose", "code", "metric", "log", "yaml", "markdown"}
 
 # RRF constant (original paper uses k=60)
 RRF_K = 60
@@ -499,13 +499,11 @@ class ContentStore:
         """
         Split content into chunks using semantic boundaries.
 
-        Dispatch strategy (only for non-prose content_type):
+        Dispatch strategy (based on content_type only):
         1. If content_type == "yaml": split on YAML document boundaries
-        2. Else if content contains markdown headings: split on heading boundaries
-        3. Else (or if content_type == "prose"): split on paragraph boundaries
-
-        For content_type == "prose" (default), always uses paragraph splitting
-        to preserve backward compatibility with existing callers.
+        2. Else if content_type == "markdown": split on markdown heading boundaries
+        3. Else (all other types including "prose", "code", "metric", "log"):
+           split on paragraph boundaries for backward compatibility
 
         Overlap is applied across all strategies.
 
@@ -524,19 +522,14 @@ class ContentStore:
         if not content:
             return [""]
 
-        # For default prose content_type, always use paragraph splitting (backward compatible)
-        if content_type == "prose":
-            return self._chunk_paragraphs(content, chunk_size, overlap)
-
-        # For non-prose content types, apply semantic dispatch
+        # Semantic dispatch based on content_type only
         if content_type == "yaml":
             return self._chunk_yaml(content, chunk_size, overlap)
 
-        # Check for markdown headings (regex: ^#{1,3}\s, multiline) for other content types
-        if re.search(r"^#{1,3}\s", content, re.MULTILINE):
+        if content_type == "markdown":
             return self._chunk_by_headings(content, chunk_size, overlap)
 
-        # Fallback: paragraph boundaries
+        # Fallback for all other content_type values: paragraph boundaries (backward compatible)
         return self._chunk_paragraphs(content, chunk_size, overlap)
 
     # ─── Search ──────────────────────────────────────────────────────
