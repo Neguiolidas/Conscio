@@ -14,14 +14,11 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.3` "Awake Maturity":**
-The Awake Mode now runs on real signals. Adds **FilesystemSensor** (mtime polling,
-depth-limited, summarize on flood), **GitSensor** (git log via subprocess, idempotent
-by commit hash), **GoalTemplates** (deterministic signal→goal mapping — zero LLM),
-**AwakeBudget** (tighter limits: 3 cycles, 20k tokens, 60s wall), and **NeurataBridge**
-(CLI subprocess bridge to Neurata — optional, zero coupling). The daemon pauses
-cognitive cycles when no sensor produces signal — no more token burn on empty
-perception. 2573 tests, stdlib-only core.
+**Latest release — `v3.6.1` "Knowledge Store":**
+Consciousness gets semantic memory. Adds semantic chunking (heading/YAML/paragraph
+splitting), vector search that auto-detects sentence_transformers (override with
+CONSCIO_VECTORS=0), ingest_directory (conscio ingest), HybridRetriever (BM25 + cosine
+RRF), and tombstone tracking for stale content detection. 2746+ tests, stdlib-only core.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
@@ -136,12 +133,12 @@ See [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules) for the full tab
   pass@k reliability metrics, and rule distillation from skills/events/decisions.
 - **Stores & retrieves knowledge** — FTS5 BM25 dual-index with RRF merging; optional
   semantic recall; KnowledgeGraph with entities, triples, and timeline.
-- **Semantic chunking + vector search (v3.6)** — `ContentStore` splits by heading
-  (markdown), `---` boundary (yaml), or paragraph (everything else); optional
-  embedding pipeline + `VectorBackend` (batched numpy cosine search) fused into
-  `recall()` via `HybridRetriever` (RRF, lexical + dense). Opt-in via
-  `CONSCIO_VECTORS=1` — off by default, no behavior/cost change for existing
-  installs. `conscio ingest <path>` bulk-indexes a directory.
+- **Semantic chunking + vector search** — `ContentStore` splits by heading
+  (markdown), `---` boundary (yaml), or paragraph (everything else); auto-detect
+  embedding pipeline via sentence_transformers + `VectorBackend` (batched numpy
+  cosine search) fused into `recall()` via `HybridRetriever` (RRF, lexical + dense).
+  Override with `CONSCIO_VECTORS=0` to disable. `conscio ingest <path>` bulk-indexes
+  a directory.
 - **Organizes memory in wings and rooms** — Hallways hierarchy: wing → room →
   drawer, with auto-created defaults and FK enforcement; WingManager integrates
   Hallways + ContentStore for filtered search.
