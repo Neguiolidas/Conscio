@@ -78,8 +78,17 @@ class HybridRetriever:
         if query_vec is None:
             return []
 
+        # Push the category into SQL so a scoped recall scores only its own
+        # slice of the index instead of the whole thing. Rows written before
+        # the category column existed are NULL and stay candidates, and
+        # _fetch_by_rowid re-checks every hit against the authoritative
+        # chunks.source_category — so over-fetch here, otherwise hits dropped
+        # by that re-check would silently under-fill the dense leg.
+        fetch_limit = min(limit * 4, 200) if category else limit
         try:
-            hits = self.vector_backend.search(query_vec, limit=limit)
+            hits = self.vector_backend.search(
+                query_vec, limit=fetch_limit, category=category
+            )
         except Exception:
             logger.warning("HybridRetriever: vector_backend.search failed", exc_info=True)
             return []
@@ -118,9 +127,9 @@ class HybridRetriever:
         category: str | None = None,
     ) -> list[SearchResult]:
         """Fetch full chunk rows for the given rowids, sorted by vector
-        score descending. Optionally filtered by source_category — VectorBackend
-        itself has no category awareness, so this is where a category filter
-        for the dense leg is applied.
+        score descending. Optionally filtered by source_category: VectorBackend
+        pre-filters candidates on its own (denormalized, NULL for pre-migration
+        rows), and this is the authoritative re-check against the chunk row.
         """
         placeholders = ",".join("?" for _ in rowids)
         params: list = list(rowids)
