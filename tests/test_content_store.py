@@ -69,7 +69,7 @@ class TestSchema:
 
     def test_valid_content_types(self):
         """All documented content types are in VALID_CONTENT_TYPES."""
-        expected = {"prose", "code", "metric", "log", "yaml"}
+        expected = {"prose", "code", "metric", "log", "yaml", "markdown"}
         assert VALID_CONTENT_TYPES == expected
 
     def test_new_categories_pentest_reference_payload(self):
@@ -81,6 +81,10 @@ class TestSchema:
     def test_new_content_type_yaml(self):
         """New content type yaml exists."""
         assert "yaml" in VALID_CONTENT_TYPES
+
+    def test_new_content_type_markdown(self):
+        """New content type markdown exists."""
+        assert "markdown" in VALID_CONTENT_TYPES
 
 
 # ─── Indexing Tests ─────────────────────────────────────────────────────
@@ -281,16 +285,29 @@ other: setting"""
         assert len(chunks) >= 2
 
     def test_chunk_content_markdown_heading_detection(self, store):
-        """_chunk_content detects markdown headings for non-prose content_type."""
+        """_chunk_content with content_type='markdown' splits by heading boundaries."""
         markdown = """# Title
 Content here.
 
 ## Section
 More content."""
-        # Heading detection dispatch only works for non-prose content_type
-        chunks = store._chunk_content(markdown, chunk_size=2000, overlap=0.0, content_type="code")
-        # Should be split by headings when content_type is not "prose"
+        # Heading dispatch triggered by content_type="markdown"
+        chunks = store._chunk_content(markdown, chunk_size=2000, overlap=0.0, content_type="markdown")
+        # Should be split by headings when content_type is "markdown"
         assert len(chunks) >= 2
+
+    def test_content_type_code_uses_paragraph_not_heading_dispatch(self, store):
+        """content_type='code' with heading-like lines uses paragraph dispatch, not heading."""
+        # Content with heading-like lines (# TODO comments)
+        code_with_hash = """def process(x):
+    # TODO: implement this
+    # Refactor for clarity
+    return x * 2
+"""
+        chunks = store._chunk_content(code_with_hash, chunk_size=2000, overlap=0.0, content_type="code")
+        # Should use paragraph splitting, not heading dispatch
+        # So # lines are treated as regular content, not heading boundaries
+        assert len(chunks) == 1  # Single chunk since content < chunk_size and no real paragraph breaks
 
     def test_overlap_20_percent(self, store):
         """20% overlap adds last 20% of chunk_size chars to each chunk after first."""
