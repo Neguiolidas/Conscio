@@ -96,3 +96,100 @@ def test_recall_prioritizes_processing_layer_on_near_tie(tmp_path):
     assert len(snippets) == 2
     # PROCESSING content surfaces first once the layer reorder is applied.
     assert "reflected insight" in snippets[0]
+
+
+class TestRecallSignatureUnchangedWithVectorBackend:
+    """Regression guard (v3.6): wiring VectorBackend/EmbeddingPipeline/
+    HybridRetriever into ConsciousnessEngine (opt-in via CONSCIO_VECTORS,
+    same pattern as CONSCIO_SEMANTIC_DEDUP — off by default so existing
+    installs don't silently start embedding on every index() call) must NOT
+    change engine.recall()'s public contract. Production callers —
+    mcp/server.py ("snippets" key), agency/relay_cognize.py, and engine.py's
+    own reflect/goal/dream paths — depend on the exact signature (query,
+    k=3, categories=None) and on a list[str] return, not list[SearchResult].
+    """
+
+    @pytest.fixture
+    def engine(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CONSCIO_VECTORS", "1")
+        e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
+        e.content_layer._session_rag = _RAG_DISABLED  # hermetic (no Ollama probe)
+        yield e
+        e.close()
+
+    def test_signature_unchanged(self, engine):
+        import inspect
+        sig = inspect.signature(engine.recall)
+        params = list(sig.parameters.values())
+        assert [p.name for p in params] == ["query", "k", "categories"]
+        assert params[1].default == 3
+        assert params[2].default is None
+        assert sig.return_annotation in ("list[str]", list, "list")
+
+    def test_hybrid_retriever_is_wired_in_by_default(self, engine):
+        assert engine._hybrid_retriever is not None
+        assert engine.content_layer._hybrid_retriever is engine._hybrid_retriever
+
+    def test_returns_list_of_str_with_real_vector_hit(self, engine):
+        """Force an actual vector-search hit (deterministic injected
+        embedder) and confirm recall() still returns list[str] snippets —
+        the hybrid third source must fuse transparently, never changing the
+        public return shape to SearchResult objects."""
+        from unittest.mock import MagicMock
+
+        vec = [1.0, 0.0, 0.0, 0.0]
+        # Match the injected vector's dimension (engine defaults to 384).
+        engine.vector_backend.dimension = 4
+        mock = MagicMock()
+        del mock.embed  # SentenceTransformer shape: .encode(), not .embed()
+        mock.encode.side_effect = lambda x: vec if isinstance(x, str) else [vec for _ in x]
+        engine.embedding_pipeline.embedding_provider._embedder = mock
+        engine.embedding_pipeline.embedding_provider.default_dimension = 4
+
+        engine.content_store.index(
+            label="vecdoc", content="vector-searchable unique payload",
+            category="reflection",
+        )
+        hits = engine.recall("vector-searchable unique payload", k=3)
+
+        assert isinstance(hits, list)
+        assert all(isinstance(h, str) for h in hits)
+        assert any("vector-searchable" in h for h in hits)
+
+    def test_categories_param_still_accepted_with_hybrid_wired(self, engine):
+        out = engine.recall("anything at all", k=1, categories=["reflection"])
+        assert isinstance(out, list)
+
+
+class TestVectorsOffByDefault:
+    """v3.6 fix: VectorBackend/EmbeddingPipeline must be opt-in
+    (CONSCIO_VECTORS), same pattern as CONSCIO_SEMANTIC_DEDUP. An install
+    that already has Ollama/sentence-transformers available must not
+    silently start embedding on every content_store.index() call just from
+    upgrading to v3.6 — that's a real behavior/latency change for existing
+    users this feature must not impose by default."""
+
+    def test_vector_backend_none_without_env_var(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CONSCIO_VECTORS", raising=False)
+        e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
+        try:
+            e.content_layer._session_rag = _RAG_DISABLED
+            assert e.vector_backend is None
+            assert e.embedding_pipeline is None
+            assert e.content_store.vector_backend is None
+            assert e.content_store.embeddings is None
+            # stats() must not advertise a vector index that doesn't exist.
+            assert "vector_count" not in e.content_store.stats()
+        finally:
+            e.close()
+
+    def test_vector_backend_present_with_env_var(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CONSCIO_VECTORS", "1")
+        e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
+        try:
+            e.content_layer._session_rag = _RAG_DISABLED
+            assert e.vector_backend is not None
+            assert e.embedding_pipeline is not None
+            assert e.content_store.vector_backend is e.vector_backend
+        finally:
+            e.close()

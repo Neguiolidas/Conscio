@@ -57,13 +57,25 @@ class EmbeddingProvider:
         self.default_dimension = dim
         self._force_no_network = force_no_network
         self._embedder = None  # injected by tests or auto-probed on first use
+        # v3.6: whether the fallback chain has already been probed once. Without
+        # this, a failed probe (no Ollama/OpenAI-compat/sentence-transformers)
+        # was silently retried on EVERY embed() call — each one paying the same
+        # network-timeout cost. Never exercised in a hot path before v3.6 wired
+        # EmbeddingPipeline into ContentStore.index()/HybridRetriever by
+        # default, at which point it becomes a real per-call latency hit.
+        self._probed = False
 
     def get_embedder(self):
-        """Probe available embedder lazily. Returns None if none available."""
+        """Probe available embedder lazily, at most once. Returns None if
+        none available (cached — a failed probe is not retried on later
+        calls within this instance's lifetime)."""
         if self._force_no_network:
             return None
         if self._embedder is not None:
             return self._embedder
+        if self._probed:
+            return None
+        self._probed = True
 
         # Try Ollama first (matches existing SessionRAG default)
         try:

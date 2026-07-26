@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -26,8 +27,10 @@ from .content_layer import (
 from .content_store import ContentStore
 from .context_manager import ContextManager
 from .dreaming import DreamRecommendation
+from .embedding_pipeline import EmbeddingPipeline
 from .event_bus import EventBus
 from .goal_generator import Drive, GoalGenerator
+from .hybrid_retriever import HybridRetriever
 from .inner_monologue import InnerMonologue
 from .kg_builder import KGBuilder
 from .meta_cognition import MetaCognition
@@ -58,6 +61,7 @@ from .structural_drift import (
 )
 from .timeutil import naive_utc_from_epoch, naive_utcnow
 from .token_tracker import TokenTracker
+from .vector_backend import VectorBackend
 from .voice_preset import resolve_voice_preset
 from .world_extract import extract_entities, extract_relations
 from .world_model import WorldModel
@@ -125,6 +129,71 @@ def _prune_quarantine(db_path: Path, keep: int = 3) -> None:
                 path.unlink()
             except OSError:
                 pass
+
+# v3.6: extension -> ContentStore content_type mapping for ingest_directory().
+# "prose" (the default every other caller relies on) is permanently paragraph-
+# only chunking (content_store._chunk_content) — markdown files must map to
+# the distinct "markdown" content_type to reach heading-based chunking rather
+# than being routed through "prose".
+_INGEST_CONTENT_TYPE_BY_EXT = {
+    ".yaml": "yaml", ".yml": "yaml",
+    ".md": "markdown", ".markdown": "markdown",
+}
+
+
+def _detect_ingest_content_type(file_path: Path) -> str:
+    """Map a file extension to a ContentStore content_type for ingestion."""
+    return _INGEST_CONTENT_TYPE_BY_EXT.get(file_path.suffix.lower(), "prose")
+
+
+_INGEST_BINARY_SNIFF_BYTES = 8192
+
+
+def _looks_binary(file_path: Path, sniff_bytes: int = _INGEST_BINARY_SNIFF_BYTES) -> bool:
+    """Best-effort binary-content sniff for ingest_directory().
+
+    Reads the first `sniff_bytes` of the file and treats the presence of a
+    NUL byte as proof of non-text content. This is deliberately content-based
+    rather than an extension allowlist: reference corpora meant for ingestion
+    (e.g. pentest-technique collections) mix markdown/text with PNGs, JPEGs,
+    PDFs, ZIPs and other binaries whose extensions can't be exhaustively
+    enumerated, whereas a real text/markdown/yaml/source file essentially
+    never contains a NUL byte in its first few KB. Any read failure here is
+    treated as "not binary" — the caller's own read attempt (which already
+    handles OSError) is the source of truth for whether the file is actually
+    readable.
+    """
+    try:
+        with file_path.open("rb") as fh:
+            chunk = fh.read(sniff_bytes)
+    except OSError:
+        return False
+    return b"\x00" in chunk
+
+
+def _iter_ingest_files(root: Path):
+    """Walk `root` recursively, skipping hidden directories.
+
+    Any directory component starting with "." (`.git`, `.svn`, `.venv`, ...)
+    is pruned before os.walk descends into it, so pointing ingest_directory()
+    at a git checkout never pulls .git's pack/object internals into the
+    knowledge store.
+    """
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        for name in filenames:
+            yield Path(dirpath) / name
+
+
+def _report_ingest_progress(callback, processed: int, total: int) -> None:
+    """Best-effort progress callback invocation — must never interrupt ingest."""
+    if callback is None:
+        return
+    try:
+        callback(processed, total)
+    except Exception:
+        logger.warning("ingest_directory: progress_callback raised", exc_info=True)
+
 
 # RAG-disable sentinel is OWNED by content_layer and re-exported via the import
 # below, so `from conscio.engine import _RAG_DISABLED` yields the SAME object the
@@ -230,7 +299,39 @@ class ConsciousnessEngine:
             else os.getenv("CONSCIO_VOICE_PRESET", "coherence-style")
         )
         self.voice_preset = resolve_voice_preset(effective_voice)
-        self.content_store = ContentStore(db_path=db_path)
+
+        # v3.6: vector-search side channel (VectorBackend + EmbeddingPipeline),
+        # wired straight into ContentStore's own vector_backend/embeddings
+        # params (Task 2) so index() actually embeds each chunk. Opt-in via
+        # CONSCIO_VECTORS, same pattern as CONSCIO_SEMANTIC_DEDUP below: an
+        # install that already has Ollama/sentence-transformers available
+        # must not silently start embedding every content_store.index() call
+        # (session summaries, reflections, dreams) just from upgrading to
+        # v3.6 — that's a real latency/behavior change for existing users,
+        # not something this feature should impose by default. Set
+        # CONSCIO_VECTORS=1 (or true/yes/on) to enable, e.g. before running
+        # `conscio ingest`. When enabled: construction never touches the
+        # network — EmbeddingProvider probes lazily on first embed() call and
+        # falls back to None (no-op) when no embedder is actually available,
+        # so this still degrades gracefully. Kept as a sibling file under the
+        # same storage root as conscio.db so both stay under one checkable
+        # DB-size budget.
+        vectors_enabled = os.getenv("CONSCIO_VECTORS", "").strip().lower() in ("1", "true", "yes", "on")
+        self.vector_backend: VectorBackend | None = None
+        self.embedding_pipeline: EmbeddingPipeline | None = None
+        if vectors_enabled:
+            self.vector_backend = VectorBackend(db_path=self.storage / "vectors.db", dimension=384)
+            self.embedding_pipeline = EmbeddingPipeline(vector_backend=self.vector_backend, dimension=384)
+        self.content_store = ContentStore(
+            db_path=db_path,
+            vector_backend=self.vector_backend,
+            embeddings=self.embedding_pipeline,
+        )
+        self._hybrid_retriever = HybridRetriever(
+            content_store=self.content_store,
+            vector_backend=self.vector_backend,
+            embedding_pipeline=self.embedding_pipeline,
+        )
         self.token_tracker = TokenTracker(db_path=db_path)
         self.output_filter = build_pipeline_from_dict({
             "stages": [
@@ -253,6 +354,7 @@ class ConsciousnessEngine:
             content_store=self.content_store,
             world_model=self.world,
             session_rag_provider=create_session_rag,
+            hybrid_retriever=self._hybrid_retriever,
             )
 
         # v0.9: SessionLifecycle — unified session persistence hooks
@@ -994,6 +1096,147 @@ class ConsciousnessEngine:
         """
         return self.content_layer.recall(query, k, categories)
 
+    def ingest_directory(
+        self,
+        path: str | Path,
+        category: str = "reference",
+        chunk_size: int = 2000,
+        overlap: float = 0.2,
+        progress_callback: Callable[[int, int], None] | None = None,
+        max_file_size_mb: float = 5.0,
+    ) -> dict:
+        """
+        Ingest all files under `path` into ContentStore (and, as a side
+        effect of index()'s existing vector_backend/embeddings wiring, into
+        VectorBackend — see __init__).
+
+        `path` may be a single file or a directory (walked recursively).
+        content_type is detected from extension: .yaml/.yml -> "yaml",
+        .md/.markdown -> "markdown", else "prose". Dedup is ContentStore's
+        own content_hash check — re-running ingest_directory() on unchanged
+        files does not duplicate chunks.
+
+        Directory walks skip hidden directories (any path component starting
+        with ".", e.g. `.git`, `.svn`) and, per file, skip anything above
+        `max_file_size_mb` or that sniffs as binary (NUL byte in the first
+        few KB — see `_looks_binary`). This matters because ingest_directory
+        is meant to run over arbitrary reference corpora (docs, code,
+        pentest-technique collections, ...) that mix text with images, PDFs,
+        archives and VCS internals; without these guards every binary byte
+        stream gets decoded as text (`errors="ignore"`) and indexed as
+        garbage chunks/vectors, bloating the store with noise that also
+        pollutes recall() results.
+
+        Args:
+            path: File or directory to ingest.
+            category: ContentStore category for every ingested file.
+            chunk_size: Max chars per chunk (passed to ContentStore.index()).
+            overlap: Fraction of chunk_size to overlap between chunks.
+            progress_callback: Optional callable(processed, total) invoked
+                after each file. Exceptions from it are logged, never raised.
+            max_file_size_mb: Files larger than this are skipped without
+                being read. Default 5.0 MB is generous for text/markdown/code
+                reference material while still rejecting large binaries.
+
+        Returns:
+            {"total": N, "ingested": N, "duplicate": N, "skipped": N,
+             "failed": N, "duration_s": float}
+
+            `ingested` counts files that actually produced chunks; files whose
+            content_hash was already indexed are counted in `duplicate`, NOT
+            in `ingested`. This distinction is load-bearing: a second run over
+            an unchanged corpus must report ingested=0/duplicate=N, otherwise
+            a no-op re-run looks identical to a real ingest and cannot be used
+            as evidence that ingestion works.
+
+            `skipped` also counts files skipped for being oversized, binary,
+            or empty — these are not read/indexing failures, so they are
+            never counted in `failed`, but they must still show up somewhere
+            in the totals rather than silently vanishing from `total`.
+        """
+        start = time.monotonic()
+        root = Path(path)
+        max_file_size_bytes = max_file_size_mb * 1024 * 1024
+
+        if root.is_file():
+            files = [root]
+        elif root.is_dir():
+            files = sorted(_iter_ingest_files(root))
+        else:
+            logger.warning("ingest_directory: path does not exist: %s", root)
+            return {"total": 0, "ingested": 0, "duplicate": 0, "skipped": 0,
+                    "failed": 0,
+                    "duration_s": round(time.monotonic() - start, 4)}
+
+        total = len(files)
+        ingested = duplicate = skipped = failed = 0
+
+        for i, file_path in enumerate(files, start=1):
+            try:
+                size_bytes = file_path.stat().st_size
+            except OSError as e:
+                logger.warning("ingest_directory: could not stat %s: %s", file_path, e)
+                failed += 1
+                _report_ingest_progress(progress_callback, i, total)
+                continue
+
+            if size_bytes > max_file_size_bytes:
+                logger.info(
+                    "ingest_directory: skipping %s (%.1f MB > %.1f MB cap)",
+                    file_path, size_bytes / (1024 * 1024), max_file_size_mb,
+                )
+                skipped += 1
+                _report_ingest_progress(progress_callback, i, total)
+                continue
+
+            if _looks_binary(file_path):
+                skipped += 1
+                _report_ingest_progress(progress_callback, i, total)
+                continue
+
+            try:
+                text = file_path.read_text(encoding="utf-8", errors="ignore")
+            except OSError as e:
+                logger.warning("ingest_directory: could not read %s: %s", file_path, e)
+                failed += 1
+                _report_ingest_progress(progress_callback, i, total)
+                continue
+
+            if not text.strip():
+                skipped += 1
+                _report_ingest_progress(progress_callback, i, total)
+                continue
+
+            try:
+                result = self.content_store.index_ex(
+                    label=str(file_path),
+                    content=text,
+                    category=category,
+                    content_type=_detect_ingest_content_type(file_path),
+                    chunk_size=chunk_size,
+                    overlap=overlap,
+                )
+                if result.is_new_content:
+                    ingested += 1
+                else:
+                    duplicate += 1
+            except Exception as e:
+                logger.warning("ingest_directory: failed to index %s: %s", file_path, e)
+                failed += 1
+
+            if i % 500 == 0:
+                logger.info("ingest_directory: %d/%d files processed", i, total)
+            _report_ingest_progress(progress_callback, i, total)
+
+        return {
+            "total": total,
+            "ingested": ingested,
+            "duplicate": duplicate,
+            "skipped": skipped,
+            "failed": failed,
+            "duration_s": round(time.monotonic() - start, 4),
+        }
+
     # --- World Model Interactions ---
 
     def perceive(self, world_state: str, entities: dict | None = None,
@@ -1269,7 +1512,7 @@ class ConsciousnessEngine:
             except Exception:
                 pass
         self._closed = True
-        for mod in (self.content_store, self.event_bus, self.token_tracker):
+        for mod in (self.content_store, self.event_bus, self.token_tracker, self.vector_backend):
             try:
                 mod.close()
             except Exception:

@@ -15,12 +15,18 @@ No MCP, no Node.js, no external deps.
 from __future__ import annotations
 
 import hashlib
+import logging
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
 from .constants import DEFAULT_DB_PATH
+from .embedding_pipeline import EmbeddingPipeline
 from .timeutil import naive_utcnow
+from .vector_backend import VectorBackend
+
+logger = logging.getLogger(__name__)
 
 # ─── Data Classes ───────────────────────────────────────────────────────
 
@@ -52,6 +58,24 @@ class SearchResult:
 
 
 @dataclass
+class IndexResult:
+    """Outcome of an index() call.
+
+    status:
+      "new"            — new source, chunks written
+      "category_added" — content already known, chunks written for a new category
+      "duplicate"      — nothing written (same content, same category)
+    """
+    source_id: int
+    status: str
+    chunks_added: int = 0
+
+    @property
+    def is_new_content(self) -> bool:
+        return self.status != "duplicate"
+
+
+@dataclass
 class SourceInfo:
     """Metadata about a content source."""
     id: int
@@ -64,8 +88,8 @@ class SourceInfo:
 
 # ─── Constants ──────────────────────────────────────────────────────────
 
-VALID_CATEGORIES = {"reflection", "perception", "trading", "system", "error", "consciousness", "external", "session"}
-VALID_CONTENT_TYPES = {"prose", "code", "metric", "log"}
+VALID_CATEGORIES = {"reflection", "perception", "trading", "system", "error", "consciousness", "external", "session", "pentest", "reference", "payload"}
+VALID_CONTENT_TYPES = {"prose", "code", "metric", "log", "yaml", "markdown"}
 
 # RRF constant (original paper uses k=60)
 RRF_K = 60
@@ -84,7 +108,12 @@ class ContentStore:
     Search merges results from both via Reciprocal Rank Fusion.
     """
 
-    def __init__(self, db_path: str | Path | None = None):
+    def __init__(
+        self,
+        db_path: str | Path | None = None,
+        vector_backend: VectorBackend | None = None,
+        embeddings: EmbeddingPipeline | None = None,
+    ):
         self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -94,6 +123,11 @@ class ContentStore:
         self.db.row_factory = sqlite3.Row
 
         self._init_schema()
+
+        # Optional vector-search side channel. Both default to None, which
+        # preserves exact FTS5-only behavior for every existing caller.
+        self.vector_backend = vector_backend
+        self.embeddings = embeddings
 
     # ─── Schema ──────────────────────────────────────────────────────
 
@@ -146,12 +180,31 @@ class ContentStore:
         content_type: str = "prose",
         session_id: str = "",
         chunk_size: int = 2000,
+        overlap: float = 0.0,
     ) -> int:
+        """Index content into FTS5 — see index_ex(); returns the source_id."""
+        return self.index_ex(
+            label, content, category,
+            content_type=content_type, session_id=session_id,
+            chunk_size=chunk_size, overlap=overlap,
+        ).source_id
+
+    def index_ex(
+        self,
+        label: str,
+        content: str,
+        category: str,
+        content_type: str = "prose",
+        session_id: str = "",
+        chunk_size: int = 2000,
+        overlap: float = 0.0,
+    ) -> IndexResult:
         """
         Index content into FTS5 (porter + trigram).
 
-        Long content is split into chunks of ~chunk_size characters
-        at paragraph boundaries for better search granularity.
+        Long content is split into chunks at semantic boundaries (YAML,
+        markdown headings, or paragraph boundaries) for better search
+        granularity. Adjacent chunks may overlap by a configurable amount.
 
         Args:
             label: Human-readable source label (e.g., "reflection_2026-06-04")
@@ -159,10 +212,15 @@ class ContentStore:
             category: One of VALID_CATEGORIES
             content_type: One of VALID_CONTENT_TYPES
             session_id: Optional session identifier
-            chunk_size: Max chars per chunk (split at paragraph boundaries)
+            chunk_size: Max chars per chunk
+            overlap: Fraction of chunk_size to overlap between chunks (default 0.0 = none; new callers can pass 0.2 for 20%)
 
         Returns:
-            source_id of the created source
+            IndexResult(source_id, status, chunks_added) — `status` tells a
+            caller whether real work happened ("new" / "category_added") or the
+            content was already indexed ("duplicate"). Without it, an ingest
+            summary counts a full re-run of an unchanged corpus as "14000
+            ingested", which is exactly the number used as evidence for CS1.
         """
         if category not in VALID_CATEGORIES:
             raise ValueError(f"Invalid category '{category}'. Must be one of: {VALID_CATEGORIES}")
@@ -189,21 +247,28 @@ class ContentStore:
                 (source_id, category),
             ).fetchone()
             if already:
-                return source_id
+                return IndexResult(source_id, "duplicate", 0)
             label = existing["label"]
-            chunks = self._chunk_content(content, chunk_size)
+            chunks = self._chunk_content(content, chunk_size=chunk_size, overlap=overlap, content_type=content_type)
+            pending: list[tuple[str, str]] = []
             for i, chunk in enumerate(chunks):
                 title = (f"{label}" if len(chunks) == 1
                          else f"{label} [part {i+1}/{len(chunks)}]")
+                chunk_rowid: int | None = None
                 for table in ("chunks", "chunks_trigram"):
-                    self.db.execute(
+                    cursor = self.db.execute(
                         f"INSERT INTO {table} (title, content, source_id,"
                         " content_type, source_category, session_id, timestamp)"
                         " VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (title, chunk, source_id, content_type, category,
                          session_id, timestamp))
+                    if table == "chunks":
+                        chunk_rowid = cursor.lastrowid
+                if chunk_rowid is not None:
+                    pending.append((f"chunk:{chunk_rowid}", chunk))
             self.db.commit()
-            return source_id
+            self._maybe_embed_batch(pending, category)
+            return IndexResult(source_id, "category_added", len(chunks))
 
         # Create source record
         cursor = self.db.execute(
@@ -212,17 +277,23 @@ class ContentStore:
         )
         source_id = int(cursor.lastrowid or 0)
 
-        # Split into chunks at paragraph boundaries
-        chunks = self._chunk_content(content, chunk_size)
+        # Split into chunks at semantic boundaries (YAML, headings, or paragraphs)
+        chunks = self._chunk_content(content, chunk_size=chunk_size, overlap=overlap, content_type=content_type)
 
+        pending = []
         for i, chunk in enumerate(chunks):
             title = f"{label}" if len(chunks) == 1 else f"{label} [part {i+1}/{len(chunks)}]"
             # Insert into both FTS5 tables
+            chunk_rowid = None
             for table in ("chunks", "chunks_trigram"):
-                self.db.execute(
+                cursor = self.db.execute(
                     f"INSERT INTO {table} (title, content, source_id, content_type, source_category, session_id, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (title, chunk, source_id, content_type, category, session_id, timestamp),
                 )
+                if table == "chunks":
+                    chunk_rowid = cursor.lastrowid
+            if chunk_rowid is not None:
+                pending.append((f"chunk:{chunk_rowid}", chunk))
 
         # Update chunk count
         self.db.execute(
@@ -231,29 +302,109 @@ class ContentStore:
         )
         self.db.commit()
 
-        return source_id
+        # Embedding runs AFTER the FTS5 commit, in one batch: FTS5 is the
+        # primary, always-on path and must not be held open (nor rolled back)
+        # by a slow model call.
+        self._maybe_embed_batch(pending, category)
 
-    def _chunk_content(self, content: str, chunk_size: int = 2000) -> list[str]:
-        """
-        Split content into chunks at paragraph boundaries.
+        return IndexResult(source_id, "new", len(chunks))
 
-        Each chunk is at most chunk_size characters, split at the last
-        paragraph break (\\n\\n) before the limit. This preserves
-        semantic coherence within chunks.
+    def _maybe_embed_batch(
+        self, pending: list[tuple[str, str]], category: str | None = None
+    ) -> None:
+        """Embed a document's chunks into the vector backend, if configured.
+
+        One call per document, not per chunk: EmbeddingPipeline.embed_batch
+        does a single model invocation for all texts and a single vector-store
+        transaction. The previous per-chunk path paid a model call AND an
+        fsync-per-vector, which is the dominant cost at corpus scale.
+
+        Keyed by the `chunks` FTS5 table's own rowid (not source_id — a
+        source can have many chunks, and VectorBackend.add() is INSERT OR
+        REPLACE keyed by id, so keying on source_id would silently collapse
+        every chunk of a document onto a single vector). Using chunk_rowid
+        also means a vector search hit maps directly onto the same
+        `chunks.rowid` that `_rrf_merge()` already fetches full rows by.
+        `category` is denormalized onto the vector row so a category-scoped
+        recall can pre-filter candidates in SQL.
+
+        Best-effort: embedding/storage failures are logged and swallowed so
+        they never interrupt FTS5 ingestion, which is the primary, always-on
+        path.
         """
-        # B-009: chunk_size<=0 makes the slice below never shrink `remaining`
-        # → infinite loop + unbounded list growth. Floor at 1 (latent footgun,
-        # same class as B-004's negative LIMIT).
+        if not pending or self.vector_backend is None or self.embeddings is None:
+            return
+        try:
+            self.embeddings.embed_batch(pending, category=category)
+        except Exception as e:
+            logger.warning(
+                f"ContentStore: embedding failed for {len(pending)} chunk(s) "
+                f"of category {category!r}: {e}"
+            )
+
+    def _chunk_by_headings(self, text: str, chunk_size: int = 2000, overlap: float = 0.2) -> list[str]:
+        r"""
+        Split markdown content by heading boundaries.
+
+        Splits at lines matching ^#{1,3}\s (h1, h2, h3). Each chunk starts
+        with a heading and includes content until the next heading or end.
+        If a chunk exceeds chunk_size, it's split at paragraph boundaries.
+        Always returns at least as many chunks as there are headings.
+
+        Args:
+            text: Markdown content
+            chunk_size: Max chars per chunk
+            overlap: Fraction of chunk_size to overlap (0.0–1.0)
+
+        Returns:
+            List of chunks with overlap applied
+        """
+        heading_pattern = re.compile(r"^#{1,3}\s", re.MULTILINE)
+        heading_positions = [m.start() for m in heading_pattern.finditer(text)]
+
+        if not heading_positions:
+            # No headings found, fall back to paragraph chunking
+            return self._chunk_paragraphs(text, chunk_size, overlap)
+
+        # Split on heading boundaries
+        raw_chunks = []
+        for i, pos in enumerate(heading_positions):
+            if i + 1 < len(heading_positions):
+                chunk = text[pos:heading_positions[i + 1]]
+            else:
+                chunk = text[pos:]
+            if chunk.strip():
+                raw_chunks.append(chunk.strip())
+
+        # If any chunk exceeds chunk_size, split at paragraphs
+        final_chunks = []
+        for chunk in raw_chunks:
+            if len(chunk) <= chunk_size:
+                final_chunks.append(chunk)
+            else:
+                # Split by paragraphs within this heading section
+                # Use paragraph-only split, don't apply overlap here (we'll do it at the end)
+                subchunks = self._split_paragraphs_hard(chunk, chunk_size)
+                final_chunks.extend(subchunks)
+
+        # Apply overlap
+        return self._apply_overlap(final_chunks, chunk_size, overlap)
+
+    def _split_paragraphs_hard(self, text: str, chunk_size: int) -> list[str]:
+        """
+        Split text at paragraph boundaries without overlap.
+        Internal helper for _chunk_by_headings to split large sections.
+        """
         chunk_size = max(1, chunk_size)
-        if len(content) <= chunk_size:
-            return [content]
+        if len(text) <= chunk_size:
+            return [text]
 
-        chunks = []
-        remaining = content
+        raw_chunks = []
+        remaining = text
 
         while remaining:
             if len(remaining) <= chunk_size:
-                chunks.append(remaining)
+                raw_chunks.append(remaining)
                 break
 
             # Find last paragraph break within chunk_size
@@ -265,13 +416,226 @@ class ContentStore:
             else:
                 split_at += 2  # Include the \n\n
 
-            chunks.append(remaining[:split_at].strip())
+            raw_chunks.append(remaining[:split_at].strip())
             remaining = remaining[split_at:].strip()
 
             if not remaining:
                 break
 
-        return [c for c in chunks if c]  # Remove empty chunks
+        return [c for c in raw_chunks if c]
+
+    def _chunk_yaml(self, text: str, chunk_size: int = 2000, overlap: float = 0.2) -> list[str]:
+        """
+        Split YAML content by document boundaries (lines that are exactly '---').
+
+        Each chunk is one YAML document. If a document exceeds chunk_size,
+        it's split at line boundaries.
+
+        Args:
+            text: YAML content
+            chunk_size: Max chars per chunk
+            overlap: Fraction of chunk_size to overlap
+
+        Returns:
+            List of chunks with overlap applied
+        """
+        # Split on lines that are exactly '---'
+        lines = text.split('\n')
+        raw_chunks = []
+        current_chunk_lines = []
+
+        for line in lines:
+            if line.strip() == '---':
+                if current_chunk_lines:
+                    chunk_text = '\n'.join(current_chunk_lines).strip()
+                    if chunk_text:
+                        raw_chunks.append(chunk_text)
+                    current_chunk_lines = []
+            else:
+                current_chunk_lines.append(line)
+
+        # Don't forget the last chunk if it exists
+        if current_chunk_lines:
+            chunk_text = '\n'.join(current_chunk_lines).strip()
+            if chunk_text:
+                raw_chunks.append(chunk_text)
+
+        # If chunks are too large, split by lines
+        final_chunks = []
+        for chunk in raw_chunks:
+            if len(chunk) <= chunk_size:
+                final_chunks.append(chunk)
+            else:
+                # Split by line boundaries
+                chunk_lines = chunk.split('\n')
+                subchunk_lines = []
+                for line in chunk_lines:
+                    subchunk_lines.append(line)
+                    subchunk_text = '\n'.join(subchunk_lines)
+                    if len(subchunk_text) > chunk_size and len(subchunk_lines) > 1:
+                        # Commit the subchunk without this line
+                        subchunk_lines.pop()
+                        final_chunks.append('\n'.join(subchunk_lines))
+                        subchunk_lines = [line]
+
+                # Commit remaining lines
+                if subchunk_lines:
+                    final_chunks.append('\n'.join(subchunk_lines))
+
+        # Apply overlap
+        return self._apply_overlap(final_chunks, chunk_size, overlap)
+
+    def _chunk_paragraphs(self, text: str, chunk_size: int = 2000, overlap: float = 0.2) -> list[str]:
+        """
+        Split content at paragraph boundaries (\\n\\n).
+
+        Each chunk is at most chunk_size characters. Splits at the last
+        paragraph break before the limit. If no paragraph breaks exist,
+        performs hard split at chunk_size.
+
+        Args:
+            text: Content to chunk
+            chunk_size: Max chars per chunk
+            overlap: Fraction of chunk_size to overlap
+
+        Returns:
+            List of chunks with overlap applied
+        """
+        # B-009: chunk_size<=0 makes the slice below never shrink `remaining`
+        chunk_size = max(1, chunk_size)
+
+        # If content is small, return as-is
+        if len(text) <= chunk_size:
+            return [text]
+
+        # Check if there are paragraph breaks
+        if "\n\n" in text:
+            # Split on paragraph breaks
+            paragraphs = text.split("\n\n")
+            raw_chunks = []
+            current_chunk_parts = []
+            current_chunk_size = 0
+
+            for para in paragraphs:
+                para = para.strip()
+                if not para:
+                    continue
+
+                # If adding this paragraph would exceed chunk_size, save current chunk and start new one
+                para_size = len(para)
+                separator_size = 2 if current_chunk_parts else 0  # "\n\n" between paragraphs
+
+                if current_chunk_size + para_size + separator_size > chunk_size and current_chunk_parts:
+                    # Save current chunk
+                    raw_chunks.append("\n\n".join(current_chunk_parts))
+                    current_chunk_parts = [para]
+                    current_chunk_size = para_size
+                else:
+                    current_chunk_parts.append(para)
+                    current_chunk_size += para_size + separator_size
+
+            # Don't forget the last chunk
+            if current_chunk_parts:
+                raw_chunks.append("\n\n".join(current_chunk_parts))
+
+            raw_chunks = [c for c in raw_chunks if c]  # Remove empty chunks
+        else:
+            # No paragraph breaks — hard split at chunk_size
+            raw_chunks = []
+            remaining = text
+
+            while remaining:
+                if len(remaining) <= chunk_size:
+                    raw_chunks.append(remaining)
+                    break
+                else:
+                    raw_chunks.append(remaining[:chunk_size])
+                    remaining = remaining[chunk_size:]
+
+        # Apply overlap
+        return self._apply_overlap(raw_chunks, chunk_size, overlap)
+
+    def _apply_overlap(self, chunks: list[str], chunk_size: int, overlap: float) -> list[str]:
+        """
+        Apply overlap between chunks by prepending the end of the previous chunk.
+
+        Args:
+            chunks: List of raw (non-overlapped) chunks
+            chunk_size: Reference chunk size (used to calculate overlap amount)
+            overlap: Fraction of chunk_size to overlap (0.0–1.0)
+
+        Returns:
+            List of chunks with overlap applied
+        """
+        if not chunks or overlap <= 0.0 or len(chunks) <= 1:
+            return chunks
+
+        overlap_amount = max(1, int(chunk_size * overlap))
+        result = [chunks[0]]
+
+        for i in range(1, len(chunks)):
+            prev_chunk = chunks[i - 1]
+            curr_chunk = chunks[i]
+
+            # Take the last overlap_amount characters from the previous chunk
+            if len(prev_chunk) > overlap_amount:
+                overlap_text = prev_chunk[-overlap_amount:]
+            else:
+                # If previous chunk is smaller than overlap, use all of it
+                overlap_text = prev_chunk
+
+            # Prepend overlap to current chunk, but don't let it completely replace it
+            if len(overlap_text) < len(curr_chunk):
+                overlapped = overlap_text + "\n\n" + curr_chunk
+            else:
+                overlapped = curr_chunk
+
+            result.append(overlapped)
+
+        return result
+
+    def _chunk_content(
+        self,
+        content: str,
+        chunk_size: int = 2000,
+        overlap: float = 0.0,
+        content_type: str = "prose",
+    ) -> list[str]:
+        """
+        Split content into chunks using semantic boundaries.
+
+        Dispatch strategy (based on content_type only):
+        1. If content_type == "yaml": split on YAML document boundaries
+        2. Else if content_type == "markdown": split on markdown heading boundaries
+        3. Else (all other types including "prose", "code", "metric", "log"):
+           split on paragraph boundaries for backward compatibility
+
+        Overlap is applied across all strategies.
+
+        Args:
+            content: Text content to chunk
+            chunk_size: Max chars per chunk (default 2000)
+            overlap: Fraction of chunk_size to overlap between chunks (default 0.0 = none)
+            content_type: Type of content, determines chunking strategy
+
+        Returns:
+            List of chunks
+        """
+        chunk_size = max(1, chunk_size)
+
+        # Handle empty content (backward compatibility: return [""])
+        if not content:
+            return [""]
+
+        # Semantic dispatch based on content_type only
+        if content_type == "yaml":
+            return self._chunk_yaml(content, chunk_size, overlap)
+
+        if content_type == "markdown":
+            return self._chunk_by_headings(content, chunk_size, overlap)
+
+        # Fallback for all other content_type values: paragraph boundaries (backward compatible)
+        return self._chunk_paragraphs(content, chunk_size, overlap)
 
     # ─── Search ──────────────────────────────────────────────────────
 
@@ -562,13 +926,32 @@ class ContentStore:
 
     # ─── Stats ───────────────────────────────────────────────────────
 
-    def _total_db_size(self) -> int:
-        """Total size of DB + WAL + SHM files in bytes."""
+    def _files_for(self, path: Path) -> int:
+        """Size of one SQLite DB plus its WAL/SHM sidecars, in bytes."""
         total = 0
         for suffix in ("", "-wal", "-shm"):
-            p = Path(str(self.db_path) + suffix)
+            p = Path(str(path) + suffix)
             if p.exists():
                 total += p.stat().st_size
+        return total
+
+    def _total_db_size(self) -> int:
+        """Total on-disk footprint of the knowledge store, in bytes.
+
+        Includes the sibling `vectors.db` when a VectorBackend is attached: the
+        vector store is deliberately placed under the same storage root so the
+        NFR2 budget (<600MB) is ONE checkable number — reporting only
+        conscio.db would under-report it by the size of the float32 blobs
+        (~330MB at target corpus scale), i.e. the check would pass while the
+        real budget was blown.
+        """
+        total = self._files_for(Path(str(self.db_path)))
+        vec_path = getattr(self.vector_backend, "db_path", None)
+        if vec_path is not None:
+            vec_path = Path(str(vec_path))
+            # Guard against double counting if both ever point at one file.
+            if vec_path != Path(str(self.db_path)):
+                total += self._files_for(vec_path)
         return total
 
     def stats(self) -> dict:
@@ -581,15 +964,25 @@ class ContentStore:
             "SELECT source_category, COUNT(*) as c FROM sources GROUP BY source_category"
         ).fetchall()
 
-        return {
+        total_bytes = self._total_db_size()
+        out = {
             "source_count": source_count,
             "chunk_count": chunk_count,
             "trigram_chunk_count": trigram_count,
             "categories": {r["source_category"]: r["c"] for r in categories},
             "db_path": str(self.db_path),
-            "db_size_kb": round(self._total_db_size() / 1024, 1),
-            "db_size_mb": round(self._total_db_size() / 1024 / 1024, 2),
+            "db_size_kb": round(total_bytes / 1024, 1),
+            "db_size_mb": round(total_bytes / 1024 / 1024, 2),
         }
+        if self.vector_backend is not None:
+            try:
+                out["vector_count"] = self.vector_backend.stats()["vectors"]
+                out["vector_db_size_mb"] = round(
+                    self._files_for(Path(str(self.vector_backend.db_path))) / 1024 / 1024, 2
+                )
+            except Exception as e:  # stats must never break a caller
+                logger.debug(f"ContentStore.stats: vector stats unavailable: {e}")
+        return out
 
     # ─── Lifecycle ───────────────────────────────────────────────────
 

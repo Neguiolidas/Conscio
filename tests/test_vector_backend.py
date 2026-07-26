@@ -1,4 +1,7 @@
 """TDD: VectorBackend — cosine search in SQLite BLOB."""
+import math
+import random
+
 from conscio.vector_backend import VectorBackend
 
 
@@ -79,3 +82,78 @@ def test_vector_store_stats(tmp_path):
     assert s["vectors"] == 2
     assert s["dimension"] == 2
     vb.close()
+
+
+# ─── Vectorized scoring (C1) ────────────────────────────────────────────
+
+def _cosine_ref(a: list[float], b: list[float]) -> float:
+    """Naive reference cosine — the pre-fix per-row Python implementation."""
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0 or nb == 0:
+        return 0.0
+    return dot / (na * nb)
+
+
+def test_vectorized_search_matches_naive_cosine(tmp_path):
+    """The batched numpy scoring must return exactly the naive ranking.
+
+    C1 replaced a per-row Python loop with a single matrix-vector product;
+    this pins the numerical result so the optimization can't silently change
+    which chunks recall() sees.
+    """
+    rng = random.Random(1234)
+    dim = 32
+    vb = VectorBackend(db_path=tmp_path / "vec.db", dimension=dim)
+    vecs = {}
+    for i in range(120):
+        v = [rng.uniform(-1.0, 1.0) for _ in range(dim)]
+        vecs[f"doc{i}"] = v
+        vb.add(f"doc{i}", v)
+
+    query = [rng.uniform(-1.0, 1.0) for _ in range(dim)]
+    got = vb.search(query, limit=10)
+
+    expected = sorted(
+        ((vid, _cosine_ref(query, v)) for vid, v in vecs.items()),
+        key=lambda kv: -kv[1],
+    )[:10]
+
+    assert [r["id"] for r in got] == [vid for vid, _ in expected]
+    for r, (_, score) in zip(got, expected):
+        assert abs(r["score"] - score) < 1e-5
+
+
+def test_search_category_prefilter_restricts_candidates(tmp_path):
+    """A category-scoped search must only ever return that category.
+
+    Pre-filtering in SQL (rather than full-scan-then-filter) is what keeps a
+    scoped recall from paying for the whole corpus; the observable contract is
+    that no foreign-category row can leak into the results even when it is a
+    much better cosine match.
+    """
+    vb = VectorBackend(db_path=tmp_path / "vec.db", dimension=2)
+    vb.add("ref1", [1.0, 0.0], category="reference")
+    vb.add("ref2", [0.9, 0.1], category="reference")
+    vb.add("refl1", [1.0, 0.0], category="reflection")
+
+    scoped = vb.search([1.0, 0.0], limit=10, category="reference")
+    assert {r["id"] for r in scoped} == {"ref1", "ref2"}
+
+    unscoped = vb.search([1.0, 0.0], limit=10)
+    assert {r["id"] for r in unscoped} == {"ref1", "ref2", "refl1"}
+
+
+def test_search_category_prefilter_unknown_category_is_empty(tmp_path):
+    vb = VectorBackend(db_path=tmp_path / "vec.db", dimension=2)
+    vb.add("a", [1.0, 0.0], category="reference")
+    assert vb.search([1.0, 0.0], limit=5, category="nope") == []
+
+
+def test_rows_without_category_are_still_searchable_unscoped(tmp_path):
+    """Vectors written before the category column existed must not vanish."""
+    vb = VectorBackend(db_path=tmp_path / "vec.db", dimension=2)
+    vb.add("legacy", [1.0, 0.0])  # no category
+    results = vb.search([1.0, 0.0], limit=5)
+    assert [r["id"] for r in results] == ["legacy"]
