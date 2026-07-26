@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [3.4.2] - 2026-07-25 — Observatory UI Rework
+## [3.5.0] - 2026-07-26 — Observatory + Daemon + Consent
 
 ### Added
 
