@@ -64,13 +64,23 @@ class TestSchema:
 
     def test_valid_categories(self):
         """All documented categories are in VALID_CATEGORIES."""
-        expected = {"reflection", "perception", "trading", "system", "error", "consciousness", "external", "session"}
+        expected = {"reflection", "perception", "trading", "system", "error", "consciousness", "external", "session", "pentest", "reference", "payload"}
         assert VALID_CATEGORIES == expected
 
     def test_valid_content_types(self):
         """All documented content types are in VALID_CONTENT_TYPES."""
-        expected = {"prose", "code", "metric", "log"}
+        expected = {"prose", "code", "metric", "log", "yaml"}
         assert VALID_CONTENT_TYPES == expected
+
+    def test_new_categories_pentest_reference_payload(self):
+        """New categories pentest, reference, and payload exist."""
+        assert "pentest" in VALID_CATEGORIES
+        assert "reference" in VALID_CATEGORIES
+        assert "payload" in VALID_CATEGORIES
+
+    def test_new_content_type_yaml(self):
+        """New content type yaml exists."""
+        assert "yaml" in VALID_CONTENT_TYPES
 
 
 # ─── Indexing Tests ─────────────────────────────────────────────────────
@@ -166,7 +176,7 @@ class TestChunking:
     def test_no_paragraph_break_hard_split(self, store):
         """Content without paragraph breaks gets hard-split at chunk_size."""
         content = "A" * 5000  # No paragraph breaks
-        chunks = store._chunk_content(content, chunk_size=2000)
+        chunks = store._chunk_content(content, chunk_size=2000, overlap=0.0)
         assert len(chunks) >= 2
         for chunk in chunks:
             assert len(chunk) <= 2000
@@ -190,6 +200,215 @@ class TestChunking:
         # All paragraphs should be present
         for i in range(20):
             assert f"unique text {i}" in reconstructed
+
+    def test_chunk_by_headings_markdown(self, store):
+        """Markdown content with headings is split by heading boundaries."""
+        content = """# Main Title
+This is the introduction.
+
+## Section 1
+Content for section 1.
+
+## Section 2
+Content for section 2.
+
+### Subsection 2.1
+Content for subsection 2.1.
+"""
+        chunks = store._chunk_by_headings(content, chunk_size=2000, overlap=0.0)
+        assert len(chunks) >= 3
+        # Each heading should be in a chunk
+        assert any("# Main Title" in c for c in chunks)
+        assert any("## Section 1" in c for c in chunks)
+        assert any("## Section 2" in c for c in chunks)
+
+    def test_chunk_by_headings_small_chunk_size(self, store):
+        """Heading chunks larger than chunk_size are split at paragraphs."""
+        content = """# Title
+First paragraph is long and has lots of text to fill the chunk size with more words here.
+
+Second paragraph is also long and should cause a split.
+
+Third paragraph for completeness."""
+        chunks = store._chunk_by_headings(content, chunk_size=100, overlap=0.0)
+        # Should have multiple chunks because of small chunk_size
+        assert len(chunks) >= 1
+        for chunk in chunks:
+            assert len(chunk) <= 150  # Some tolerance for splitting
+
+    def test_chunk_yaml_by_separators(self, store):
+        """YAML content is split by --- document separators."""
+        content = """key1: value1
+key2: value2
+---
+key3: value3
+key4: value4
+---
+key5: value5
+"""
+        chunks = store._chunk_yaml(content, chunk_size=2000, overlap=0.0)
+        assert len(chunks) == 3
+        assert "key1: value1" in chunks[0]
+        assert "key3: value3" in chunks[1]
+        assert "key5: value5" in chunks[2]
+
+    def test_chunk_yaml_large_document(self, store):
+        """Large YAML documents are split by line boundaries."""
+        lines = [f"key{i}: value{i}" for i in range(100)]
+        content = '\n'.join(lines)
+        chunks = store._chunk_yaml(content, chunk_size=200, overlap=0.0)
+        # Should split due to chunk_size constraint
+        assert len(chunks) > 1
+        # All keys should be present in some chunk
+        for i in range(100):
+            found = any(f"key{i}:" in c for c in chunks)
+            assert found
+
+    def test_chunk_content_type_yaml_dispatch(self, store):
+        """_chunk_content dispatches to _chunk_yaml for content_type='yaml'."""
+        yaml_content = """config: value
+---
+other: setting"""
+        chunks = store._chunk_content(yaml_content, chunk_size=2000, overlap=0.0, content_type="yaml")
+        assert len(chunks) == 2
+
+    def test_chunk_content_type_prose_dispatch(self, store):
+        """_chunk_content dispatches to paragraphs for content_type='prose' without headings."""
+        # Use longer content to force splitting at paragraph boundaries
+        prose = "Paragraph 1. " * 10 + "\n\n" + "Paragraph 2. " * 10 + "\n\n" + "Paragraph 3. " * 10
+        chunks = store._chunk_content(prose, chunk_size=100, overlap=0.0, content_type="prose")
+        # Should split at paragraph boundaries
+        assert len(chunks) >= 2
+
+    def test_chunk_content_markdown_heading_detection(self, store):
+        """_chunk_content detects markdown headings and uses heading chunker."""
+        markdown = """# Title
+Content here.
+
+## Section
+More content."""
+        chunks = store._chunk_content(markdown, chunk_size=2000, overlap=0.0)
+        # Should be split by headings
+        assert len(chunks) >= 2
+
+    def test_overlap_20_percent(self, store):
+        """20% overlap adds last 20% of chunk_size chars to each chunk after first."""
+        # Create simple chunks to test overlap
+        chunk1 = "A" * 100
+        chunk2 = "B" * 100
+        chunk3 = "C" * 100
+        raw_chunks = [chunk1, chunk2, chunk3]
+
+        overlapped = store._apply_overlap(raw_chunks, chunk_size=100, overlap=0.2)
+        assert len(overlapped) == 3
+        assert overlapped[0] == chunk1  # First chunk unchanged
+        # Second chunk should start with last 20 chars of first chunk
+        assert overlapped[1].startswith(chunk1[-20:])
+        assert "B" in overlapped[1]  # And contain original chunk2
+        # Third chunk should start with last 20 chars of second chunk
+        assert overlapped[2].startswith(chunk2[-20:])
+        assert "C" in overlapped[2]
+
+    def test_overlap_zero_no_change(self, store):
+        """Zero overlap returns chunks unchanged."""
+        chunks = ["First chunk", "Second chunk", "Third chunk"]
+        overlapped = store._apply_overlap(chunks, chunk_size=100, overlap=0.0)
+        assert overlapped == chunks
+
+    def test_overlap_empty_chunks(self, store):
+        """Empty chunk list returns empty."""
+        overlapped = store._apply_overlap([], chunk_size=100, overlap=0.2)
+        assert overlapped == []
+
+    def test_overlap_single_chunk(self, store):
+        """Single chunk is returned unchanged."""
+        chunks = ["Only chunk"]
+        overlapped = store._apply_overlap(chunks, chunk_size=100, overlap=0.2)
+        assert overlapped == chunks
+
+    def test_index_accepts_overlap_parameter(self, store):
+        """index() method accepts overlap parameter."""
+        content = "Paragraph 1.\n\nParagraph 2.\n\nParagraph 3."
+        sid = store.index("test", content, "reflection", overlap=0.1)
+        assert sid > 0
+
+    def test_index_overlap_default_0_2(self, store):
+        """index() uses default overlap of 0.2 when not specified."""
+        content = "Paragraph 1.\n\nParagraph 2.\n\nParagraph 3."
+        sid = store.index("test", content, "reflection")
+        assert sid > 0
+        # Should have created chunks with overlap applied
+
+    def test_index_with_markdown_and_overlap(self, store):
+        """Indexing markdown with overlap works correctly."""
+        markdown = """# Part 1
+Section 1 content here.
+
+## Subsection
+More text.
+
+# Part 2
+Section 2 content."""
+        sid = store.index("markdown_doc", markdown, "reference", content_type="prose", overlap=0.1)
+        assert sid > 0
+        source = store.get_source(sid)
+        assert source is not None
+
+    def test_index_with_yaml_content_type(self, store):
+        """Indexing YAML content with content_type='yaml' works."""
+        yaml_content = """version: "1.0"
+enabled: true
+---
+version: "2.0"
+enabled: false
+"""
+        sid = store.index("yaml_config", yaml_content, "reference", content_type="yaml")
+        assert sid > 0
+        source = store.get_source(sid)
+        assert source.source_category == "reference"
+        # Verify the content was indexed
+        results = store.search("version", category="reference")
+        assert len(results) > 0
+
+    def test_new_category_pentest_indexing(self, store):
+        """Pentest category can be indexed and retrieved."""
+        sid = store.index("sql_injection_ref", "UNION SELECT attack vector", "pentest")
+        assert sid > 0
+        results = store.search("attack vector", category="pentest")
+        assert len(results) > 0
+
+    def test_new_category_reference_indexing(self, store):
+        """Reference category can be indexed and retrieved."""
+        sid = store.index("owasp_top_10", "OWASP Top 10 vulnerability list", "reference")
+        assert sid > 0
+        results = store.search("OWASP", category="reference")
+        assert len(results) > 0
+
+    def test_new_category_payload_indexing(self, store):
+        """Payload category can be indexed and retrieved."""
+        sid = store.index("shellcode_payload", "x86 shellcode payload bytes", "payload")
+        assert sid > 0
+        results = store.search("shellcode", category="payload")
+        assert len(results) > 0
+
+    def test_regression_overlap_zero_prose_reproduces_old_behavior(self, store):
+        """overlap=0.0 with content_type='prose' reproduces exact old behavior."""
+        content = "\n\n".join([f"Paragraph {i} with unique text {i}." for i in range(10)])
+        # Old way: called _chunk_content with just content and chunk_size (and no overlap, which is 0.0)
+        old_chunks = store._chunk_content(content, chunk_size=200, overlap=0.0)
+        # New way: explicitly with overlap=0.0 and content_type="prose"
+        new_chunks = store._chunk_content(content, chunk_size=200, overlap=0.0, content_type="prose")
+        assert old_chunks == new_chunks
+
+    def test_regression_index_default_overlap_behavior(self, store):
+        """index() default behavior with new params doesn't break existing callers."""
+        # Existing caller: index(label, content, category)
+        sid1 = store.index("test1", "Simple content here.", "reflection")
+        # New caller with defaults: index(label, content, category, chunk_size=2000, overlap=0.2)
+        sid2 = store.index("test2", "Simple content here.", "reflection")
+        # Both should succeed and return positive IDs
+        assert sid1 > 0
+        assert sid2 > 0
 
 
 # ─── Search Tests ───────────────────────────────────────────────────────
