@@ -105,7 +105,11 @@ class HybridRetriever:
         if not rowids:
             return []
 
-        return self._fetch_by_rowid(rowids, score_by_rowid, category)[:limit]
+        try:
+            return self._fetch_by_rowid(rowids, score_by_rowid, category)[:limit]
+        except Exception:
+            logger.warning("HybridRetriever: chunk row fetch failed", exc_info=True)
+            return []
 
     def _fetch_by_rowid(
         self,

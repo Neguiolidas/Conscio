@@ -15,11 +15,14 @@ Engine construction is deferred into the handlers, so `conscio version`,
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
 
 from . import __version__
+
+logger = logging.getLogger(__name__)
 
 # Empty sentinel: the effective model is resolved AFTER parsing in main()
 # (config.json 'model' > CONSCIO_MODEL), so a bare `conscio info` picks up the
@@ -427,7 +430,7 @@ def _cmd_ingest(path: str, category: str, chunk_size: int, overlap: float,
                       "category": category, **result},
             )
         except Exception:
-            pass
+            logger.warning("_cmd_ingest: event_bus.emit failed", exc_info=True)
     finally:
         eng.close()
     return 0
