@@ -96,3 +96,56 @@ def test_recall_prioritizes_processing_layer_on_near_tie(tmp_path):
     assert len(snippets) == 2
     # PROCESSING content surfaces first once the layer reorder is applied.
     assert "reflected insight" in snippets[0]
+
+
+class TestRecallSignatureUnchangedWithVectorBackend:
+    """Regression guard (v3.6): wiring VectorBackend/EmbeddingPipeline/
+    HybridRetriever into ConsciousnessEngine by default must NOT change
+    engine.recall()'s public contract. Production callers — mcp/server.py
+    ("snippets" key), agency/relay_cognize.py, and engine.py's own
+    reflect/goal/dream paths — depend on the exact signature (query, k=3,
+    categories=None) and on a list[str] return, not list[SearchResult].
+    """
+
+    def test_signature_unchanged(self, engine):
+        import inspect
+        sig = inspect.signature(engine.recall)
+        params = list(sig.parameters.values())
+        assert [p.name for p in params] == ["query", "k", "categories"]
+        assert params[1].default == 3
+        assert params[2].default is None
+        assert sig.return_annotation in ("list[str]", list, "list")
+
+    def test_hybrid_retriever_is_wired_in_by_default(self, engine):
+        assert engine._hybrid_retriever is not None
+        assert engine.content_layer._hybrid_retriever is engine._hybrid_retriever
+
+    def test_returns_list_of_str_with_real_vector_hit(self, engine):
+        """Force an actual vector-search hit (deterministic injected
+        embedder) and confirm recall() still returns list[str] snippets —
+        the hybrid third source must fuse transparently, never changing the
+        public return shape to SearchResult objects."""
+        from unittest.mock import MagicMock
+
+        vec = [1.0, 0.0, 0.0, 0.0]
+        # Match the injected vector's dimension (engine defaults to 384).
+        engine.vector_backend.dimension = 4
+        mock = MagicMock()
+        del mock.embed  # SentenceTransformer shape: .encode(), not .embed()
+        mock.encode.side_effect = lambda x: vec if isinstance(x, str) else [vec for _ in x]
+        engine.embedding_pipeline.embedding_provider._embedder = mock
+        engine.embedding_pipeline.embedding_provider.default_dimension = 4
+
+        engine.content_store.index(
+            label="vecdoc", content="vector-searchable unique payload",
+            category="reflection",
+        )
+        hits = engine.recall("vector-searchable unique payload", k=3)
+
+        assert isinstance(hits, list)
+        assert all(isinstance(h, str) for h in hits)
+        assert any("vector-searchable" in h for h in hits)
+
+    def test_categories_param_still_accepted_with_hybrid_wired(self, engine):
+        out = engine.recall("anything at all", k=1, categories=["reflection"])
+        assert isinstance(out, list)

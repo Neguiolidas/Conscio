@@ -98,11 +98,16 @@ class ContentLayerManager:
         content_store,
         world_model,
         session_rag_provider=None,
+        hybrid_retriever=None,
     ):
         self.content_store = content_store
         self.world_model = world_model
         self._session_rag_provider = session_rag_provider
         self._session_rag = None
+        # v3.6: optional HybridRetriever — adds VectorBackend dense search as
+        # a third fused source in recall(), alongside ContentStore FTS5 and
+        # SessionRAG. None (default) preserves exact pre-v3.6 behavior.
+        self._hybrid_retriever = hybrid_retriever
     
     @property
     def session_rag(self):
@@ -122,13 +127,15 @@ class ContentLayerManager:
     ) -> list[str]:
         """
         Retrieve relevant past context across sessions.
-        
-        Fuses two rankings with Reciprocal Rank Fusion: the lexical ranking from
+
+        Fuses rankings with Reciprocal Rank Fusion: the lexical ranking from
         ContentStore FTS5 (BM25 + porter/trigram RRF, then layer-prioritized
-        reorder) and, when SessionRAG is available (local Ollama up), the dense
-        semantic ranking. Cross-source agreement boosts a result; a strong
-        dense-only hit can outrank a weak lexical one. With RAG off it is exactly
-        the lexical order. Each snippet is length-bounded and de-duplicated.
+        reorder), and, when available, two optional dense rankings —
+        SessionRAG (local Ollama up) and HybridRetriever's VectorBackend
+        search (v3.6). Cross-source agreement boosts a result; a strong
+        dense-only hit can outrank a weak lexical one. With both dense
+        sources off it is exactly the lexical order. Each snippet is
+        length-bounded and de-duplicated.
         
         Args:
             query: Free-text query (e.g., current world_state + anomalies).
@@ -181,6 +188,18 @@ class ContentLayerManager:
                 _fuse([r.content for r in rag.search(query, limit=pool)])
         except Exception:
             logging.warning("SessionRAG search failed in recall()", exc_info=True)
+
+        # ── VectorBackend dense search (optional) — third fused source ──
+        try:
+            hr = self._hybrid_retriever
+            if hr is not None:
+                if categories:
+                    for cat in categories:
+                        _fuse([r.content for r in hr.vector_only_search(query, limit=pool, category=cat)])
+                else:
+                    _fuse([r.content for r in hr.vector_only_search(query, limit=pool)])
+        except Exception:
+            logging.warning("Vector search failed in recall()", exc_info=True)
 
         # Stable sort by fused score desc; ties keep insertion order (lexical
         # is fused first, so it wins a tie against an equal-rank dense hit).
