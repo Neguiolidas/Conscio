@@ -223,7 +223,7 @@
     card.className = "freshness-card";
     card.textContent = "Loading\u2026";
     container.appendChild(card);
-    fetch("/api/structural/freshness").then(function (r) { return r.json(); }).then(function (f) {
+    fetch("/api/structural/freshness?root=" + encodeURIComponent(App._activeProject ? App._activeProject.path || "" : "")).then(function (r) { return r.json(); }).then(function (f) {
       card.textContent = f.known ? (f.is_stale ? "\u26a0 stale" : "\u2713 fresh") : "\u2014";
       card.style.borderColor = f.is_stale ? "#e55" : "#5a5";
     }).catch(function () { card.textContent = "\u2014"; });
