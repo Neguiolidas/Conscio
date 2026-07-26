@@ -242,9 +242,25 @@
     card.textContent = "Loading\u2026";
     container.appendChild(card);
     fetch("/api/structural/freshness?root=" + encodeURIComponent(App._activeProject ? App._activeProject.path || "" : "")).then(function (r) { return r.json(); }).then(function (f) {
-      card.textContent = f.known ? (f.is_stale ? "\u26a0 stale" : "\u2713 fresh") : "\u2014";
-      card.style.borderColor = f.is_stale ? "#e55" : "#5a5";
-    }).catch(function () { card.textContent = "\u2014"; });
+      var msg, color, border;
+      if (!f.known) {
+        // Sem consent ou sem graph — não mostra card
+        card.style.display = "none";
+        return;
+      }
+      if (f.is_stale) {
+        msg = "\u26a0 graph outdated";
+        color = "#e55";
+        border = "#e55";
+      } else {
+        msg = "\u2713 up to date";
+        color = "#5a5";
+        border = "#5a5";
+      }
+      card.textContent = msg;
+      card.style.borderColor = border;
+      card.style.color = color;
+    }).catch(function () { card.style.display = "none"; });
 
     // detail panel
     var detail = document.createElement("div");
