@@ -30,6 +30,12 @@ _STATIC_WHITELIST = {"index.html", "app.js", "style.css", "d3.min.js"}
 _CONTENT_TYPES = {".html": "text/html", ".js": "application/javascript",
                   ".css": "text/css"}
 _DEFAULT_STORAGE = Path.home() / ".hermes" / "consciousness"
+
+
+def _workspace_id(root: Path) -> str:
+    """Derive a stable workspace ID (sha256 of path, first 16 chars)."""
+    import hashlib
+    return hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:16]
 # Reference: conscio/noosphere/paths.py:default_noosphere_db — keep in sync.
 _DEFAULT_NOOSPHERE = Path(
     os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "noosphere.db"
@@ -173,6 +179,7 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
                     "id": root_p.name,
                     "name": root_p.name,
                     "path": str(root_p),
+                    "ws_id": _workspace_id(root_p),
                     "has_graph": True,
                     "node_count": nodes,
                     "link_count": links,
@@ -194,6 +201,7 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
                     "id": entry.name,
                     "name": entry.name,
                     "path": str(entry),
+                    "ws_id": _workspace_id(entry),
                     "has_graph": True,
                     "node_count": nodes,
                     "link_count": links,
