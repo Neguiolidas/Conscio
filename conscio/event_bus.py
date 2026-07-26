@@ -63,6 +63,9 @@ VALID_TYPES = {
  "awake:changed",         # v1.5: Awake Mode (R9) toggled — auditable autonomy gate
  "workspace:changed",     # v1.5: active workspace root changed (env awareness)
  "structure:changed",     # v1.8: ingested structure drifted (graph rebuilt/moved)
+ "consent:request",        # v3.4.2: workspace requests structural consent (interactive)
+ "consent:granted",        # v3.4.2: user granted consent for a workspace
+ "consent:revoked",        # v3.4.2: user revoked consent for a workspace
  "proposal:audited",      # v2.0: MCP propose_* audited proposal (advisory)
  "host:event",            # v2.0: raw host event recorded via MCP note()
  "act:result",            # v2.0.1: host-executed action outcome (report_result)
