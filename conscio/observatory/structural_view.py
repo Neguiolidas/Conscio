@@ -74,8 +74,15 @@ class StructuralProjection:
         if not store._map:
             return {"known": False, "is_stale": False,
                     "graph_commit": "", "head_commit": None}
-        first_digest = next(iter(store._map.values()))
-        graph_commit = getattr(first_digest, "commit", "")
+        # Look up the digest for the specific workspace, not just the first one
+        from conscio.workspace import WorkspaceContext
+        ws = WorkspaceContext(explicit_root=root, emit=lambda *a, **k: None)
+        ws_id = ws.current().id
+        digest = store._map.get(ws_id)
+        graph_commit = getattr(digest, "commit", "") if digest else ""
+        if not graph_commit:
+            return {"known": False, "is_stale": False,
+                    "graph_commit": "", "head_commit": None}
         try:
             fr = compute_freshness(root, graph_commit)
             adv = fr.to_advisory()
