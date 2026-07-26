@@ -95,6 +95,48 @@ class TestVectorOnlySearch:
         assert not any(r.content == "alpha content" for r in results)
         store.close()
 
+    def test_category_is_pushed_down_into_vector_backend(self, tmp_path, vector_backend):
+        """The scope must reach SQL — post-filtering a full scan means every
+        scoped recall still pays for the whole index.
+        """
+        vectors = {"alpha content": [1.0, 0.0, 0.0, 0.0], "find alpha": [1.0, 0.0, 0.0, 0.0]}
+        store, pipeline = _wired_store(tmp_path, vector_backend, vectors)
+        store.index("doc1", "alpha content", "reference")
+
+        spy = MagicMock(wraps=vector_backend)
+        hr = HybridRetriever(content_store=store, vector_backend=spy,
+                              embedding_pipeline=pipeline)
+        hr.vector_only_search("find alpha", limit=5, category="reference")
+
+        assert spy.search.call_args.kwargs["category"] == "reference"
+        store.close()
+
+    def test_category_scope_does_not_underfill_when_other_category_dominates(
+        self, tmp_path, vector_backend
+    ):
+        """Regression: with a global top-k + post-filter, a category whose best
+        vectors all rank below another category's returns nothing.
+        """
+        q = [1.0, 0.0, 0.0, 0.0]
+        vectors: dict[str, list[float]] = {"the query": q}
+        store, pipeline = _wired_store(tmp_path, vector_backend, vectors)
+        for i in range(5):  # perfect matches, all in another category
+            text = f"reference doc {i}"
+            vectors[text] = q
+            store.index(f"ref{i}", text, "reference")
+        for i in range(4):  # weaker matches in the category we ask for
+            text = f"pentest doc {i}"
+            vectors[text] = [0.5, 0.866, 0.0, 0.0]
+            store.index(f"pen{i}", text, "pentest")
+
+        hr = HybridRetriever(content_store=store, vector_backend=vector_backend,
+                              embedding_pipeline=pipeline)
+        results = hr.vector_only_search("the query", limit=3, category="pentest")
+
+        assert len(results) == 3, "scoped dense leg under-filled"
+        assert all(r.source_category == "pentest" for r in results)
+        store.close()
+
     def test_no_vector_backend_returns_empty(self, tmp_path):
         store = ContentStore(db_path=tmp_path / "store.db")
         hr = HybridRetriever(content_store=store, vector_backend=None, embedding_pipeline=None)
