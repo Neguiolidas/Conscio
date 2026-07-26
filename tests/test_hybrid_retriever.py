@@ -134,6 +134,27 @@ class TestVectorOnlySearch:
         assert hr.vector_only_search("q") == []
         store.close()
 
+    def test_db_fetch_failure_does_not_raise(self, tmp_path, vector_backend, monkeypatch):
+        """Regression guard: vector_only_search() must be unconditionally
+        non-raising as its own docstring promises — not merely "safe" because
+        ContentLayerManager.recall() happens to wrap the call in try/except.
+        A locked/corrupt DB during the final row-fetch step must degrade to
+        [] just like the embedding and vector_backend.search() steps above it."""
+        vectors = {"doc": [1.0, 0.0, 0.0, 0.0], "q": [1.0, 0.0, 0.0, 0.0]}
+        store, pipeline = _wired_store(tmp_path, vector_backend, vectors)
+        store.index("doc1", "doc", "reference")
+
+        hr = HybridRetriever(content_store=store, vector_backend=vector_backend,
+                              embedding_pipeline=pipeline)
+
+        def _raise(*args, **kwargs):
+            raise RuntimeError("db locked")
+
+        monkeypatch.setattr(hr, "_fetch_by_rowid", _raise)
+
+        assert hr.vector_only_search("q") == []
+        store.close()
+
 
 # ─── search() — standalone combined RRF ─────────────────────────────────
 
