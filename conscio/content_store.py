@@ -147,14 +147,14 @@ class ContentStore:
         content_type: str = "prose",
         session_id: str = "",
         chunk_size: int = 2000,
-        overlap: float = 0.2,
+        overlap: float = 0.0,
     ) -> int:
         """
         Index content into FTS5 (porter + trigram).
 
         Long content is split into chunks at semantic boundaries (YAML,
         markdown headings, or paragraph boundaries) for better search
-        granularity. Adjacent chunks overlap by a configurable amount.
+        granularity. Adjacent chunks may overlap by a configurable amount.
 
         Args:
             label: Human-readable source label (e.g., "reflection_2026-06-04")
@@ -163,7 +163,7 @@ class ContentStore:
             content_type: One of VALID_CONTENT_TYPES
             session_id: Optional session identifier
             chunk_size: Max chars per chunk
-            overlap: Fraction of chunk_size to overlap between chunks (default 0.2 = 20%)
+            overlap: Fraction of chunk_size to overlap between chunks (default 0.0 = none; new callers can pass 0.2 for 20%)
 
         Returns:
             source_id of the created source
@@ -493,23 +493,26 @@ class ContentStore:
         self,
         content: str,
         chunk_size: int = 2000,
-        overlap: float = 0.2,
+        overlap: float = 0.0,
         content_type: str = "prose",
     ) -> list[str]:
         """
         Split content into chunks using semantic boundaries.
 
-        Dispatch strategy:
+        Dispatch strategy (only for non-prose content_type):
         1. If content_type == "yaml": split on YAML document boundaries
         2. Else if content contains markdown headings: split on heading boundaries
-        3. Else: split on paragraph boundaries
+        3. Else (or if content_type == "prose"): split on paragraph boundaries
+
+        For content_type == "prose" (default), always uses paragraph splitting
+        to preserve backward compatibility with existing callers.
 
         Overlap is applied across all strategies.
 
         Args:
             content: Text content to chunk
             chunk_size: Max chars per chunk (default 2000)
-            overlap: Fraction of chunk_size to overlap between chunks (default 0.2 = 20%)
+            overlap: Fraction of chunk_size to overlap between chunks (default 0.0 = none)
             content_type: Type of content, determines chunking strategy
 
         Returns:
@@ -521,11 +524,15 @@ class ContentStore:
         if not content:
             return [""]
 
-        # Dispatch on content_type (even for small content, apply semantic chunking)
+        # For default prose content_type, always use paragraph splitting (backward compatible)
+        if content_type == "prose":
+            return self._chunk_paragraphs(content, chunk_size, overlap)
+
+        # For non-prose content types, apply semantic dispatch
         if content_type == "yaml":
             return self._chunk_yaml(content, chunk_size, overlap)
 
-        # Check for markdown headings (regex: ^#{1,3}\s, multiline)
+        # Check for markdown headings (regex: ^#{1,3}\s, multiline) for other content types
         if re.search(r"^#{1,3}\s", content, re.MULTILINE):
             return self._chunk_by_headings(content, chunk_size, overlap)
 
