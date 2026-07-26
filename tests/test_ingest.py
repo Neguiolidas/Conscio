@@ -187,6 +187,99 @@ class TestIngestDirectory:
         ).fetchone()
         assert row["source_category"] == "reference"
 
+    def test_binary_oversized_and_hidden_dir_files_are_skipped_not_failed(
+        self, engine, tmp_path
+    ):
+        """Guard for the pentest-corpus finding: pointing ingest_directory at
+        a real reference corpus (PNGs/PDFs/ZIPs + a .git checkout) must not
+        read every binary as text or descend into VCS internals. Skipped
+        files must land in `skipped`, never in `failed`, and must still be
+        counted in `total` (not silently dropped)."""
+        corpus = tmp_path / "corpus"
+        corpus.mkdir()
+
+        # 1. Real text file — the only one that should be ingested.
+        (corpus / "real.txt").write_text(
+            "Actual prose content worth indexing.", encoding="utf-8"
+        )
+
+        # 2. Fake binary — NUL byte in a misleadingly-named .txt file.
+        (corpus / "fake_image.txt").write_bytes(
+            b"\x89PNG\r\n\x1a\n" + b"\x00" * 32 + b"binary junk"
+        )
+
+        # 3. Oversized text file — cap lowered via kwarg to keep the test fast.
+        (corpus / "huge.txt").write_text("x" * 2000, encoding="utf-8")
+
+        # 4. Hidden directory (simulating .git) containing a text file.
+        hidden = corpus / ".git"
+        hidden.mkdir()
+        (hidden / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+
+        result = engine.ingest_directory(
+            corpus, max_file_size_mb=1000 / (1024 * 1024)  # ~1000 bytes cap
+        )
+
+        # total == 3: real.txt, fake_image.txt, huge.txt — the hidden .git
+        # directory is pruned before .git/HEAD is ever seen by the walk, so
+        # it contributes nothing to total (not even a "skipped" count).
+        assert result["total"] == 3
+        assert result["ingested"] == 1
+        assert result["skipped"] == 2  # fake_image.txt (binary) + huge.txt (oversized)
+        assert result["failed"] == 0
+
+        # real.txt ingested; fake_image.txt (binary) and huge.txt (oversized)
+        # both skipped; .git/HEAD never walked at all.
+        titles = {
+            r["title"]
+            for r in engine.content_store.db.execute(
+                "SELECT title FROM chunks"
+            ).fetchall()
+        }
+        assert any("real.txt" in t for t in titles)
+        assert not any("fake_image.txt" in t for t in titles)
+        assert not any("huge.txt" in t for t in titles)
+        assert not any("HEAD" in t for t in titles)
+
+    def test_hidden_directory_is_never_walked(self, engine, tmp_path):
+        corpus = tmp_path / "corpus"
+        corpus.mkdir()
+        (corpus / "visible.txt").write_text("visible content", encoding="utf-8")
+        hidden = corpus / ".svn"
+        hidden.mkdir()
+        (hidden / "entries.txt").write_text("hidden content", encoding="utf-8")
+
+        result = engine.ingest_directory(corpus)
+
+        assert result["total"] == 1
+        assert result["ingested"] == 1
+
+    def test_oversized_file_is_skipped_not_failed(self, engine, tmp_path):
+        corpus = tmp_path / "corpus"
+        corpus.mkdir()
+        (corpus / "small.txt").write_text("small content", encoding="utf-8")
+        (corpus / "big.txt").write_text("y" * 5000, encoding="utf-8")
+
+        result = engine.ingest_directory(corpus, max_file_size_mb=1000 / (1024 * 1024))
+
+        assert result["total"] == 2
+        assert result["ingested"] == 1
+        assert result["skipped"] == 1
+        assert result["failed"] == 0
+
+    def test_binary_content_is_skipped_not_failed(self, engine, tmp_path):
+        corpus = tmp_path / "corpus"
+        corpus.mkdir()
+        (corpus / "real.md").write_text("# Real\n\nprose\n", encoding="utf-8")
+        (corpus / "sneaky.md").write_bytes(b"header\x00\x00\x00binary")
+
+        result = engine.ingest_directory(corpus)
+
+        assert result["total"] == 2
+        assert result["ingested"] == 1
+        assert result["skipped"] == 1
+        assert result["failed"] == 0
+
 
 # ─── vector side-effect (best-effort, degrades gracefully offline) ──────
 
