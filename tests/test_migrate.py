@@ -230,6 +230,39 @@ class TestMigrateWorldModel:
         row = migrator.db.execute("SELECT relevance FROM world_entities WHERE name = 'OKX'").fetchone()
         assert row["relevance"] == 0.9
 
+    def test_migrate_world_dict_shaped_entities(self, tmp_path):
+        """WorldModel's actual on-disk schema keys entities by name (dict, not
+        list) and stores relations as {from, relation, to} rather than
+        {source, target, relation_type} — the shape migrate.py originally
+        assumed. Real ~/.hermes/consciousness/world_model.json files use this
+        dict-shaped schema."""
+        s = tmp_path / "storage"
+        s.mkdir()
+        world = {
+            "entities": {
+                "OKX": {"type": "exchange", "state": "connected", "relevance": 0.9,
+                         "last_updated": "2026-06-04T12:00:00"},
+                "BTC-USDT": {"type": "market", "state": "listed", "relevance": 0.8,
+                             "last_updated": "2026-06-04T12:00:00"},
+            },
+            "relations": [
+                {"from": "OKX", "relation": "lists", "to": "BTC-USDT"},
+            ],
+        }
+        (s / "world_model.json").write_text(json.dumps(world, indent=2))
+        m = Migrator(storage_path=s, db_path=tmp_path / "test.db")
+        count = m.migrate_world_model()
+        assert count == 3  # 2 entities + 1 relation
+
+        names = {r["name"] for r in m.db.execute("SELECT name FROM world_entities").fetchall()}
+        assert names == {"OKX", "BTC-USDT"}
+
+        rel = m.db.execute("SELECT source, target, relation_type FROM world_relations").fetchone()
+        assert rel["source"] == "OKX"
+        assert rel["target"] == "BTC-USDT"
+        assert rel["relation_type"] == "lists"
+        m.close()
+
 
 # ─── Proposals Migration Tests ──────────────────────────────────────────
 
