@@ -58,6 +58,24 @@ class SearchResult:
 
 
 @dataclass
+class IndexResult:
+    """Outcome of an index() call.
+
+    status:
+      "new"            — new source, chunks written
+      "category_added" — content already known, chunks written for a new category
+      "duplicate"      — nothing written (same content, same category)
+    """
+    source_id: int
+    status: str
+    chunks_added: int = 0
+
+    @property
+    def is_new_content(self) -> bool:
+        return self.status != "duplicate"
+
+
+@dataclass
 class SourceInfo:
     """Metadata about a content source."""
     id: int
@@ -164,6 +182,23 @@ class ContentStore:
         chunk_size: int = 2000,
         overlap: float = 0.0,
     ) -> int:
+        """Index content into FTS5 — see index_ex(); returns the source_id."""
+        return self.index_ex(
+            label, content, category,
+            content_type=content_type, session_id=session_id,
+            chunk_size=chunk_size, overlap=overlap,
+        ).source_id
+
+    def index_ex(
+        self,
+        label: str,
+        content: str,
+        category: str,
+        content_type: str = "prose",
+        session_id: str = "",
+        chunk_size: int = 2000,
+        overlap: float = 0.0,
+    ) -> IndexResult:
         """
         Index content into FTS5 (porter + trigram).
 
@@ -181,7 +216,11 @@ class ContentStore:
             overlap: Fraction of chunk_size to overlap between chunks (default 0.0 = none; new callers can pass 0.2 for 20%)
 
         Returns:
-            source_id of the created source
+            IndexResult(source_id, status, chunks_added) — `status` tells a
+            caller whether real work happened ("new" / "category_added") or the
+            content was already indexed ("duplicate"). Without it, an ingest
+            summary counts a full re-run of an unchanged corpus as "14000
+            ingested", which is exactly the number used as evidence for CS1.
         """
         if category not in VALID_CATEGORIES:
             raise ValueError(f"Invalid category '{category}'. Must be one of: {VALID_CATEGORIES}")
@@ -208,9 +247,10 @@ class ContentStore:
                 (source_id, category),
             ).fetchone()
             if already:
-                return source_id
+                return IndexResult(source_id, "duplicate", 0)
             label = existing["label"]
             chunks = self._chunk_content(content, chunk_size=chunk_size, overlap=overlap, content_type=content_type)
+            pending: list[tuple[str, str]] = []
             for i, chunk in enumerate(chunks):
                 title = (f"{label}" if len(chunks) == 1
                          else f"{label} [part {i+1}/{len(chunks)}]")
@@ -224,9 +264,11 @@ class ContentStore:
                          session_id, timestamp))
                     if table == "chunks":
                         chunk_rowid = cursor.lastrowid
-                self._maybe_embed(chunk_rowid, chunk)
+                if chunk_rowid is not None:
+                    pending.append((f"chunk:{chunk_rowid}", chunk))
             self.db.commit()
-            return source_id
+            self._maybe_embed_batch(pending, category)
+            return IndexResult(source_id, "category_added", len(chunks))
 
         # Create source record
         cursor = self.db.execute(
@@ -238,6 +280,7 @@ class ContentStore:
         # Split into chunks at semantic boundaries (YAML, headings, or paragraphs)
         chunks = self._chunk_content(content, chunk_size=chunk_size, overlap=overlap, content_type=content_type)
 
+        pending = []
         for i, chunk in enumerate(chunks):
             title = f"{label}" if len(chunks) == 1 else f"{label} [part {i+1}/{len(chunks)}]"
             # Insert into both FTS5 tables
@@ -249,7 +292,8 @@ class ContentStore:
                 )
                 if table == "chunks":
                     chunk_rowid = cursor.lastrowid
-            self._maybe_embed(chunk_rowid, chunk)
+            if chunk_rowid is not None:
+                pending.append((f"chunk:{chunk_rowid}", chunk))
 
         # Update chunk count
         self.db.execute(
@@ -258,10 +302,22 @@ class ContentStore:
         )
         self.db.commit()
 
-        return source_id
+        # Embedding runs AFTER the FTS5 commit, in one batch: FTS5 is the
+        # primary, always-on path and must not be held open (nor rolled back)
+        # by a slow model call.
+        self._maybe_embed_batch(pending, category)
 
-    def _maybe_embed(self, chunk_rowid: int | None, chunk_text: str) -> None:
-        """Embed a chunk into the vector backend, if both are configured.
+        return IndexResult(source_id, "new", len(chunks))
+
+    def _maybe_embed_batch(
+        self, pending: list[tuple[str, str]], category: str | None = None
+    ) -> None:
+        """Embed a document's chunks into the vector backend, if configured.
+
+        One call per document, not per chunk: EmbeddingPipeline.embed_batch
+        does a single model invocation for all texts and a single vector-store
+        transaction. The previous per-chunk path paid a model call AND an
+        fsync-per-vector, which is the dominant cost at corpus scale.
 
         Keyed by the `chunks` FTS5 table's own rowid (not source_id — a
         source can have many chunks, and VectorBackend.add() is INSERT OR
@@ -269,17 +325,22 @@ class ContentStore:
         every chunk of a document onto a single vector). Using chunk_rowid
         also means a vector search hit maps directly onto the same
         `chunks.rowid` that `_rrf_merge()` already fetches full rows by.
+        `category` is denormalized onto the vector row so a category-scoped
+        recall can pre-filter candidates in SQL.
 
         Best-effort: embedding/storage failures are logged and swallowed so
         they never interrupt FTS5 ingestion, which is the primary, always-on
         path.
         """
-        if chunk_rowid is None or self.vector_backend is None or self.embeddings is None:
+        if not pending or self.vector_backend is None or self.embeddings is None:
             return
         try:
-            self.embeddings.embed_chunk(f"chunk:{chunk_rowid}", chunk_text)
+            self.embeddings.embed_batch(pending, category=category)
         except Exception as e:
-            logger.warning(f"ContentStore: embedding failed for chunk {chunk_rowid}: {e}")
+            logger.warning(
+                f"ContentStore: embedding failed for {len(pending)} chunk(s) "
+                f"of category {category!r}: {e}"
+            )
 
     def _chunk_by_headings(self, text: str, chunk_size: int = 2000, overlap: float = 0.2) -> list[str]:
         r"""
@@ -865,13 +926,32 @@ class ContentStore:
 
     # ─── Stats ───────────────────────────────────────────────────────
 
-    def _total_db_size(self) -> int:
-        """Total size of DB + WAL + SHM files in bytes."""
+    def _files_for(self, path: Path) -> int:
+        """Size of one SQLite DB plus its WAL/SHM sidecars, in bytes."""
         total = 0
         for suffix in ("", "-wal", "-shm"):
-            p = Path(str(self.db_path) + suffix)
+            p = Path(str(path) + suffix)
             if p.exists():
                 total += p.stat().st_size
+        return total
+
+    def _total_db_size(self) -> int:
+        """Total on-disk footprint of the knowledge store, in bytes.
+
+        Includes the sibling `vectors.db` when a VectorBackend is attached: the
+        vector store is deliberately placed under the same storage root so the
+        NFR2 budget (<600MB) is ONE checkable number — reporting only
+        conscio.db would under-report it by the size of the float32 blobs
+        (~330MB at target corpus scale), i.e. the check would pass while the
+        real budget was blown.
+        """
+        total = self._files_for(Path(str(self.db_path)))
+        vec_path = getattr(self.vector_backend, "db_path", None)
+        if vec_path is not None:
+            vec_path = Path(str(vec_path))
+            # Guard against double counting if both ever point at one file.
+            if vec_path != Path(str(self.db_path)):
+                total += self._files_for(vec_path)
         return total
 
     def stats(self) -> dict:
@@ -884,15 +964,25 @@ class ContentStore:
             "SELECT source_category, COUNT(*) as c FROM sources GROUP BY source_category"
         ).fetchall()
 
-        return {
+        total_bytes = self._total_db_size()
+        out = {
             "source_count": source_count,
             "chunk_count": chunk_count,
             "trigram_chunk_count": trigram_count,
             "categories": {r["source_category"]: r["c"] for r in categories},
             "db_path": str(self.db_path),
-            "db_size_kb": round(self._total_db_size() / 1024, 1),
-            "db_size_mb": round(self._total_db_size() / 1024 / 1024, 2),
+            "db_size_kb": round(total_bytes / 1024, 1),
+            "db_size_mb": round(total_bytes / 1024 / 1024, 2),
         }
+        if self.vector_backend is not None:
+            try:
+                out["vector_count"] = self.vector_backend.stats()["vectors"]
+                out["vector_db_size_mb"] = round(
+                    self._files_for(Path(str(self.vector_backend.db_path))) / 1024 / 1024, 2
+                )
+            except Exception as e:  # stats must never break a caller
+                logger.debug(f"ContentStore.stats: vector stats unavailable: {e}")
+        return out
 
     # ─── Lifecycle ───────────────────────────────────────────────────
 

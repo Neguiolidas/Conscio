@@ -195,3 +195,13 @@ COUNCIL_VOTES
 from conscio.pipelines import PROMOTION_GATES
 
 PROMOTION_GATES
+
+# ── knowledge store (v3.6) ─────────────────────────────────────────
+from conscio.content_store import IndexResult
+from conscio.embedding_pipeline import EmbeddingPipeline
+
+# Part of the IndexResult contract returned by index_ex() to callers/tests.
+IndexResult.chunks_added
+# Single-chunk entry point kept beside embed_batch() for callers that embed
+# one item at a time (ingestion itself now goes through embed_batch).
+EmbeddingPipeline.embed_chunk
