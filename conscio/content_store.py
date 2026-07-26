@@ -15,13 +15,18 @@ No MCP, no Node.js, no external deps.
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
 from .constants import DEFAULT_DB_PATH
+from .embedding_pipeline import EmbeddingPipeline
 from .timeutil import naive_utcnow
+from .vector_backend import VectorBackend
+
+logger = logging.getLogger(__name__)
 
 # ─── Data Classes ───────────────────────────────────────────────────────
 
@@ -85,7 +90,12 @@ class ContentStore:
     Search merges results from both via Reciprocal Rank Fusion.
     """
 
-    def __init__(self, db_path: str | Path | None = None):
+    def __init__(
+        self,
+        db_path: str | Path | None = None,
+        vector_backend: VectorBackend | None = None,
+        embeddings: EmbeddingPipeline | None = None,
+    ):
         self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -95,6 +105,11 @@ class ContentStore:
         self.db.row_factory = sqlite3.Row
 
         self._init_schema()
+
+        # Optional vector-search side channel. Both default to None, which
+        # preserves exact FTS5-only behavior for every existing caller.
+        self.vector_backend = vector_backend
+        self.embeddings = embeddings
 
     # ─── Schema ──────────────────────────────────────────────────────
 
@@ -199,13 +214,17 @@ class ContentStore:
             for i, chunk in enumerate(chunks):
                 title = (f"{label}" if len(chunks) == 1
                          else f"{label} [part {i+1}/{len(chunks)}]")
+                chunk_rowid: int | None = None
                 for table in ("chunks", "chunks_trigram"):
-                    self.db.execute(
+                    cursor = self.db.execute(
                         f"INSERT INTO {table} (title, content, source_id,"
                         " content_type, source_category, session_id, timestamp)"
                         " VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (title, chunk, source_id, content_type, category,
                          session_id, timestamp))
+                    if table == "chunks":
+                        chunk_rowid = cursor.lastrowid
+                self._maybe_embed(chunk_rowid, chunk)
             self.db.commit()
             return source_id
 
@@ -222,11 +241,15 @@ class ContentStore:
         for i, chunk in enumerate(chunks):
             title = f"{label}" if len(chunks) == 1 else f"{label} [part {i+1}/{len(chunks)}]"
             # Insert into both FTS5 tables
+            chunk_rowid = None
             for table in ("chunks", "chunks_trigram"):
-                self.db.execute(
+                cursor = self.db.execute(
                     f"INSERT INTO {table} (title, content, source_id, content_type, source_category, session_id, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (title, chunk, source_id, content_type, category, session_id, timestamp),
                 )
+                if table == "chunks":
+                    chunk_rowid = cursor.lastrowid
+            self._maybe_embed(chunk_rowid, chunk)
 
         # Update chunk count
         self.db.execute(
@@ -236,6 +259,27 @@ class ContentStore:
         self.db.commit()
 
         return source_id
+
+    def _maybe_embed(self, chunk_rowid: int | None, chunk_text: str) -> None:
+        """Embed a chunk into the vector backend, if both are configured.
+
+        Keyed by the `chunks` FTS5 table's own rowid (not source_id — a
+        source can have many chunks, and VectorBackend.add() is INSERT OR
+        REPLACE keyed by id, so keying on source_id would silently collapse
+        every chunk of a document onto a single vector). Using chunk_rowid
+        also means a vector search hit maps directly onto the same
+        `chunks.rowid` that `_rrf_merge()` already fetches full rows by.
+
+        Best-effort: embedding/storage failures are logged and swallowed so
+        they never interrupt FTS5 ingestion, which is the primary, always-on
+        path.
+        """
+        if chunk_rowid is None or self.vector_backend is None or self.embeddings is None:
+            return
+        try:
+            self.embeddings.embed_chunk(f"chunk:{chunk_rowid}", chunk_text)
+        except Exception as e:
+            logger.warning(f"ContentStore: embedding failed for chunk {chunk_rowid}: {e}")
 
     def _chunk_by_headings(self, text: str, chunk_size: int = 2000, overlap: float = 0.2) -> list[str]:
         r"""
