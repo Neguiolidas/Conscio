@@ -178,6 +178,21 @@ def test_direct_act_works_while_asleep(tmp_path):
         eng.close()
 
 
+def test_run_awake_uses_awake_budget_by_default(tmp_path):
+    """When awake and budget=None, engine.run() must use AwakeBudget (not ActBudget).
+    AwakeBudget has max_cycles=3; ActBudget has max_cycles=10."""
+    from conscio.awake.budget import AwakeBudget
+    eng = _engine(tmp_path)
+    _attach(eng, tmp_path, [_proposal(), "A1: NO\nA2: NO\nA3: YES"])
+    try:
+        eng.wake()
+        eng.goals.add_user_goal("write a memory note")
+        report = eng.run()  # no budget → must default to AwakeBudget
+        assert report.cycles <= AwakeBudget.max_cycles
+    finally:
+        eng.close()
+
+
 def test_run_awake_without_adapter_fails_cleanly(tmp_path):
     eng = _engine(tmp_path)
     try:

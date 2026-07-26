@@ -156,6 +156,19 @@ class DreamCycle:
         # (Distill), mirroring the dream protocol's biological framing. ──
         report.skills_distilled = self._distill(engine, dry_run=dry_run)
 
+        # v3.4.2: auto-publish distilled skills to the noosphere so the
+        # Society tab in the Observatory shows them. Best-effort: if
+        # noosphere is unreachable or publish fails, the dream still
+        # succeeds — skills are in the local DB regardless.
+        if not dry_run and report.skills_distilled > 0:
+            try:
+                from .noosphere import publish as _publish
+                from .noosphere import record_publish as _record_publish
+                _publish.run(storage=str(engine.storage))
+                _record_publish.run(storage=str(engine.storage))
+            except Exception:
+                pass  # best-effort; don't break the dream
+
         # Coherence after — same window; reflects this cycle's mutations.
         report.coherence_after = engine.coherence.assess(recent).score
 
