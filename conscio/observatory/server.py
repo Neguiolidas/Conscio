@@ -141,12 +141,31 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
 
     # v3.4.2: project discovery + per-project graph serving
     if path == "/api/projects":
-        root = workspace_root
+        root = query.get("root") or workspace_root
         if not root or not Path(root).is_dir():
             return Resp(200, [])
         projects = []
         try:
-            for entry in sorted(Path(root).iterdir()):
+            root_p = Path(root)
+            # Check if the root itself has a graph
+            gj = root_p / "graphify-out" / "graph.json"
+            if gj.exists():
+                try:
+                    raw = json.loads(gj.read_text())
+                    nodes = len(raw.get("nodes", []))
+                    links = len(raw.get("links", []))
+                except Exception:
+                    nodes, links = 0, 0
+                projects.append({
+                    "id": root_p.name,
+                    "name": root_p.name,
+                    "path": str(root_p),
+                    "has_graph": True,
+                    "node_count": nodes,
+                    "link_count": links,
+                })
+            # Check subdirectories
+            for entry in sorted(root_p.iterdir()):
                 if not entry.is_dir():
                     continue
                 gj = entry / "graphify-out" / "graph.json"
@@ -175,7 +194,12 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
     if m:
         pid = m.group(1)
         root = workspace_root or "."
-        gj = Path(root) / pid / "graphify-out" / "graph.json"
+        root_p = Path(root)
+        # If the pid matches the root dir name, graph is at root/graphify-out/
+        if pid == root_p.name:
+            gj = root_p / "graphify-out" / "graph.json"
+        else:
+            gj = root_p / pid / "graphify-out" / "graph.json"
         if not gj.exists():
             return _err(404, "not found", f"project '{pid}' has no graph.json")
         try:
