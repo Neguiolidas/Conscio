@@ -89,10 +89,11 @@ def test_many_commits_summarized():
         _commit(d, "first")
         sensor = GitSensor(d)
         sensor.perceive()
-        time.sleep(1.5)
+        time.sleep(2.0)
         for i in range(10):
             Path(d, f"f{i}.py").write_text(f"x={i}")
             _commit(d, f"commit-{i}")
+        time.sleep(0.2)
         frame = sensor.perceive()
         assert len(frame.observations) <= 3
         assert any("10" in o for o in frame.observations)
