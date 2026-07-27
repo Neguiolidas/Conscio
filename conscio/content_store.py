@@ -978,11 +978,15 @@ class ContentStore:
 
     def _mark_stale(self, source_id: int, reason: str = "content_changed") -> None:
         """Mark a source's chunks as stale (tombstone). Does NOT delete chunks."""
-        self.db.execute(
-            "INSERT OR REPLACE INTO source_tombstones (source_id, reason) VALUES (?, ?)",
-            (source_id, reason),
-        )
-        self.db.commit()
+        try:
+            self.db.execute(
+                "INSERT OR REPLACE INTO source_tombstones (source_id, reason) VALUES (?, ?)",
+                (source_id, reason),
+            )
+            self.db.commit()
+        except Exception:
+            # Source may not exist (FK violation) — ignore silently
+            pass
 
     def list_tombstones(self) -> list[dict]:
         """Return all tombstoned sources with reason and timestamp."""
