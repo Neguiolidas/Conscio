@@ -146,6 +146,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("--model", default=DEFAULT_MODEL)
     p_search.add_argument("--include-stale", action="store_true",
                           help="include tombstoned chunks")
+    p_search.add_argument("--exact", "-e", action="store_true",
+                          help="activate trigram index for exact substring match")
 
     p_manual = sub.add_parser(
         "manual",
@@ -468,13 +470,15 @@ def _cmd_ingest(path: str, category: str, chunk_size: int, overlap: float,
 
 
 def _cmd_search(query: str, k: int, category: str | None,
-                 storage: str, model: str, include_stale: bool) -> int:
+                 storage: str, model: str, include_stale: bool,
+                 exact: bool = False) -> int:
     """Search ContentStore and print results."""
     from .engine import ConsciousnessEngine
     eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage))
     try:
         results = eng.content_store.search(
             query, limit=k, category=category, include_stale=include_stale,
+            use_trigram=exact,
         )
         if not results:
             print("(no results)")
@@ -550,7 +554,8 @@ def main(argv: list[str] | None = None) -> int:
                            args.overlap, args.model, args.storage)
     if args.command == "search":
         return _cmd_search(args.query, args.k, args.category,
-                           args.storage, args.model, args.include_stale)
+                           args.storage, args.model, args.include_stale,
+                           exact=args.exact)
     if args.command == "manual":
         return _cmd_manual(open_it=getattr(args, "open", False))
     if args.command == "observatory":
