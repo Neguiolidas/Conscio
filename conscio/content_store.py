@@ -270,16 +270,16 @@ class ContentStore:
             for i, chunk in enumerate(chunks):
                 title = (f"{label}" if len(chunks) == 1
                          else f"{label} [part {i+1}/{len(chunks)}]")
-                chunk_rowid: int | None = None
-                for table in ("chunks", "chunks_trigram"):
-                    cursor = self.db.execute(
-                        f"INSERT INTO {table} (title, content, source_id,"
-                        " content_type, source_category, session_id, timestamp)"
-                        " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (title, chunk, source_id, content_type, category,
-                         session_id, timestamp))
-                    if table == "chunks":
-                        chunk_rowid = cursor.lastrowid
+                # Insert into porter FTS5
+                cursor = self.db.execute(
+                    "INSERT INTO chunks (title, content, source_id,"
+                    " content_type, source_category, session_id, timestamp)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (title, chunk, source_id, content_type, category,
+                     session_id, timestamp))
+                chunk_rowid = cursor.lastrowid
+                # Insert into trigram FTS5 (main DB pre-rebuild, or separate DB post-rebuild)
+                self._insert_trigram(title, chunk, chunk_rowid, source_id, content_type, category, session_id, timestamp)
                 if chunk_rowid is not None:
                     pending.append((f"chunk:{chunk_rowid}", chunk))
             self.db.commit()
@@ -299,15 +299,14 @@ class ContentStore:
         pending = []
         for i, chunk in enumerate(chunks):
             title = f"{label}" if len(chunks) == 1 else f"{label} [part {i+1}/{len(chunks)}]"
-            # Insert into both FTS5 tables
-            chunk_rowid = None
-            for table in ("chunks", "chunks_trigram"):
-                cursor = self.db.execute(
-                    f"INSERT INTO {table} (title, content, source_id, content_type, source_category, session_id, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (title, chunk, source_id, content_type, category, session_id, timestamp),
-                )
-                if table == "chunks":
-                    chunk_rowid = cursor.lastrowid
+            # Insert into porter FTS5 (always in main DB)
+            cursor = self.db.execute(
+                "INSERT INTO chunks (title, content, source_id, content_type, source_category, session_id, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (title, chunk, source_id, content_type, category, session_id, timestamp),
+            )
+            chunk_rowid = cursor.lastrowid
+            # Insert into trigram FTS5 (main DB pre-rebuild, or separate DB post-rebuild)
+            self._insert_trigram(title, chunk, chunk_rowid, source_id, content_type, category, session_id, timestamp)
             if chunk_rowid is not None:
                 pending.append((f"chunk:{chunk_rowid}", chunk))
 
@@ -879,6 +878,46 @@ class ContentStore:
             return set()
 
     # ─── Rebuild / Migration ──────────────────────────────────────────
+
+    def _insert_trigram(
+        self, title: str, content: str, rowid: int | None,
+        source_id: int, content_type: str, category: str,
+        session_id: str | None, timestamp: str,
+    ) -> None:
+        """
+        Insert a chunk into the trigram FTS5 index.
+
+        Post-rebuild: insert into conscio_trigram.db with explicit rowid
+        (keeping rowid parity with chunks table for RRF merge).
+        Pre-rebuild: insert into chunks_trigram in main DB (original behavior).
+        """
+        trigram_db_path = self.db_path.parent / "conscio_trigram.db"
+
+        if trigram_db_path.exists():
+            try:
+                conn = sqlite3.connect(str(trigram_db_path))
+                try:
+                    conn.execute(
+                        "INSERT INTO chunks_trigram (rowid, title, content, source_id, content_type, source_category, session_id, timestamp) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (rowid, title, content, source_id, content_type, category, session_id, timestamp),
+                    )
+                    conn.commit()
+                    return
+                finally:
+                    conn.close()
+            except sqlite3.OperationalError:
+                pass  # fall through to main DB
+
+        # Fallback: chunks_trigram in main DB (pre-rebuild)
+        try:
+            self.db.execute(
+                "INSERT INTO chunks_trigram (title, content, source_id, content_type, source_category, session_id, timestamp) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (title, content, source_id, content_type, category, session_id, timestamp),
+            )
+        except sqlite3.OperationalError:
+            pass  # table doesn't exist — skip
 
     def rebuild_db(self) -> dict:
         """
