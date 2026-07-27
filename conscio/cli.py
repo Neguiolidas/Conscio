@@ -133,6 +133,20 @@ def _build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--storage", default="",
                           help="storage dir (default: ~/.hermes)")
 
+    p_search = sub.add_parser(
+        "search",
+        help="search ContentStore (FTS5 + optional vector)")
+    p_search.add_argument("query", help="search query")
+    p_search.add_argument("--k", type=int, default=5,
+                          help="max results (default: 5)")
+    p_search.add_argument("--category", default=None,
+                          help="filter by category")
+    p_search.add_argument("--storage", default="",
+                          help="storage dir (default: ~/.hermes)")
+    p_search.add_argument("--model", default=DEFAULT_MODEL)
+    p_search.add_argument("--include-stale", action="store_true",
+                          help="include tombstoned chunks")
+
     p_manual = sub.add_parser(
         "manual",
         help="print the location of the usage manual (USAGE.md shipped with the package)")
@@ -453,6 +467,27 @@ def _cmd_ingest(path: str, category: str, chunk_size: int, overlap: float,
     return 0
 
 
+def _cmd_search(query: str, k: int, category: str | None,
+                 storage: str, model: str, include_stale: bool) -> int:
+    """Search ContentStore and print results."""
+    from .engine import ConsciousnessEngine
+    eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage))
+    try:
+        results = eng.content_store.search(
+            query, limit=k, category=category, include_stale=include_stale,
+        )
+        if not results:
+            print("(no results)")
+            return 0
+        for i, r in enumerate(results):
+            snippet = r.content[:120].replace("\n", " ").strip()
+            print(f"[{i+1}] {r.title} (score={r.rank:.3f})")
+            print(f"    {snippet}")
+        return 0
+    finally:
+        eng.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -513,6 +548,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "ingest":
         return _cmd_ingest(args.path, args.category, args.chunk_size,
                            args.overlap, args.model, args.storage)
+    if args.command == "search":
+        return _cmd_search(args.query, args.k, args.category,
+                           args.storage, args.model, args.include_stale)
     if args.command == "manual":
         return _cmd_manual(open_it=getattr(args, "open", False))
     if args.command == "observatory":
