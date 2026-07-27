@@ -1521,7 +1521,7 @@ class ConsciousnessEngine:
                 vector_backend=self.vector_backend, dimension=384
             )
             logger.info("Vectors auto-enabled (sentence_transformers available)")
-        except ImportError:
+        except Exception:
             logger.info("sentence_transformers not available — FTS5 only")
 
     # --- Lifecycle / Resource Cleanup ---
