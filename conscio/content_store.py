@@ -167,6 +167,13 @@ class ContentStore:
 
             CREATE INDEX IF NOT EXISTS idx_sources_label ON sources(label);
             CREATE INDEX IF NOT EXISTS idx_sources_category ON sources(source_category);
+
+            CREATE TABLE IF NOT EXISTS source_tombstones (
+                source_id INTEGER PRIMARY KEY,
+                reason TEXT NOT NULL DEFAULT 'content_changed',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (source_id) REFERENCES sources(id)
+            );
         """)
         self.db.commit()
 
@@ -229,6 +236,15 @@ class ContentStore:
 
         content_hash = hashlib.sha256(content.encode()).hexdigest()
         timestamp = naive_utcnow().isoformat()
+
+        # Tombstone check: if label exists with a DIFFERENT hash, mark old source stale
+        old_sources = self.db.execute(
+            "SELECT id, content_hash FROM sources WHERE label = ?",
+            (label,),
+        ).fetchall()
+        for old in old_sources:
+            if old["content_hash"] != content_hash:
+                self._mark_stale(int(old["id"]), "content_changed")
 
         # Check for duplicate content (same hash = source already indexed)
         existing = self.db.execute(
@@ -646,6 +662,7 @@ class ContentStore:
         category: str | None = None,
         content_type: str | None = None,
         since: str | None = None,
+        include_stale: bool = False,
     ) -> list[SearchResult]:
         """
         Search content using BM25 with dual-index RRF merge.
@@ -660,6 +677,7 @@ class ContentStore:
             category: Filter by source category
             content_type: Filter by content type
             since: ISO timestamp — only results after this time
+            include_stale: If True, include chunks from tombstoned sources
 
         Returns:
             List of SearchResult sorted by RRF score (descending)
@@ -671,6 +689,8 @@ class ContentStore:
         filter_clause = ""
         filter_params: list = []
 
+        if not include_stale:
+            filter_clause += " AND source_id NOT IN (SELECT source_id FROM source_tombstones)"
         if category:
             filter_clause += " AND source_category = ?"
             filter_params.append(category)
@@ -953,6 +973,31 @@ class ContentStore:
             if vec_path != Path(str(self.db_path)):
                 total += self._files_for(vec_path)
         return total
+
+    # ─── Tombstone ─────────────────────────────────────────────────
+
+    def _mark_stale(self, source_id: int, reason: str = "content_changed") -> None:
+        """Mark a source's chunks as stale (tombstone). Does NOT delete chunks."""
+        self.db.execute(
+            "INSERT OR REPLACE INTO source_tombstones (source_id, reason) VALUES (?, ?)",
+            (source_id, reason),
+        )
+        self.db.commit()
+
+    def list_tombstones(self) -> list[dict]:
+        """Return all tombstoned sources with reason and timestamp."""
+        rows = self.db.execute(
+            """SELECT t.source_id, t.reason, t.created_at, s.label
+               FROM source_tombstones t
+               JOIN sources s ON s.id = t.source_id
+               ORDER BY t.created_at DESC"""
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def _stale_source_ids(self) -> set[int]:
+        """Return set of tombstoned source IDs (for filtering in search)."""
+        rows = self.db.execute("SELECT source_id FROM source_tombstones").fetchall()
+        return {r["source_id"] for r in rows}
 
     def stats(self) -> dict:
         """Return store statistics."""
