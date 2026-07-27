@@ -663,6 +663,7 @@ class ContentStore:
         content_type: str | None = None,
         since: str | None = None,
         include_stale: bool = False,
+        use_trigram: bool = False,
     ) -> list[SearchResult]:
         """
         Search content using BM25 with dual-index RRF merge.
@@ -678,12 +679,21 @@ class ContentStore:
             content_type: Filter by content type
             since: ISO timestamp — only results after this time
             include_stale: If True, include chunks from tombstoned sources
+            use_trigram: If True, include trigram index in search (exact match).
+                If False (default), porter-only search. Auto-detect overrides
+                this to True when the query pattern suggests substring search
+                (code, file paths, IDs like "T1569.002").
 
         Returns:
             List of SearchResult sorted by RRF score (descending)
         """
         if not query.strip():
             return []
+
+        # Auto-detect: queries with dots, slashes, dashes, underscores, or
+        # dotted numbers suggest code/identifiers — activate trigram.
+        if not use_trigram and self._query_needs_trigram(query):
+            use_trigram = True
 
         # Build WHERE clause for filters
         filter_clause = ""
@@ -706,15 +716,29 @@ class ContentStore:
             "chunks", query, limit * 3, filter_clause, filter_params
         )
 
-        # Trigram search (BM25)
-        trigram_results = self._fts_search(
-            "chunks_trigram", query, limit * 3, filter_clause, filter_params
+        if not use_trigram:
+            # Porter-only: wrap in RRF with empty trigram for consistent shape
+            return self._rrf_merge(porter_results, [])[:limit]
+
+        # Trigram search (BM25) — from separate DB or fallback to main DB
+        trigram_results = self._fts_search_trigram(
+            query, limit * 3, filter_clause, filter_params
         )
 
         # Merge via RRF
         merged = self._rrf_merge(porter_results, trigram_results)
 
         return merged[:limit]
+
+    _TRIGGER_PATTERN_RE = re.compile(
+        r"[./\\_\-]"           # dots, slashes, backslashes, underscores, dashes
+        r"|\d+\.\d+"           # dotted numbers (e.g., T1569.002, CVE-2024-1234)
+        r"|\d{4,}",            # 4+ consecutive digits (log IDs, hashes)
+    )
+
+    def _query_needs_trigram(self, query: str) -> bool:
+        """Heuristic: detect if query benefits from trigram (substring) search."""
+        return bool(self._TRIGGER_PATTERN_RE.search(query))
 
     def _fts_search(
         self,
@@ -766,6 +790,234 @@ class ContentStore:
         # bm25() returns negative scores (more negative = better match)
         # Convert to positive for RRF (lower bm25 = higher rank)
         return [(row["rowid"], row["score"]) for row in rows]
+
+    def _fts_search_trigram(
+        self,
+        query: str,
+        limit: int,
+        filter_clause: str,
+        filter_params: list,
+    ) -> list[tuple[int, float]]:
+        """
+        Execute trigram FTS5 BM25 search, using a separate DB if available.
+
+        Resolution order:
+        1. If `conscio_trigram.db` exists alongside the main DB, search there.
+        2. If it does not exist, fall back to `chunks_trigram` in the main DB
+           (pre-rebuild state — transparent backward compatibility).
+        3. If neither has a `chunks_trigram` table, return [] (no trigram
+           index available at all).
+
+        Note: filter_clause may reference source_tombstones which only exists
+        in the main DB. When searching the separate trigram DB, we strip the
+        tombstone filter and apply it post-query against the main DB instead.
+        """
+        trigram_db_path = self.db_path.parent / "conscio_trigram.db"
+
+        # Split filter clause: tombstone filter stays in main DB, rest goes to trigram
+        tombstone_filter = ""
+        safe_clause = filter_clause
+        if "source_tombstones" in filter_clause:
+            # Extract tombstone sub-clause for post-filter
+            tombstone_filter = " AND source_id NOT IN (SELECT source_id FROM source_tombstones)"
+            safe_clause = filter_clause.replace(
+                " AND source_id NOT IN (SELECT source_id FROM source_tombstones)", ""
+            )
+
+        # Try separate trigram DB first
+        if trigram_db_path.exists():
+            try:
+                conn = sqlite3.connect(str(trigram_db_path))
+                conn.row_factory = sqlite3.Row
+                try:
+                    escaped = self._escape_fts_query(query, "chunks_trigram")
+                    if not escaped:
+                        return []
+                    rows = conn.execute(
+                        f"""
+                        SELECT rowid, bm25(chunks_trigram) as score
+                        FROM chunks_trigram
+                        WHERE chunks_trigram MATCH ?{safe_clause}
+                        ORDER BY score
+                        LIMIT ?
+                        """,
+                        [escaped] + filter_params + [limit],
+                    ).fetchall()
+                    results = [(row["rowid"], row["score"]) for row in rows]
+                    # Post-filter tombstones against main DB
+                    if tombstone_filter:
+                        tombed_ids = self._get_tombstoned_source_ids()
+                        if tombed_ids:
+                            results = [r for r in results if r[0] not in tombed_ids]
+                    return results
+                finally:
+                    conn.close()
+            except sqlite3.OperationalError:
+                pass  # fall through to main DB
+
+        # Fallback: use chunks_trigram from main DB (pre-rebuild state)
+        try:
+            table_exists = self.db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_trigram'"
+            ).fetchone()
+            if not table_exists:
+                return []
+            return self._fts_search(
+                "chunks_trigram", query, limit, filter_clause, filter_params
+            )
+        except sqlite3.OperationalError:
+            return []
+
+    def _get_tombstoned_source_ids(self) -> set[int]:
+        """Return set of source_ids that are tombstoned (empty if table missing)."""
+        try:
+            rows = self.db.execute(
+                "SELECT source_id FROM source_tombstones"
+            ).fetchall()
+            return {row["source_id"] for row in rows}
+        except sqlite3.OperationalError:
+            return set()
+
+    # ─── Rebuild / Migration ──────────────────────────────────────────
+
+    def rebuild_db(self) -> dict:
+        """
+        Migrate trigram index from main DB to a separate conscio_trigram.db.
+
+        Steps:
+        1. Check if chunks_trigram exists in main DB (idempotent — skip if not)
+        2. Backup conscio.db → conscio.db.bak
+        3. Create conscio_trigram.db with chunks_trigram schema
+        4. Copy all chunk data (with explicit rowids) to trigram DB
+        5. DROP chunks_trigram from main DB
+        6. VACUUM main DB (recovers ~230MB)
+        7. If any step fails, restore from backup
+
+        Returns:
+            Dict with migration stats: {migrated, db_size_before, db_size_after, trigram_size}
+        """
+        import shutil
+
+        # Idempotency: if chunks_trigram not in main DB, already migrated
+        has_trigram = self.db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_trigram'"
+        ).fetchone()
+        if not has_trigram:
+            logger.info("rebuild_db: chunks_trigram already migrated, skipping")
+            return {"migrated": 0, "status": "already_migrated"}
+
+        # Count chunks to migrate
+        chunk_count = self.db.execute(
+            "SELECT COUNT(*) as c FROM chunks_trigram"
+        ).fetchone()["c"]
+
+        # Backup main DB
+        backup_path = self.db_path.with_suffix(".db.bak")
+        self.db.close()
+        shutil.copy2(str(self.db_path), str(backup_path))
+        self.db = sqlite3.connect(str(self.db_path))
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("PRAGMA foreign_keys=ON")
+        self.db.row_factory = sqlite3.Row
+
+        size_before = self.db_path.stat().st_size
+
+        try:
+            # Create trigram DB
+            trigram_db_path = self.db_path.parent / "conscio_trigram.db"
+            if trigram_db_path.exists():
+                trigram_db_path.unlink()
+
+            tri_conn = sqlite3.connect(str(trigram_db_path))
+            tri_conn.row_factory = sqlite3.Row
+            tri_conn.execute("PRAGMA journal_mode=WAL")
+            tri_conn.execute("""
+                CREATE VIRTUAL TABLE chunks_trigram USING fts5(
+                    title,
+                    content,
+                    source_id UNINDEXED,
+                    content_type UNINDEXED,
+                    source_category UNINDEXED,
+                    session_id UNINDEXED,
+                    timestamp UNINDEXED,
+                    tokenize='trigram'
+                )
+            """)
+            tri_conn.commit()
+
+            # Copy chunks with explicit rowids using cursor (avoids OFFSET O(n²))
+            batch_size = 1000
+            last_rowid = -1
+            while True:
+                rows = self.db.execute(
+                    """
+                    SELECT rowid, title, content, source_id, content_type,
+                           source_category, session_id, timestamp
+                    FROM chunks_trigram
+                    WHERE rowid > ?
+                    ORDER BY rowid
+                    LIMIT ?
+                    """,
+                    [last_rowid, batch_size],
+                ).fetchall()
+                if not rows:
+                    break
+                placeholders = ",".join(["(?,?,?,?,?,?,?,?)"] * len(rows))
+                values = []
+                for row in rows:
+                    values.extend([
+                        row["rowid"], row["title"], row["content"],
+                        row["source_id"], row["content_type"],
+                        row["source_category"], row["session_id"], row["timestamp"]
+                    ])
+                    last_rowid = row["rowid"]
+                tri_conn.execute(
+                    f"INSERT INTO chunks_trigram(rowid, title, content, source_id, "
+                    f"content_type, source_category, session_id, timestamp) "
+                    f"VALUES {placeholders}",
+                    values
+                )
+                tri_conn.commit()
+
+            tri_conn.close()
+
+            # Drop trigram from main DB
+            self.db.execute("DROP TABLE chunks_trigram")
+            self.db.commit()
+            self.db.execute("VACUUM")
+            self.db.commit()
+
+            size_after = self.db_path.stat().st_size
+            trigram_size = trigram_db_path.stat().st_size
+
+            logger.info(
+                f"rebuild_db: migrated {chunk_count} chunks, "
+                f"main DB {size_before/1048576:.1f}MB → {size_after/1048576:.1f}MB, "
+                f"trigram DB {trigram_size/1048576:.1f}MB"
+            )
+
+            return {
+                "migrated": chunk_count,
+                "db_size_before": size_before,
+                "db_size_after": size_after,
+                "trigram_size": trigram_size,
+                "status": "ok",
+            }
+
+        except Exception as e:
+            # Rollback: restore from backup
+            logger.error(f"rebuild_db failed: {e}, restoring from backup")
+            self.db.close()
+            shutil.copy2(str(backup_path), str(self.db_path))
+            # Remove partial trigram DB
+            trigram_db_path = self.db_path.parent / "conscio_trigram.db"
+            if trigram_db_path.exists():
+                trigram_db_path.unlink()
+            self.db = sqlite3.connect(str(self.db_path))
+            self.db.execute("PRAGMA journal_mode=WAL")
+            self.db.execute("PRAGMA foreign_keys=ON")
+            self.db.row_factory = sqlite3.Row
+            raise
 
     def _escape_fts_query(self, query: str, table: str) -> str:
         """

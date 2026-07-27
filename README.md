@@ -14,11 +14,10 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.6.1` "Knowledge Store":**
-Consciousness gets semantic memory. Adds semantic chunking (heading/YAML/paragraph
-splitting), vector search that auto-detects sentence_transformers (override with
-CONSCIO_VECTORS=0), ingest_directory (conscio ingest), HybridRetriever (BM25 + cosine
-RRF), and tombstone tracking for stale content detection. 2746+ tests, stdlib-only core.
+**Latest release — `v3.6.3` "Storage Optimization":**
+Trigram FTS5 index moved to a separate DB (~40% main DB size reduction). New
+`search(use_trigram=)` with auto-detect for code-like queries, `conscio search --exact`,
+and `rebuild_db()` migration with backup/rollback. 2777+ tests, stdlib-only core.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.6.3] - 2026-07-27 — Storage Optimization
+
+### Added
+
+- **Trigram DB separation**: `rebuild_db()` migrates the trigram FTS5 index
+  from `conscio.db` to a separate `conscio_trigram.db`, reducing the main
+  DB by ~40%. The trigram index is created on demand and searched via a
+  transparent fallback when the separate DB exists.
+- **`search(use_trigram=)` parameter**: when `False` (default), porter-only
+  search for faster queries. When `True`, activates trigram for exact
+  substring matching (code, IDs, file paths).
+- **Auto-detect trigram**: queries containing dots, slashes, dashes,
+  dotted numbers (e.g., `T1569.002`, `certutil.exe`) automatically
+  activate trigram search without the explicit flag.
+- **`conscio search --exact`**: CLI flag to force trigram search.
+- **`rebuild_db()`**: idempotent migration with automatic backup, rollback
+  on failure, WAL journal for trigram DB, and cursor-based batch copy
+  (O(n) instead of O(n²) OFFSET).
+
+### Changed
+
+- Default `search()` now uses porter-only (dual-index RRF only when
+  trigram is explicitly requested or auto-detected).
+
+---
+
 ## [3.6.1] - 2026-07-26 — Gap Close
 
 ### Added
