@@ -89,6 +89,7 @@ class Intercepter:
 
     def __init__(self) -> None:
         self._functions: dict[str, Callable[..., Any]] = {}
+        self._variables: dict[str, int | float | str | bool] = {}
         self._register_defaults()
 
     def _register_defaults(self) -> None:
@@ -165,6 +166,34 @@ class Intercepter:
             pass  # dry-run failure is OK (e.g. sqrt(-1) raises)
 
         self._functions[name] = fn
+
+    def set_variable(self, name: str, value: int | float | str | bool) -> None:
+        """Bind a variable for use in [INTERCEPT: ...] tags.
+
+        Variables allow stateful expressions like [INTERCEPT: x * 2 + 1]
+        where x was previously bound via set_variable('x', 42).
+
+        Security: only primitive types (int, float, str, bool) are accepted.
+        Variable names must not shadow registered functions or builtins.
+        """
+        if name in self._ALLOWED_FUNCS:
+            raise ValueError(f"name '{name}' shadows a builtin")
+        if name in self._functions:
+            raise ValueError(f"name '{name}' shadows a registered function")
+        if not isinstance(value, tuple(self._ALLOWED_PARAM_TYPES)):
+            raise ValueError(
+                f"variable value must be int, float, str, or bool, "
+                f"got {type(value).__name__}"
+            )
+        self._variables[name] = value
+
+    def get_variable(self, name: str) -> int | float | str | bool | None:
+        """Return the value of a bound variable, or None if not bound."""
+        return self._variables.get(name)
+
+    def clear_variables(self) -> None:
+        """Remove all bound variables."""
+        self._variables.clear()
 
     # ── public API ──
 
@@ -289,8 +318,16 @@ class Intercepter:
         if isinstance(node, ast.Set):
             raise InterceptError("set literals not supported")
         if isinstance(node, ast.Name):
+            var_name = node.id
+            # Resolve bound variables
+            if var_name in self._variables:
+                return self._variables[var_name]
+            # Check math constants
+            if var_name in ("pi", "e", "tau", "inf"):
+                return getattr(math, var_name)
             raise InterceptError(
-                f"variable '{node.id}' not supported — stateless evaluation"
+                f"variable '{var_name}' not bound — "
+                f"use set_variable() to bind it"
             )
         if isinstance(node, ast.BoolOp):
             raise InterceptError("boolean operators not supported")
