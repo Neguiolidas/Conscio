@@ -203,6 +203,7 @@ class Bindings:
                 rule_text=a.get("rule_text", ""),
                 rule_id=a.get("rule_id")),
             "conscio.health": lambda a: self.engine.health_check(),
+            "conscio.intercept": self._intercept,
             # ── v3.2 Memory tools ──
             "conscio.kg_query": lambda a: self._kg_query(a),
             "conscio.wings_search": lambda a: self._wings_search(a),
@@ -435,6 +436,45 @@ class Bindings:
                if isinstance(i, int) and not isinstance(i, bool)]  # R1-menor
         n = mailbox.mark_read(self.liaison_db, ids)
         return {"ok": True, "marked": n}
+
+    def _intercept(self, args: dict) -> dict:
+        """Evaluate a safe expression via the Intercepter AST evaluator."""
+        from conscio.agency.intercepter import Intercepter
+
+        expr = self._require(args, "expression")
+        variables = args.get("variables") or {}
+
+        itc = Intercepter()
+        for name, value in variables.items():
+            try:
+                itc.set_variable(name, value)
+            except ValueError as exc:
+                return {"ok": False, "error": str(exc),
+                        "expression": expr}
+
+        tag = expr if expr.strip().startswith("[INTERCEPT:") else f"[INTERCEPT: {expr}]"
+        result = itc.process(tag)
+
+        # Extract the result value from the inline format
+        if "[RESULT:" in result.text:
+            value_str = result.text.split("[RESULT:")[1].rstrip("]")
+            try:
+                if "." in value_str or "e" in value_str.lower():
+                    value: int | float | str = float(value_str)
+                else:
+                    value = int(value_str)
+            except ValueError:
+                value = value_str
+        elif "[ERROR:" in result.text:
+            error_msg = result.text.split("[ERROR:")[1].rstrip("]")
+            return {"ok": False, "error": error_msg, "expression": expr}
+        else:
+            return {"ok": False, "error": "no result or error in output",
+                    "expression": expr, "raw": result.text}
+
+        return {"ok": True, "expression": expr, "result": value,
+                "intercepted": result.intercepted, "count": result.count,
+                "errors": [e for e in result.errors if e]}
 
     @staticmethod
     def _require(args: dict, key: str):

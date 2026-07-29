@@ -261,10 +261,6 @@ class TestRegisterFunction:
 
 # Task 5a: Variable Support
 
-def solve_linear(a: float, b: float, c: float, d: float) -> float:
-    """Solve ax + b = cx + d for x."""
-    return (d - b) / (a - c)
-
 
 class TestVariables:
     def test_set_get_variable(self):
@@ -311,15 +307,22 @@ class TestVariables:
         assert inter.get_variable("x") is None
 
     def test_solve_linear_equation_with_variables(self):
-        """Solve ax + b = cx + d using variables bound per-step."""
+        """Solve ax + b = cx + d using variables bound per-step.
+        solve_linear is now a default function, no need to register."""
         inter = Intercepter()
-        inter.register_function("solve_linear", solve_linear)
         inter.set_variable("a", 73/3)
         inter.set_variable("b", -75/2)
         inter.set_variable("c", 1)
         inter.set_variable("d", 6)
         r = inter.process("[INTERCEPT: solve_linear(a, b, c, d)]")
         assert "[RESULT: 1.864" in r.text
+
+    def test_solve_linear_no_variables(self):
+        """solve_linear works with inline constants too."""
+        inter = Intercepter()
+        r = inter.process("[INTERCEPT: solve_linear(2, 3, 1, 7)]")
+        # 2x + 3 = x + 7 -> x = 4
+        assert "[RESULT: 4" in r.text
 
     def test_complex_nesting_with_variable_set(self):
         """Complex nesting still works when variables are set."""

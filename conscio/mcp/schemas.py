@@ -288,6 +288,27 @@ BASE_TOOL_DEFS: list[dict] = [
                     "stale entity count. Pure read-only.",
      "inputSchema": {"type": "object",
                      "properties": {}}},
+    {"name": "conscio.intercept",
+     "description": "Evaluate a safe expression or [INTERCEPT: ...] tag using "
+                    "the Intercepter AST evaluator. Supports arithmetic, math "
+                    "functions (sqrt, floor, ceil, log, sin, cos, tan, "
+                    "solve_linear), bound variables, and comparisons. "
+                    "Pass variables as a dict of name->value to bind them "
+                    "before evaluation. Returns the result or error.",
+     "inputSchema": {"type": "object",
+                     "properties": {
+                         "expression": {"type": "string",
+                            "description": "Expression to evaluate. If wrapped "
+                                           "in [INTERCEPT: ...] the tag is "
+                                           "parsed; otherwise the raw "
+                                           "expression is evaluated directly."},
+                         "variables": {"type": "object",
+                            "description": "Variables to bind before "
+                                           "evaluation. Keys are names, "
+                                           "values must be int, float, str, "
+                                           "or bool."},
+                     },
+                     "required": ["expression"]}},
 ]
 
 RESOURCE_DEFS: list[dict] = [

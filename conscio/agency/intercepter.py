@@ -65,6 +65,14 @@ class InterceptError(Exception):
     """Raised for any Intercepter evaluation failure."""
 
 
+def _solve_linear(a: float, b: float, c: float, d: float) -> float:
+    """Solve ax + b = cx + d for x. Returns x = (d - b) / (a - c)."""
+    denom = a - c
+    if denom == 0:
+        raise ValueError("no unique solution: a == c")
+    return (d - b) / denom
+
+
 class Intercepter:
     """Safe AST evaluator for [INTERCEPT: expr] tags."""
 
@@ -101,6 +109,7 @@ class Intercepter:
             "sin": math.sin,
             "cos": math.cos,
             "tan": math.tan,
+            "solve_linear": _solve_linear,
         }
         for name, fn in defaults.items():
             self._functions[name] = fn
