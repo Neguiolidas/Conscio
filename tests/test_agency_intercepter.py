@@ -3,6 +3,7 @@
 
 Origin: Think-Vetor DSL concept (CromIA). Reimplemented from scratch.
 """
+import math
 import os
 
 import pytest
@@ -251,16 +252,84 @@ class TestRegisterFunction:
     def test_register_dry_run_failure_ok(self):
         """Registration should succeed even if dry-run with zero fails."""
         inter = Intercepter()
-        def safe_sqrt(x: float) -> float:
-            if x < 0:
-                raise ValueError("domain error")
-            return x ** 0.5
+        def safe_sqrt(n: float) -> float:
+            return n ** 0.5
         inter.register_function("my_sqrt", safe_sqrt)
         r = inter.process("[INTERCEPT: my_sqrt(9)]")
         assert "[RESULT: 3" in r.text
 
 
-# ── Task 6: InterceptionLoop ──
+# Task 5a: Variable Support
+
+def solve_linear(a: float, b: float, c: float, d: float) -> float:
+    """Solve ax + b = cx + d for x."""
+    return (d - b) / (a - c)
+
+
+class TestVariables:
+    def test_set_get_variable(self):
+        inter = Intercepter()
+        inter.set_variable("x", 42)
+        assert inter.get_variable("x") == 42
+        assert inter.get_variable("y") is None
+
+    def test_simple_variable_expression(self):
+        inter = Intercepter()
+        inter.set_variable("x", 10)
+        r = inter.process("[INTERCEPT: x + 5]")
+        assert "[RESULT: 15" in r.text
+
+    def test_variable_with_math_constant(self):
+        inter = Intercepter()
+        inter.set_variable("r", 3.0)
+        r = inter.process("[INTERCEPT: r * r * pi]")
+        assert "[RESULT:" in r.text
+
+    def test_unbound_variable_error(self):
+        inter = Intercepter()
+        r = inter.process("[INTERCEPT: z + 1]")
+        assert "[ERROR:" in r.text
+        assert "z" in r.text
+
+    def test_variable_shadows_builtin_rejected(self):
+        inter = Intercepter()
+        with pytest.raises(ValueError, match="shadows a builtin"):
+            inter.set_variable("abs", 5)
+
+    def test_variable_shadows_function_rejected(self):
+        inter = Intercepter()
+        def safe_sqrt(n: float) -> float:
+            return n ** 0.5
+        inter.register_function("safe_sqrt", safe_sqrt)
+        with pytest.raises(ValueError, match="shadows a registered function"):
+            inter.set_variable("sqrt", 16)
+
+    def test_clear_variables(self):
+        inter = Intercepter()
+        inter.set_variable("x", 10)
+        inter.clear_variables()
+        assert inter.get_variable("x") is None
+
+    def test_solve_linear_equation_with_variables(self):
+        """Solve ax + b = cx + d using variables bound per-step."""
+        inter = Intercepter()
+        inter.register_function("solve_linear", solve_linear)
+        inter.set_variable("a", 73/3)
+        inter.set_variable("b", -75/2)
+        inter.set_variable("c", 1)
+        inter.set_variable("d", 6)
+        r = inter.process("[INTERCEPT: solve_linear(a, b, c, d)]")
+        assert "[RESULT: 1.864" in r.text
+
+    def test_complex_nesting_with_variable_set(self):
+        """Complex nesting still works when variables are set."""
+        inter = Intercepter()
+        inter.set_variable("x", 100)
+        r = inter.process("[INTERCEPT: 2**(8 + 2) + sqrt(81)]")
+        assert "[RESULT: 1033" in r.text
+
+
+# Task 6: InterceptionLoop
 
 from conscio.agency.adapter import MockAdapter
 from conscio.agency.intercepter import InterceptionLoop
