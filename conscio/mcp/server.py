@@ -66,7 +66,9 @@ class Bindings:
 
         # v3.7: ModeRouter — chunkifica output conforme prompt_complexity
         from .mode_router import ModeRouter
-        self._router = ModeRouter(engine.storage)
+        import tempfile as _tempfile
+        storage = getattr(engine, "storage", Path(_tempfile.gettempdir()))
+        self._router = ModeRouter(storage)
 
     # ── discovery ──
     def version(self) -> str:

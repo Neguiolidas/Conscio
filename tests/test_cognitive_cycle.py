@@ -94,6 +94,7 @@ def test_mcp_exposes_cognitive_cycle(tmp_path):
     from conscio.mcp.seen import SeenStore
     from conscio.mcp.server import Bindings
     eng = ConsciousnessEngine("glm-5.1", storage_path=tmp_path / "s")
+    (tmp_path / "s" / "daemon_control.json").write_text('{"prompt_complexity":"full"}')
     seen = SeenStore(tmp_path / "seen.db")
     b = Bindings(eng, seen, adapter_name=None, workspace_id="ws")
     try:
