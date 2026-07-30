@@ -30,8 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Model**: DeepSeek V4 Flash (`custom:nvm3/deepseek -ai/deepseek-v4-flash`)
-  replaces Kimi K2.6 in daemon_control.json.
 - **Default payload mode**: in `daemon_control.json` changed from `full` to `compact`.
 - **MCP server**: council/evaluate/cognitive_cycle handlers now pass through
   ModeRouter, respecting the configured complexity mode.
