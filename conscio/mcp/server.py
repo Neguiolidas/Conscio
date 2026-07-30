@@ -64,6 +64,10 @@ class Bindings:
         self.auto_review = auto_review        # v2.6.2: --auto-review
         self.last_auto_apply_ts = 0.0         # v2.6.3 #2: throttle clock
 
+        # v3.7: ModeRouter — chunkifica output conforme prompt_complexity
+        from .mode_router import ModeRouter
+        self._router = ModeRouter(engine.storage)
+
     # ── discovery ──
     def version(self) -> str:
         return __version__
@@ -144,16 +148,18 @@ class Bindings:
             "conscio.structure": self._structure,
             "conscio.structural_lookup": self._structural_lookup,
             "conscio.cognitive_cycle": self._cognitive_cycle,
-            "conscio.evaluate": lambda a: self.engine.evaluate(
-                a.get("task_description", ""), a.get("output")).to_dict(),
+            "conscio.evaluate": lambda a: self._router.format_evaluate(
+                self.engine.evaluate(
+                    a.get("task_description", ""), a.get("output")).to_dict()),
             # ── v3.0 Gate tools ──
             "conscio.decide": lambda a: self.engine.decide(
                 title=a.get("title", ""), context=a.get("context", ""),
                 alternatives=a.get("alternatives"), adr_id=a.get("adr_id"),
                 status=a.get("status", "proposed"), deciders=a.get("deciders")),
-            "conscio.council": lambda a: self.engine.council(
-                question=a.get("question", ""), context=a.get("context", ""),
-                options=a.get("options")),
+            "conscio.council": lambda a: self._router.format_council(
+                            self.engine.council(
+                                question=a.get("question", ""), context=a.get("context", ""),
+                                options=a.get("options"))),
             "conscio.loop_gate": lambda a: self.engine.loop_gate(
                 task=a.get("task", ""), frequency=a.get("frequency", ""),
                 verifiable=a.get("verifiable", True),
@@ -510,18 +516,20 @@ class Bindings:
         return {"result": self.engine.structural_lookup(str(key))}
 
     def _cognitive_cycle(self, args: dict) -> dict:
-        """Run one explicit cognitive pass and return a per-stage report.
+            """Run one explicit cognitive pass and return a per-stage report.
 
-        The act stage runs only when act is enabled on this server; otherwise
-        it is propose-only (reflect/synthesize/self-improve). Accepts
-        session_tokens so the loop also feeds the metabolic tier.
-        """
-        st = args.get("session_tokens")
-        if isinstance(st, int) and not isinstance(st, bool) and st >= 0:
-            self.engine.session_tokens_used = st
-        return self.engine.cognitive_cycle(
-            world_state=args.get("world_state", "") or "",
-            act=self._act_enabled())
+            The act stage runs only when act is enabled on this server; otherwise
+            it is propose-only (reflect/synthesize/self-improve). Accepts
+            session_tokens so the loop also feeds the metabolic tier.
+            Output is chunkified via ModeRouter.
+            """
+            st = args.get("session_tokens")
+            if isinstance(st, int) and not isinstance(st, bool) and st >= 0:
+                self.engine.session_tokens_used = st
+            raw = self.engine.cognitive_cycle(
+                world_state=args.get("world_state", "") or "",
+                act=self._act_enabled())
+            return self._router.format_cognitive_cycle(raw)
 
     # ── v3.2 Memory tool handlers ────────────────────────────────────
 

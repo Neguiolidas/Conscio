@@ -56,6 +56,20 @@ def _build_parser() -> argparse.ArgumentParser:
                            help="OpenAI-compatible endpoint to probe")
     p_reflect.add_argument("--autodetect", action="store_true",
                            help="enable host-state auto-detection")
+    p_reflect.add_argument("--mode", default="compact",
+                           choices=["minimal", "compact", "full"],
+                           help="output verbosity (default: compact)")
+
+    # v3.7: council subcommand — convene 4-voice council from CLI
+    p_council = sub.add_parser("council", help="convene a 4-voice council")
+    p_council.add_argument("question", help="the decision question")
+    p_council.add_argument("--context", default="", help="optional context string")
+    p_council.add_argument("--options", default="", help="comma-separated options")
+    p_council.add_argument("--model", default=DEFAULT_MODEL)
+    p_council.add_argument("--storage", default="", help="storage dir (default: temp)")
+    p_council.add_argument("--mode", default="compact",
+                           choices=["minimal", "compact", "full"],
+                           help="output verbosity (default: compact)")
 
     sub.add_parser("plugins", help="list discovered adapter/sensor/tool plugins")
 
@@ -221,7 +235,7 @@ def _cmd_info(model: str, storage: str,
 
 
 def _cmd_reflect(world_state: str, model: str, confidence: float,
-                 storage: str,
+                 storage: str, mode: str = "compact",
                  base_url: str | None = None, autodetect: bool = True) -> int:
     from .engine import ConsciousnessEngine
     eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage),
@@ -229,9 +243,54 @@ def _cmd_reflect(world_state: str, model: str, confidence: float,
     try:
         _note_if_unknown(model, eng.model_info)
         result = eng.reflect(world_state=world_state, confidence=confidence)
-        print(result.get("summary", ""))
-        print()
-        print(eng.get_state_for_injection())
+
+        if mode == "minimal":
+            print(result.get("summary", ""))
+        elif mode == "compact":
+            print(result.get("summary", ""))
+            print()
+            state_lines = eng.get_state_for_injection().split("\n")
+            print("\n".join(state_lines[:8]))  # top 8 lines apenas
+        else:
+            print(result.get("summary", ""))
+            print()
+            print(eng.get_state_for_injection())
+    finally:
+        eng.close()
+    return 0
+
+
+def _cmd_council(question: str, context: str, options: str, model: str,
+                 storage: str, mode: str) -> int:
+    """Convene a 4-voice council from the CLI."""
+    from .engine import ConsciousnessEngine
+    eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage))
+    try:
+        opts = [o.strip() for o in options.split(",") if o.strip()] if options else None
+        result = eng.council(question=question, context=context, options=opts)
+
+        # Detect mode: deterministic vs llm
+        has_llm = any(
+            "LLM" in v.get("analysis", "")
+            for v in result.get("voices", [])
+        )
+        active_mode = "llm" if has_llm else "deterministic"
+
+        if mode == "minimal":
+            print(f"mode: {active_mode}")
+            print(f"recommendation: {result['recommendation']}")
+            print(f"votes: {result['votes_summary']}")
+        elif mode == "compact":
+            print(f"mode: {active_mode}")
+            print(f"recommendation: {result['recommendation']}")
+            print(f"votes: {result['votes_summary']}")
+            for v in result.get("voices", []):
+                top = v.get("concerns", ["none"][:1])
+                top = top[0] if top else "none"
+                print(f"  {v['role']}: vote={v['vote']}, top_concern={top}")
+        else:  # full
+            import json
+            print(json.dumps(result, indent=2, default=str))
     finally:
         eng.close()
     return 0
@@ -531,8 +590,11 @@ def main(argv: list[str] | None = None) -> int:
                          base_url=args.base_url, autodetect=args.autodetect)
     if args.command == "reflect":
         return _cmd_reflect(args.world_state, args.model, args.confidence,
-                            args.storage,
+                            args.storage, args.mode,
                             base_url=args.base_url, autodetect=args.autodetect)
+    if args.command == "council":
+        return _cmd_council(args.question, args.context, args.options,
+                           args.model, args.storage, args.mode)
     if args.command == "plugins":
         return _cmd_plugins()
     if args.command == "consent":
