@@ -44,7 +44,7 @@ extras never enter the runtime import graph.
 from conscio import ConsciousnessEngine
 
 # Passive consciousness — auto-detects model and mode
-with ConsciousnessEngine(model_name="kimi-k2.6") as engine:
+with ConsciousnessEngine(model_name="deepseek-ai/deepseek-v4-flash") as engine:
     result = engine.reflect(
         world_state="All systems operational",
         confidence=0.8,
@@ -65,17 +65,25 @@ with ConsciousnessEngine(model_name="kimi-k2.6") as engine:
     check = engine.delivery_check
     evidence = engine.investigate("server latency")
 
-    # v3.0 — Pipeline tools
-    criteria = engine.acceptance_criteria(goal="Deploy to production")
-    verified = engine.verify(criteria_source=adr["id"])
-    loop = engine.continuous_loop(pattern="continuous_pr")
-    compact = engine.strategic_compact(context_tokens=8000, context_window=128000)
-    entry = engine.ledger(action="record", rollout_id="RL-1")
+    # v3.7 — Safe expression evaluation
+    value = engine.intercept("2 + 2", variables={})
+    x = engine.intercept("solve_linear(2, 3, 1, 7)", variables={})
+```
 
-    # v3.0 — Diagnostic tools
-    budget = engine.context_budget
-    eval_result = engine.eval_harness(action="define", eval_type="capability")
-    rules = engine.rules_distill(action="scan", source="skills")
+```bash
+# v3.7 — CLI council: 4-voice decision analysis
+conscio council "Should I deploy to production?" --mode compact
+
+# v3.7 — CLI reflect with verbosity control
+conscio reflect "System health check" --mode minimal
+
+# v3.6 — CLI search
+conscio search "latency" --k 5
+
+# v3.0 — v3.6 — remaining CLI commands
+conscio info                  # model context window / mode / budget
+conscio ingest file.md        # feed documents into episodic memory
+conscio promote --budget 8    # promote single studies through the refinement space
 ```
 
 `reflect` is the **passive heart** and is never allowed to act. Everything that can

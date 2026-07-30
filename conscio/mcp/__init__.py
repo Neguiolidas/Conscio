@@ -3,6 +3,7 @@
 A hand-rolled, stdlib-only MCP stdio server. Zero new runtime dependency.
 Nothing here opens a socket.
 """
+from .mode_router import ModeRouter
 from .server import main, serve
 
-__all__ = ["main", "serve"]
+__all__ = ["main", "serve", "ModeRouter"]
