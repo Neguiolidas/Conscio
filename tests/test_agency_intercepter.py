@@ -3,7 +3,6 @@
 
 Origin: Think-Vetor DSL concept (CromIA). Reimplemented from scratch.
 """
-import math
 import os
 
 import pytest

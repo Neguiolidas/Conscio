@@ -23,6 +23,8 @@ MultiProviderFallbackAdapter.current_provider
 from conscio.agency.intercepter import Intercepter
 
 Intercepter.register_function
+Intercepter.get_variable
+Intercepter.clear_variables
 
 from conscio.agency.ledger import ActionLedger
 
@@ -56,6 +58,9 @@ from conscio.content_store import ContentStore, _IndexedChunk
 
 _IndexedChunk.indexed_at
 ContentStore.row_factory
+ContentStore.rebuild_db
+ContentStore.list_tombstones
+ContentStore._stale_source_ids
 
 # ── context_manager ─────────────────────────────────────────────────
 from conscio.context_manager import ContextManager

@@ -6,4 +6,4 @@ Nothing here opens a socket.
 from .mode_router import ModeRouter
 from .server import main, serve
 
-__all__ = ["main", "serve", "ModeRouter"]
+__all__ = ["ModeRouter", "main", "serve"]
