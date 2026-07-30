@@ -176,7 +176,7 @@ class Intercepter:
 
         self._functions[name] = fn
 
-    def set_variable(self, name: str, value: int | float | str | bool) -> None:
+    def set_variable(self, name: str, value: float | str | bool) -> None:
         """Bind a variable for use in [INTERCEPT: ...] tags.
 
         Variables allow stateful expressions like [INTERCEPT: x * 2 + 1]

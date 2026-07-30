@@ -9,7 +9,6 @@ import pytest
 
 from conscio.mcp.mode_router import ModeRouter
 
-
 # ── Fixtures ──
 
 @pytest.fixture

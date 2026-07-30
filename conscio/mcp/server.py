@@ -65,8 +65,9 @@ class Bindings:
         self.last_auto_apply_ts = 0.0         # v2.6.3 #2: throttle clock
 
         # v3.7: ModeRouter — chunkifica output conforme prompt_complexity
-        from .mode_router import ModeRouter
         import tempfile as _tempfile
+
+        from .mode_router import ModeRouter
         storage = getattr(engine, "storage", Path(_tempfile.gettempdir()))
         self._router = ModeRouter(storage)
 
