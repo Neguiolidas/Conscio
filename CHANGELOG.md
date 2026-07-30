@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.7.0] - 2026-07-30 — ModeRouter + CLI Council + Payload Reduction
+
+### Added
+
+- **`conscio council <question>`**: CLI subcommand that convenes a 4-voice
+  decision council (architect, skeptic, pragmatist, critic) with `--mode`
+  flag (minimal/compact/full).
+- **ModeRouter** (`conscio.mcp.ModeRouter`): reads `prompt_complexity` from
+  `daemon_control.json` and chunkifies MCP tool output. Supported modes:
+  `minimal` (~87 chars, 92% smaller than full), `compact` (~319 chars, 68%
+  smaller), `full`, `agent_host` (delegate to host agent).
+- **`conscio.reflect --mode minimal|compact|full`**: CLI reflect now respects
+  output  verbosity modes.
+- **`conscio.intercept` MCP tool**: safe expression evaluator via
+  Intercepter AST engine (v3.6.3).
+- **`solve_linear(a,b,c,d)`**: registered as default function in
+  Intercepter's `_register_defaults()`.
+- **Agent-host council delegation**: call council with
+  `mode = "agent_host"` to receive question + hint and produce verdict
+  consciously, without LLM.
+
+### Changed
+
+- **Model**: DeepSeek V4 Flash (`custom:nvm3/deepseek -ai/deepseek-v4-flash`)
+  replaces Kimi K2.6 in daemon_control.json.
+- **Default payload mode**: in `daemon_control.json` changed from `full` to `compact`.
+- **MCP server**: council/evaluate/cognitive_cycle handlers now pass through
+  ModeRouter, respecting the configured complexity mode.
+- **MCP responses**: all tools now include a `mode` field
+  (`deterministic`, `llm`, or `agent_host`).
+
+### Fixed
+
+- Council voices (architect, skeptic, pragmatist, critic) are fully
+  deterministic — no LLM adapter needed. The council was already
+  functional; chain optimization was payload chunking, not voice logic.
+- Suite regress: 70/70 tests passing (11 new/ ModeRouter TDD + 70 existing).
+
+---
+
 ## [3.6.3] - 2026-07-27 — Storage Optimization
 
 ### Added

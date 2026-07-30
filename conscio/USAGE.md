@@ -2,7 +2,7 @@
 
 Self-awareness framework for AI agents. 100% local Python + SQLite FTS5. Zero external deps runtime (numpy optional for embeddings).
 
-**Version:** 3.2.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
+**Version:** 3.7.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
 
 ## Install
 
@@ -68,6 +68,7 @@ proposed actions, but never executes. The host stays sovereign over execution.
 - `conscio.structural_lookup(key)` — resolve graph node
 - `conscio.cognitive_cycle()` — one explicit reflect→synthesize→propose→learn pass
 - `conscio.evaluate(task_description?, output?)` — 5-axis self-evaluation scorecard (v2.15)
+- `conscio.intercept(expression, variables?)` — safe AST expression evaluator (v3.7)
 
 ### Propose / Act (act is opt-in via `--enable-act`)
 
@@ -143,7 +144,9 @@ with a `[project-name]` prefix in the summary/data.
 ```bash
 conscio version
 conscio info                       # model, context window, mode, budget
-conscio reflect                    # one offline reflection cycle
+conscio reflect [--mode MODE]      # offline reflection (minimal/compact/full)
+conscio council <question>        # 4-voice decision council (v3.7)
+conscio search <query>            # FTS5 search (v3.6)
 conscio plugins                    # list adapters/sensors/tools
 conscio consent                    # workspace structural consent
 conscio structure                  # drift + freshness (read-only)
@@ -152,8 +155,9 @@ conscio sleep                      # leave R9
 conscio trial <path>               # trial quarantined skill
 conscio promote <path>             # promote trialed skill
 conscio init                       # interactive installer (per-host space)
+conscio ingest <file>              # feed documents into memory (v3.6)
 conscio bench --help               # inference benchmark
-conscio-daemon --awake             # persistent heartbeat
+conscio daemon --awake             # persistent heartbeat
 conscio noosphere --help           # cross-instance skill sharing
 conscio-hub --enable-daemon-control
 conscio-observatory
