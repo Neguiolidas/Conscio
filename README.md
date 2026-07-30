@@ -14,10 +14,12 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.6.3` "Storage Optimization":**
-Trigram FTS5 index moved to a separate DB (~40% main DB size reduction). New
-`search(use_trigram=)` with auto-detect for code-like queries, `conscio search --exact`,
-and `rebuild_db()` migration with backup/rollback. 2777+ tests, stdlib-only core.
+**Latest release — `v3.7.0` "ModeRouter + CLI Council":**
+Smart payload reduction (68-92% fewer tokens) via `ModeRouter` that respects
+`prompt_complexity` modes. New `conscio council <question>` CLI with 4-voice
+deterministic governance. `conscio reflect --mode minimal|compact|full`.
+Safe expression evaluation via `conscio.intercept`.
+70+ tests passing, stdlib-only core.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
@@ -44,7 +46,7 @@ extras never enter the runtime import graph.
 from conscio import ConsciousnessEngine
 
 # Passive consciousness — auto-detects model and mode
-with ConsciousnessEngine(model_name="deepseek-ai/deepseek-v4-flash") as engine:
+with ConsciousnessEngine(model_name="glm-5.2") as engine:
     result = engine.reflect(
         world_state="All systems operational",
         confidence=0.8,
