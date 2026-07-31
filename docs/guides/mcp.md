@@ -96,6 +96,30 @@ Retrieve relevant past context (FTS5 BM25 + RAG fusion).
 {"query": "debug cron Hermes", "k": 5, "categories": ["consciousness", "session"]}
 ```
 
+### `conscio.observe(tool, input?, output?, project?, agent?)`
+
+Record a raw tool call into the isolated `obs.db` (v3.8 DeepMiner).
+Fire-and-forget: never raises, never blocks, costs **0 LLM tokens**. Returns
+`{observation_id}`, or `-1` if the write failed — telemetry must never break
+the caller. Capture is **lossy by design**: at most 1024 chars of `input` and
+of `output` are stored.
+
+```json
+{"tool": "edit_file", "input": "fix auth bug", "output": "done", "project": "/proj"}
+```
+
+### `conscio.recall_observations(query, k?, full?)` (pure read)
+
+FTS5 full-text search over recorded observations — distinct from
+`conscio.recall`, which searches the content store. `input`/`output` carry the
+**snippet window** around the hit (elided with `…`), not the whole stored row:
+measured on real transcripts, ~110 tokens per recall instead of ~350. Pass
+`full: true` when the entire observation is the answer.
+
+```json
+{"query": "authentication", "k": 5, "full": false}
+```
+
 ### `conscio.propose_action(intent)`
 
 Audit an explicit action intent with the Skeptic. **Never executes.**
