@@ -86,6 +86,7 @@ VALID_TYPES = {
  "harness:checkpoint",    # v3.1: compaction checkpoint created
  "harness:failure",       # v3.1: classified failure event
  "harness:account",       # v3.1: token account recorded
+ "tool:observed",         # v3.8: DeepMiner fire-and-forget tool-call observation
  }
 
 VALID_CATEGORIES = {"system", "trading", "consciousness", "external", "session"}
