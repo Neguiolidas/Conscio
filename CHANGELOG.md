@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.8.1] - 2026-07-30 — DeepMiner Hardening
+
+Intensive confirmation pass over the v3.8.0 DeepMiner feature. **No behaviour
+changes** — every engine and MCP contract shipped in 3.8.0 is byte-for-byte
+unchanged; this release adds a dedicated intensive suite that proves the
+feature end-to-end and locks in invariants the original suites left implicit.
+
+### Added
+
+- **`tests/test_deepminer_intensive.py`** — 15 tests driving the real offline
+  `ConsciousnessEngine` (0 LLM tokens), complementing the behavioural
+  (`test_deepminer.py`) and destructive (`test_deepminer_hostile.py`) suites:
+  - **Persistence roundtrip** (the headline gap): `observe → compress →
+    content_store.search` proves the handoff is durably persisted and
+    retrievable under a `handoff_deepminer_*` label with
+    `source_category="session"` — earlier suites asserted only the *negative*
+    (that the platform-owned `_session_handoff.md` is never touched).
+  - **Store isolation**: `obs.db` and `conscio.db` are distinct files whose
+    contents never bleed across `recall_observations()` (obs.db) vs
+    `content_store.search()` (conscio.db).
+  - **Session precedence**: an explicit `session_id=` overrides
+    `set_session()`; `compress_observations()` defaults to the wired session.
+  - **Boundary & safety**: 1023/1024/2000-byte truncation edges; verbatim
+    storage of SQL-metacharacter payloads with the `observations` table intact;
+    FTS5 metacharacter queries (`*`, `"`, `NEAR`, emoji, …) return safely with
+    `PRAGMA integrity_check = ok`.
+  - **Concurrency**: six writer threads observing while the main thread hammers
+    `compress_observations()` — final row count exact, obs.db integrity intact.
+  - **Re-runnability**: a repeated `compress_observations()` within the same
+    wall-clock second tolerates the second-granular label collision.
+  - **MCP depth**: `conscio.observe` returns strictly-increasing unique
+    `observation_id`s; `conscio.recall_observations` with an empty query
+    returns `[]` instead of crashing.
+
+### Notes
+
+- Documented the `recall_observations(query, k)` contract: `k` is floored via
+  `max(1, k)`, deliberately neutralising SQLite's "`LIMIT -1` means unlimited"
+  footgun — `k <= 0` returns exactly one row, never the whole table.
+
 ## [3.8.0] - 2026-07-30 — DeepMiner
 
 ### Added
