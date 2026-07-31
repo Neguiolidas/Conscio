@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.8.2] - 2026-07-31 — DeepMiner Economics
+
+v3.8.0/3.8.1 shipped DeepMiner without ever measuring what a recall *costs*.
+Benchmarked against three real session transcripts (6,195 actual
+tool_use/tool_result pairs, tiktoken `cl100k_base`), it saved a median of
+**32–39%** per query — below the 60% floor the feature exists to clear — and
+**~25% of queries cost more than simply keeping the raw tool output**. Two
+causes, both fixed here. No data migration: `obs.db` is unchanged.
+
+### Changed
+
+- **`recall_observations()` returns a snippet window, not the whole row.** A
+  recall answers "where did I see this?", but it was returning the entire
+  stored observation (up to 2×1024 chars) — a flat 334–357 tokens, heavier
+  than the median tool output it was meant to replace. It now returns the
+  FTS5 `snippet()` window (±32 tokens, elided with `…`) around the hit.
+  Measured on the same three corpora: median saving **31.7/38.0/38.6% →
+  79.9/82.8/81.2%**, cost **334–357 → 108–129 tokens**, queries that are
+  cheaper than the raw output **71–79% → 97–99%**, with **fidelity
+  unchanged** (96.7/90.0/98.7% in both arms — the snippet contains the hit by
+  construction, so nothing retrievable was lost). New `full=True` argument
+  (engine and the `conscio.recall_observations` MCP tool) returns the whole
+  stored row for callers to whom the entire observation is the answer.
+
+- **`compress_observations()` reads the session's tail, not its head.** It
+  ordered `ORDER BY id` and took `rows[:8]`, so a handoff — the artifact whose
+  job is to resume work — described the *oldest* calls. Measured on a
+  3000-observation session: 4 of the first 5 observations present, 0 of the
+  last 5. It now takes the newest, and renders them in chronological order.
+  After: **5/5 newest present**.
+
+- **The handoff spends its budget.** `format_handoff()` caps `actions` at 5,
+  so the handoff used **18.5% of `HO_MAX_CHARS`** and covered 5 of 3000
+  observations. It now emits `chunks` (which the formatter renders in full)
+  under an explicit char budget: **94–97% of the budget, 20–22 entries**,
+  never exceeding it. `count` still reports every observation in the session,
+  not just the rendered window.
+
+### Fixed
+
+- Observation fields are flattened to one line before entering the handoff. A
+  newline in captured tool I/O could previously forge an extra handoff entry,
+  since the format is line-oriented.
+
+### Added
+
+- Six tests in `tests/test_deepminer.py` covering snippet vs `full=True`,
+  handoff recency, budget spend without overrun, `count` vs rendered window,
+  and the newline-forging guard.
+
+### Notes
+
+- Capture remains **lossy by design** and is now documented as such:
+  `observe()` stores at most 1024 chars per field. On the benchmark corpora
+  that discards **58–61% of characters**, and 0 of 60 probe terms sampled
+  from beyond the cap were recoverable. DeepMiner is an index of what was
+  seen, not an archive of it.
+- The savings above are **cross-session / post-compaction**. Nothing in
+  Conscio intercepts tool output — `conscio.observe` is agent-called, so the
+  agent already holds the output it passes in. There is no intra-session
+  saving without a harness hook, and this release does not claim one.
+
+---
+
 ## [3.8.1] - 2026-07-30 — DeepMiner Hardening
 
 Intensive confirmation pass over the v3.8.0 DeepMiner feature. **No behaviour

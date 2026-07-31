@@ -319,10 +319,13 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "agent": {"type": "string"}},
                      "required": ["tool"]}},
     {"name": "conscio.recall_observations",
-     "description": "FTS5 full-text search over recorded tool observations.",
+     "description": "FTS5 full-text search over recorded tool observations. "
+                    "Returns a snippet window around each hit; pass full=true "
+                    "for the whole stored observation.",
      "inputSchema": {"type": "object",
                      "properties": {"query": {"type": "string"},
-                                    "k": {"type": "integer"}},
+                                    "k": {"type": "integer"},
+                                    "full": {"type": "boolean"}},
                      "required": ["query"]}},
 ]
 

@@ -153,14 +153,22 @@ eng.set_session("session-123")             # share the platform session id
 # fire-and-forget capture — never raises, never blocks (returns obs id, or -1)
 eng.observe("edit_file", "fix auth bug", "done", project="/home/me/proj")
 
-# full-text recall over raw tool calls (query bound as a literal FTS phrase)
+# full-text recall over raw tool calls (query bound as a literal FTS phrase).
+# input/output carry a snippet window around the hit, not the whole row.
 hits = eng.recall_observations("auth", k=5)
+hits = eng.recall_observations("auth", k=5, full=True)   # whole row instead
 
 # compress the session into a handoff (0 tokens); persisted via the content
 # store — never touches the platform-owned _session_handoff.md
 result = eng.compress_observations()       # {"handoff": ..., "count": N, "session_id": ...}
 eng.close()
 ```
+
+Capture is **lossy by design**: `observe()` stores at most 1024 chars of
+`input` and `output` each, so a 40KB tool result becomes a fixed-cost row.
+`count` is everything the session did; the handoff itself carries the most
+recent observations that fit its char budget — a handoff exists to resume
+work, so the newest calls win.
 
 As MCP tools (any agent can call them — required arg in **bold**):
 
@@ -169,7 +177,7 @@ As MCP tools (any agent can call them — required arg in **bold**):
  "arguments": {"tool": "edit_file", "input": "fix auth", "output": "done", "project": "/proj"}}
 
 {"name": "conscio.recall_observations",
- "arguments": {"query": "auth", "k": 5}}
+ "arguments": {"query": "auth", "k": 5, "full": false}}
 ```
 
 ## Event schema
