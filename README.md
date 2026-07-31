@@ -14,12 +14,13 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.7.0` "ModeRouter + CLI Council":**
-Smart payload reduction (68-92% fewer tokens) via `ModeRouter` that respects
-`prompt_complexity` modes. New `conscio council <question>` CLI with 4-voice
-deterministic governance. `conscio reflect --mode minimal|compact|full`.
-Safe expression evaluation via `conscio.intercept`.
-70+ tests passing, stdlib-only core.
+**Latest release — `v3.8.0` "DeepMiner":**
+An agnostic tool-observation store isolated in its own `obs.db` (SQLite +
+FTS5): `observe()` captures raw tool calls fire-and-forget, `recall_observations()`
+full-text searches them, and `compress_observations()` turns a session into a
+handoff — all at **0 LLM tokens**. Exposed as two MCP tools
+(`conscio.observe` / `conscio.recall_observations`) so any agent can use it.
+Fully offline, stdlib-only core.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.8.0] - 2026-07-30 — DeepMiner
+
+### Added
+
+- **DeepMiner** — an agnostic tool-observation store isolated in its own
+  `obs.db` (SQLite + FTS5), separate from `conscio.db`:
+  - `ConsciousnessEngine.observe(tool, input, output, project, agent, session_id)`
+    — fire-and-forget capture of a raw tool call at **0 LLM tokens**; never
+    raises (returns `-1` on write failure) and never blocks the calling agent.
+  - `ConsciousnessEngine.recall_observations(query, k)` — full-text (FTS5)
+    search over raw tool calls; the query is bound as a literal phrase, so
+    SQL/FTS metacharacters can never inject.
+  - `ConsciousnessEngine.compress_observations(session_id)` — bridges
+    `obs.db → SessionSummary → format_handoff()` to build a handoff at **0 LLM
+    tokens**, persisted through `content_store.index()` under its own label;
+    never touches the platform-owned `_session_handoff.md`.
+  - `ConsciousnessEngine.set_session(session_id)` — wires the platform session
+    id so `observe()` and `compress_observations()` share it.
+- **MCP tools** — `conscio.observe` and `conscio.recall_observations` added to
+  `BASE_TOOL_DEFS`, so any MCP-speaking agent (not only Conscio) can record and
+  recall raw tool observations.
+
+### Notes
+
+- Per-session isolation; `input`/`output` truncated to 1 KB and
+  `tool`/`project`/`agent` capped, keeping capture bounded under flood.
+
+---
+
 ## [3.7.0] - 2026-07-30 — ModeRouter + CLI Council + Payload Reduction
 
 ### Added

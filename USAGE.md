@@ -139,6 +139,39 @@ review channel. Payload cap 64KB, retention 7 days after read.
 - `conscio://events?type=&category=&since=&limit=`
 - `conscio://handoff`
 
+## DeepMiner — agnostic tool observation (v3.8)
+
+Capture raw tool calls into an isolated `obs.db` (SQLite + FTS5) and turn them
+into a searchable handoff — all at **0 LLM tokens**, separate from `conscio.db`.
+
+```python
+from conscio.engine import ConsciousnessEngine
+
+eng = ConsciousnessEngine("glm-5.1")
+eng.set_session("session-123")             # share the platform session id
+
+# fire-and-forget capture — never raises, never blocks (returns obs id, or -1)
+eng.observe("edit_file", "fix auth bug", "done", project="/home/me/proj")
+
+# full-text recall over raw tool calls (query bound as a literal FTS phrase)
+hits = eng.recall_observations("auth", k=5)
+
+# compress the session into a handoff (0 tokens); persisted via the content
+# store — never touches the platform-owned _session_handoff.md
+result = eng.compress_observations()       # {"handoff": ..., "count": N, "session_id": ...}
+eng.close()
+```
+
+As MCP tools (any agent can call them — required arg in **bold**):
+
+```jsonc
+{"name": "conscio.observe",
+ "arguments": {"tool": "edit_file", "input": "fix auth", "output": "done", "project": "/proj"}}
+
+{"name": "conscio.recall_observations",
+ "arguments": {"query": "auth", "k": 5}}
+```
+
 ## Event schema
 
 `feed` and `note` take one `event` object:
