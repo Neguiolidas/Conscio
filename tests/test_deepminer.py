@@ -6,12 +6,16 @@ MCP tools. These exercise the real engine (offline, 0 LLM tokens).
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 
 import pytest
 
 from conscio.engine import ConsciousnessEngine
+from conscio.mcp import jsonrpc as j
+from conscio.mcp.seen import SeenStore
+from conscio.mcp.server import Bindings
 
 
 @pytest.fixture
@@ -162,3 +166,71 @@ def test_concurrent_observe_thread_safe(eng):
         t.join()
     n = eng._obs_conn().execute("SELECT COUNT(*) FROM observations").fetchone()[0]
     assert n == 200
+
+
+# ── Commit 2: compress_observations + MCP wiring ──────────────────────────
+
+
+def _bindings(eng):
+    return Bindings(eng, SeenStore(":memory:"))
+
+
+def test_mcp_observe_records(eng):
+    b = _bindings(eng)
+    res = b.call_tool("conscio.observe",
+                      {"tool": "grep", "input": "foo", "output": "bar"})
+    payload = json.loads(res["content"][0]["text"])
+    assert isinstance(payload["observation_id"], int)
+    n = eng._obs_conn().execute("SELECT COUNT(*) FROM observations").fetchone()[0]
+    assert n == 1
+
+
+def test_mcp_recall_observations_finds(eng):
+    b = _bindings(eng)
+    b.call_tool("conscio.observe",
+                {"tool": "grep", "input": "needle", "output": "hay"})
+    res = b.call_tool("conscio.recall_observations", {"query": "needle"})
+    payload = json.loads(res["content"][0]["text"])
+    assert payload["observations"]
+    assert "needle" in json.dumps(payload["observations"])
+
+
+def test_mcp_observe_requires_tool(eng):
+    b = _bindings(eng)
+    with pytest.raises(j.InvalidParams):
+        b.call_tool("conscio.observe", {"input": "no tool key"})
+
+
+def test_mcp_unknown_tool_raises(eng):
+    b = _bindings(eng)
+    with pytest.raises(j.MethodNotFound):
+        b.call_tool("conscio.nonexistent", {})
+
+
+def test_schemas_expose_observe_tools():
+    from conscio.mcp.schemas import BASE_TOOL_DEFS
+
+    names = {t["name"] for t in BASE_TOOL_DEFS}
+    assert {"conscio.observe", "conscio.recall_observations"} <= names
+
+
+def test_compress_observations_builds_handoff(eng):
+    for i in range(3):
+        eng.observe("grep", f"q{i}", f"out{i}", "/p", session_id="s")
+    res = eng.compress_observations("s")
+    assert res["count"] == 3
+    assert res["session_id"] == "s"
+    assert "grep: q0" in res["handoff"]
+
+
+def test_compress_observations_empty(eng):
+    res = eng.compress_observations("no-such-session")
+    assert res == {"handoff": "", "count": 0, "session_id": "no-such-session"}
+
+
+def test_compress_observations_isolated_by_session(eng):
+    eng.observe("grep", "a", "o", "/p", session_id="s1")
+    eng.observe("grep", "b", "o", "/p", session_id="s2")
+    eng.observe("grep", "c", "o", "/p", session_id="s2")
+    assert eng.compress_observations("s1")["count"] == 1
+    assert eng.compress_observations("s2")["count"] == 2
