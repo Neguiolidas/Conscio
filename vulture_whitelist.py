@@ -85,6 +85,11 @@ ConsciousnessEngine.structural_freshness
 ConsciousnessEngine.propose_evolution
 ConsciousnessEngine.health_check
 ConsciousnessEngine.token_summary
+# v3.8 DeepMiner — agnostic tool-observation API (MCP tools + external agents)
+ConsciousnessEngine.observe
+ConsciousnessEngine.recall_observations
+ConsciousnessEngine.compress_observations
+ConsciousnessEngine.set_session
 
 # ── entity_detector ──────────────────────────────────────────────────
 from conscio.entity_detector import EntityDetector
