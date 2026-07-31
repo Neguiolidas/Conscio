@@ -82,6 +82,25 @@ _OUTPUT_MAX_WIDTH = 8000
 # Reflection-query cap used by the trust matrix reflect_count_fn.
 _REFLECT_COUNT_LIMIT = 100_000
 
+# DeepMiner recall/handoff shaping. A recall answers "where did I see this?",
+# so it returns an FTS5 snippet window around the hit, not the 1KB row that
+# happens to contain it. 32 tokens each side still reads as a full sentence.
+_SNIPPET_TOKENS = 32
+# Rows scanned when building a handoff: a hard ceiling well above what
+# HO_MAX_CHARS can spend, so the char budget (not this) decides the cut.
+_HANDOFF_SCAN_LIMIT = 200
+# Chars reserved for the header/section lines format_handoff() adds itself.
+_HANDOFF_HEADER_RESERVE = 250
+# Per-chunk chrome the formatter wraps around a payload: " 🤖 [obs] " + "\n".
+_HANDOFF_CHUNK_OVERHEAD = 11
+
+
+def _obs_line(text: str | None, limit: int) -> str:
+    """One-line, length-capped view of an observation field. Raw tool I/O is
+    multi-line and the handoff format is line-oriented, so a stray newline
+    would silently forge a new entry."""
+    return " ".join((text or "").split())[:limit]
+
 
 def _quarantine_if_corrupt(db_path: Path) -> Path | None:
     """If ``db_path`` exists but is not a usable sqlite DB, move it aside so a fresh
@@ -1623,24 +1642,40 @@ class ConsciousnessEngine:
             logger.debug("observe() emit skipped: %s", exc)
         return row
 
-    def recall_observations(self, query: str, k: int = 5) -> list[dict]:
+    def recall_observations(
+        self, query: str, k: int = 5, full: bool = False
+    ) -> list[dict]:
         """Full-text (FTS5) search over raw tool observations.
 
         Distinct from recall(), which searches the content store. Returns the
         matching raw tool calls, most relevant first. The query is bound as a
         literal FTS phrase (AND/OR/NOT and quotes defused) — never run as SQL.
+
+        ``input``/``output`` carry the snippet window around the hit (elided
+        with "…"), not the whole stored row: the caller asked where a term
+        appears, and the padding around it is billed to their context. Pass
+        ``full=True`` when the entire observation is the answer.
         """
         if not query.strip():
             return []
         safe = '"' + query.replace('"', '""') + '"'
+        # Both branches are fixed literals; `safe` stays a bound parameter.
+        if full:
+            cols = "o.input, o.output"
+            params: tuple = (safe, max(1, k))
+        else:
+            # snippet() resolves the FTS table by NAME, never by the alias.
+            cols = ("snippet(obs_fts, 1, '', '', '…', ?), "
+                    "snippet(obs_fts, 2, '', '', '…', ?)")
+            params = (_SNIPPET_TOKENS, _SNIPPET_TOKENS, safe, max(1, k))
         try:
             with self._obs_lock:
                 cur = self._obs_conn().execute(
-                    "SELECT o.id, o.tool, o.input, o.output, o.project, "
+                    "SELECT o.id, o.tool, " + cols + ", o.project, "
                     "o.agent, o.ts FROM obs_fts f "
                     "JOIN observations o ON o.id = f.rowid "
                     "WHERE obs_fts MATCH ? ORDER BY rank LIMIT ?",
-                    (safe, max(1, k)),
+                    params,
                 )
                 rows = cur.fetchall()
         except Exception as exc:
@@ -1666,29 +1701,55 @@ class ConsciousnessEngine:
         Persists through content_store.index() under its own label — never
         touches _session_handoff.md (that path stays owned by the platform).
         Isolated per session_id, defaulting to the same sid as observe() (I5).
+
+        Reads the session's TAIL: a handoff exists so work can resume, and the
+        last calls are the state to carry over — ordering oldest-first
+        described the opening moves of a long session and nothing since. Emits
+        chunks rather than actions because the formatter caps actions at 5,
+        which spent a fraction of HO_MAX_CHARS; chunks it renders in full, so
+        the budget is enforced here.
         """
         # lazy import: avoids the engine/session_lifecycle import cycle
-        from .session_lifecycle import SessionSummary, format_handoff
+        from .session_lifecycle import (
+            HO_MAX_CHARS,
+            SemanticChunk,
+            SessionSummary,
+            format_handoff,
+        )
         sid = session_id or self._obs_session
         with self._obs_lock:
-            rows = self._obs_conn().execute(
+            conn = self._obs_conn()
+            total = int(conn.execute(
+                "SELECT COUNT(*) FROM observations WHERE session_id=?", (sid,)
+            ).fetchone()[0])
+            rows = conn.execute(
                 "SELECT tool, input, output FROM observations "
-                "WHERE session_id=? ORDER BY id",
-                (sid,),
+                "WHERE session_id=? ORDER BY id DESC LIMIT ?",
+                (sid, _HANDOFF_SCAN_LIMIT),
             ).fetchall()
         if not rows:
             return {"handoff": "", "count": 0, "session_id": sid}
-        # format_handoff renders summary.actions when summary.chunks is empty;
-        # topics is NOT rendered by the formatter, so we don't build it (YAGNI).
-        actions = [
-            f"{t}: {(i or '')[:40]}→{(o or '')[:20]}" for t, i, o in rows[:8]
-        ]
+        chunks: list[SemanticChunk] = []
+        budget = HO_MAX_CHARS - _HANDOFF_HEADER_RESERVE
+        for tool, inp, out in rows:  # newest first: they get the budget
+            payload = f"{tool}: {_obs_line(inp, 70)}→{_obs_line(out, 50)}"
+            budget -= len(payload) + _HANDOFF_CHUNK_OVERHEAD
+            if budget < 0:
+                break
+            chunks.append(SemanticChunk(
+                tag="obs",
+                domain="observations",
+                payload=payload,
+                source_role="assistant",
+            ))
+        # one domain ⇒ rendered in list order, so restore chronology
+        chunks.reverse()
         summary = SessionSummary(
             session_id=sid,
             model="deepminer",
-            message_count=len(rows),
-            title=f"{len(rows)} tool observations",
-            actions=actions,
+            message_count=total,
+            title=f"{total} tool observations",
+            chunks=chunks,
         )
         handoff = format_handoff(summary)
         if hasattr(self, "content_store"):
@@ -1698,7 +1759,7 @@ class ConsciousnessEngine:
                 category="session",
                 session_id=sid,
             )
-        return {"handoff": handoff, "count": len(rows), "session_id": sid}
+        return {"handoff": handoff, "count": total, "session_id": sid}
 
     def close(self) -> None:
         """Close all SQLite-backed modules and flush WAL."""

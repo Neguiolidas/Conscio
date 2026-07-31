@@ -147,7 +147,8 @@ class Bindings:
                 a.get("agent", "hermes"))},
             "conscio.recall_observations": lambda a: {
                 "observations": self.engine.recall_observations(
-                    self._require(a, "query"), int(a.get("k", 5)))},
+                    self._require(a, "query"), int(a.get("k", 5)),
+                    bool(a.get("full", False)))},
             "conscio.propose_action": lambda a: self.engine.propose_action(
                 self._require(a, "intent")),
             "conscio.propose_plan": lambda a: self.engine.propose_plan(

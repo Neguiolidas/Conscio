@@ -14,11 +14,12 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.8.0` "DeepMiner":**
+**Latest release — `v3.8.2` "DeepMiner":**
 An agnostic tool-observation store isolated in its own `obs.db` (SQLite +
 FTS5): `observe()` captures raw tool calls fire-and-forget, `recall_observations()`
-full-text searches them, and `compress_observations()` turns a session into a
-handoff — all at **0 LLM tokens**. Exposed as two MCP tools
+full-text searches them and returns a **snippet window** around each hit, and
+`compress_observations()` turns a session's most recent work into a handoff —
+all at **0 LLM tokens**. Exposed as two MCP tools
 (`conscio.observe` / `conscio.recall_observations`) so any agent can use it.
 Fully offline, stdlib-only core.
 
