@@ -14,7 +14,9 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 import time
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -264,6 +266,12 @@ class ConsciousnessEngine:
         # v3.3.1: Auto-Indexer + KG Builder (lazy, installed on demand)
         self._auto_indexer: AutoIndexer | None = None
         self._kg_builder: KGBuilder | None = None
+
+        # v3.8: DeepMiner — fire-and-forget tool-observation store (obs.db, lazy,
+        # isolated from conscio.db). Guarded by a lock for thread-safe capture.
+        self._obs_lock = threading.Lock()
+        self._obs_db: sqlite3.Connection | None = None
+        self._obs_session = uuid.uuid4().hex
 
         # --- v0.2: SQLite-backed modules (shared DB) ---
         db_path = self.storage / "conscio.db"
@@ -1526,6 +1534,131 @@ class ConsciousnessEngine:
 
     # --- Lifecycle / Resource Cleanup ---
 
+    # ── v3.8: DeepMiner — agnostic tool-observation store ──────────────────
+
+    def _obs_conn(self) -> sqlite3.Connection:
+        """Lazy per-engine obs.db connection (WAL). Isolated from conscio.db.
+
+        Never locks — callers hold self._obs_lock. Standalone FTS5 table keeps
+        raw tool I/O searchable without external-content triggers.
+        """
+        if self._obs_db is None:
+            conn = sqlite3.connect(str(self.storage / "obs.db"), check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            # synchronous=NORMAL under WAL: durable across app crashes, only the
+            # newest commits may roll back on power loss — never corruption. The
+            # right tradeoff for high-rate fire-and-forget telemetry (drops the
+            # per-commit fsync, ~10x faster under flood).
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS observations("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, tool TEXT, input TEXT, "
+                "output TEXT, project TEXT, agent TEXT, session_id TEXT, ts TEXT)"
+            )
+            conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS obs_fts USING fts5(tool, input, output)"
+            )
+            conn.commit()
+            self._obs_db = conn
+        return self._obs_db
+
+    def set_session(self, session_id: str) -> None:
+        """Wire the platform session id so observe()/compress share it (avoids
+        the 'unknown' sid mismatch)."""
+        if session_id:
+            self._obs_session = session_id
+
+    def observe(
+        self,
+        tool: str,
+        input_text: str = "",
+        output_text: str = "",
+        project: str = "",
+        agent: str = "hermes",
+        session_id: str = "",
+    ) -> int:
+        """Fire-and-forget tool observation. 0 LLM tokens. Never raises.
+
+        Records a raw tool call into the isolated obs.db for later full-text
+        recall (recall_observations) and handoff compression
+        (compress_observations). Returns the observation id, or -1 if the write
+        failed — telemetry must never break the calling agent.
+        """
+        sid = session_id or self._obs_session
+        row = -1
+        try:
+            with self._obs_lock:
+                conn = self._obs_conn()
+                cur = conn.execute(
+                    "INSERT INTO observations"
+                    "(tool, input, output, project, agent, session_id, ts) "
+                    "VALUES(?,?,?,?,?,?,?)",
+                    (
+                        tool[:256],
+                        input_text[:1024],
+                        output_text[:1024],
+                        project[:256],
+                        agent[:64],
+                        sid,
+                        naive_utcnow().isoformat(),
+                    ),
+                )
+                row = int(cur.lastrowid or 0)
+                conn.execute(
+                    "INSERT INTO obs_fts(rowid, tool, input, output) VALUES(?,?,?,?)",
+                    (row, tool[:256], input_text[:1024], output_text[:1024]),
+                )
+                conn.commit()
+        except Exception as exc:  # fire-and-forget: never break the agent
+            logger.debug("observe() swallowed write error: %s", exc)
+            return -1
+        try:  # emit is best-effort telemetry (may fail cross-thread; ok to skip)
+            self.event_bus.emit(
+                type="tool:observed",
+                category="session",
+                data={"tool": tool[:256], "project": project[:256], "obs_id": row},
+                project_dir=project[:256],
+            )
+        except Exception as exc:
+            logger.debug("observe() emit skipped: %s", exc)
+        return row
+
+    def recall_observations(self, query: str, k: int = 5) -> list[dict]:
+        """Full-text (FTS5) search over raw tool observations.
+
+        Distinct from recall(), which searches the content store. Returns the
+        matching raw tool calls, most relevant first. The query is bound as a
+        literal FTS phrase (AND/OR/NOT and quotes defused) — never run as SQL.
+        """
+        if not query.strip():
+            return []
+        safe = '"' + query.replace('"', '""') + '"'
+        try:
+            with self._obs_lock:
+                cur = self._obs_conn().execute(
+                    "SELECT o.id, o.tool, o.input, o.output, o.project, "
+                    "o.agent, o.ts FROM obs_fts f "
+                    "JOIN observations o ON o.id = f.rowid "
+                    "WHERE obs_fts MATCH ? ORDER BY rank LIMIT ?",
+                    (safe, max(1, k)),
+                )
+                rows = cur.fetchall()
+        except Exception as exc:
+            logger.debug("recall_observations swallowed: %s", exc)
+            return []
+        return [
+            {
+                "id": r[0],
+                "tool": r[1],
+                "input": r[2],
+                "output": r[3],
+                "project": r[4],
+                "agent": r[5],
+                "timestamp": r[6],
+            }
+            for r in rows
+        ]
+
     def close(self) -> None:
         """Close all SQLite-backed modules and flush WAL."""
         # Run delivery_check before closing SQLite (so it can query EventBus)
@@ -1543,6 +1676,14 @@ class ConsciousnessEngine:
                 mod.close()
             except Exception:
                 pass
+        # v3.8: close DeepMiner obs.db (idempotent)
+        obs_db = getattr(self, "_obs_db", None)
+        if obs_db is not None:
+            try:
+                obs_db.close()
+            except Exception:
+                pass
+            self._obs_db = None
         # Close ContentLayerManager (SessionRAG HTTP connections)
         try:
             self.content_layer.close()
