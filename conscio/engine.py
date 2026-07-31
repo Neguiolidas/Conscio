@@ -1659,6 +1659,47 @@ class ConsciousnessEngine:
             for r in rows
         ]
 
+    def compress_observations(self, session_id: str = "") -> dict:
+        """Compress raw tool observations into a handoff via the EXISTING formatter.
+
+        Bridges obs.db → SessionSummary → format_handoff(); costs 0 LLM tokens.
+        Persists through content_store.index() under its own label — never
+        touches _session_handoff.md (that path stays owned by the platform).
+        Isolated per session_id, defaulting to the same sid as observe() (I5).
+        """
+        # lazy import: avoids the engine/session_lifecycle import cycle
+        from .session_lifecycle import SessionSummary, format_handoff
+        sid = session_id or self._obs_session
+        with self._obs_lock:
+            rows = self._obs_conn().execute(
+                "SELECT tool, input, output FROM observations "
+                "WHERE session_id=? ORDER BY id",
+                (sid,),
+            ).fetchall()
+        if not rows:
+            return {"handoff": "", "count": 0, "session_id": sid}
+        # format_handoff renders summary.actions when summary.chunks is empty;
+        # topics is NOT rendered by the formatter, so we don't build it (YAGNI).
+        actions = [
+            f"{t}: {(i or '')[:40]}→{(o or '')[:20]}" for t, i, o in rows[:8]
+        ]
+        summary = SessionSummary(
+            session_id=sid,
+            model="deepminer",
+            message_count=len(rows),
+            title=f"{len(rows)} tool observations",
+            actions=actions,
+        )
+        handoff = format_handoff(summary)
+        if hasattr(self, "content_store"):
+            self.content_store.index(
+                label=f"handoff_deepminer_{naive_utcnow().strftime('%Y%m%d_%H%M%S')}",
+                content=handoff,
+                category="session",
+                session_id=sid,
+            )
+        return {"handoff": handoff, "count": len(rows), "session_id": sid}
+
     def close(self) -> None:
         """Close all SQLite-backed modules and flush WAL."""
         # Run delivery_check before closing SQLite (so it can query EventBus)

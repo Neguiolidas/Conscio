@@ -309,6 +309,21 @@ BASE_TOOL_DEFS: list[dict] = [
                                            "or bool."},
                      },
                      "required": ["expression"]}},
+    {"name": "conscio.observe",
+     "description": "Record a tool observation (fire-and-forget, 0 LLM tokens).",
+     "inputSchema": {"type": "object",
+                     "properties": {"tool": {"type": "string"},
+                                    "input": {"type": "string"},
+                                    "output": {"type": "string"},
+                                    "project": {"type": "string"},
+                                    "agent": {"type": "string"}},
+                     "required": ["tool"]}},
+    {"name": "conscio.recall_observations",
+     "description": "FTS5 full-text search over recorded tool observations.",
+     "inputSchema": {"type": "object",
+                     "properties": {"query": {"type": "string"},
+                                    "k": {"type": "integer"}},
+                     "required": ["query"]}},
 ]
 
 RESOURCE_DEFS: list[dict] = [

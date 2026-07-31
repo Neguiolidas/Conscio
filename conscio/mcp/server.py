@@ -141,6 +141,13 @@ class Bindings:
             "conscio.recall": lambda a: {"snippets": self.engine.recall(
                 self._require(a, "query"), int(a.get("k", 3)),
                 a.get("categories"))},
+            "conscio.observe": lambda a: {"observation_id": self.engine.observe(
+                self._require(a, "tool"), a.get("input", ""),
+                a.get("output", ""), a.get("project", ""),
+                a.get("agent", "hermes"))},
+            "conscio.recall_observations": lambda a: {
+                "observations": self.engine.recall_observations(
+                    self._require(a, "query"), int(a.get("k", 5)))},
             "conscio.propose_action": lambda a: self.engine.propose_action(
                 self._require(a, "intent")),
             "conscio.propose_plan": lambda a: self.engine.propose_plan(
