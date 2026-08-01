@@ -1,5 +1,8 @@
 """ObsStore — full-fidelity, content-addressed observation storage."""
 import sqlite3
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -102,3 +105,69 @@ def test_an_unknown_scope_is_a_programming_error_not_a_silent_widening(conn):
     _obs(conn, output_text="marker")
     with pytest.raises(ValueError):
         obsstore.search(conn, "marker", scope="everything", session_id="S1")
+
+
+def _make_v1(path):
+    """Build a database in the exact v3.8.2 shape, with truncated payloads."""
+    c = sqlite3.connect(str(path))
+    c.execute("CREATE TABLE observations(id INTEGER PRIMARY KEY AUTOINCREMENT,"
+              " tool TEXT, input TEXT, output TEXT, project TEXT, agent TEXT,"
+              " session_id TEXT, ts TEXT)")
+    c.execute("CREATE VIRTUAL TABLE obs_fts USING fts5(tool, input, output)")
+    cur = c.execute("INSERT INTO observations(tool, input, output, project, agent,"
+                    " session_id, ts) VALUES(?,?,?,?,?,?,?)",
+                    ("Bash", "old-in", "old-out-legacy", "p", "hermes",
+                     "OLD", "2026-07-30T00:00:00"))
+    c.execute("INSERT INTO obs_fts(rowid, tool, input, output) VALUES(?,?,?,?)",
+              (cur.lastrowid, "Bash", "old-in", "old-out-legacy"))
+    c.commit()
+    c.close()
+
+
+def test_v1_database_migrates_and_stays_searchable(tmp_path):
+    p = tmp_path / "obs.db"
+    _make_v1(p)
+    c = obsstore.connect(p)
+    assert c.execute("PRAGMA user_version").fetchone()[0] == obsstore.SCHEMA_VERSION
+    got = obsstore.search(c, "legacy", session_id="OLD", full=True)
+    assert got[0]["output"] == "old-out-legacy"
+    assert got[0]["truncated"] is True  # v1 payloads were capped at 1024
+    c.close()
+
+
+def test_migration_is_idempotent(tmp_path):
+    p = tmp_path / "obs.db"
+    _make_v1(p)
+    obsstore.connect(p).close()
+    c = obsstore.connect(p)
+    assert c.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 1
+    c.close()
+
+
+def test_migration_leaves_no_stale_fts_rows(tmp_path):
+    """The v1 index must be rebuilt, not appended to — one row, one hit."""
+    p = tmp_path / "obs.db"
+    _make_v1(p)
+    c = obsstore.connect(p)
+    assert len(obsstore.search(c, "legacy", scope="all", k=10)) == 1
+    c.close()
+
+
+def test_module_loads_without_importing_the_conscio_package(tmp_path):
+    """The v3.9 hook loads this file directly; conscio must stay out of sys.modules."""
+    mod_path = Path(obsstore.__file__)
+    script = (
+        "import importlib.util, sys\n"
+        f"spec = importlib.util.spec_from_file_location('obsstore', r'{mod_path}')\n"
+        "m = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(m)\n"
+        f"c = m.connect(r'{tmp_path / "standalone.db"}')\n"
+        "m.put_observation(c, tool='Bash', input_text='i', output_text='marker',\n"
+        "                  project='p', agent='a', session_id='S', ts='t')\n"
+        "assert m.search(c, 'marker', session_id='S')\n"
+        "assert 'conscio' not in sys.modules, sorted(sys.modules)[:5]\n"
+        "print('OK')\n"
+    )
+    r = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "OK" in r.stdout
