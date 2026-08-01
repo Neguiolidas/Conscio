@@ -335,21 +335,31 @@ def _cmd_govern(action: str, window: int | None, storage: str,
             print(f"Growth rate     {growth:>10,.0f}  tokens added per request")
             print(f"Compaction lands{landed:>10,}  "
                   f"{'(never observed)' if not landed else '(worst seen)'}")
-            floor = max(int(prefix * governor.MIN_HEADROOM_FACTOR),
-                        int(landed * governor.FLOOR_MARGIN))
+            floor = governor.hard_floor(prefix, landed)
             print(f"Refused below   {floor:>10,}")
             best = governor.recommend_window(
                 prefix, requests=agg["requests"], growth=growth,
                 out_per_request=out_rate, floor=landed)
-            print(f"Recommended     {best:>10,}  (cost-optimal for this profile)")
+            print(f"Recommended     {best:>10,}  (cheapest window above the floor)")
             print("\n  window      modelled cost")
             for w in governor.CANDIDATE_WINDOWS:
+                if w < floor:
+                    # Never print a cost here. modelled_cost assumes a compaction
+                    # reclaims room; below the floor it reclaims nothing, so the
+                    # number would be both wrong and the cheapest on the page.
+                    if w <= prefix:
+                        why = "cannot hold the prefix"
+                    elif w < int(landed * governor.FLOOR_MARGIN):
+                        why = "compaction would loop"
+                    else:
+                        why = "too little room above prefix"
+                    print(f"  {w:>9,}  {'refused':>14}  ({why})")
+                    continue
                 cost = governor.modelled_cost(
                     w, prefix=prefix, requests=agg["requests"], growth=growth,
                     out_per_request=out_rate)
                 mark = "  <- recommended" if w == best else ""
-                shown = "n/a" if cost == float("inf") else f"{cost:,.0f}"
-                print(f"  {w:>9,}  {shown:>14}{mark}")
+                print(f"  {w:>9,}  {cost:>14,.0f}{mark}")
         else:
             obs = Path(space) / "obs.db"
             size = obs.stat().st_size if obs.exists() else 0
