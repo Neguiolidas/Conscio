@@ -58,3 +58,6 @@ graphify-out/
 
 # internal design docs (specs/plans) — never committed
 docs/superpowers/
+
+# Claude Code harness reference — internal research, local only
+docs/reference/claude-code-harness.md
