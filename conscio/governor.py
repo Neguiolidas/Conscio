@@ -313,3 +313,125 @@ def report_for_session(path: str | Path, space_dir: str | Path,
     rows = read_usage(path)
     return render_report(Path(path).stem[:8], summarise(rows),
                          read_baseline(space_dir), window)
+
+
+def settings_path(scope: str = "local") -> Path:
+    """Where to write the ceiling.
+
+    Default is the project's ``.claude/settings.local.json``. Settings resolve
+    local > project > user, so this wins reliably; it is gitignored, so it never
+    reaches a teammate's checkout; and it scopes the ceiling to the project the
+    operator turned it on in, rather than to every session on the machine.
+
+    ``scope="global"`` targets ``~/.claude/settings.json`` for someone who really
+    does want it everywhere.
+    """
+    if scope == "global":
+        return Path(os.environ.get(
+            "CLAUDE_DIR", str(Path.home() / ".claude"))) / "settings.json"
+    return Path(os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())) \
+        / ".claude" / "settings.local.json"
+
+
+def current_window(scope: str = "local") -> int | None:
+    """``autoCompactWindow`` as the host has it in ``scope``, or None.
+
+    Verified 2026-08-01 that the host honours this key from settings.json even
+    on builds whose /config screen exposes only an on/off toggle for
+    auto-compaction: a probe with the key set compacted at the expected
+    threshold with no environment variable in play.
+    """
+    try:
+        value = json.loads(settings_path(scope).read_text("utf-8")).get(
+            "autoCompactWindow")
+    except Exception:
+        return None
+    return int(value) if isinstance(value, (int, float)) else None
+
+
+def apply_window(window: int, *, ts: str, scope: str = "local") -> Path | None:
+    """Write ``autoCompactWindow`` into the host settings, backing up first."""
+    from .installer import hostcfg
+
+    path = settings_path(scope)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def mutate(o: dict) -> None:
+        o["autoCompactWindow"] = int(window)
+
+    return hostcfg.backup_then_write_json(
+        path, mutate=mutate,
+        verify=lambda o: o.get("autoCompactWindow") == int(window), ts=ts)
+
+
+def clear_window(*, ts: str, previous: int | None = None,
+                 scope: str = "local") -> Path | None:
+    """Undo the ceiling, restoring whatever the user had before.
+
+    Deleting the key is only correct when there was no key. A user who had set
+    their own ``autoCompactWindow`` before running ``govern on`` must get *their*
+    value back, not the host default — otherwise `off` is not an undo, it is a
+    second, silent change.
+    """
+    from .installer import hostcfg
+
+    path = settings_path(scope)
+    if not path.exists():
+        return None
+
+    def mutate(o: dict) -> None:
+        if previous is None:
+            o.pop("autoCompactWindow", None)
+        else:
+            o["autoCompactWindow"] = int(previous)
+
+    return hostcfg.backup_then_write_json(
+        path, mutate=mutate,
+        verify=lambda o: o.get("autoCompactWindow") == previous, ts=ts)
+
+
+def snapshot(space_dir: str | Path) -> dict:
+    """Freeze what the host looks like right now, before a ceiling is applied."""
+    from .timeutil import naive_utcnow
+
+    paths = _recent_transcripts(projects_dir(), 10)
+    rows: list[dict] = []
+    for path in paths:
+        rows.extend(read_usage(path))
+    agg = summarise(rows)
+    return {
+        "prefix": measure_prefix(projects_dir())["prefix"],
+        "avg_context": agg["avg_context"],
+        "units_per_request": (agg["units"] / agg["requests"]
+                              if agg["requests"] else 0.0),
+        "requests": agg["requests"],
+        # Kept so `govern off` can restore rather than delete, and so the report
+        # can tell a genuine saving from the same work taking more turns.
+        "prior_window": current_window(),
+        "turns_per_session": agg["requests"] / max(1, len(paths)),
+        "taken_at": naive_utcnow().isoformat(timespec="seconds"),
+    }
+
+
+def report_all(space_dir: str | Path, window: int | None,
+               sessions: int = 20) -> str:
+    """One line per recent session, plus the aggregate."""
+    paths = _recent_transcripts(projects_dir(), sessions)
+    if not paths:
+        return "No sessions found under " + str(projects_dir())
+    baseline = read_baseline(space_dir)
+    every: list[dict] = []
+    lines = [(f"{'session':<12}{'project':<24}{'turns':>7}"
+              f"{'avg ctx':>11}{'units':>14}")]
+    for path in paths:
+        rows = read_usage(path)
+        if not rows:
+            continue
+        agg = summarise(rows)
+        every.extend(rows)
+        lines.append(f"{path.stem[:10]:<12}{path.parent.name[:22]:<24}"
+                     f"{agg['requests']:>7,}{agg['avg_context']:>11,}"
+                     f"{agg['units']:>14,.0f}")
+    lines += ["", render_report(f"{len(paths)} sessions", summarise(every),
+                                baseline, window)]
+    return "\n".join(lines)
