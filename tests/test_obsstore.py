@@ -1,4 +1,5 @@
 """ObsStore — full-fidelity, content-addressed observation storage."""
+import os
 import sqlite3
 import subprocess
 import sys
@@ -17,7 +18,7 @@ def conn(tmp_path):
 
 
 def test_blob_round_trips_a_large_payload_byte_for_byte(conn):
-    raw = ("line %d\n" % 0).encode() * 20000  # ~140 KB, far past the old cap
+    raw = b"line 0\n" * 20000  # ~140 KB, far past the old cap
     h, n, clipped = obsstore.put_blob(conn, raw)
     assert clipped is False
     assert n == len(raw)
@@ -45,9 +46,9 @@ def test_schema_version_is_stamped(conn):
 
 
 def _obs(conn, **kw):
-    base = dict(tool="Bash", input_text="cmd", output_text="out",
-                project="p", agent="claude-code", session_id="S1",
-                ts="2026-07-31T00:00:00")
+    base = {"tool": "Bash", "input_text": "cmd", "output_text": "out",
+            "project": "p", "agent": "claude-code", "session_id": "S1",
+            "ts": "2026-07-31T00:00:00"}
     base.update(kw)
     return obsstore.put_observation(conn, **base)
 
@@ -107,6 +108,58 @@ def test_an_unknown_scope_is_a_programming_error_not_a_silent_widening(conn):
         obsstore.search(conn, "marker", scope="everything", session_id="S1")
 
 
+def test_prune_drops_old_rows_and_then_orphan_blobs(conn):
+    _obs(conn, output_text="ancient", ts="2020-01-01T00:00:00")
+    _obs(conn, output_text="recent", ts="2099-01-01T00:00:00")
+    before = conn.execute("SELECT COUNT(*) FROM blobs").fetchone()[0]
+    stats = obsstore.prune(conn, max_age_days=30)
+    assert stats["observations_deleted"] == 1
+    assert stats["blobs_deleted"] >= 1
+    assert conn.execute("SELECT COUNT(*) FROM blobs").fetchone()[0] < before
+    assert obsstore.search(conn, "recent", session_id="S1", full=True)
+    assert obsstore.search(conn, "ancient", session_id="S1") == []
+
+
+def test_prune_keeps_a_blob_still_referenced_by_a_survivor(conn):
+    shared = "identical payload"
+    _obs(conn, output_text=shared, ts="2020-01-01T00:00:00")
+    _obs(conn, output_text=shared, ts="2099-01-01T00:00:00")
+    obsstore.prune(conn, max_age_days=30)
+    got = obsstore.search(conn, "identical", session_id="S1", full=True)
+    assert got and got[0]["output"] == shared
+
+
+def test_prune_actually_brings_the_store_under_the_byte_cap(conn):
+    """The cap is a guarantee, not a suggestion: one pass must land under it."""
+    for i in range(20):
+        _obs(conn, output_text=os.urandom(4096).hex(),  # incompressible
+             ts=f"2099-01-{i + 1:02d}T00:00:00")
+    assert obsstore.stored_bytes(conn) > 60_000
+    stats = obsstore.prune(conn, max_age_days=36500, max_bytes=60_000)
+    assert obsstore.stored_bytes(conn) <= 60_000
+    assert stats["observations_deleted"] > 0
+
+
+def test_prune_evicts_oldest_first_so_the_newest_survives(conn):
+    for i in range(10):
+        _obs(conn, output_text=f"ROW{i:02d} " + os.urandom(2048).hex(),
+             ts=f"2099-01-{i + 1:02d}T00:00:00")
+    obsstore.prune(conn, max_age_days=36500, max_bytes=8_000)
+    left = conn.execute("SELECT ts FROM observations ORDER BY ts").fetchall()
+    assert left, "the cap must not empty a store it can satisfy"
+    assert left[-1][0] == "2099-01-10T00:00:00"
+
+
+def test_prune_on_an_empty_store_is_a_no_op(conn):
+    assert obsstore.prune(conn) == {"observations_deleted": 0, "blobs_deleted": 0}
+
+
+def test_prune_with_an_unreachable_cap_empties_rather_than_spinning(conn):
+    _obs(conn, output_text="x" * 5000, ts="2099-01-01T00:00:00")
+    obsstore.prune(conn, max_age_days=36500, max_bytes=1)
+    assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+
+
 def _make_v1(path):
     """Build a database in the exact v3.8.2 shape, with truncated payloads."""
     c = sqlite3.connect(str(path))
@@ -156,12 +209,13 @@ def test_migration_leaves_no_stale_fts_rows(tmp_path):
 def test_module_loads_without_importing_the_conscio_package(tmp_path):
     """The v3.9 hook loads this file directly; conscio must stay out of sys.modules."""
     mod_path = Path(obsstore.__file__)
+    db_path = tmp_path / "standalone.db"
     script = (
         "import importlib.util, sys\n"
         f"spec = importlib.util.spec_from_file_location('obsstore', r'{mod_path}')\n"
         "m = importlib.util.module_from_spec(spec)\n"
         "spec.loader.exec_module(m)\n"
-        f"c = m.connect(r'{tmp_path / "standalone.db"}')\n"
+        f"c = m.connect(r'{db_path}')\n"
         "m.put_observation(c, tool='Bash', input_text='i', output_text='marker',\n"
         "                  project='p', agent='a', session_id='S', ts='t')\n"
         "assert m.search(c, 'marker', session_id='S')\n"
