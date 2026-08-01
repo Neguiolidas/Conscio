@@ -198,3 +198,149 @@ def test_report_reports_a_regression_honestly():
     out = governor.render_report("s", now, base, 120_000)
     saved_line = next(ln for ln in out.splitlines() if "Saved" in ln)
     assert "-" in saved_line, "a regression must not read as a gain"
+
+
+# ── CLI: prefix / status / on / off / report (Tasks 4-6) ────────────────────
+
+def _cli():
+    from conscio import cli
+    return cli
+
+
+def test_settings_path_defaults_to_the_project_local_file(tmp_path, monkeypatch):
+    """Scoped to the project, gitignored, and highest precedence after managed."""
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
+    assert governor.settings_path().name == "settings.local.json"
+    assert governor.settings_path().parent.name == ".claude"
+    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "home"))
+    assert governor.settings_path("global").name == "settings.json"
+
+
+def test_current_window_reads_the_setting(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
+    assert governor.current_window() is None
+    d = tmp_path / ".claude"
+    d.mkdir()
+    (d / "settings.local.json").write_text(json.dumps({"autoCompactWindow": 120_000}))
+    assert governor.current_window() == 120_000
+
+
+def test_current_window_of_a_corrupt_settings_file_is_none(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
+    d = tmp_path / ".claude"
+    d.mkdir()
+    (d / "settings.local.json").write_text("{ not json")
+    assert governor.current_window() is None
+
+
+def _wire(tmp_path, monkeypatch, turns=None):
+    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path))
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path / "proj"))
+    _write_session(tmp_path / "projects", "p", "s1",
+                   turns or [(2, 30_000, 0, 5), (2, 100, 60_000, 5)])
+    return tmp_path / "space"
+
+
+def test_govern_prefix_reports_measurement_recommendation_and_curve(
+        tmp_path, monkeypatch, capsys):
+    space = _wire(tmp_path, monkeypatch)
+    assert _cli()._cmd_govern("prefix", None, str(space), False) == 0
+    out = capsys.readouterr().out
+    assert "30,002" in out                    # the measured prefix
+    assert "Refused below" in out
+    assert "Recommended" in out
+    assert "modelled cost" in out             # the curve, not a bare number
+    line = next(ln for ln in out.splitlines() if ln.startswith("Recommended"))
+    assert int(line.split()[1].replace(",", "")) >= 60_004   # clears prefix x2
+
+
+def test_govern_status_says_off_when_nothing_is_set(tmp_path, monkeypatch, capsys):
+    space = _wire(tmp_path, monkeypatch)
+    assert _cli()._cmd_govern("status", None, str(space), False) == 0
+    assert "OFF" in capsys.readouterr().out
+
+
+def test_govern_on_refuses_a_window_with_no_working_room(
+        tmp_path, monkeypatch, capsys):
+    space = _wire(tmp_path, monkeypatch)
+    rc = _cli()._cmd_govern("on", 40_000, str(space), False)
+    out = capsys.readouterr().out
+    assert rc == 1, "40,000 is below 30,002 x 2 — must refuse"
+    assert "30,002" in out and "60,004" in out
+    assert governor.current_window() is None, "a refusal must not write anything"
+
+
+def test_govern_on_applies_the_window_and_freezes_a_baseline(
+        tmp_path, monkeypatch, capsys):
+    space = _wire(tmp_path, monkeypatch)
+    assert _cli()._cmd_govern("on", 120_000, str(space), False) == 0
+    assert governor.current_window() == 120_000
+    base = governor.read_baseline(space)
+    assert base and base["avg_context"] > 0 and base["units_per_request"] > 0
+    assert "govern off" in capsys.readouterr().out, "must say how to revert"
+
+
+def test_govern_on_preserves_other_settings(tmp_path, monkeypatch):
+    space = _wire(tmp_path, monkeypatch)
+    d = tmp_path / "proj" / ".claude"
+    d.mkdir(parents=True)
+    (d / "settings.local.json").write_text(json.dumps({"effortLevel": "high"}))
+    _cli()._cmd_govern("on", 120_000, str(space), False)
+    data = json.loads((d / "settings.local.json").read_text())
+    assert data["effortLevel"] == "high"
+    assert data["autoCompactWindow"] == 120_000
+
+
+def test_govern_off_restores_a_window_the_user_had_set_themselves(
+        tmp_path, monkeypatch):
+    """`off` must be an undo. Deleting a key the user owned is a second change."""
+    space = _wire(tmp_path, monkeypatch)
+    d = tmp_path / "proj" / ".claude"
+    d.mkdir(parents=True)
+    (d / "settings.local.json").write_text(json.dumps({"autoCompactWindow": 150_000}))
+    _cli()._cmd_govern("on", 120_000, str(space), False)
+    assert governor.current_window() == 120_000
+    _cli()._cmd_govern("off", None, str(space), False)
+    assert governor.current_window() == 150_000, "must restore, not delete"
+
+
+def test_govern_off_removes_the_window_when_there_was_none_before(
+        tmp_path, monkeypatch):
+    space = _wire(tmp_path, monkeypatch)
+    _cli()._cmd_govern("on", 120_000, str(space), False)
+    assert _cli()._cmd_govern("off", None, str(space), False) == 0
+    assert governor.current_window() is None
+
+
+def test_govern_off_when_never_on_is_not_an_error(tmp_path, monkeypatch):
+    space = _wire(tmp_path, monkeypatch)
+    assert _cli()._cmd_govern("off", None, str(space), False) == 0
+
+
+def test_govern_on_without_a_window_uses_the_recommendation(tmp_path, monkeypatch):
+    space = _wire(tmp_path, monkeypatch)
+    assert _cli()._cmd_govern("on", None, str(space), False) == 0
+    assert governor.current_window() >= 60_004
+
+
+def test_govern_report_prints_the_current_session(tmp_path, monkeypatch, capsys):
+    space = _wire(tmp_path, monkeypatch)
+    assert _cli()._cmd_govern("report", None, str(space), False) == 0
+    out = capsys.readouterr().out
+    assert "turns" in out and "Avg context/turn" in out
+    assert "no baseline" in out.lower()
+
+
+def test_govern_report_all_covers_every_session(tmp_path, monkeypatch, capsys):
+    space = _wire(tmp_path, monkeypatch)
+    _write_session(tmp_path / "projects", "q", "s2", [(2, 20_000, 0, 500)])
+    assert _cli()._cmd_govern("report", None, str(space), True) == 0
+    out = capsys.readouterr().out
+    assert "s1" in out and "s2" in out and "sessions" in out
+
+
+def test_report_all_with_no_transcripts_says_so(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path))
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path / "proj"))
+    assert _cli()._cmd_govern("report", None, str(tmp_path / "space"), True) == 0
+    assert "no sessions" in capsys.readouterr().out.lower()
