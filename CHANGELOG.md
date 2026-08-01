@@ -43,6 +43,12 @@ like it might do.
 - Two `log_message` overrides narrowed their base signature, which pyright
   reported and a caller passing `format=` would have hit as a `TypeError`.
   The type check is now clean at zero warnings.
+- **The capture-budget tests measured the runner, not the hook.** One batch of
+  40 timings on a shared CI machine puts a neighbour's IO stall inside our p95
+  — observed at 124.7 ms against a 60 ms budget, on an unchanged hook. Both
+  budget tests now take the best of repeated batches: interference only ever
+  adds time, so the lowest measurement is the closest estimate of what the hook
+  itself costs, while a real regression slows every batch and still fails.
 
 ### Audited and left alone
 
