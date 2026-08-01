@@ -58,3 +58,27 @@ def test_self_prompt_goal_id_is_real_across_dedup(tmp_path, monkeypatch):
     assert surfaced in {g.id for g in eng.goals._goals}
     assert surfaced == sp_goals[0].id
     eng.close()
+
+
+def test_self_prompt_goal_id_is_real_when_the_target_shifts(tmp_path):
+    """The maintenance self-prompt names the entities it found stale, so its
+    description changes as they do while the goal stays the same one. The goal
+    dedups on its check; resolving the stored goal has to use that same key, or
+    a shifted target surfaces a phantom id that is in no store."""
+    from conscio.self_prompt import SelfPrompt
+
+    eng = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
+    try:
+        def prompt(target):
+            return [SelfPrompt(question="q", drive="maintenance", target=target,
+                               source_signal="stale_entities", severity=0.9)]
+
+        first = eng._spawn_self_prompt_goal(prompt("3 stale: a, b, c"))
+        second = eng._spawn_self_prompt_goal(prompt("4 stale: a, b, d"))
+
+        stored = {g.id for g in eng.goals._goals}
+        assert first.id in stored
+        assert second is not None and second.id in stored
+        assert second.id == first.id            # one goal, not two
+    finally:
+        eng.close()

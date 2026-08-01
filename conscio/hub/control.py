@@ -1,10 +1,14 @@
 """Daemon control-file IO (the WRITE half of v2.8.1 "Reins").
 
-The Hub writes the operator's awake intent here; a daemon launched with
-`--watch-control` reads it at the top of each cycle and applies it via
-`engine.wake()`/`engine.sleep()`. Pure, engine-free, atomic. The filename is a
-contract shared by name only — the daemon reads it with `safe_read_json` and
-never imports this module (layering).
+The Hub and `conscio awake`/`conscio sleep` write the operator's awake intent
+here; a daemon launched with `--watch-control` reads it at the top of each
+cycle and applies it via `engine.wake()`/`engine.sleep()`. Pure, engine-free,
+atomic. The filename is a contract shared by name only — the daemon reads it
+with `safe_read_json` and never imports this module (layering).
+
+Any operator surface that flips awake must write here. Flipping it only on an
+engine instance reaches that process alone, and the daemon — which owns its
+own engine — never learns of it.
 """
 from __future__ import annotations
 
