@@ -70,12 +70,25 @@ def context_of(row: dict) -> int:
     return row["in"] + row["cw"] + row["cr"]
 
 
+def _mtime(path: Path) -> float:
+    """Modification time, or 0.0 if it cannot be read.
+
+    The host is writing these files while we walk them, so one can be rotated
+    away between the glob and the sort. An unhandled stat here would take down
+    the whole report over a file we did not need; sorting it last is enough.
+    """
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
 def _recent_transcripts(root: Path, limit: int) -> list[Path]:
     try:
         files = [p for p in Path(root).glob(TRANSCRIPT_GLOB) if p.is_file()]
     except OSError:
         return []
-    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    files.sort(key=_mtime, reverse=True)
     return files[:limit]
 
 
@@ -212,11 +225,21 @@ def compaction_floor(root: str | Path, sessions: int = 10) -> int:
                         "out": int(usage.get("output_tokens") or 0)})
         except OSError:
             continue
-        # A row whose usage is all zeros is not a landing point — 20 of 95
-        # observed landings on this host were such rows. They need no filtering:
-        # under max() a zero cannot win, and a run of nothing but zeros returns 0
-        # either way, which is the same "no floor observed" the caller expects.
-        floors += [context_of(rows[b]) for b in marks if b < len(rows)]
+        # The row right after a compaction is often billed with no context at
+        # all — 20 of 95 landings on this host. Taking it verbatim scores that
+        # compaction as 0, and under max() a 0 does not lose harmlessly: it
+        # drops the measurement, and a floor built from fewer landings than
+        # actually occurred can only come out too low. Too low is the direction
+        # that permits the loop this whole number exists to forbid. So scan on
+        # to the first row that was really billed, stopping at the next
+        # compaction — past it the context belongs to a different landing.
+        stops = marks[1:] + [len(rows)]
+        for start, stop in zip(marks, stops):
+            landed = next((context_of(rows[i])
+                           for i in range(start, min(stop, len(rows)))
+                           if context_of(rows[i]) > 0), 0)
+            if landed:
+                floors.append(landed)
     return max(floors) if floors else 0
 
 

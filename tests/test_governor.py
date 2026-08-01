@@ -1,5 +1,7 @@
 """v3.9.2 Governor — measurement and reporting over host transcripts."""
 import json
+from pathlib import Path
+from unittest import mock
 
 from conscio import governor
 
@@ -458,6 +460,72 @@ def test_compaction_floor_ignores_zero_context_rows(tmp_path):
     ]
     (d / "good.jsonl").write_text("\n".join(json.dumps(r) for r in good) + "\n")
     assert governor.compaction_floor(tmp_path / "projects") == 70_002
+
+
+def test_a_landing_behind_an_unbilled_row_is_still_measured(tmp_path):
+    """Scoring that compaction 0 would drop it, and a dropped landing lowers
+    the floor. 19 of 95 landings on the development host sat behind such a row.
+    """
+    d = tmp_path / "projects" / "p"
+    d.mkdir(parents=True)
+    rows = [
+        {"message": {"id": "a", "usage": {"input_tokens": 2,
+         "cache_creation_input_tokens": 300_000, "cache_read_input_tokens": 0,
+         "output_tokens": 5}}},
+        {"isCompactSummary": True},
+        {"message": {"id": "b", "usage": {"input_tokens": 0,
+         "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+         "output_tokens": 0}}},                       # billed nothing
+        {"message": {"id": "c", "usage": {"input_tokens": 8,
+         "cache_creation_input_tokens": 0, "cache_read_input_tokens": 96_000,
+         "output_tokens": 5}}},                       # where it really landed
+    ]
+    (d / "s.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    assert governor.compaction_floor(tmp_path / "projects") == 96_008
+
+
+def test_a_landing_is_never_borrowed_from_the_next_compaction(tmp_path):
+    """Scanning forward must stop at the next summary.
+
+    Otherwise a compaction that produced only unbilled rows adopts the landing
+    of the one after it, inventing a floor no compaction actually reached.
+    """
+    d = tmp_path / "projects" / "p"
+    d.mkdir(parents=True)
+    rows = [
+        {"message": {"id": "a", "usage": {"input_tokens": 2,
+         "cache_creation_input_tokens": 300_000, "cache_read_input_tokens": 0,
+         "output_tokens": 5}}},
+        {"isCompactSummary": True},
+        {"message": {"id": "b", "usage": {"input_tokens": 0,
+         "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+         "output_tokens": 0}}},
+        {"isCompactSummary": True},
+        {"message": {"id": "c", "usage": {"input_tokens": 1,
+         "cache_creation_input_tokens": 0, "cache_read_input_tokens": 130_000,
+         "output_tokens": 5}}},
+    ]
+    (d / "s.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    assert governor.compaction_floor(tmp_path / "projects") == 130_001
+
+
+def test_a_transcript_rotated_away_mid_walk_does_not_sink_the_report(tmp_path):
+    """The host writes these files while we read them."""
+    d = tmp_path / "projects" / "p"
+    d.mkdir(parents=True)
+    (d / "a.jsonl").write_text("{}\n")
+    (d / "b.jsonl").write_text("{}\n")
+    real = Path.stat
+
+    def vanishing(self, *a, **kw):
+        if self.name == "a.jsonl":
+            raise FileNotFoundError(self)
+        return real(self, *a, **kw)
+
+    with mock.patch.object(Path, "stat", vanishing):
+        got = governor._recent_transcripts(tmp_path / "projects", 10)
+    assert [p.name for p in got] == ["b.jsonl", "a.jsonl"], \
+        "the readable transcript must survive, the vanished one sorts last"
 
 
 def test_growth_per_session_does_not_span_unrelated_sessions(tmp_path):
