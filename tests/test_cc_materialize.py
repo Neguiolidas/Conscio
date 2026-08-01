@@ -166,3 +166,12 @@ def test_copy_tree_skips_pycache(tmp_path):
     n = materialize._copy_tree(src, tmp_path / "dst")
     assert n == 1
     assert not (tmp_path / "dst" / "__pycache__").exists()
+
+
+def test_materialize_registers_the_compaction_bracket(tmp_path):
+    _run(tmp_path)
+    settings = json.loads((tmp_path / "claude" / "settings.json").read_text())
+    for event, arg in (("PreCompact", "pre-compact"),
+                       ("PostCompact", "post-compact")):
+        blob = json.dumps(settings["hooks"][event])
+        assert "conscio_deepminer.py" in blob and arg in blob, event

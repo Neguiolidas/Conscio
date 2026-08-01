@@ -186,10 +186,68 @@ def on_session_start(payload, store, storage):
         conn.close()
 
 
+COMPACT_INSTRUCTIONS = (
+    "Preserve: the task in progress and why, files opened or edited and what "
+    "changed in each, decisions taken and the reasoning behind them, and any "
+    "failing test or unresolved error with its exact message. Drop: tool output "
+    "that has been superseded, and narration. Every tool call in this session is "
+    "recorded verbatim in Conscio and can be recovered with "
+    "conscio.recall_observations, so summarise freely rather than hoarding detail."
+)
+
+
+def on_pre_compact(payload, store, storage):
+    """Steer the summariser and mark the boundary. Never blocks.
+
+    PreCompact can block compaction; this deliberately does not. The whole point
+    of the Governor is to compact more often, so blocking would work against it.
+    """
+    session = str(payload.get("session_id") or "unknown")
+    conn = store.connect(storage / "obs.db", busy_timeout_ms=BUSY_TIMEOUT_MS)
+    try:
+        store.put_observation(
+            conn, tool="compact-boundary", input_text="",
+            output_text=f"compaction started for session {session}",
+            project=str(payload.get("cwd") or os.getcwd()),
+            agent="claude-code", session_id=session, ts=_utc_now())
+    finally:
+        conn.close()
+    sys.stdout.write(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreCompact",
+        "customInstructions": COMPACT_INSTRUCTIONS}}) + "\n")
+
+
+def on_post_compact(payload, store, storage):
+    """Store the summary the host produced, then point at what it replaced."""
+    session = str(payload.get("session_id") or "unknown")
+    summary = _as_text(payload.get("summary"))
+    conn = store.connect(storage / "obs.db", busy_timeout_ms=BUSY_TIMEOUT_MS)
+    try:
+        if summary:
+            store.put_observation(
+                conn, tool="compact-summary", input_text="",
+                output_text=summary,
+                project=str(payload.get("cwd") or os.getcwd()),
+                agent="claude-code", session_id=session, ts=_utc_now())
+        info = store.session_summary(conn, session)
+    finally:
+        conn.close()
+    if not info["total"]:
+        return
+    # The summary is already in context. What the model does not know is that the
+    # detail behind it survived, and how to ask for it.
+    sys.stdout.write(
+        f"Conscio: {info['total']} tool calls from this session are stored "
+        f"verbatim and survived compaction. Recover any of them with "
+        f"conscio.recall_observations before assuming detail was lost.\n")
+
+
 _HANDLERS = {
     "session-start": on_session_start,
     "post-tool-use": lambda p, s, d: on_tool(p, s, d, failed=False),
     "post-tool-use-failure": lambda p, s, d: on_tool(p, s, d, failed=True),
+    "pre-compact": on_pre_compact,
+    "post-compact": on_post_compact,
 }
 
 

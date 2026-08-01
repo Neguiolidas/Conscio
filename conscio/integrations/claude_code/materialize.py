@@ -19,6 +19,8 @@ _CAPTURE_EVENTS = {
     "SessionStart": "session-start",
     "PostToolUse": "post-tool-use",
     "PostToolUseFailure": "post-tool-use-failure",
+    "PreCompact": "pre-compact",
+    "PostCompact": "post-compact",
 }
 
 
