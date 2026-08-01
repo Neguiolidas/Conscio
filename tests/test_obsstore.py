@@ -225,3 +225,72 @@ def test_module_loads_without_importing_the_conscio_package(tmp_path):
     r = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     assert "OK" in r.stdout
+
+
+def test_engine_stores_full_output_and_scopes_recall(tmp_path):
+    from conscio import ConsciousnessEngine
+
+    e = ConsciousnessEngine(model_name="t", storage_path=str(tmp_path))
+    try:
+        big = "x " * 5000 + "TAILMARKER"
+        e.set_session("SESSION-AAA")
+        e.observe("Bash", "git status", "ALPHA-ONLY", project="alpha")
+        e.set_session("SESSION-BBB")
+        e.observe("Bash", "git status", big, project="beta")
+
+        # the 1024-char cap is gone
+        got = e.recall_observations("TAILMARKER", full=True)
+        assert got and got[0]["output"] == big
+
+        # and a recall in session BBB no longer sees session AAA
+        assert e.recall_observations("ALPHA-ONLY") == []
+        assert e.recall_observations("ALPHA-ONLY", scope="all")[0]["project"] == "alpha"
+
+        assert "session_id" in got[0]
+    finally:
+        e.close()
+
+
+def test_engine_compress_observations_survives_the_v2_schema(tmp_path):
+    """The handoff path reads obs.db directly; v2 dropped the columns it used."""
+    from conscio import ConsciousnessEngine
+
+    e = ConsciousnessEngine(model_name="t", storage_path=str(tmp_path))
+    try:
+        e.set_session("SESSION-H")
+        e.observe("Bash", "git status", "on branch main", project="p")
+        e.observe("Read", "engine.py", "y " * 200_000 + "TAIL", project="p")
+        got = e.compress_observations()
+        assert got["count"] == 2
+        assert "git status" in got["handoff"]
+        assert len(got["handoff"]) < 10_000, "a whole payload leaked into the handoff"
+    finally:
+        e.close()
+
+
+def test_engine_project_scope_needs_the_project_it_observed_with(tmp_path):
+    from conscio import ConsciousnessEngine
+
+    e = ConsciousnessEngine(model_name="t", storage_path=str(tmp_path))
+    try:
+        e.set_session("SESSION-P")
+        e.observe("Bash", "cmd", "PROJMARKER", project="alpha")
+        assert e.recall_observations("PROJMARKER", scope="project",
+                                     project="alpha")[0]["project"] == "alpha"
+        # omitting it must be loud, not an empty result that reads like a miss
+        with pytest.raises(ValueError):
+            e.recall_observations("PROJMARKER", scope="project")
+    finally:
+        e.close()
+
+
+def test_engine_observe_still_never_raises(tmp_path):
+    """Telemetry must not break the caller even when the store is unusable."""
+    from conscio import ConsciousnessEngine
+
+    e = ConsciousnessEngine(model_name="t", storage_path=str(tmp_path))
+    try:
+        e._obs_conn().close()  # simulate a dead handle mid-session
+        assert e.observe("Bash", "cmd", "out") == -1
+    finally:
+        e.close()
