@@ -160,6 +160,34 @@ def test_prune_with_an_unreachable_cap_empties_rather_than_spinning(conn):
     assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
 
 
+def test_last_session_id_returns_the_most_recent_and_can_skip_current(conn):
+    _obs(conn, session_id="OLD", output_text="a")
+    _obs(conn, session_id="NEW", output_text="b")
+    assert obsstore.last_session_id(conn) == "NEW"
+    assert obsstore.last_session_id(conn, exclude="NEW") == "OLD"
+    assert obsstore.last_session_id(conn, exclude="OLD") == "NEW"
+
+
+def test_last_session_id_is_none_on_an_empty_store(conn):
+    assert obsstore.last_session_id(conn) is None
+
+
+def test_session_summary_counts_tools_most_used_first(conn):
+    for _ in range(3):
+        _obs(conn, session_id="S", tool="Bash", output_text="o")
+    _obs(conn, session_id="S", tool="Read", output_text="o")
+    _obs(conn, session_id="OTHER", tool="Edit", output_text="o")
+    s = obsstore.session_summary(conn, "S")
+    assert s["total"] == 4
+    assert s["tools"] == [("Bash", 3), ("Read", 1)]
+    assert s["session_id"] == "S"
+
+
+def test_session_summary_of_an_unknown_session_is_empty_not_an_error(conn):
+    s = obsstore.session_summary(conn, "NOPE")
+    assert s["total"] == 0 and s["tools"] == []
+
+
 def _make_v1(path):
     """Build a database in the exact v3.8.2 shape, with truncated payloads."""
     c = sqlite3.connect(str(path))
