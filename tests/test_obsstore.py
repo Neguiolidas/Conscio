@@ -177,7 +177,10 @@ def test_connect_takes_no_write_lock_on_an_already_current_store(tmp_path):
         c = obsstore.connect(p, busy_timeout_ms=3000)
         elapsed = (time.perf_counter() - t0) * 1000
         c.close()
-        assert elapsed < 150, f"connect() blocked {elapsed:.0f}ms behind a writer"
+        # The bar is "did not wait on the lock", not "ran on an idle machine":
+        # a blocked connect() would sit for the full 3s busy_timeout above.
+        # 150ms was tight enough to flake under a loaded test sweep.
+        assert elapsed < 1000, f"connect() blocked {elapsed:.0f}ms behind a writer"
     finally:
         holder.rollback()
         holder.close()

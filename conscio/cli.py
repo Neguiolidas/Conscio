@@ -71,6 +71,15 @@ def _build_parser() -> argparse.ArgumentParser:
                            choices=["minimal", "compact", "full"],
                            help="output verbosity (default: compact)")
 
+    p_govern = sub.add_parser("govern", help="measure and cap the context window")
+    p_govern.add_argument("action",
+                          choices=["prefix", "on", "off", "status", "report"])
+    p_govern.add_argument("--window", type=int, default=None,
+                          help="context ceiling in tokens (default: measured)")
+    p_govern.add_argument("--all", action="store_true", dest="all_sessions",
+                          help="report: across sessions, not just this one")
+    p_govern.add_argument("--storage", default=None)
+
     sub.add_parser("plugins", help="list discovered adapter/sensor/tool plugins")
 
     p_consent = sub.add_parser(
@@ -293,6 +302,119 @@ def _cmd_council(question: str, context: str, options: str, model: str,
             print(json.dumps(result, indent=2, default=str))
     finally:
         eng.close()
+    return 0
+
+
+def _cmd_govern(action: str, window: int | None, storage: str,
+                all_sessions: bool) -> int:
+    """Measure, apply, or report on the context ceiling."""
+    from . import governor
+    from .timeutil import naive_utcnow
+    space = _storage(storage)
+    ts = naive_utcnow().strftime("%Y%m%d_%H%M%S")
+
+    def _profile():
+        rows: list[dict] = []
+        for path in governor._recent_transcripts(governor.projects_dir(), 10):
+            rows.extend(governor.read_usage(path))
+        out_rate = (sum(r["out"] for r in rows) / len(rows)) if rows else 0.0
+        return rows, governor.summarise(rows), governor.growth_rate(rows), out_rate
+
+    if action in ("prefix", "status"):
+        measured = governor.measure_prefix(governor.projects_dir())
+        prefix = measured["prefix"]
+        active = governor.current_window()
+        print(f"Stable prefix   {prefix:>10,}  "
+              f"(median first turn of {measured['sessions']} sessions)")
+        print(f"Ceiling         "
+              f"{'OFF' if active is None else format(active, ',')}")
+        if action == "prefix":
+            _, agg, growth, out_rate = _profile()
+            landed = governor.compaction_floor(governor.projects_dir())
+            print(f"Growth rate     {growth:>10,.0f}  tokens added per request")
+            print(f"Compaction lands{landed:>10,}  "
+                  f"{'(never observed)' if not landed else '(smallest seen)'}")
+            floor = max(int(prefix * governor.MIN_HEADROOM_FACTOR),
+                        int(landed * governor.FLOOR_MARGIN))
+            print(f"Refused below   {floor:>10,}")
+            best = governor.recommend_window(
+                prefix, requests=agg["requests"], growth=growth,
+                out_per_request=out_rate, floor=landed)
+            print(f"Recommended     {best:>10,}  (cost-optimal for this profile)")
+            print("\n  window      modelled cost")
+            for w in governor.CANDIDATE_WINDOWS:
+                cost = governor.modelled_cost(
+                    w, prefix=prefix, requests=agg["requests"], growth=growth,
+                    out_per_request=out_rate)
+                mark = "  <- recommended" if w == best else ""
+                shown = "n/a" if cost == float("inf") else f"{cost:,.0f}"
+                print(f"  {w:>9,}  {shown:>14}{mark}")
+        else:
+            obs = Path(space) / "obs.db"
+            size = obs.stat().st_size if obs.exists() else 0
+            print(f"obs.db          {size / 1_048_576:>10,.1f} MB")
+            print(f"Baseline        "
+                  f"{'recorded' if governor.read_baseline(space) else 'none'}")
+        return 0
+
+    if action == "on":
+        measured = governor.measure_prefix(governor.projects_dir())
+        prefix = measured["prefix"]
+        landed = governor.compaction_floor(governor.projects_dir())
+        _, agg, growth, out_rate = _profile()
+        if prefix <= 0:
+            print("Refusing: no transcripts to measure from, so there is no "
+                  "prefix to size a window against.")
+            print(f"  Looked in {governor.projects_dir()}.")
+            print("  Run a session first, or pass --window explicitly if you "
+                  "know what your prefix is.")
+            return 1
+        chosen = window or governor.recommend_window(
+            prefix, requests=agg["requests"], growth=growth,
+            out_per_request=out_rate, floor=landed)
+        room_floor = int(prefix * governor.MIN_HEADROOM_FACTOR)
+        land_floor = int(landed * governor.FLOOR_MARGIN)
+        if chosen < max(room_floor, land_floor):
+            print(f"Refusing: window {chosen:,} cannot hold.")
+            if chosen < room_floor:
+                print(f"  Measured prefix {prefix:,} leaves no working room "
+                      f"below {room_floor:,} "
+                      f"(prefix x{governor.MIN_HEADROOM_FACTOR:g}).")
+            if chosen < land_floor:
+                print(f"  Compaction lands at {landed:,} in your own "
+                      f"transcripts. A window under {land_floor:,} would "
+                      f"compact, land above itself, and compact again.")
+            print("  Either raise --window, or prune the prefix: "
+                  "`conscio govern prefix` lists what feeds it.")
+            return 1
+        governor.write_baseline(space, governor.snapshot(space))
+        backup = governor.apply_window(chosen, ts=ts)
+        print(f"Ceiling set to {chosen:,} tokens (prefix {prefix:,}).")
+        if backup:
+            print(f"  Settings backed up to {backup}")
+        print("  Baseline frozen. Revert with `conscio govern off`.")
+        return 0
+
+    if action == "off":
+        base = governor.read_baseline(space) or {}
+        prior = base.get("prior_window")
+        governor.clear_window(ts=ts, previous=prior)
+        print("Ceiling removed." if prior is None
+              else f"Ceiling restored to your previous {prior:,}.")
+        print("  The baseline is kept for reporting.")
+        return 0
+
+    if action == "report":
+        if all_sessions:
+            print(governor.report_all(space, governor.current_window()))
+            return 0
+        paths = governor._recent_transcripts(governor.projects_dir(), 1)
+        if not paths:
+            print("No sessions found under " + str(governor.projects_dir()))
+            return 0
+        print(governor.report_for_session(paths[0], space,
+                                          governor.current_window()))
+        return 0
     return 0
 
 
@@ -595,6 +717,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "council":
         return _cmd_council(args.question, args.context, args.options,
                            args.model, args.storage, args.mode)
+    if args.command == "govern":
+        return _cmd_govern(args.action, args.window, args.storage,
+                           args.all_sessions)
     if args.command == "plugins":
         return _cmd_plugins()
     if args.command == "consent":

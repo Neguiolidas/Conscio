@@ -276,3 +276,55 @@ def test_a_one_megabyte_payload_still_fits_the_budget(wired):
     mod.on_tool(payload, store, Path(cfg["storage"]))
     ms = (time.perf_counter() - t0) * 1000
     assert ms < 200.0, f"{ms:.0f}ms for a 1 MiB payload"
+
+
+# ── compaction bracket (v3.9.2) ────────────────────────────────────────────
+
+def test_pre_compact_steers_the_summariser_without_blocking(wired):
+    r = run_hook("pre-compact", {"session_id": "C1", "cwd": "/tmp/p"}, wired)
+    assert r.returncode == 0
+    out = json.loads(r.stdout)
+    hs = out["hookSpecificOutput"]
+    assert hs["hookEventName"] == "PreCompact"
+    assert "customInstructions" in hs
+    assert out.get("continue") is not False, \
+        "spec 7: blocking compaction works against the goal"
+
+
+def test_post_compact_stores_the_summary_and_injects_an_index(wired):
+    run_hook("post-tool-use", _payload(session_id="C1",
+             tool_response={"stdout": "EARLIERWORK"}), wired)
+    r = run_hook("post-compact",
+                 {"session_id": "C1", "cwd": "/tmp/p",
+                  "summary": "We fixed the parser and shipped v2."}, wired)
+    assert r.returncode == 0
+    c = _conn(wired)
+    got = obsstore.search(c, "parser", session_id="C1", full=True)
+    assert got and "shipped v2" in got[0]["output"]
+    assert got[0]["tool"] == "compact-summary"
+    c.close()
+    assert "recall_observations" in r.stdout
+
+
+def test_post_compact_index_never_carries_the_summary_itself(wired):
+    """The summary is already in context — repeating it would be pure cost."""
+    summary = "UNIQUESUMMARYTOKEN " + "detail " * 5000
+    r = run_hook("post-compact", {"session_id": "C1", "summary": summary}, wired)
+    assert "UNIQUESUMMARYTOKEN" not in r.stdout
+    assert len(r.stdout) < 4096
+
+
+def test_pre_compact_records_a_boundary_marker(wired):
+    run_hook("pre-compact", {"session_id": "C1", "cwd": "/tmp/p"}, wired)
+    c = _conn(wired)
+    assert obsstore.search(c, "compaction started", session_id="C1", full=True)
+    c.close()
+
+
+def test_compaction_events_still_fail_open(wired, tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({"obsstore": "/nope.py", "storage": str(tmp_path)}))
+    for event in ("pre-compact", "post-compact"):
+        r = run_hook(event, {"session_id": "C1"}, bad)
+        assert r.returncode == 0, event
+        assert r.stdout == "", event
