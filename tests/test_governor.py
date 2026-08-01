@@ -344,3 +344,36 @@ def test_report_all_with_no_transcripts_says_so(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path / "proj"))
     assert _cli()._cmd_govern("report", None, str(tmp_path / "space"), True) == 0
     assert "no sessions" in capsys.readouterr().out.lower()
+
+
+def test_recommend_window_refuses_to_guess_without_a_measured_prefix():
+    """With no transcripts the smallest candidate is 25,000 — measured
+    catastrophic (36.9%, 241 compactions). Returning it would be the worst
+    possible default, so an unmeasurable profile yields no recommendation."""
+    assert governor.recommend_window(0) == 0
+    assert governor.recommend_window(0, requests=100, growth=1000.0) == 0
+
+
+def test_govern_on_refuses_when_there_is_nothing_to_measure(
+        tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path))
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path / "proj"))
+    (tmp_path / "projects").mkdir()
+    rc = _cli()._cmd_govern("on", None, str(tmp_path / "space"), False)
+    assert rc == 1
+    assert "no transcripts" in capsys.readouterr().out.lower()
+    assert governor.current_window() is None
+
+
+def test_govern_on_twice_still_restores_the_users_original_window(
+        tmp_path, monkeypatch):
+    """`on` twice must not record the governor's own window as the user's."""
+    space = _wire(tmp_path, monkeypatch)
+    d = tmp_path / "proj" / ".claude"
+    d.mkdir(parents=True)
+    (d / "settings.local.json").write_text(json.dumps({"autoCompactWindow": 150_000}))
+    _cli()._cmd_govern("on", 120_000, str(space), False)
+    _cli()._cmd_govern("on", 160_000, str(space), False)
+    assert governor.current_window() == 160_000
+    _cli()._cmd_govern("off", None, str(space), False)
+    assert governor.current_window() == 150_000, "the user's own value, not 120,000"

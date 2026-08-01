@@ -32,6 +32,23 @@ short **index** of the previous session — what ran, never what it returned.
 Search it with `conscio.recall_observations`, which stays inside the current
 session unless you widen `scope` to `project` or `all`.
 
+**Context ceiling (v3.9.2).** `conscio govern prefix` measures your stable prefix
+and the point your compactions actually land at, then prints the cost curve for
+every candidate window. `conscio govern on` applies the cost-optimal one to the
+project's `.claude/settings.local.json` — scoped to that project, gitignored, and
+backed up — and freezes a baseline. `conscio govern report` compares against it
+using the host's own `message.usage` records rather than any token counting of
+ours. `conscio govern off` restores whatever you had before.
+
+The window is a trade, not a limbo bar. A smaller ceiling makes every turn cheaper
+but forces compaction more often, and each compaction invalidates the prompt cache
+and pays for a summary. Measured on an 881-request session that reached 402,722
+tokens: the curve bottoms out around 59% in the abstract, but the summariser lands
+at ~82,000-90,000 tokens **regardless of the window you set**, so anything under
+about 90,000 compacts, lands above its own ceiling, and compacts again. The
+honest, achievable figure for that profile was **45.8% at a 120,000 window**, and
+`govern on` refuses any window below the floor your own transcripts show.
+
 > Capture is complete, not truncated: a tool's whole input and output are stored
 > (up to 1 MiB per field), so anything a tool reads or writes — including
 > secrets — can land in `obs.db`, which is plain SQLite on disk. This is the same
