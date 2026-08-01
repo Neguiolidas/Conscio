@@ -61,17 +61,35 @@ _DDL = (
 )
 
 
-def connect(path: str | Path) -> sqlite3.Connection:
+def connect(
+    path: str | Path, *, busy_timeout_ms: int = _BUSY_TIMEOUT_MS
+) -> sqlite3.Connection:
     """Open (creating if needed) an obs.db at ``path`` and ensure the schema.
 
     WAL plus ``synchronous=NORMAL``: durable across process crashes, and only the
     newest commits can roll back on power loss. Never corruption. The right trade
     for high-rate fire-and-forget telemetry.
+
+    **Opening an up-to-date store writes nothing.** The v3.9.1 hook opens this
+    file once per tool call; stamping ``user_version`` unconditionally made every
+    open a writer, so a tool call queued behind whatever else held the lock —
+    measured at 2s against a 60ms budget. A store already at ``SCHEMA_VERSION``
+    therefore returns immediately, without DDL and without a transaction.
+
+    The cost of that trade: a store stamped v2 whose tables were dropped
+    underneath it is no longer silently rebuilt here. It surfaces at the failing
+    write instead, where ``observe()`` swallows it and returns -1 — which is the
+    honest outcome for a corrupt store, rather than masking it.
+
+    ``busy_timeout_ms`` belongs to the caller: a hook on the tool path wants to
+    give up in milliseconds, while the MCP server can afford to wait.
     """
     conn = sqlite3.connect(str(path), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+    conn.execute(f"PRAGMA busy_timeout={int(busy_timeout_ms)}")
+    if conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION:
+        return conn
     # Migration runs *before* the DDL: on a v1 file the index on in_h would be
     # created against a table that has no such column and raise.
     migrate(conn)
