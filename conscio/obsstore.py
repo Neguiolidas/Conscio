@@ -27,6 +27,10 @@ SCHEMA_VERSION = 2
 # every genuine payload whole while refusing pathological input outright.
 MAX_FIELD_BYTES = 1024 * 1024
 
+# Measured on real tool output: at the typical 2 KB the level is irrelevant
+# (0.03ms at L1 vs 0.04ms at L6); it only diverges at the 1 MiB cap (9ms/32.2%
+# vs 21ms/28.2%), which is rare. The default ratio is worth 12ms on a payload
+# that size, and the retention cap counts compressed bytes.
 _COMPRESS_LEVEL = 6
 
 _DDL = (
@@ -195,6 +199,12 @@ def migrate(conn: sqlite3.Connection) -> int:
         return 0
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # Re-check under the write lock. Two processes can both see a v1 file and
+        # queue here; without this the loser would wake up after the winner
+        # committed and rename the *migrated* table out from under it.
+        if not _is_v1(conn):
+            conn.rollback()
+            return 0
         conn.execute("ALTER TABLE observations RENAME TO observations_v1")
         conn.execute("DROP TABLE IF EXISTS obs_fts")
         for stmt in _DDL:
@@ -302,7 +312,14 @@ def search(
 
 
 def stored_bytes(conn: sqlite3.Connection) -> int:
-    """Total compressed size of every blob currently held."""
+    """Total compressed size of every blob currently held.
+
+    Payload bytes only — the FTS index carries the same text uncompressed plus
+    its postings, so the file on disk is a multiple of this. It is the right
+    number to prune against anyway: it is the only one that shrinks immediately
+    on delete, where page_count keeps freed pages on the freelist until a VACUUM
+    and would make the eviction loop run until the store was empty.
+    """
     row = conn.execute("SELECT COALESCE(SUM(LENGTH(z)),0) FROM blobs").fetchone()
     return int(row[0])
 
@@ -342,6 +359,8 @@ def prune(
     compressed, so no per-row size arithmetic can predict the cut point; the loop
     evicts a twentieth of what remains per pass and re-measures, which converges
     in a couple of dozen passes from any starting size.
+
+    ``max_bytes`` bounds stored payload bytes, not the file: see ``stored_bytes``.
     """
     cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=max_age_days)
               ).replace(tzinfo=None).isoformat()

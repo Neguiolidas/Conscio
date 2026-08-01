@@ -206,6 +206,68 @@ def test_migration_leaves_no_stale_fts_rows(tmp_path):
     c.close()
 
 
+def test_concurrent_first_open_of_a_v1_file_migrates_exactly_once(tmp_path):
+    """Concurrent first opens must converge on one migration, never double-run.
+
+    Whether any given run hits the pre-lock/post-lock window is timing-dependent,
+    so this asserts the outcome — exact row count, no leftover v1 table, still
+    searchable — rather than claiming to force the race every time.
+    """
+    p = tmp_path / "obs.db"
+    c = sqlite3.connect(str(p))
+    c.execute("CREATE TABLE observations(id INTEGER PRIMARY KEY AUTOINCREMENT,"
+              " tool TEXT, input TEXT, output TEXT, project TEXT, agent TEXT,"
+              " session_id TEXT, ts TEXT)")
+    c.execute("CREATE VIRTUAL TABLE obs_fts USING fts5(tool, input, output)")
+    for i in range(50):
+        cur = c.execute("INSERT INTO observations(tool, input, output, project,"
+                        " agent, session_id, ts) VALUES(?,?,?,?,?,?,?)",
+                        ("Bash", f"in{i}", f"RACEMARK{i}", "p", "a", "R",
+                         "2026-07-30T00:00:00"))
+        c.execute("INSERT INTO obs_fts(rowid, tool, input, output) VALUES(?,?,?,?)",
+                  (cur.lastrowid, "Bash", f"in{i}", f"RACEMARK{i}"))
+    c.commit()
+    c.close()
+
+    mod_path = Path(obsstore.__file__)
+    script = (
+        "import importlib.util, sys\n"
+        f"spec = importlib.util.spec_from_file_location('obsstore', r'{mod_path}')\n"
+        "m = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(m)\n"
+        f"c = m.connect(r'{p}')\n"
+        "print(c.execute('SELECT COUNT(*) FROM observations').fetchone()[0])\n"
+    )
+    procs = [subprocess.Popen([sys.executable, "-c", script],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              text=True) for _ in range(4)]
+    outs = [p_.communicate() for p_ in procs]
+    for (out, err), p_ in zip(outs, procs):
+        assert p_.returncode == 0, err
+        assert out.strip() == "50", f"row count drifted: {out!r}"
+
+    c = obsstore.connect(p)
+    assert c.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 50
+    assert not c.execute(
+        "SELECT name FROM sqlite_master WHERE name='observations_v1'").fetchall()
+    assert len(obsstore.search(c, "RACEMARK7", session_id="R")) == 1
+    c.close()
+
+
+def test_a_payload_cut_mid_codepoint_still_round_trips(conn):
+    """The cap is a byte boundary; a 4-byte emoji straddling it must not raise."""
+    head = "a" * (obsstore.MAX_FIELD_BYTES - 2)
+    oid = obsstore.put_observation(
+        conn, tool="Bash", input_text="i", output_text=head + "🌍 tail",
+        project="p", agent="a", session_id="S1", ts="t")
+    got = obsstore.read_observation(conn, oid)
+    assert got["truncated"] is True
+    assert got["output"].startswith("a" * 100)
+    # whatever survived the cut, the blob and the index agree on it
+    fts = conn.execute("SELECT output FROM obs_fts WHERE rowid=?", (oid,)).fetchone()[0]
+    assert fts == got["output"]
+
+
 def test_module_loads_without_importing_the_conscio_package(tmp_path):
     """The v3.9 hook loads this file directly; conscio must stay out of sys.modules."""
     mod_path = Path(obsstore.__file__)
