@@ -33,6 +33,12 @@ MAX_FIELD_BYTES = 1024 * 1024
 # that size, and the retention cap counts compressed bytes.
 _COMPRESS_LEVEL = 6
 
+# Everyday lock patience. Short on purpose: this runs inside a per-tool-call
+# hook, where blocking the agent costs more than dropping one observation.
+_BUSY_TIMEOUT_MS = 2000
+# Patience while a one-time migration holds the write lock — see migrate().
+_MIGRATION_LOCK_WAIT_MS = 30000
+
 _DDL = (
     ("CREATE TABLE IF NOT EXISTS blobs ("
      " h TEXT PRIMARY KEY, z BLOB NOT NULL, n INTEGER NOT NULL)"),
@@ -65,7 +71,7 @@ def connect(path: str | Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA busy_timeout=2000")
+    conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
     # Migration runs *before* the DDL: on a v1 file the index on in_h would be
     # created against a table that has no such column and raise.
     migrate(conn)
@@ -197,8 +203,12 @@ def migrate(conn: sqlite3.Connection) -> int:
     """
     if not _is_v1(conn):
         return 0
-    conn.execute("BEGIN IMMEDIATE")
+    # A one-time rewrite of a large store can outlast the everyday busy_timeout,
+    # and a process that waits here is one that would otherwise drop writes. The
+    # longer patience applies only while migrating: a v2 file never reaches this.
+    conn.execute(f"PRAGMA busy_timeout={_MIGRATION_LOCK_WAIT_MS}")
     try:
+        conn.execute("BEGIN IMMEDIATE")
         # Re-check under the write lock. Two processes can both see a v1 file and
         # queue here; without this the loser would wake up after the winner
         # committed and rename the *migrated* table out from under it.
@@ -228,6 +238,8 @@ def migrate(conn: sqlite3.Connection) -> int:
     except Exception:
         conn.rollback()
         raise
+    finally:
+        conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
     return moved
 
 
