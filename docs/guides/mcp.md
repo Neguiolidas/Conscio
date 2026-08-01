@@ -101,8 +101,13 @@ Retrieve relevant past context (FTS5 BM25 + RAG fusion).
 Record a raw tool call into the isolated `obs.db` (v3.8 DeepMiner).
 Fire-and-forget: never raises, never blocks, costs **0 LLM tokens**. Returns
 `{observation_id}`, or `-1` if the write failed — telemetry must never break
-the caller. Capture is **lossy by design**: at most 1024 chars of `input` and
-of `output` are stored.
+the caller.
+
+Since **v3.9** capture is full-fidelity, not clipped: a field is stored whole up
+to `MAX_FIELD_BYTES` (1 MiB), against the 1024 chars the v1 schema kept. Rows
+migrated from v1 stay clipped — the detail they lost was never written. On
+Claude Code this tool is rarely called by hand, because the installed hook
+records every tool call already.
 
 ```json
 {"tool": "edit_file", "input": "fix auth bug", "output": "done", "project": "/proj"}

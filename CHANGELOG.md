@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.9.2] - 2026-08-01 — Context Governor
+
+The 3.9 line in one release. It was developed as three slices — `3.9.0`
+ObsStore, `3.9.1` capture, `3.9.2` Governor — and none was published
+separately, so this is the first release to carry any of them.
+
+### Added
+
+- **ObsStore** — observations move to their own schema with content-addressed
+  blob storage, session-scoped writes, and FTS search that stays inside the
+  current session unless `scope` widens it to `project` or `all`. Retention
+  enforces an age window, a byte cap, and orphan collection. The v1→v2
+  migration is atomic and the module stays loadable standalone.
+- **Automatic capture on Claude Code** — the installer registers a hook on
+  `SessionStart`, `PostToolUse` and `PostToolUseFailure` that records every
+  tool call into `obs.db`. It never alters tool output and never blocks a
+  session: any failure exits silently. Session start prunes the store and
+  injects an index of the previous session — what ran, never what it returned.
+  Capture is held to a 60 ms p95 budget by test.
+- **Context Governor** — `conscio govern prefix` measures the stable prefix and
+  the point compactions actually land at, then prints the cost curve for every
+  candidate window. `govern on` applies the cost-optimal one to the project's
+  `.claude/settings.local.json` (scoped, gitignored, backed up) and freezes a
+  baseline; `govern report` compares against it using the host's own
+  `message.usage` records; `govern off` restores what you had.
+- **Compaction bracket** — `PreCompact` steers the summariser toward what is
+  worth keeping and `PostCompact` stores the summary the host produced, then
+  points at the detail that survived it.
+
+### Fixed
+
+- The compaction hooks spoke a contract the host does not implement.
+  `PreCompact` emitted a `hookSpecificOutput` envelope, but the host joins raw
+  hook stdout and hands it to the summariser as its instructions — so the steer
+  was a JSON blob standing where prose belongs. `PostCompact` read
+  `payload["summary"]`; the field is `compact_summary`, so every summary was
+  discarded while the hook reported success. Both were silent.
+- The compaction floor pooled landings across models. A `sonnet-5` landing of
+  142,208 governed an `opus-5` session whose own landings topped out at
+  125,586, and since the floor is a maximum, the foreign number won. Same-model
+  landings only, falling back to the pooled maximum rather than to zero, which
+  would drop the guard entirely.
+- The floor also dropped every landing whose first post-compaction row was
+  billed nothing — 20 of 95 on one host. Fewer landings can only produce too
+  low a floor, which is the direction that permits the compaction loop the
+  number exists to forbid.
+- Capture was inert on every fresh install, and opening an up-to-date store
+  took the write lock unnecessarily. The one-time WAL conversion now retries
+  the busy state SQLite refuses to wait through.
+- Listing transcripts no longer raises when one rotates away mid-walk.
+
 ## [3.8.2] - 2026-07-31 — DeepMiner Economics
 
 v3.8.0/3.8.1 shipped DeepMiner without ever measuring what a recall *costs*.

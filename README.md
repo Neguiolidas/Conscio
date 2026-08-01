@@ -14,7 +14,16 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.8.2` "DeepMiner":**
+**Latest release — `v3.9.2` "Context Governor":**
+Conscio measures what a session's context actually costs — from the host's own
+`message.usage` records, not from any token counting of ours — and turns that
+into a window you can defend. Automatic capture records every tool call, so a
+smaller window stops meaning lost work: the detail is recoverable after the
+summariser has dropped it. The 3.9 line shipped as three slices (`3.9.0`
+ObsStore, `3.9.1` capture, `3.9.2` Governor); this is the first release to
+carry any of them.
+
+**`v3.8.2` "DeepMiner":**
 An agnostic tool-observation store isolated in its own `obs.db` (SQLite +
 FTS5): `observe()` captures raw tool calls fire-and-forget, `recall_observations()`
 full-text searches them and returns a **snippet window** around each hit, and
@@ -23,7 +32,7 @@ all at **0 LLM tokens**. Exposed as two MCP tools
 (`conscio.observe` / `conscio.recall_observations`) so any agent can use it.
 Fully offline, stdlib-only core.
 
-**Automatic capture on Claude Code (v3.9.1).** The installer registers a hook on
+**Automatic capture on Claude Code (v3.9).** The installer registers a hook on
 `SessionStart`, `PostToolUse` and `PostToolUseFailure` that records every tool
 call into `obs.db`, scoped to the session and the project. It never alters tool
 output and never blocks a session: any failure exits silently and the output
@@ -32,7 +41,7 @@ short **index** of the previous session — what ran, never what it returned.
 Search it with `conscio.recall_observations`, which stays inside the current
 session unless you widen `scope` to `project` or `all`.
 
-**Context ceiling (v3.9.2).** `conscio govern prefix` measures your stable prefix
+**Context ceiling (v3.9).** `conscio govern prefix` measures your stable prefix
 and the point your compactions actually land at, then prints the cost curve for
 every candidate window. `conscio govern on` applies the cost-optimal one to the
 project's `.claude/settings.local.json` — scoped to that project, gitignored, and
@@ -48,6 +57,20 @@ at ~82,000-90,000 tokens **regardless of the window you set**, so anything under
 about 90,000 compacts, lands above its own ceiling, and compacts again. The
 honest, achievable figure for that profile was **45.8% at a 120,000 window**, and
 `govern on` refuses any window below the floor your own transcripts show.
+
+Where the summariser lands is a property of the model, not of your habits. On one
+host `opus-5` landings topped out at 125,586 while `sonnet-5` reached 142,208, so
+the floor is computed from landings billed to the model you are actually running —
+a floor borrowed from a heavier model silently forbids windows that are fine for
+yours. Landings from a manual `/compact` count too: they are still landings the
+next turn has to sit above.
+
+**Compaction bracket (v3.9).** `PreCompact` tells the summariser what is worth
+keeping — the task in progress, what changed in which file, unresolved errors
+with their exact text — and that every tool call is recoverable from `obs.db`, so
+it can summarise freely instead of hoarding detail. `PostCompact` stores the
+summary the host produced and points at the detail that survived it. Neither ever
+blocks compaction: the whole point of the Governor is to compact *more* often.
 
 > Capture is complete, not truncated: a tool's whole input and output are stored
 > (up to 1 MiB per field), so anything a tool reads or writes — including
