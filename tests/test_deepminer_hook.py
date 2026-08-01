@@ -182,3 +182,55 @@ def test_hook_never_imports_the_conscio_package(wired):
     assert r.returncode == 0
     assert "conscio/__init__" not in r.stderr
     assert "sentence_transformers" not in r.stderr
+
+
+# ── session start ──────────────────────────────────────────────────────────
+
+def test_session_start_injects_an_index_of_the_previous_session(wired):
+    run_hook("post-tool-use", _payload(session_id="PREV",
+             tool_name="Bash", tool_response={"stdout": "x"}), wired)
+    run_hook("post-tool-use", _payload(session_id="PREV",
+             tool_name="Read", tool_response={"stdout": "y"}), wired)
+    r = run_hook("session-start", {"session_id": "CURRENT"}, wired)
+    assert r.returncode == 0
+    assert "PREV" in r.stdout
+    assert "2 tool calls" in r.stdout                  # not a stray digit
+    assert "Bash x1" in r.stdout and "Read x1" in r.stdout
+    assert "conscio.recall_observations" in r.stdout   # tells the agent how to get it
+
+
+def test_session_start_injects_an_index_never_the_content(wired):
+    """The index must name what happened, not carry it."""
+    big = "SECRETPAYLOAD " + "z " * 100_000
+    run_hook("post-tool-use", _payload(session_id="PREV",
+             tool_response={"stdout": big}), wired)
+    r = run_hook("session-start", {"session_id": "CURRENT"}, wired)
+    assert "SECRETPAYLOAD" not in r.stdout
+    assert len(r.stdout) < 4096
+
+
+def test_session_start_on_an_empty_store_says_nothing(wired):
+    r = run_hook("session-start", {"session_id": "CURRENT"}, wired)
+    assert r.returncode == 0
+    assert r.stdout == ""
+
+
+def test_session_start_prunes(wired):
+    """Retention runs here, off the hot path."""
+    c = _conn(wired)
+    obsstore.put_observation(c, tool="Bash", input_text="i",
+                             output_text="ANCIENTROW", project="p",
+                             agent="claude-code", session_id="OLD",
+                             ts="2019-01-01T00:00:00")
+    c.close()
+    run_hook("session-start", {"session_id": "CURRENT"}, wired)
+    c = _conn(wired)
+    assert obsstore.search(c, "ANCIENTROW", scope="all") == []
+    c.close()
+
+
+def test_session_start_ignores_the_current_session_in_the_index(wired):
+    run_hook("post-tool-use", _payload(session_id="CURRENT",
+             tool_response={"stdout": "mine"}), wired)
+    r = run_hook("session-start", {"session_id": "CURRENT"}, wired)
+    assert r.stdout == ""

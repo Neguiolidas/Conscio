@@ -141,7 +141,52 @@ def on_tool(payload, store, storage, failed=False):
         conn.close()
 
 
+# Retention runs at session start, never on the hot path.
+RETENTION_DAYS = 30
+RETENTION_BYTES = 2 * 1024 ** 3
+
+
+def render_index(summary):
+    """One short block naming what the last session did — never its content.
+
+    additionalContext is capped by the harness, and the whole point of the store
+    is that content stays out of context until asked for. So this says what
+    exists and how to fetch it, and nothing else.
+    """
+    if not summary or not summary["total"]:
+        return ""
+    tools = ", ".join(f"{name} x{count}" for name, count in summary["tools"][:8])
+    return (
+        f"Conscio DeepMiner: {summary['total']} tool calls recorded in the "
+        f"previous session ({summary['session_id']}), {summary['first_ts']} to "
+        f"{summary['last_ts']}. Tools: {tools}. "
+        f"Search them with conscio.recall_observations "
+        f'(scope="all" to reach past sessions).'
+    )[:MAX_INJECT_CHARS]
+
+
+def on_session_start(payload, store, storage):
+    """Prune, then inject an index of the previous session."""
+    current = str(payload.get("session_id") or "")
+    conn = store.connect(storage / "obs.db")
+    try:
+        try:
+            store.prune(conn, max_age_days=RETENTION_DAYS,
+                        max_bytes=RETENTION_BYTES)
+        except Exception:
+            pass  # retention is best-effort; never block a session on it
+        prev = store.last_session_id(conn, exclude=current)
+        if not prev:
+            return
+        text = render_index(store.session_summary(conn, prev))
+        if text:
+            sys.stdout.write(text + "\n")
+    finally:
+        conn.close()
+
+
 _HANDLERS = {
+    "session-start": on_session_start,
     "post-tool-use": lambda p, s, d: on_tool(p, s, d, failed=False),
     "post-tool-use-failure": lambda p, s, d: on_tool(p, s, d, failed=True),
 }
