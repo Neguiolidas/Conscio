@@ -212,11 +212,11 @@ def compaction_floor(root: str | Path, sessions: int = 10) -> int:
                         "out": int(usage.get("output_tokens") or 0)})
         except OSError:
             continue
-        # A row whose usage is all zeros is not a landing point. Letting one
-        # into min() returns 0, which disables the floor entirely and lets a
-        # ceiling be set below where compaction actually lands.
-        floors += [c for c in (context_of(rows[b]) for b in marks
-                               if b < len(rows)) if c > 0]
+        # A row whose usage is all zeros is not a landing point — 20 of 95
+        # observed landings on this host were such rows. They need no filtering:
+        # under max() a zero cannot win, and a run of nothing but zeros returns 0
+        # either way, which is the same "no floor observed" the caller expects.
+        floors += [context_of(rows[b]) for b in marks if b < len(rows)]
     return max(floors) if floors else 0
 
 
@@ -232,9 +232,15 @@ def modelled_cost(window: int, *, prefix: int, requests: int,
       compaction  — a smaller window fills sooner, and each compaction pays to
                     rebuild the cache it invalidated plus the summary it writes.
 
+    Valid only at or above ``hard_floor``. The compaction term assumes each
+    compaction reclaims ``window - prefix``; under the landing floor it reclaims
+    nothing and fires again, so the figure this returns there is not merely
+    optimistic but wrong on its own premise. Callers must refuse those windows
+    rather than print what this says about them.
+
     Measured on a real 881-request session, the unconstrained minimum sits near
     60,000 and the curve is flat from 40,000 to 80,000. Below 40,000 it climbs
-    steeply. Once this host's landing floor is applied, 120,000 wins.
+    steeply. Once this host's landing floor is applied, 160,000 wins.
     """
     room = window - prefix
     if room <= 0:
@@ -246,6 +252,23 @@ def modelled_cost(window: int, *, prefix: int, requests: int,
     each = (window * WEIGHTS["cw"] + avg_context * WEIGHTS["cr"]
             + SUMMARY_OUT_TOKENS * WEIGHTS["out"])
     return turns + compactions * each
+
+
+def hard_floor(prefix: int, landed: int) -> int:
+    """The smallest window that can actually be satisfied.
+
+    Two independent reasons a window is unusable, whichever binds harder:
+
+      headroom — it must hold the stable prefix with room left to work in;
+      landing  — it must sit above where the summariser actually lands, or the
+                 compaction it triggers finishes *over* its own threshold and
+                 fires again immediately. That loop is what this feature exists
+                 to prevent, and it was reproduced live at window 40,000.
+
+    One formula in one place: the recommendation and the curve that justifies it
+    have to refuse the same windows, or the report argues with itself.
+    """
+    return max(int(prefix * MIN_HEADROOM_FACTOR), int(landed * FLOOR_MARGIN))
 
 
 def recommend_window(prefix: int, *, requests: int = 0, growth: float = 0.0,
@@ -263,7 +286,7 @@ def recommend_window(prefix: int, *, requests: int = 0, growth: float = 0.0,
     """
     if prefix <= 0:
         return 0
-    hard = max(int(prefix * MIN_HEADROOM_FACTOR), int(floor * FLOOR_MARGIN))
+    hard = hard_floor(prefix, floor)
     usable = [w for w in CANDIDATE_WINDOWS if w >= hard]
     if not usable:
         return hard

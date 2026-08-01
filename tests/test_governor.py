@@ -254,6 +254,54 @@ def test_govern_prefix_reports_measurement_recommendation_and_curve(
     assert int(line.split()[1].replace(",", "")) >= 60_004   # clears prefix x2
 
 
+def test_the_curve_never_prints_a_bare_cost_for_a_window_it_would_refuse(
+        tmp_path, monkeypatch, capsys):
+    """A refused row showing an attractive number is an invitation to the bug.
+
+    modelled_cost assumes a compaction reclaims `window - prefix`. Below the
+    landing floor it reclaims nothing and fires again, so the figure is wrong on
+    the model's own terms — and it is precisely the cheap-looking figure a user
+    would override the recommendation to chase.
+    """
+    space = _wire(tmp_path, monkeypatch)
+    assert _cli()._cmd_govern("prefix", None, str(space), False) == 0
+    out = capsys.readouterr().out
+    floor = int(next(ln for ln in out.splitlines()
+                     if ln.startswith("Refused below")).split()[2].replace(",", ""))
+    assert floor > governor.CANDIDATE_WINDOWS[0], "test needs a binding floor"
+    for ln in out.splitlines():
+        head = ln.strip().split()
+        if not head or not head[0].replace(",", "").isdigit():
+            continue
+        w = int(head[0].replace(",", ""))
+        if w < floor:
+            assert "refused" in ln, f"window {w:,} is below the floor but reads as usable"
+
+
+def test_the_floor_the_curve_draws_is_the_floor_the_recommendation_uses(
+        tmp_path, monkeypatch, capsys):
+    """One formula, one place. Two copies drift and the table stops agreeing
+    with the line above it."""
+    space = _wire(tmp_path, monkeypatch)
+    assert _cli()._cmd_govern("prefix", None, str(space), False) == 0
+    out = capsys.readouterr().out
+    floor = int(next(ln for ln in out.splitlines()
+                     if ln.startswith("Refused below")).split()[2].replace(",", ""))
+    best = int(next(ln for ln in out.splitlines()
+                    if ln.startswith("Recommended")).split()[1].replace(",", ""))
+    assert best >= floor
+    assert governor.hard_floor(
+        governor.measure_prefix(governor.projects_dir())["prefix"],
+        governor.compaction_floor(governor.projects_dir())) == floor
+
+
+def test_hard_floor_reports_whichever_constraint_binds():
+    # landing floor binds: 142,208 x 1.1 beats 45,101 x 2
+    assert governor.hard_floor(45_101, 142_208) == 156_428
+    # headroom binds: nothing ever compacted, so only the prefix constrains
+    assert governor.hard_floor(45_101, 0) == 90_202
+
+
 def test_govern_status_says_off_when_nothing_is_set(tmp_path, monkeypatch, capsys):
     space = _wire(tmp_path, monkeypatch)
     assert _cli()._cmd_govern("status", None, str(space), False) == 0
@@ -380,11 +428,12 @@ def test_govern_on_twice_still_restores_the_users_original_window(
 
 
 def test_compaction_floor_ignores_zero_context_rows(tmp_path):
-    """A zero-usage row must not poison the minimum.
+    """A zero-usage row must never be reported as where compaction landed.
 
-    Real transcripts contain rows whose usage is all zeros. Taking min() over
-    them yields 0, which silently disables the very floor that stops a ceiling
-    from compacting forever.
+    Real transcripts are full of them — 20 of 95 observed landings on the
+    development host. This pins the output contract, not a guard: since the
+    floor takes the worst landing, a zero simply loses, and the explicit filter
+    that once served the earlier min() has been removed as dead code.
     """
     d = tmp_path / "projects" / "p"
     d.mkdir(parents=True)
