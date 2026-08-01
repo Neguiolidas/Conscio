@@ -68,7 +68,13 @@ class GitSensor(SensorAdapter):
             proc = subprocess.run(
                 [
                     self._git_bin, "-C", str(self._repo), "log",
-                    f"--since={since_s}s",
+                    # "N seconds ago", not "Ns": git's approxidate does not
+                    # accept the bare-suffix form and does not reject it
+                    # either -- it matches nothing and exits 0. Measured on
+                    # git 2.43.0: --since=172800s returned 0 commits where
+                    # --since="172800 seconds ago" returned 40. The sensor
+                    # reported a quiet repository on every poll.
+                    f"--since={since_s} seconds ago",
                     # NUL-delimited to handle commas in author names/subjects
                     "--format=%H%x00%an%x00%s",
                 ],
