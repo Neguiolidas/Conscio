@@ -151,12 +151,34 @@ def growth_rate(rows: list[dict]) -> float:
     return max(0.0, (context_of(rows[-1]) - context_of(rows[0])) / (len(rows) - 1))
 
 
-def compaction_floor(root: str | Path, sessions: int = 10) -> int:
-    """Smallest context observed immediately after a compaction, or 0.
+def growth_per_session(root: str | Path, sessions: int = 10) -> float:
+    """Median tokens added per request, measured within each session.
 
-    This is the number a window must clear. It comes from the user's own
-    transcripts because it depends on their prefix and their summariser output,
-    not on anything we can assume.
+    Never across a concatenation of sessions: the rows of two unrelated sessions
+    laid end to end give a delta that means nothing and is frequently negative,
+    which clamps to zero and silently removes the compaction term from the cost
+    model.
+    """
+    rates = []
+    for path in _recent_transcripts(Path(root), sessions):
+        rate = growth_rate(read_usage(path))
+        if rate > 0:
+            rates.append(rate)
+    return float(statistics.median(rates)) if rates else 0.0
+
+
+def compaction_floor(root: str | Path, sessions: int = 10) -> int:
+    """**Largest** context observed immediately after a compaction, or 0.
+
+    This is the number a window must clear, and the worst case governs it: the
+    question is "what ceiling does compaction always fit under", not "how low can
+    it get". A minimum would permit a window just above the best landing, and any
+    session that landed higher would compact, land above its own ceiling, and
+    compact again. Measured landings on one host spanned 68,498 to 115,264, and a
+    40,000 window — which a minimum would have allowed — was proven to loop.
+
+    Derived from the user's own transcripts, because it depends on their prefix
+    and their summariser output rather than on anything we can assume.
     """
     floors: list[int] = []
     for path in _recent_transcripts(Path(root), sessions):
@@ -190,8 +212,12 @@ def compaction_floor(root: str | Path, sessions: int = 10) -> int:
                         "out": int(usage.get("output_tokens") or 0)})
         except OSError:
             continue
-        floors += [context_of(rows[b]) for b in marks if b < len(rows)]
-    return min(floors) if floors else 0
+        # A row whose usage is all zeros is not a landing point. Letting one
+        # into min() returns 0, which disables the floor entirely and lets a
+        # ceiling be set below where compaction actually lands.
+        floors += [c for c in (context_of(rows[b]) for b in marks
+                               if b < len(rows)) if c > 0]
+    return max(floors) if floors else 0
 
 
 def modelled_cost(window: int, *, prefix: int, requests: int,

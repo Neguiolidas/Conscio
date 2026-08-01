@@ -377,3 +377,80 @@ def test_govern_on_twice_still_restores_the_users_original_window(
     assert governor.current_window() == 160_000
     _cli()._cmd_govern("off", None, str(space), False)
     assert governor.current_window() == 150_000, "the user's own value, not 120,000"
+
+
+def test_compaction_floor_ignores_zero_context_rows(tmp_path):
+    """A zero-usage row must not poison the minimum.
+
+    Real transcripts contain rows whose usage is all zeros. Taking min() over
+    them yields 0, which silently disables the very floor that stops a ceiling
+    from compacting forever.
+    """
+    d = tmp_path / "projects" / "p"
+    d.mkdir(parents=True)
+    rows = [
+        {"message": {"id": "a", "usage": {"input_tokens": 2,
+         "cache_creation_input_tokens": 300_000, "cache_read_input_tokens": 0,
+         "output_tokens": 5}}},
+        {"isCompactSummary": True},
+        {"message": {"id": "b", "usage": {"input_tokens": 0,
+         "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+         "output_tokens": 0}}},                       # the poison row
+    ]
+    (d / "zero.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    good = [
+        {"message": {"id": "c", "usage": {"input_tokens": 2,
+         "cache_creation_input_tokens": 300_000, "cache_read_input_tokens": 0,
+         "output_tokens": 5}}},
+        {"isCompactSummary": True},
+        {"message": {"id": "d", "usage": {"input_tokens": 2,
+         "cache_creation_input_tokens": 70_000, "cache_read_input_tokens": 0,
+         "output_tokens": 5}}},
+    ]
+    (d / "good.jsonl").write_text("\n".join(json.dumps(r) for r in good) + "\n")
+    assert governor.compaction_floor(tmp_path / "projects") == 70_002
+
+
+def test_growth_per_session_does_not_span_unrelated_sessions(tmp_path):
+    """Concatenating sessions makes the delta meaningless — often negative."""
+    _write_session(tmp_path / "projects", "p", "big",
+                   [(2, 100_000, 0, 5), (2, 100, 140_000, 5)])
+    _write_session(tmp_path / "projects", "p", "small",
+                   [(2, 10_000, 0, 5), (2, 100, 20_000, 5)])
+    got = governor.growth_per_session(tmp_path / "projects")
+    assert got > 0, "a concatenation would give 0 here"
+    assert got == 25_100.0        # median of 40,100 and 10,100
+
+
+def test_growth_per_session_is_zero_when_there_is_nothing_to_measure(tmp_path):
+    (tmp_path / "projects").mkdir()
+    assert governor.growth_per_session(tmp_path / "projects") == 0.0
+
+
+def test_compaction_floor_takes_the_worst_landing_not_the_best(tmp_path):
+    """The floor answers "what window always holds", so the worst case governs.
+
+    Taking min() says compaction *can* land low and permits a window just above
+    that — but a session that lands high would then compact, land above its own
+    ceiling, and compact again. Measured landings on one host ranged 68,498 to
+    115,264; a min-based floor would have allowed 40,000, which was proven to loop.
+    """
+    d = tmp_path / "projects" / "p"
+    d.mkdir(parents=True)
+
+    def _sess(name, landing):
+        rows = [
+            {"message": {"id": f"{name}a", "usage": {"input_tokens": 2,
+             "cache_creation_input_tokens": 300_000,
+             "cache_read_input_tokens": 0, "output_tokens": 5}}},
+            {"isCompactSummary": True},
+            {"message": {"id": f"{name}b", "usage": {"input_tokens": 0,
+             "cache_creation_input_tokens": landing,
+             "cache_read_input_tokens": 0, "output_tokens": 5}}},
+        ]
+        (d / f"{name}.jsonl").write_text(
+            "\n".join(json.dumps(r) for r in rows) + "\n")
+
+    _sess("low", 30_000)
+    _sess("high", 115_000)
+    assert governor.compaction_floor(tmp_path / "projects") == 115_000

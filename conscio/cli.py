@@ -318,7 +318,8 @@ def _cmd_govern(action: str, window: int | None, storage: str,
         for path in governor._recent_transcripts(governor.projects_dir(), 10):
             rows.extend(governor.read_usage(path))
         out_rate = (sum(r["out"] for r in rows) / len(rows)) if rows else 0.0
-        return rows, governor.summarise(rows), governor.growth_rate(rows), out_rate
+        growth = governor.growth_per_session(governor.projects_dir())
+        return rows, governor.summarise(rows), growth, out_rate
 
     if action in ("prefix", "status"):
         measured = governor.measure_prefix(governor.projects_dir())
@@ -333,7 +334,7 @@ def _cmd_govern(action: str, window: int | None, storage: str,
             landed = governor.compaction_floor(governor.projects_dir())
             print(f"Growth rate     {growth:>10,.0f}  tokens added per request")
             print(f"Compaction lands{landed:>10,}  "
-                  f"{'(never observed)' if not landed else '(smallest seen)'}")
+                  f"{'(never observed)' if not landed else '(worst seen)'}")
             floor = max(int(prefix * governor.MIN_HEADROOM_FACTOR),
                         int(landed * governor.FLOOR_MARGIN))
             print(f"Refused below   {floor:>10,}")
