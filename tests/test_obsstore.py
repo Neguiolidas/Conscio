@@ -320,6 +320,23 @@ def test_concurrent_first_open_of_a_v1_file_migrates_exactly_once(tmp_path):
     c.close()
 
 
+def test_connect_creates_the_directory_it_was_pointed_at(tmp_path):
+    """"Open (creating if needed)" has to include the directory.
+
+    sqlite3 will not create a file under a directory that is missing, and a
+    freshly materialized instance has none. The hook fails open, so the result
+    was silent: every tool call dropped its observation and nothing reported it.
+    """
+    target = tmp_path / "instances" / "brand-new" / "obs.db"
+    conn = obsstore.connect(target)
+    oid = obsstore.put_observation(
+        conn, tool="Bash", input_text="i", output_text="landed",
+        project="p", agent="a", session_id="S", ts="t")
+    assert target.exists()
+    assert obsstore.read_observation(conn, oid)["output"] == "landed"
+    conn.close()
+
+
 class _ScriptedConn:
     """Returns each scripted pragma result in turn; an Exception is raised."""
 

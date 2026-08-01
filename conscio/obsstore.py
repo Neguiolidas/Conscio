@@ -117,6 +117,12 @@ def connect(
     ``busy_timeout_ms`` belongs to the caller: a hook on the tool path wants to
     give up in milliseconds, while the MCP server can afford to wait.
     """
+    # sqlite3 creates the file but never the directory holding it, and a freshly
+    # materialized instance has no storage directory yet. Since the capture hook
+    # fails open, the store that could not be created dropped every observation
+    # without a word.
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), check_same_thread=False)
     # busy_timeout first: it is connection-local, needs no lock, and every
     # statement below is a potential waiter.
