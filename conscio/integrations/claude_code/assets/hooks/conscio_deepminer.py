@@ -124,9 +124,10 @@ def on_tool(payload, store, storage, failed=False):
         # Kept in the tool name so a failure is visible in any recall, without
         # a schema column that only this one event would ever set.
         tool += "!failed"
-    conn = store.connect(storage / "obs.db")
+    # The budget has to be handed to connect(), not set after it: opening the
+    # store can itself contend for the lock, and by then it is too late.
+    conn = store.connect(storage / "obs.db", busy_timeout_ms=BUSY_TIMEOUT_MS)
     try:
-        conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
         store.put_observation(
             conn,
             tool=tool,

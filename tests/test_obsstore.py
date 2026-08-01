@@ -3,6 +3,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -158,6 +159,40 @@ def test_prune_with_an_unreachable_cap_empties_rather_than_spinning(conn):
     _obs(conn, output_text="x" * 5000, ts="2099-01-01T00:00:00")
     obsstore.prune(conn, max_age_days=36500, max_bytes=1)
     assert conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 0
+
+
+def test_connect_takes_no_write_lock_on_an_already_current_store(tmp_path):
+    """The v3.9.1 hook opens obs.db once per tool call.
+
+    Stamping user_version on every open makes each open a writer, so a tool call
+    serialises behind whatever else holds the lock — measured at 2s before this
+    was fixed, against a 60ms budget.
+    """
+    p = tmp_path / "obs.db"
+    obsstore.connect(p).close()
+    holder = sqlite3.connect(str(p))
+    holder.execute("BEGIN IMMEDIATE")        # stand in for the MCP server writing
+    try:
+        t0 = time.perf_counter()
+        c = obsstore.connect(p, busy_timeout_ms=3000)
+        elapsed = (time.perf_counter() - t0) * 1000
+        c.close()
+        assert elapsed < 150, f"connect() blocked {elapsed:.0f}ms behind a writer"
+    finally:
+        holder.rollback()
+        holder.close()
+
+
+def test_connect_still_builds_a_fresh_store_and_migrates_a_v1_one(tmp_path):
+    """The fast path must not skip setup for stores that actually need it."""
+    fresh = obsstore.connect(tmp_path / "new.db")
+    assert fresh.execute("PRAGMA user_version").fetchone()[0] == obsstore.SCHEMA_VERSION
+    fresh.close()
+    old = tmp_path / "v1.db"
+    _make_v1(old)
+    c = obsstore.connect(old)
+    assert obsstore.search(c, "legacy", session_id="OLD", full=True)
+    c.close()
 
 
 def test_last_session_id_returns_the_most_recent_and_can_skip_current(conn):
