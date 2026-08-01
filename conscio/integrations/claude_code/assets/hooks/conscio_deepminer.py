@@ -12,6 +12,7 @@ reversible. It runs once per tool call, so two rules dominate the design:
 Dispatch is by argv because the harness sends no event name on stdin — verified
 against the installed binary, see docs/reference/claude-code-harness.md 3.2.1.
 """
+import datetime
 import importlib.util
 import json
 import os
@@ -84,7 +85,66 @@ def main(argv):
     return 0
 
 
-_HANDLERS = {}
+def _utc_now():
+    """Naive UTC, matching conscio.timeutil.naive_utcnow().
+
+    The engine writes this column too, and obsstore.prune() builds its cutoff
+    from datetime.now(timezone.utc).replace(tzinfo=None). A hook writing local
+    time would put two clocks in one column: west of UTC every hook row would
+    read as hours older than it is, and rows from the two writers would not sort
+    against each other.
+    """
+    return datetime.datetime.now(
+        datetime.timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+
+
+def _as_text(value):
+    """Flatten a tool_input/tool_response field to storable text.
+
+    tool_response is a dict whose shape varies per tool ({"stdout":...} for Bash,
+    {"success":true} for Write). Storing the JSON keeps every field rather than
+    guessing which one matters.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value)
+    return str(value)
+
+
+def on_tool(payload, store, storage, failed=False):
+    """Record one tool call. Called on both success and failure events."""
+    tool = str(payload.get("tool_name") or "unknown")
+    if failed:
+        # Kept in the tool name so a failure is visible in any recall, without
+        # a schema column that only this one event would ever set.
+        tool += "!failed"
+    conn = store.connect(storage / "obs.db")
+    try:
+        conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+        store.put_observation(
+            conn,
+            tool=tool,
+            input_text=_as_text(payload.get("tool_input")),
+            output_text=_as_text(payload.get("tool_response")),
+            project=str(payload.get("cwd") or os.getcwd()),
+            agent="claude-code",
+            session_id=str(payload.get("session_id") or "unknown"),
+            ts=_utc_now(),
+        )
+    finally:
+        conn.close()
+
+
+_HANDLERS = {
+    "post-tool-use": lambda p, s, d: on_tool(p, s, d, failed=False),
+    "post-tool-use-failure": lambda p, s, d: on_tool(p, s, d, failed=True),
+}
 
 
 if __name__ == "__main__":
