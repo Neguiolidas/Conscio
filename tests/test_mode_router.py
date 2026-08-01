@@ -188,3 +188,39 @@ def test_format_cognitive_cycle_compact(tmp_storage):
     assert "coherence" in result
     assert "top_dissonance" in result
     assert len(result.get("top_dissonance", [])) <= 3
+
+# ── format_evaluate: the shape EvaluationReport.to_dict() actually produces ──
+
+def _report_dict(tmp_storage):
+    """A real report, not a hand-written stub — the mismatch was in the stub."""
+    from conscio.engine import ConsciousnessEngine
+    eng = ConsciousnessEngine(model_name="t", storage_path=str(tmp_storage))
+    try:
+        return eng.evaluate("some task", None).to_dict()
+    finally:
+        eng.close()
+
+
+@pytest.mark.parametrize("complexity", ["minimal", "compact", "full"])
+def test_format_evaluate_accepts_the_real_report_shape(tmp_storage, complexity):
+    """conscio.evaluate returned -32603 for every minimal/compact caller.
+
+    to_dict() gives ``overall`` as a float and the axes under ``axes``;
+    format_evaluate read ``axis_scores`` and called ``.get`` on the float.
+    """
+    (tmp_storage / "daemon_control.json").write_text(
+        json.dumps({"prompt_complexity": complexity}))
+    out = ModeRouter(tmp_storage).format_evaluate(_report_dict(tmp_storage))
+    assert isinstance(out, dict)
+    assert isinstance(out["overall"], (int, float))
+    assert out["mode"] in ("deterministic", "llm")
+
+
+def test_format_evaluate_names_the_weakest_axis_in_compact_modes(tmp_storage):
+    (tmp_storage / "daemon_control.json").write_text(
+        json.dumps({"prompt_complexity": "minimal"}))
+    report = _report_dict(tmp_storage)
+    out = ModeRouter(tmp_storage).format_evaluate(report)
+    axes = {a["axis"]: a["score"] for a in report["axes"]}
+    assert out["weakest"] == min(axes, key=lambda k: axes[k])
+    assert out["strongest"] == max(axes, key=lambda k: axes[k])

@@ -116,24 +116,27 @@ class ModeRouter:
         return {"mode": mode, **cycle_result}
 
     def format_evaluate(self, evaluate_result: dict) -> dict:
-        """Formata evaluate conforme o modo.
-        Preserva os 5 eixos, trunca conforme o modo."""
-        # Detecta modo — evaluate pode ter LLM score
+        """Format an evaluation for the active mode, keeping all five axes.
+
+        Reads the shape ``EvaluationReport.to_dict()`` actually produces: the axes
+        live under ``axes`` and ``overall`` is a float. Reading ``axis_scores``
+        and calling ``.get`` on that float made every minimal/compact caller of
+        conscio.evaluate fail with a bare "internal error".
+        """
+        axes = evaluate_result.get("axes") or []
         mode = "deterministic"
-        for axis in evaluate_result.get("axis_scores", []):
+        for axis in axes:
             if "LLM" in str(axis.get("evidence", "")):
                 mode = "llm"
                 break
 
-        complexity = self.complexity
-
-        if complexity in ("minimal", "compact"):
-            overall = evaluate_result.get("overall", {})
+        if self.complexity in ("minimal", "compact"):
+            scored = {a.get("axis", ""): a.get("score", 0) for a in axes}
             return {
                 "mode": mode,
-                "overall": overall.get("average", overall.get("score", "N/A")),
-                "strongest": evaluate_result.get("strongest", ""),
-                "weakest": evaluate_result.get("weakest", ""),
+                "overall": evaluate_result.get("overall", 0.0),
+                "strongest": max(scored, key=lambda k: scored[k]) if scored else "",
+                "weakest": min(scored, key=lambda k: scored[k]) if scored else "",
             }
 
         return {"mode": mode, **evaluate_result}
