@@ -102,6 +102,19 @@ def measure_prefix(root: str | Path, sessions: int = 10) -> dict:
     40,000 ceiling is not merely aggressive but impossible.
 
     The median, not the mean: one enormous session should not move the estimate.
+
+    Known contaminant, measured 2026-08-01 and left in deliberately. A session
+    resumed from an earlier one carries that history in its *first* billed turn,
+    so this reads prefix-plus-history and calls it prefix: 112,167 for such a
+    session against 38,490 for fresh ones in the same project. Every sample is
+    weighted alike, so three-request throwaways vote with 5,796-request sessions.
+    Both distortions are latent rather than wrong today -- the recommendation is
+    driven by ``compaction_floor``, and the prefix only binds above roughly
+    78,000, which no fresh session on this host reaches. Measured across four
+    scopings (all projects, excluding probes, this project, this project's real
+    sessions) the prefix moved 38,490-45,101 and the recommendation did not move
+    at all. Worth fixing when a host appears whose prefix actually binds; not
+    worth guessing at a resume-detection heuristic before then.
     """
     firsts = []
     for path in _recent_transcripts(Path(root), sessions):
