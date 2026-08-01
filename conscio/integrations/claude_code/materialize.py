@@ -9,9 +9,17 @@ import shlex
 import shutil
 from pathlib import Path
 
-from ...installer import hostcfg
+from ...installer import hostcfg, spaces
 
 _HOOK_NAME = "conscio_awareness.py"
+_CAPTURE_HOOK = "conscio_deepminer.py"
+# event name in settings.json -> argv token the hook dispatches on. The harness
+# sends no event name on stdin, so it has to travel in the command line.
+_CAPTURE_EVENTS = {
+    "SessionStart": "session-start",
+    "PostToolUse": "post-tool-use",
+    "PostToolUseFailure": "post-tool-use-failure",
+}
 
 
 def assets_root() -> Path:
@@ -57,6 +65,15 @@ def materialize(slug: str, *, flags: dict, model, ts: str, io=None,
     hook_dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(a / "hooks" / _HOOK_NAME, hook_dst)
 
+    capture_dst = cdir / "hooks" / _CAPTURE_HOOK
+    shutil.copy2(a / "hooks" / _CAPTURE_HOOK, capture_dst)
+    # The hook loads obsstore by absolute path so it never imports the conscio
+    # package (~0.28s) on a path that runs once per tool call.
+    capture_dst.with_suffix(".json").write_text(json.dumps({
+        "obsstore": str(Path(__file__).resolve().parents[2] / "obsstore.py"),
+        "storage": str(spaces.space_dir(slug)),
+    }, indent=2), encoding="utf-8")
+
     backups = []
     # 1) MCP registration (reuse hostcfg entry + backup/verify)
     def mut_mcp(o: dict) -> None:
@@ -78,14 +95,24 @@ def materialize(slug: str, *, flags: dict, model, ts: str, io=None,
         kept = [grp for grp in starts if _HOOK_NAME not in json.dumps(grp)]
         kept.append({"hooks": [{"type": "command", "command": cmd}]})
         hooks["SessionStart"] = kept
+        # Each hook is filtered and re-appended on its own so re-running the
+        # installer never drops a sibling that shares the event.
+        for event, arg in _CAPTURE_EVENTS.items():
+            ccmd = f"python3 {shlex.quote(str(capture_dst))} {arg}"
+            groups = [g for g in hooks.get(event, [])
+                      if _CAPTURE_HOOK not in json.dumps(g)]
+            groups.append({"hooks": [{"type": "command", "command": ccmd}]})
+            hooks[event] = groups
     b2 = hostcfg.backup_then_write_json(
         settings, mutate=mut_hook,
-        verify=lambda o: _HOOK_NAME in json.dumps(o.get("hooks", {})), ts=ts)
+        verify=lambda o: _HOOK_NAME in json.dumps(o.get("hooks", {})) and all(
+            _CAPTURE_HOOK in json.dumps(o.get("hooks", {}).get(e, []))
+            for e in _CAPTURE_EVENTS), ts=ts)
     if b2:
         backups.append(str(b2))
 
     summary = {"commands": n_cmds, "skill": True, "hook": True,
-               "mcp": "conscio", "backups": backups}
+               "capture_hook": True, "mcp": "conscio", "backups": backups}
     if io is not None:
         io.echo(f"materialized Claude Code bundle: {n_cmds} commands, skill, "
                 f"hook, MCP entry (storage bound to space {slug}).")

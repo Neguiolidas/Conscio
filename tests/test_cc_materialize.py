@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -44,6 +45,42 @@ def test_materialize_registers_sessionstart_hook(tmp_path):
     assert "conscio_awareness.py" in blob
 
 
+def test_materialize_installs_the_capture_hook_and_its_sidecar(tmp_path):
+    _run(tmp_path)
+    hooks = tmp_path / "claude" / "hooks"
+    assert (hooks / "conscio_deepminer.py").is_file()
+    cfg = json.loads((hooks / "conscio_deepminer.json").read_text())
+    assert cfg["obsstore"].endswith("obsstore.py")
+    assert Path(cfg["obsstore"]).is_file()
+    assert str(spaces.space_dir("host-a")) == cfg["storage"]
+
+
+def test_materialize_registers_all_three_capture_events(tmp_path):
+    _run(tmp_path)
+    settings = json.loads((tmp_path / "claude" / "settings.json").read_text())
+    for event, arg in (("SessionStart", "session-start"),
+                       ("PostToolUse", "post-tool-use"),
+                       ("PostToolUseFailure", "post-tool-use-failure")):
+        blob = json.dumps(settings["hooks"][event])
+        assert "conscio_deepminer.py" in blob, event
+        assert arg in blob, event
+
+
+def test_awareness_hook_survives_alongside_the_capture_hook(tmp_path):
+    _run(tmp_path)
+    settings = json.loads((tmp_path / "claude" / "settings.json").read_text())
+    blob = json.dumps(settings["hooks"]["SessionStart"])
+    assert "conscio_awareness.py" in blob and "conscio_deepminer.py" in blob
+
+
+def test_registration_is_idempotent(tmp_path):
+    _run(tmp_path)
+    _run(tmp_path)
+    settings = json.loads((tmp_path / "claude" / "settings.json").read_text())
+    blob = json.dumps(settings["hooks"]["PostToolUse"])
+    assert blob.count("conscio_deepminer.py") == 1
+
+
 def test_materialize_idempotent(tmp_path):
     _run(tmp_path)
     _run(tmp_path)                                  # second run must not double
@@ -70,17 +107,35 @@ def test_materialize_preserves_existing_mcp_and_hooks(tmp_path):
 
 
 def test_hook_command_survives_spaces_in_path(tmp_path):
+    import shlex
+
     spaces.ensure_space("host-a")
     cdir = tmp_path / "my claude"                        # path with a space
     materialize.materialize(
         "host-a", flags={}, model=None, ts="T1",
         claude_dir=cdir, claude_json=tmp_path / "claude.json")
     settings = json.loads((cdir / "settings.json").read_text())
-    cmd = settings["hooks"]["SessionStart"][-1]["hooks"][0]["command"]
-    import shlex
-    parts = shlex.split(cmd)                             # must parse cleanly
+
+    def command_for(event, script):
+        """Find a hook by script name — never by list position, which shifts
+        as soon as another hook registers for the same event."""
+        for group in settings["hooks"][event]:
+            for h in group["hooks"]:
+                if script in h["command"]:
+                    return h["command"]
+        raise AssertionError(f"{script} not registered for {event}")
+
+    parts = shlex.split(command_for("SessionStart", "conscio_awareness.py"))
     assert parts[0] == "python3"
     assert parts[1].endswith("conscio_awareness.py")     # ONE arg, not split
+
+    # the capture hook carries an extra argv token, so a split path would put
+    # the event name in the wrong position and it would dispatch to nothing
+    parts = shlex.split(command_for("PostToolUse", "conscio_deepminer.py"))
+    assert parts[0] == "python3"
+    assert parts[1].endswith("conscio_deepminer.py")
+    assert parts[2] == "post-tool-use"
+    assert len(parts) == 3
 
 
 def test_copy_tree_is_recursive(tmp_path):
