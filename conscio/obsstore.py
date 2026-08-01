@@ -207,10 +207,17 @@ def _scope_clause(scope: str, session_id: str, project: str) -> tuple[str, tuple
     Scoping is an equality test on the joined observations row, not an FTS term:
     the default unicode61 tokenizer splits on '_' and '-', so any scope token
     built from a session id would silently become a multi-word phrase.
+
+    A narrowing scope with nothing to narrow by is a caller bug: it would match
+    no row and be indistinguishable from an honest miss.
     """
     if scope == "session":
+        if not session_id:
+            raise ValueError("scope='session' requires a non-empty session_id")
         return " AND o.session_id = ?", (session_id,)
     if scope == "project":
+        if not project:
+            raise ValueError("scope='project' requires a non-empty project")
         return " AND o.project = ?", (project,)
     return "", ()
 
