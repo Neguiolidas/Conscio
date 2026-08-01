@@ -289,8 +289,10 @@ class Handler(BaseHTTPRequestHandler):
     _knowledge: KnowledgeProjection | None = None
     _workspace_root: str = "."
 
-    def log_message(self, *a):                 # never log (urls may carry tokens)
-        pass
+    # Signature mirrors BaseHTTPRequestHandler's exactly, keyword name included:
+    # a caller may pass format= and would otherwise hit a silent TypeError here.
+    def log_message(self, format: str, *args: Any) -> None:
+        """Never log — request URLs may carry tokens."""
 
     def _dispatch(self, method: str) -> None:
         parsed = urlparse(self.path)

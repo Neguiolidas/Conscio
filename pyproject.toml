@@ -74,6 +74,12 @@ version = {attr = "conscio.__version__"}
 [tool.setuptools.package-data]
 conscio = ["py.typed", "hub/static/*", "observatory/static/*", "integrations/claude_code/assets/**/*", "USAGE.md"]
 
+# The asset glob is recursive and reads the working tree, so a developer who
+# has ever run the hook ships their own __pycache__ — v3.9.2 carried a 3.14
+# .pyc to every user, including the ones on 3.10.
+[tool.setuptools.exclude-package-data]
+conscio = ["**/__pycache__/*", "**/*.pyc", "**/*.pyo"]
+
 # ── pyright (type checker — substitui mypy) ─────────────────────────
 # ── ruff (linter) ───────────────────────────────────────────────────
 [tool.ruff]

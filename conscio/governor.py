@@ -14,6 +14,7 @@ import json
 import os
 import statistics
 from pathlib import Path
+from stat import S_ISREG
 
 TRANSCRIPT_GLOB = "*/*.jsonl"
 
@@ -70,26 +71,35 @@ def context_of(row: dict) -> int:
     return row["in"] + row["cw"] + row["cr"]
 
 
-def _mtime(path: Path) -> float:
-    """Modification time, or 0.0 if it cannot be read.
+def _recent_transcripts(root: Path, limit: int) -> list[Path]:
+    """The ``limit`` most recently modified transcripts under ``root``.
 
-    The host is writing these files while we walk them, so one can be rotated
-    away between the glob and the sort. An unhandled stat here would take down
-    the whole report over a file we did not need; sorting it last is enough.
+    One stat per path, taken once: it decides both that the entry is a regular
+    file and where it sorts. The host writes and rotates these files while we
+    walk them, so a path can vanish between the glob and the stat — that path
+    is dropped, and only that path.
+
+    Testing it here instead of with ``Path.is_file`` is deliberate. Before 3.13
+    that method re-raises any errno outside ENOENT/ENOTDIR/EBADF/ELOOP, so a
+    stale NFS handle (ESTALE) over one transcript would escape the filter and
+    collapse the whole report to empty. It also reads a cached dirent on 3.14
+    and a fresh stat before it, which made the same rotation behave differently
+    per interpreter.
     """
     try:
-        return path.stat().st_mtime
-    except OSError:
-        return 0.0
-
-
-def _recent_transcripts(root: Path, limit: int) -> list[Path]:
-    try:
-        files = [p for p in Path(root).glob(TRANSCRIPT_GLOB) if p.is_file()]
+        candidates = list(Path(root).glob(TRANSCRIPT_GLOB))
     except OSError:
         return []
-    files.sort(key=_mtime, reverse=True)
-    return files[:limit]
+    dated: list[tuple[float, Path]] = []
+    for path in candidates:
+        try:
+            info = path.stat()
+        except OSError:
+            continue
+        if S_ISREG(info.st_mode):
+            dated.append((info.st_mtime, path))
+    dated.sort(key=lambda pair: pair[0], reverse=True)
+    return [path for _, path in dated[:limit]]
 
 
 def measure_prefix(root: str | Path, sessions: int = 10) -> dict:

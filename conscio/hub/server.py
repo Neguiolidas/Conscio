@@ -226,8 +226,10 @@ class Handler(BaseHTTPRequestHandler):
     _storage: Path | None = None
     _daemon_control: bool = False
 
-    def log_message(self, *a):                     # never log (urls may carry keys)
-        pass
+    # Signature mirrors BaseHTTPRequestHandler's exactly, keyword name included:
+    # a caller may pass format= and would otherwise hit a silent TypeError here.
+    def log_message(self, format: str, *args: Any) -> None:
+        """Never log — request URLs may carry keys."""
 
     def _dispatch(self, method: str) -> None:
         parsed = urlparse(self.path)

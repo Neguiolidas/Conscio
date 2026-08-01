@@ -1,4 +1,5 @@
 """v3.9.2 Governor — measurement and reporting over host transcripts."""
+import errno
 import json
 from pathlib import Path
 from unittest import mock
@@ -548,23 +549,63 @@ def test_a_landing_is_never_borrowed_from_the_next_compaction(tmp_path):
     assert governor.compaction_floor(tmp_path / "projects") == 130_001
 
 
+def _stat_failing_on_a(exc: OSError):
+    """Patch for ``Path.stat`` that fails for ``a.jsonl`` and nothing else."""
+    real = Path.stat
+
+    def failing(self, *a, **kw):
+        if self.name == "a.jsonl":
+            raise exc
+        return real(self, *a, **kw)
+
+    return failing
+
+
 def test_a_transcript_rotated_away_mid_walk_does_not_sink_the_report(tmp_path):
-    """The host writes these files while we read them."""
+    """The host writes and rotates these files while we read them.
+
+    The injected error carries ENOENT because that is what the kernel raises;
+    an errno-less OSError would exercise a case no filesystem produces.
+    """
     d = tmp_path / "projects" / "p"
     d.mkdir(parents=True)
     (d / "a.jsonl").write_text("{}\n")
     (d / "b.jsonl").write_text("{}\n")
-    real = Path.stat
+    gone = FileNotFoundError(errno.ENOENT, "No such file or directory", "a.jsonl")
 
-    def vanishing(self, *a, **kw):
-        if self.name == "a.jsonl":
-            raise FileNotFoundError(self)
-        return real(self, *a, **kw)
-
-    with mock.patch.object(Path, "stat", vanishing):
+    with mock.patch.object(Path, "stat", _stat_failing_on_a(gone)):
         got = governor._recent_transcripts(tmp_path / "projects", 10)
-    assert [p.name for p in got] == ["b.jsonl", "a.jsonl"], \
-        "the readable transcript must survive, the vanished one sorts last"
+    assert [p.name for p in got] == ["b.jsonl"], \
+        "the readable transcript survives; the vanished one is dropped, not fatal"
+
+
+def test_an_unusual_errno_costs_one_transcript_and_not_the_report(tmp_path):
+    """ESTALE over an NFS home used to escape the filter and empty the report.
+
+    ``Path.is_file`` swallows only ENOENT/ENOTDIR/EBADF/ELOOP before 3.13 and
+    re-raises everything else, which the caller could only catch by discarding
+    every transcript it had already found.
+    """
+    d = tmp_path / "projects" / "p"
+    d.mkdir(parents=True)
+    (d / "a.jsonl").write_text("{}\n")
+    (d / "b.jsonl").write_text("{}\n")
+    stale = OSError(errno.ESTALE, "Stale file handle", "a.jsonl")
+
+    with mock.patch.object(Path, "stat", _stat_failing_on_a(stale)):
+        got = governor._recent_transcripts(tmp_path / "projects", 10)
+    assert [p.name for p in got] == ["b.jsonl"], \
+        "one unreadable transcript must not cost the report"
+
+
+def test_a_directory_named_like_a_transcript_is_not_a_transcript(tmp_path):
+    """The glob matches names; only the stat says what the entry is."""
+    d = tmp_path / "projects" / "p"
+    d.mkdir(parents=True)
+    (d / "real.jsonl").write_text("{}\n")
+    (d / "decoy.jsonl").mkdir()
+    got = governor._recent_transcripts(tmp_path / "projects", 10)
+    assert [p.name for p in got] == ["real.jsonl"]
 
 
 def test_growth_per_session_does_not_span_unrelated_sessions(tmp_path):
