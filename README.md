@@ -23,6 +23,22 @@ all at **0 LLM tokens**. Exposed as two MCP tools
 (`conscio.observe` / `conscio.recall_observations`) so any agent can use it.
 Fully offline, stdlib-only core.
 
+**Automatic capture on Claude Code (v3.9.1).** The installer registers a hook on
+`SessionStart`, `PostToolUse` and `PostToolUseFailure` that records every tool
+call into `obs.db`, scoped to the session and the project. It never alters tool
+output and never blocks a session: any failure exits silently and the output
+reaches the model untouched. At session start it prunes the store and injects a
+short **index** of the previous session — what ran, never what it returned.
+Search it with `conscio.recall_observations`, which stays inside the current
+session unless you widen `scope` to `project` or `all`.
+
+> Capture is complete, not truncated: a tool's whole input and output are stored
+> (up to 1 MiB per field), so anything a tool reads or writes — including
+> secrets — can land in `obs.db`, which is plain SQLite on disk. This is the same
+> content, on the same machine, that the host already keeps in its own session
+> transcripts; `obs.db` is a second copy with a 30-day retention window. Treat it
+> as one more place to scrub, and set `max_age_days` lower if that matters to you.
+
 Benchmarked on real session transcripts (6,217 tool calls): a recall costs
 **~110 tokens instead of ~350** — a median **80% saving** per query, at
 unchanged retrieval fidelity. The saving is **cross-session**: it is what a
