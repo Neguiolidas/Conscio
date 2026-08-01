@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+A second field report, from an operator trying to turn Awake on and keep it on.
+Both defects made the daemon look like it was ignoring its operator.
+
+### Fixed
+
+- **`conscio awake` never reached a running daemon.** It woke the engine it had
+  just opened and stopped there. A daemon holds its own engine in its own
+  process, so the CLI printed `Awake Mode: ON` while the daemon it was meant to
+  wake kept sleeping — indistinguishable, from outside, from awake failing to
+  persist. The operator's only working route was hand-writing
+  `daemon_control.json`. `awake`/`sleep` now write that control file too, which
+  is the channel a `--watch-control` daemon actually reads.
+- **Maintenance goals multiplied every cycle and could not be cancelled.** Two
+  causes. A goal's identity was its description, and the maintenance
+  description embeds a live reading — `23 stale entities: a, b, c` — so one
+  entity going stale renamed the goal, and a renamed goal is a new goal: six
+  reflect cycles over a growing stale set produced six copies of one check.
+  Deduplication also ignored cancelled goals, so cancelling was a no-op the
+  next cycle undid. Goals now dedup on `Goal.dedup_key` — the check being run,
+  for maintenance goals — and a cancellation suppresses its check for
+  `CANCEL_COOLDOWN_HOURS` (24h). The cooldown expires because `goal_update
+  cancel` is a tool the agent can call on itself; an explicit request from an
+  operator is never suppressed by an earlier cancel.
+- **A self-prompt goal could surface an id that was in no store.** `reflect()`
+  resolved the stored goal by description while the store deduped by key, so a
+  shifted target returned the discarded duplicate. It now resolves by the same
+  key, and returns `None` when nothing is tracked rather than naming a phantom.
+
+---
+
 ## [3.9.3] - 2026-08-01 — Field Repairs
 
 Driven by a hostile audit of a running v3.9.2 install rather than by a plan.

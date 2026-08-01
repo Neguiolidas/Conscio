@@ -89,6 +89,7 @@ class Goal:
         self.source = source  # "internal" or "user"
         self.status = "active"  # active | completed | cancelled | expired
         self.created_at = datetime.now().isoformat()
+        self.cancelled_at: str | None = None  # when status became "cancelled"
         self.metadata = metadata or {}
         self.meta_score: float = 0.0  # MetaCognition-adjusted score (0-1)
 
@@ -125,6 +126,21 @@ class Goal:
         """Whether the actor may auto-execute this goal (#7 provenance gate)."""
         return self.origin.auto_executable
 
+    @property
+    def dedup_key(self) -> str:
+        """What makes two goals *the same goal*, for deduplication.
+
+        A maintenance goal keys on the check it runs, not on its description.
+        The description embeds a live reading — "23 stale entities: a, b, c" —
+        so one entity going stale renames the goal, and a rename is a new goal
+        to anything comparing descriptions. The check being run is what is
+        actually the same between cycles.
+        """
+        check = self.metadata.get("check_type")
+        if self.drive == Drive.MAINTENANCE and check:
+            return f"maintenance:{check}"
+        return self.description
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -134,6 +150,7 @@ class Goal:
             "source": self.source,
             "status": self.status,
             "created_at": self.created_at,
+            "cancelled_at": self.cancelled_at,
             "metadata": self.metadata,
             "meta_score": self.meta_score,
         }
@@ -150,6 +167,7 @@ class Goal:
         goal.id = data.get("id", goal.id)
         goal.status = data.get("status", "active")
         goal.created_at = data.get("created_at", goal.created_at)
+        goal.cancelled_at = data.get("cancelled_at")
         goal.meta_score = data.get("meta_score", 0.0)
         return goal
 
@@ -167,6 +185,12 @@ class GoalGenerator:
     """
 
     MAX_ACTIVE_GOALS = 10
+
+    # How long a cancellation silences the goal it killed. It expires because
+    # `goal_update cancel` is a tool the agent can call on itself: a permanent
+    # tombstone would let one bad call disable a maintenance check for the life
+    # of the store, with no way back short of hand-editing goals.json.
+    CANCEL_COOLDOWN_HOURS = 24
 
     def __init__(
         self,
@@ -281,15 +305,45 @@ class GoalGenerator:
             priority=priority,
             source=origin.value,
         )
-        self._add_goal(goal)
+        self._add_goal(goal, from_drive=False)
         return goal
 
-    def _add_goal(self, goal: Goal) -> None:
-        """Add a goal to the queue, respecting the max limit."""
-        # Check for duplicates
-        for existing in self._goals:
-            if existing.status == "active" and existing.description == goal.description:
-                return  # Already exists
+    def _is_suppressed(self, key: str, *, tombstones: bool = True) -> bool:
+        """Whether a goal with this dedup key is already queued or was just killed.
+
+        A drive re-proposes its goals every cycle, so a proposal matching a goal
+        the store already tracks is the same work coming back around. Cancelled
+        counts as tracked for the cooldown above — otherwise cancelling is a
+        no-op, which is how a broken maintenance goal became impossible to talk
+        the daemon out of: cancel it, reflect, and it is back. "completed" and
+        "expired" stay regenerable on purpose — a check that ran once should run
+        again when its condition returns.
+        """
+        from datetime import timedelta
+        cutoff = datetime.now() - timedelta(hours=self.CANCEL_COOLDOWN_HOURS)
+        for g in self._goals:
+            if g.dedup_key != key:
+                continue
+            if g.status == "active":
+                return True
+            if g.status == "cancelled" and tombstones:
+                try:
+                    if datetime.fromisoformat(g.cancelled_at or "") >= cutoff:
+                        return True
+                except (ValueError, TypeError):
+                    pass  # cancelled before this field existed: not suppressed
+        return False
+
+    def _add_goal(self, goal: Goal, *, from_drive: bool = True) -> None:
+        """Add a goal to the queue, respecting the max limit.
+
+        `from_drive` marks the proposals a drive makes on its own every cycle —
+        the ones a cancellation is meant to silence. An explicit request is
+        never silenced by an earlier cancel: asking for the thing again is how
+        an operator undoes cancelling it.
+        """
+        if self._is_suppressed(goal.dedup_key, tombstones=from_drive):
+            return
 
         self._goals.append(goal)
 
@@ -320,6 +374,7 @@ class GoalGenerator:
         for g in self._goals:
             if g.id == goal_id:
                 g.status = "cancelled"
+                g.cancelled_at = datetime.now().isoformat()
                 self._save()
                 return True
         return False

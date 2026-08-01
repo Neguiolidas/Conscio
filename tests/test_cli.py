@@ -101,6 +101,21 @@ def test_awake_persists_to_storage(tmp_path):
         eng.close()
 
 
+def test_awake_reaches_a_running_daemon_through_the_control_file(tmp_path):
+    """`conscio awake` has to land in daemon_control.json, not just in the
+    engine it opened. A daemon owns its own engine in its own process, so
+    without this the CLI reports ON while the daemon it was meant to wake
+    keeps sleeping — which is exactly how awake looked "not to persist"."""
+    from conscio.hub.control import read_control
+
+    assert main(["awake", "--storage", str(tmp_path)]) == 0
+    on = read_control(tmp_path)
+    assert on["awake"] is True and on["ts"] > 0
+
+    assert main(["sleep", "--storage", str(tmp_path)]) == 0
+    assert read_control(tmp_path)["awake"] is False
+
+
 def test_daemon_once_runs_a_cycle(tmp_path):
     assert main(["daemon", "--storage", str(tmp_path),
                  "--model", "test-model",

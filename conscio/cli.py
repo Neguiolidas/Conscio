@@ -446,11 +446,19 @@ def _cmd_plugins() -> int:
 
 def _cmd_set_awake(model: str, storage: str, awake: bool) -> int:
     from .engine import ConsciousnessEngine
+    from .hub.control import CONTROL_FILENAME, write_control
     eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage))
     try:
         eng.wake() if awake else eng.sleep()
+        # A running daemon holds its own engine in its own process, so this
+        # wake() never reaches it: it would report ON here while the daemon it
+        # was meant to wake kept sleeping. The control file is the channel the
+        # daemon watches, and the operator's intent has to land there too.
+        write_control(Path(eng.storage), awake)
         print(f"Awake Mode: {'ON' if eng.awake else 'OFF'} "
               f"(storage: {eng.storage})")
+        print(f"  wrote {CONTROL_FILENAME} — a daemon started with "
+              f"--watch-control applies it on its next cycle")
     finally:
         eng.close()
     return 0

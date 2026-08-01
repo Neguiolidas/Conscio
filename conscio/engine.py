@@ -810,11 +810,11 @@ class ConsciousnessEngine:
         source="self_prompt", returning the goal actually tracked in the store
         (or None when no prompt exists / the drive is too weak to spawn).
 
-        GoalGenerator dedups by active description and caps active goals, so a
+        GoalGenerator dedups on `Goal.dedup_key` and caps active goals, so a
         repeated self-prompt is a no-op in the store. The generators, however,
         always return a freshly-built Goal even on a dedup no-op — and that object
         is NOT the persisted one (its id is never in `_goals`). So after generating
-        we resolve the canonical active goal by description, ensuring
+        we resolve the canonical active goal by that same key, ensuring
         result["self_prompt_goal"] carries a real stored id rather than a phantom
         from a discarded duplicate."""
         if not prompts:
@@ -835,11 +835,17 @@ class ConsciousnessEngine:
         if goal is None:
             return None
         # Resolve the canonical tracked goal — generators hand back a fresh
-        # (possibly non-persisted) Goal even on a dedup no-op.
+        # (possibly non-persisted) Goal even on a dedup no-op. Match on
+        # dedup_key rather than description: a maintenance goal's description
+        # carries a live reading ("23 stale entities: a, b, c") that changes
+        # between cycles while the goal itself stays the same one.
         for g in self.goals._goals:
-            if g.status == "active" and g.description == goal.description:
+            if g.status == "active" and g.dedup_key == goal.dedup_key:
                 return g
-        return goal
+        # Nothing active answers to this key: the proposal was dropped against a
+        # cancelled twin, or the cap expired it on arrival. Either way no goal is
+        # tracked, and reporting the phantom's id would invent one.
+        return None
 
     @property
     def state(self):
