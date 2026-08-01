@@ -166,6 +166,45 @@ def test_compaction_floor_is_zero_when_nothing_ever_compacted(tmp_path):
     assert governor.compaction_floor(tmp_path / "projects") == 0
 
 
+def _compacted(path, model, landing, *, mtime):
+    """One session that compacted once and landed at ``landing`` on ``model``."""
+    import os
+    rows = [
+        {"message": {"id": f"{model}-a", "model": model, "usage": {
+            "input_tokens": 0, "cache_creation_input_tokens": 300_000,
+            "cache_read_input_tokens": 0, "output_tokens": 5}}},
+        {"isCompactSummary": True},
+        {"message": {"id": f"{model}-b", "model": model, "usage": {
+            "input_tokens": 0, "cache_creation_input_tokens": landing,
+            "cache_read_input_tokens": 0, "output_tokens": 5}}},
+    ]
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    os.utime(path, (mtime, mtime))
+
+
+def test_a_landing_from_another_model_cannot_set_this_model_s_floor(tmp_path):
+    """Measured on this host: a sonnet-5 landing of 142,208 was governing an
+    opus-5 session whose own landings never passed 125,586. max() let the
+    foreign number win, inflating the recommendation by ~20,000 and compacting
+    less often than the evidence supported."""
+    d = tmp_path / "projects" / "p"
+    d.mkdir(parents=True)
+    _compacted(d / "old.jsonl", "claude-sonnet-5", 142_208, mtime=1000)
+    _compacted(d / "new.jsonl", "claude-opus-5", 125_586, mtime=2000)
+    assert governor.compaction_floor(tmp_path / "projects") == 125_586
+
+
+def test_a_model_with_no_landings_of_its_own_keeps_a_floor(tmp_path):
+    """Never 0 — that would drop the guard and re-permit the compaction loop."""
+    d = tmp_path / "projects" / "p"
+    d.mkdir(parents=True)
+    _compacted(d / "old.jsonl", "claude-sonnet-5", 142_208, mtime=1000)
+    _write_session(tmp_path / "projects", "p", "fresh", [(2, 10_000, 0, 5)])
+    import os
+    os.utime(d / "fresh.jsonl", (3000, 3000))
+    assert governor.compaction_floor(tmp_path / "projects") == 142_208
+
+
 # ── report (Task 3) ─────────────────────────────────────────────────────────
 
 def test_report_shows_the_saving_against_the_baseline():
