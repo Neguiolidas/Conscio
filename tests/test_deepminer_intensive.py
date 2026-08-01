@@ -23,6 +23,7 @@ import threading
 
 import pytest
 
+from conscio import obsstore
 from conscio.engine import ConsciousnessEngine
 from conscio.mcp.seen import SeenStore
 from conscio.mcp.server import Bindings
@@ -99,7 +100,7 @@ def test_compress_preserves_raw_observations(eng):
     eng.observe("grep", "keepme", "o", "/p", session_id="s")
     assert eng.compress_observations("s")["count"] == 1
     # raw observation still recallable afterwards
-    assert eng.recall_observations("keepme", k=5)
+    assert eng.recall_observations("keepme", k=5, session_id="s")
     n = eng._obs_conn().execute("SELECT COUNT(*) FROM observations").fetchone()[0]
     assert n == 1
 
@@ -137,14 +138,13 @@ def test_compress_defaults_to_set_session(eng):
 
 
 def test_truncation_boundary(eng):
-    for size, expect in ((1023, 1023), (1024, 1024), (2000, 1024)):
+    """v3.9 stores payloads whole; the old 1024-char cliff is gone."""
+    for size in (1023, 1024, 2000):
         oid = eng.observe("t", "x" * size, "y" * size, "/p", session_id="s")
-        inp, out = (
-            eng._obs_conn()
-            .execute("SELECT input, output FROM observations WHERE id=?", (oid,))
-            .fetchone()
-        )
-        assert len(inp) == expect and len(out) == expect, (size, len(inp), len(out))
+        got = obsstore.read_observation(eng._obs_conn(), oid)
+        assert len(got["input"]) == size, (size, len(got["input"]))
+        assert len(got["output"]) == size, (size, len(got["output"]))
+        assert got["truncated"] is False
 
 
 def test_recall_k_floor_defuses_negative_limit(eng):
@@ -152,11 +152,11 @@ def test_recall_k_floor_defuses_negative_limit(eng):
     'LIMIT -1 means unlimited' footgun, so k<=0 can never dump every row."""
     for i in range(5):
         eng.observe("grep", f"needle {i}", "o", "/p", session_id="s")
-    assert len(eng.recall_observations("needle", k=2)) == 2
-    assert len(eng.recall_observations("needle", k=1000)) == 5
+    assert len(eng.recall_observations("needle", k=2, session_id="s")) == 2
+    assert len(eng.recall_observations("needle", k=1000, session_id="s")) == 5
     # the guard: k=0 and k=-1 floor to 1 — NOT 0, and crucially NOT unlimited
-    assert len(eng.recall_observations("needle", k=0)) == 1
-    assert len(eng.recall_observations("needle", k=-1)) == 1
+    assert len(eng.recall_observations("needle", k=0, session_id="s")) == 1
+    assert len(eng.recall_observations("needle", k=-1, session_id="s")) == 1
 
 
 # ── verbatim storage + FTS metacharacter safety ─────────────────────────────
@@ -165,14 +165,10 @@ def test_recall_k_floor_defuses_negative_limit(eng):
 def test_observe_sql_meta_stored_verbatim_table_intact(eng):
     payload = "'); DROP TABLE observations;--"
     oid = eng.observe("t", payload, "sentinel_marker", "/p", session_id="s")
-    row = (
-        eng._obs_conn()
-        .execute("SELECT input, output FROM observations WHERE id=?", (oid,))
-        .fetchone()
-    )
-    assert row[0] == payload  # stored byte-for-byte, never executed
+    got = obsstore.read_observation(eng._obs_conn(), oid)
+    assert got["input"] == payload  # stored byte-for-byte, never executed
     assert eng._obs_conn().execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 1
-    assert eng.recall_observations("sentinel_marker", k=5)  # still retrievable
+    assert eng.recall_observations("sentinel_marker", k=5, session_id="s")
 
 
 def test_recall_fts_metacharacters_no_crash(eng):

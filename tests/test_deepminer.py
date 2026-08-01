@@ -12,6 +12,7 @@ import time
 
 import pytest
 
+from conscio import obsstore
 from conscio.engine import ConsciousnessEngine
 from conscio.mcp import jsonrpc as j
 from conscio.mcp.seen import SeenStore
@@ -31,12 +32,9 @@ def eng(tmp_path):
 def test_observe_returns_id_and_persists(eng):
     oid = eng.observe("edit_file", "fix auth", "done", "/proj", "hermes")
     assert isinstance(oid, int) and oid >= 1
-    row = (
-        eng._obs_conn()
-        .execute("SELECT tool, input, output, project, agent FROM observations WHERE id=?", (oid,))
-        .fetchone()
-    )
-    assert row == ("edit_file", "fix auth", "done", "/proj", "hermes")
+    got = obsstore.read_observation(eng._obs_conn(), oid)
+    assert (got["tool"], got["input"], got["output"], got["project"],
+            got["agent"]) == ("edit_file", "fix auth", "done", "/proj", "hermes")
 
 
 def test_observe_emits_tool_observed_event(eng):
@@ -62,26 +60,19 @@ def test_observe_never_raises_returns_minus_one(eng):
     assert eng.observe("x", "y", "z") == -1
 
 
-def test_observe_large_payload_truncated(eng):
+def test_observe_large_payload_clipped_at_the_sanity_cap(eng):
     big = "x" * 5_000_000
     oid = eng.observe("t", big, big, "/p")
-    inp, out = (
-        eng._obs_conn()
-        .execute("SELECT input, output FROM observations WHERE id=?", (oid,))
-        .fetchone()
-    )
-    assert len(inp) <= 1024 and len(out) <= 1024
+    got = obsstore.read_observation(eng._obs_conn(), oid)
+    assert len(got["input"]) == obsstore.MAX_FIELD_BYTES
+    assert len(got["output"]) == obsstore.MAX_FIELD_BYTES
+    assert got["truncated"] is True
 
 
 def test_set_session_is_default(eng):
     eng.set_session("wired")
     oid = eng.observe("t", "i", "o")  # no explicit session_id
-    sid = (
-        eng._obs_conn()
-        .execute("SELECT session_id FROM observations WHERE id=?", (oid,))
-        .fetchone()[0]
-    )
-    assert sid == "wired"
+    assert obsstore.read_observation(eng._obs_conn(), oid)["session_id"] == "wired"
 
 
 # ── recall_observations() (FTS5) ────────────────────────────────────────────
@@ -195,6 +186,31 @@ def test_mcp_recall_observations_finds(eng):
     assert "needle" in json.dumps(payload["observations"])
 
 
+def test_mcp_recall_observations_can_widen_scope(eng):
+    b = _bindings(eng)
+    eng.set_session("MCP-A")
+    b.call_tool("conscio.observe",
+                {"tool": "grep", "input": "SCOPEMARK", "output": "o",
+                 "project": "proj-x"})
+    eng.set_session("MCP-B")
+    assert not json.loads(b.call_tool(
+        "conscio.recall_observations", {"query": "SCOPEMARK"}
+    )["content"][0]["text"])["observations"]
+    for widen in ({"scope": "all"}, {"scope": "project", "project": "proj-x"}):
+        got = json.loads(b.call_tool(
+            "conscio.recall_observations", {"query": "SCOPEMARK", **widen}
+        )["content"][0]["text"])["observations"]
+        assert len(got) == 1, widen
+
+
+def test_mcp_recall_observations_rejects_a_bad_scope(eng):
+    """An agent that guesses a scope gets a reason back, not 'internal error'."""
+    b = _bindings(eng)
+    with pytest.raises(j.InvalidParams):
+        b.call_tool("conscio.recall_observations",
+                    {"query": "x", "scope": "global"})
+
+
 def test_mcp_observe_requires_tool(eng):
     b = _bindings(eng)
     with pytest.raises(j.InvalidParams):
@@ -240,7 +256,7 @@ def test_compress_observations_isolated_by_session(eng):
 
 
 def test_recall_returns_snippet_not_whole_row(eng):
-    pad = "pad " * 300  # overflows the 1024-char stored cap
+    pad = "pad " * 300  # comfortably past any snippet window
     eng.observe("edit_file", f"fix authentication bug {pad}", f"done {pad}", "/p")
     [r] = eng.recall_observations("authentication")
     assert "authentication" in r["input"]  # the hit survives
@@ -253,8 +269,9 @@ def test_recall_full_opts_back_into_the_whole_row(eng):
     eng.observe("edit_file", f"fix authentication bug {pad}", f"done {pad}", "/p")
     [snip] = eng.recall_observations("authentication")
     [whole] = eng.recall_observations("authentication", full=True)
-    assert whole["input"].startswith("fix authentication bug")
-    assert len(whole["input"]) == 1024  # stored cap, verbatim
+    expected = "fix authentication bug " + "pad " * 300
+    assert whole["input"] == expected  # stored whole, verbatim — no cap
+    assert whole["truncated"] is False
     assert len(whole["input"]) > len(snip["input"])
 
 

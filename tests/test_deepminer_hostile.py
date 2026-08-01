@@ -8,7 +8,7 @@ exercise — each test earns its place by pushing harder or covering a gap:
         its ONLY persistence is ``content_store.index()`` under a deepminer label.
   * I1  a *corrupt schema* (tables dropped mid-run) still returns ``-1`` and the
         agent keeps running — not just one softly-swallowed write.
-  * I10 a 10 MB output is stored truncated to exactly 1024 chars, no OOM/hang.
+  * I10 a 10 MB output is clipped to MAX_FIELD_BYTES, no OOM/hang.
   * Non-ASCII (accents/emoji/CJK) survive a write→read roundtrip byte-for-byte.
   * ``compress_observations`` is deterministic with NO LLM adapter (0 tokens).
   * ``set_session`` default routing coexists with an explicit ``session_id=``
@@ -22,6 +22,7 @@ import time
 
 import pytest
 
+from conscio import obsstore
 from conscio.engine import ConsciousnessEngine
 
 
@@ -69,30 +70,28 @@ def test_observe_corrupt_schema_survives(eng):
     assert eng.recall_observations("i2") == []
 
 
-def test_observe_10mb_output_truncated_no_oom(eng):
-    """I10: a 10 MB output is stored truncated to exactly 1024 chars, no OOM/hang."""
+def test_observe_10mb_output_clipped_at_sanity_cap_no_oom(eng):
+    """I10: a 10 MB output is clipped to MAX_FIELD_BYTES, no OOM/hang.
+
+    The number moved with v3.9 (payloads are stored whole up to a sanity cap);
+    the guarantee did not — a pathological payload must never hang the agent.
+    """
     huge = "z" * 10_000_000
     t0 = time.time()
     oid = eng.observe("big", "in", huge, "/p")
     assert oid >= 1
-    assert time.time() - t0 < 3.0  # truncation happens before the write, never after
-    (stored,) = (
-        eng._obs_conn()
-        .execute("SELECT output FROM observations WHERE id=?", (oid,))
-        .fetchone()
-    )
-    assert len(stored) == 1024
+    assert time.time() - t0 < 3.0  # clipping happens before the write, never after
+    got = obsstore.read_observation(eng._obs_conn(), oid)
+    assert len(got["output"]) == obsstore.MAX_FIELD_BYTES
+    assert got["truncated"] is True
 
 
 def test_unicode_emoji_roundtrip(eng):
     """Accents / emoji / CJK survive write→read exactly (UTF-8 in, UTF-8 out)."""
     oid = eng.observe("café", "héllo 🌍 dïacrítics", "日本語 ✓ output", "/pró")
-    row = (
-        eng._obs_conn()
-        .execute("SELECT tool, input, output, project FROM observations WHERE id=?", (oid,))
-        .fetchone()
-    )
-    assert row == ("café", "héllo 🌍 dïacrítics", "日本語 ✓ output", "/pró")
+    got = obsstore.read_observation(eng._obs_conn(), oid)
+    assert (got["tool"], got["input"], got["output"], got["project"]) == (
+        "café", "héllo 🌍 dïacrítics", "日本語 ✓ output", "/pró")
 
 
 def test_compress_deterministic_without_adapter(eng):
