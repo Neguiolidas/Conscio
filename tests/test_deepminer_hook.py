@@ -299,23 +299,44 @@ def test_a_one_megabyte_payload_still_fits_the_budget(wired):
 
 # ── compaction bracket (v3.9.2) ────────────────────────────────────────────
 
-def test_pre_compact_steers_the_summariser_without_blocking(wired):
-    r = run_hook("pre-compact", {"session_id": "C1", "cwd": "/tmp/p"}, wired)
+def test_pre_compact_steers_the_summariser_in_the_form_the_host_reads(wired):
+    """Bare prose on stdout, because that is what becomes the instructions.
+
+    The host has no ``hookSpecificOutput`` variant for PreCompact. It filters the
+    successful hooks to those whose stdout is non-empty and joins them into the
+    summariser's instructions, so an envelope would not be unwrapped -- it would
+    be the instruction text. Asserting the envelope is how this passed while the
+    steer was never delivered as written.
+    """
+    r = run_hook("pre-compact", {"hook_event_name": "PreCompact",
+                                 "trigger": "auto", "custom_instructions": None,
+                                 "session_id": "C1", "cwd": "/tmp/p"}, wired)
+    assert r.returncode == 0, "a failed hook is dropped from the join"
+    assert r.stdout.strip(), "empty output is filtered out before the join"
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(r.stdout)
+    assert "conscio.recall_observations" in r.stdout
+
+
+def test_pre_compact_fires_on_the_automatic_trigger_too(wired):
+    """Auto-compaction is the path the Governor exists to steer."""
+    r = run_hook("pre-compact", {"hook_event_name": "PreCompact",
+                                 "trigger": "auto", "custom_instructions": None,
+                                 "session_id": "C2", "cwd": "/tmp/p"}, wired)
     assert r.returncode == 0
-    out = json.loads(r.stdout)
-    hs = out["hookSpecificOutput"]
-    assert hs["hookEventName"] == "PreCompact"
-    assert "customInstructions" in hs
-    assert out.get("continue") is not False, \
-        "spec 7: blocking compaction works against the goal"
+    assert r.stdout.strip()
+    c = _conn(wired)
+    assert obsstore.search(c, "compaction started", session_id="C2", full=True)
+    c.close()
 
 
 def test_post_compact_stores_the_summary_and_injects_an_index(wired):
     run_hook("post-tool-use", _payload(session_id="C1",
              tool_response={"stdout": "EARLIERWORK"}), wired)
     r = run_hook("post-compact",
-                 {"session_id": "C1", "cwd": "/tmp/p",
-                  "summary": "We fixed the parser and shipped v2."}, wired)
+                 {"hook_event_name": "PostCompact", "trigger": "auto",
+                  "session_id": "C1", "cwd": "/tmp/p",
+                  "compact_summary": "We fixed the parser and shipped v2."}, wired)
     assert r.returncode == 0
     c = _conn(wired)
     got = obsstore.search(c, "parser", session_id="C1", full=True)
@@ -328,9 +349,28 @@ def test_post_compact_stores_the_summary_and_injects_an_index(wired):
 def test_post_compact_index_never_carries_the_summary_itself(wired):
     """The summary is already in context — repeating it would be pure cost."""
     summary = "UNIQUESUMMARYTOKEN " + "detail " * 5000
-    r = run_hook("post-compact", {"session_id": "C1", "summary": summary}, wired)
+    r = run_hook("post-compact",
+                 {"session_id": "C1", "compact_summary": summary}, wired)
     assert "UNIQUESUMMARYTOKEN" not in r.stdout
     assert len(r.stdout) < 4096
+
+
+def test_post_compact_reads_the_field_the_host_actually_sends(wired):
+    """``compact_summary`` is the host's name for it; ``summary`` was never sent.
+
+    A missing key is indistinguishable from an empty summary, so this handler
+    stored nothing and reported success on every compaction.
+    """
+    run_hook("post-tool-use", _payload(session_id="C3",
+             tool_response={"stdout": "x"}), wired)
+    run_hook("post-compact", {"hook_event_name": "PostCompact",
+                              "trigger": "auto", "session_id": "C3",
+                              "compact_summary": "ARCHIVEDBYCOMPACTION"}, wired)
+    c = _conn(wired)
+    got = obsstore.search(c, "ARCHIVEDBYCOMPACTION", session_id="C3", full=True)
+    c.close()
+    assert got, "the compact summary was dropped"
+    assert got[0]["tool"] == "compact-summary"
 
 
 def test_pre_compact_records_a_boundary_marker(wired):
@@ -338,6 +378,25 @@ def test_pre_compact_records_a_boundary_marker(wired):
     c = _conn(wired)
     assert obsstore.search(c, "compaction started", session_id="C1", full=True)
     c.close()
+
+
+def test_an_unusable_store_does_not_cost_the_steer(tmp_path):
+    """The instructions need no database, so a broken one must not silence them.
+
+    This handler runs inside a fail-open wrapper, so any exception before the
+    write ends the hook quietly with empty stdout -- and empty stdout is dropped
+    from the join, taking the steer with it. Storage here is a regular file, so
+    creating obs.db under it cannot succeed.
+    """
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("")
+    cfg = tmp_path / "hook.json"
+    cfg.write_text(json.dumps({"obsstore": str(Path(obsstore.__file__)),
+                               "storage": str(blocker)}))
+    r = run_hook("pre-compact", {"session_id": "C1", "trigger": "auto"}, cfg)
+    assert r.returncode == 0
+    assert "conscio.recall_observations" in r.stdout, \
+        "a store failure swallowed the summariser instructions"
 
 
 def test_compaction_events_still_fail_open(wired, tmp_path):

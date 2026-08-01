@@ -9,8 +9,11 @@ reversible. It runs once per tool call, so two rules dominate the design:
   2. It fails open, always. Any error exits 0 with no stdout, and the tool's
      output reaches the model untouched. Telemetry must never cost a session.
 
-Dispatch is by argv because the harness sends no event name on stdin — verified
-against the installed binary, see docs/reference/claude-code-harness.md 3.2.1.
+Dispatch is by argv. The harness does send ``hook_event_name`` on stdin, but the
+registration in settings.json is per event anyway, so argv keeps the dispatch
+visible in the registered command instead of buried in the payload. See
+docs/reference/claude-code-harness.md 3.2.1 -- including the correction to the
+earlier claim that no event name existed, which came from a broken measurement.
 """
 import datetime
 import importlib.util
@@ -201,8 +204,20 @@ def on_pre_compact(payload, store, storage):
 
     PreCompact can block compaction; this deliberately does not. The whole point
     of the Governor is to compact more often, so blocking would work against it.
+
+    The steer goes out as bare text, not as the ``hookSpecificOutput`` envelope
+    every other event uses. PreCompact has no variant in that union: the host
+    keeps the successful hooks whose output is non-empty, joins their stdout with
+    newlines, and hands the result to the summariser as its instructions. An
+    envelope here would be the instructions -- a JSON blob where prose belongs.
     """
     session = str(payload.get("session_id") or "unknown")
+    # The steer goes out before the store is touched. It needs nothing from the
+    # database, and this handler runs inside a fail-open wrapper: writing it last
+    # would let a locked or unwritable obs.db silently cost the one thing here
+    # that changes what the model keeps. The boundary marker is the expendable
+    # half, so it is the half that runs second.
+    sys.stdout.write(COMPACT_INSTRUCTIONS + "\n")
     conn = store.connect(storage / "obs.db", busy_timeout_ms=BUSY_TIMEOUT_MS)
     try:
         store.put_observation(
@@ -212,15 +227,16 @@ def on_pre_compact(payload, store, storage):
             agent="claude-code", session_id=session, ts=_utc_now())
     finally:
         conn.close()
-    sys.stdout.write(json.dumps({"hookSpecificOutput": {
-        "hookEventName": "PreCompact",
-        "customInstructions": COMPACT_INSTRUCTIONS}}) + "\n")
 
 
 def on_post_compact(payload, store, storage):
     """Store the summary the host produced, then point at what it replaced."""
     session = str(payload.get("session_id") or "unknown")
-    summary = _as_text(payload.get("summary"))
+    # The field is ``compact_summary``. Reading ``summary`` matched nothing, so
+    # the one artefact worth keeping across a compaction was dropped in silence
+    # -- and silence is what a missing key always looks like here. Both names are
+    # accepted because this contract belongs to the host, not to us.
+    summary = _as_text(payload.get("compact_summary") or payload.get("summary"))
     conn = store.connect(storage / "obs.db", busy_timeout_ms=BUSY_TIMEOUT_MS)
     try:
         if summary:
