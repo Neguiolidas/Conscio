@@ -1,8 +1,10 @@
 """v3.9.1 capture hook — it must never break a session, whatever happens."""
 import datetime as _dt
+import importlib.util
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -234,3 +236,43 @@ def test_session_start_ignores_the_current_session_in_the_index(wired):
              tool_response={"stdout": "mine"}), wired)
     r = run_hook("session-start", {"session_id": "CURRENT"}, wired)
     assert r.stdout == ""
+
+
+# ── budget (spec 4.1.4) ────────────────────────────────────────────────────
+
+def _load_hook_module():
+    spec = importlib.util.spec_from_file_location("_hook_under_test", HOOK)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_capture_stays_inside_the_60ms_p95_budget(wired):
+    """spec 4.1.4 — the hook runs once per tool call; it cannot be slow."""
+    mod = _load_hook_module()
+    cfg = json.loads(Path(wired).read_text())
+    store = mod.load_obsstore(cfg["obsstore"])
+    storage = Path(cfg["storage"])
+    payload = _payload(tool_response={"stdout": "y " * 4000})  # ~8 KB, realistic
+
+    mod.on_tool(payload, store, storage)          # warm the file open
+    samples = []
+    for _ in range(40):
+        t0 = time.perf_counter()
+        mod.on_tool(payload, store, storage)
+        samples.append((time.perf_counter() - t0) * 1000)
+    samples.sort()
+    p95 = samples[int(len(samples) * 0.95) - 1]
+    assert p95 < 60.0, f"p95={p95:.1f}ms, samples={samples[-5:]}"
+
+
+def test_a_one_megabyte_payload_still_fits_the_budget(wired):
+    mod = _load_hook_module()
+    cfg = json.loads(Path(wired).read_text())
+    store = mod.load_obsstore(cfg["obsstore"])
+    payload = _payload(tool_response={"stdout": "q" * 1_000_000})
+    mod.on_tool(payload, store, Path(cfg["storage"]))
+    t0 = time.perf_counter()
+    mod.on_tool(payload, store, Path(cfg["storage"]))
+    ms = (time.perf_counter() - t0) * 1000
+    assert ms < 200.0, f"{ms:.0f}ms for a 1 MiB payload"
