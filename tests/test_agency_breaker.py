@@ -154,6 +154,38 @@ def test_cooldown_release(tmp_path):
     led.close()
 
 
+def test_expired_cooldown_frees_the_goal_even_if_review_never_runs(tmp_path):
+    """review_quarantine() runs at the top of act(). A gated agent never gets
+    there — a sleeping daemon, or a lockdown standing on this very row — so a
+    reader that trusted the row's presence kept the goal paralysed for as long
+    as nothing swept the table. Observed in the field 150h past expiry."""
+    led = ActionLedger(tmp_path / "conscio.db")
+    brk = CircuitBreaker(led, _Bus(), db_path=tmp_path / "conscio.db",
+                         cooldown_s=0.0)         # expires immediately
+    _failed_rows(led, "g1", 3)
+    brk.trip("g1", goal_text="prune stale entities")
+    _time.sleep(0.01)
+    assert brk.is_quarantined("g1") is False, "cooldown expired: the goal is free"
+    brk.close()
+    led.close()
+
+
+def test_expired_quarantine_does_not_count_toward_global_lockdown(tmp_path):
+    """Otherwise a quorum of long-cold goals holds the whole agent down."""
+    led = ActionLedger(tmp_path / "conscio.db")
+    brk = CircuitBreaker(led, _Bus(), db_path=tmp_path / "conscio.db",
+                         cooldown_s=0.0)
+    for i in range(GLOBAL_LOCKDOWN_QUORUM):
+        fp = f"g{i}"
+        _failed_rows(led, fp, 3)
+        brk.trip(fp, goal_text=f"goal number {i}")
+    _time.sleep(0.01)
+    assert brk.quarantined_count() == 0
+    assert brk.global_lockdown_due() is False
+    brk.close()
+    led.close()
+
+
 def test_relevant_event_releases_quarantine(tmp_path):
     led = ActionLedger(tmp_path / "conscio.db")
     bus = _Bus()

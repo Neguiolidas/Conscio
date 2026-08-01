@@ -44,6 +44,8 @@ project's `.claude/settings.local.json` — refusing any window below the floor
 your own transcripts show, because a window under the landing point compacts,
 lands above its own ceiling, and compacts again. Every measurement comes from
 the host's own `message.usage` records rather than from token counting of ours.
+**v3.9.3** repairs what a live install turned up — see the
+[changelog](https://github.com/Neguiolidas/Conscio/blob/main/CHANGELOG.md).
 
 ## Install
 

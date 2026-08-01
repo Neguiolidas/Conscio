@@ -101,19 +101,29 @@ class CircuitBreaker:
 
     # ── quarantine state ──
 
+    # Both readers compare the cooldown themselves rather than trusting the row
+    # to have been reaped. review_quarantine() only runs at the start of an
+    # act() cycle, so an agent whose actions are gated — a sleeping daemon, or
+    # a global lockdown standing on these very rows — would never reach the
+    # release and would stay paralysed long past its cooldown. Expiry has to
+    # hold whether or not anything sweeps the table.
+
     def is_quarantined(self, goal_fp: str) -> bool:
         if self._conn is None:
             return False
         row = self._conn.execute(
-            "SELECT 1 FROM goal_quarantine WHERE goal_fp=?",
-            (goal_fp,)).fetchone()
+            "SELECT 1 FROM goal_quarantine"
+            " WHERE goal_fp=? AND cooldown_until > ?",
+            (goal_fp, time.time())).fetchone()
         return row is not None
 
     def quarantined_count(self) -> int:
+        """Goals still serving their cooldown. Expired rows do not count."""
         if self._conn is None:
             return 0
         row = self._conn.execute(
-            "SELECT COUNT(*) FROM goal_quarantine").fetchone()
+            "SELECT COUNT(*) FROM goal_quarantine WHERE cooldown_until > ?",
+            (time.time(),)).fetchone()
         return int(row[0])
 
     def global_lockdown_due(self) -> bool:

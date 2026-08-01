@@ -76,6 +76,9 @@ def coerce(value: str, type_name: str) -> Any:
     return value
 
 
+# Enough of the reply to recognise its shape; short enough to log every time.
+_RAW_SAMPLE_CHARS = 200
+
 _JSON_INSTRUCTIONS = (
     "\n\nRespond with ONE JSON object only, no prose, exactly these keys:\n"
     '{"tool": "<tool name>", "args": {<tool arguments>}, '
@@ -102,6 +105,10 @@ class OutputGateway:
         self.tier = tier         # explicit "T1"/"T2"/"T3"; None = caps auto
         self.last_tier = ""      # tier that produced (or last tried) decode
         self.last_adapter_error: AdapterError | None = None
+        # What the model last said, and why it was rejected. Kept so that a
+        # decode failure names its cause instead of only its outcome.
+        self.last_raw = ""
+        self.last_decode_errors: list[str] = []
         self._token_ledger = None
         # v3.1: failure classification + circuit breaker
         from conscio.failure import FailureGovernor
@@ -156,6 +163,8 @@ class OutputGateway:
         if hasattr(base_prompt, "full_prompt"):
             base_prompt = base_prompt.full_prompt
         self.last_adapter_error = None
+        self.last_raw = ""
+        self.last_decode_errors = []
         caps = self.adapter.capabilities()
         tier = self.effective_tier()
         if tier == "T1":
@@ -184,8 +193,24 @@ class OutputGateway:
                 from conscio.failure import FailureGovernor as _FG
                 if not _FG.should_retry(_FG.classify(self.last_adapter_error)):
                     raise GatewayError("permanent failure: " + str(self.last_adapter_error))
-            raise GatewayError("all decode tiers failed")
+            raise GatewayError("all decode tiers failed" + self._decode_detail())
         return proposal_from_dict(data, goal_id=goal_id)
+
+    def _decode_detail(self) -> str:
+        """What the model said and why it was rejected, for the error message.
+
+        'all decode tiers failed' on its own cannot distinguish a model that
+        answers prose from one that answers JSON with the wrong keys, and the
+        operator has no other record: the reply is discarded on the way out.
+        Bounded because this string reaches the ledger and the event bus.
+        """
+        parts: list[str] = []
+        if self.last_decode_errors:
+            parts.append("last errors: " + "; ".join(self.last_decode_errors[:3]))
+        if self.last_raw:
+            sample = " ".join(self.last_raw.split())[:_RAW_SAMPLE_CHARS]
+            parts.append(f"last reply: {sample!r}")
+        return f" ({', '.join(parts)})" if parts else ""
 
     # ── tiers ──
 
@@ -207,14 +232,17 @@ class OutputGateway:
                 if not _FG.should_retry(_FG.classify(exc)):
                     return None
                 return None
+            self.last_raw = raw
             try:
                 data = json.loads(repair_json(raw))
             except (json.JSONDecodeError, ValueError):
+                self.last_decode_errors = ["not JSON"]
                 feedback = "\n\nPrevious answer was invalid JSON. JSON only."
                 continue
             errors = validate(data, schema)
             if not errors:
                 return data
+            self.last_decode_errors = errors
             feedback = ("\n\nPrevious answer was invalid: "
                         + "; ".join(errors) + ". Fix and resend JSON only.")
         return None
@@ -233,14 +261,17 @@ class OutputGateway:
                 if not _FG.should_retry(_FG.classify(exc)):
                     return None
                 return None
+            self.last_raw = raw
             try:
                 data = json.loads(repair_json(raw))
             except (json.JSONDecodeError, ValueError):
+                self.last_decode_errors = ["not JSON"]
                 feedback = "\n\nPrevious answer was invalid JSON. JSON only."
                 continue
             errors = validate(data, schema)
             if not errors:
                 return data
+            self.last_decode_errors = errors
             feedback = ("\n\nPrevious answer was invalid: "
                         + "; ".join(errors) + ". Fix and resend JSON only.")
         return None
@@ -259,10 +290,12 @@ class OutputGateway:
                 if not _FG.should_retry(_FG.classify(exc)):
                     return None
                 return None
+            self.last_raw = raw
             data = parse_kv(raw)
             errors = validate(data, schema)
             if not errors:
                 return data
+            self.last_decode_errors = errors
             feedback = ("\n\nPrevious answer was invalid: "
                         + "; ".join(errors) + ". Use the exact line format.")
         return None

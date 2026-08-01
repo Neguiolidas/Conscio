@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.9.3] - 2026-08-01 — Field Repairs
+
+Driven by a hostile audit of a running v3.9.2 install rather than by a plan.
+Every fix below answers something the agent did, not something the code looked
+like it might do.
+
+### Fixed
+
+- **A quarantined goal stayed quarantined after its cooldown expired.**
+  `is_quarantined()` and `quarantined_count()` trusted the row's presence, and
+  the cooldown was honoured only by `review_quarantine()` — which runs at the
+  top of an `act()` cycle. An agent whose actions are gated never gets there:
+  a sleeping daemon, or a global lockdown standing on those very rows. Paralysis
+  therefore outlived its cooldown indefinitely; found in the field 150 hours
+  past expiry, with the quorum still counting the cold rows. Both readers now
+  compare `cooldown_until` themselves, so recovery no longer depends on anything
+  sweeping the table.
+- **`all decode tiers failed` named its outcome and not its cause.** The reply
+  was discarded on the way out, so a model answering prose and a model answering
+  JSON with the wrong keys produced the same message and the same `tool=(none)`
+  row. `GatewayError` now carries the validation errors and a bounded sample of
+  what the model actually said.
+- **One unreadable transcript could empty the whole context report.**
+  `_recent_transcripts()` filtered with `Path.is_file()`, which before 3.13
+  re-raises any errno outside ENOENT/ENOTDIR/EBADF/ELOOP — a stale NFS handle
+  (ESTALE) over a single file collapsed the report to nothing. The same method
+  reads a cached dirent on 3.14 and takes a fresh stat before it, so an
+  identical rotation behaved differently per interpreter and the regression test
+  only held on the newest one. One stat per path now decides both that the entry
+  is a regular file and where it sorts; a failure costs that path alone.
+- **The wheel shipped bytecode.** The recursive asset glob reads the working
+  tree, so v3.9.2 carried a 3.14 `.pyc` into every install, including the ones
+  on 3.10. Package data now excludes `__pycache__`.
+- Two `log_message` overrides narrowed their base signature, which pyright
+  reported and a caller passing `format=` would have hit as a `TypeError`.
+  The type check is now clean at zero warnings.
+
+### Audited and left alone
+
+Findings from the same audit that are not defects, recorded so the next reader
+does not re-open them:
+
+- **`world_entities`, `world_relations` and `meta_errors` are empty by design.**
+  They are targets of the one-time `conscio migrate` from legacy JSON. The live
+  world model and meta-cognition keep their state in `world_model.json` and
+  `meta_cognition.json`. An empty table means nothing was migrated, not that
+  nothing is being recorded — which is why `health` can report 23 stale entities
+  over an empty `world_entities`.
+- **`events.db` is not ours.** The name appears in no version of the package,
+  in any commit. The EventBus writes to the `events` table inside `conscio.db`.
+  A zero-byte `events.db` in a storage directory can be deleted.
+- **`saving_pct = 0` on `source=reflection` is the correct value.** The output
+  filter strips ANSI, repeated blocks and tool noise; a reflection summary
+  contains none of that, so `raw == filtered`. The row is instrumentation, not
+  a promise.
+- **`conscio.cc_hook` and `conscio.context_governor` never existed.** Capture is
+  a standalone script (`integrations/claude_code/assets/hooks/conscio_deepminer.py`)
+  that deliberately imports nothing from the package — importing `conscio` costs
+  ~0.28 s, and this runs once per tool call. The governor is `conscio.governor`,
+  a module of functions with no class.
+
+---
+
 ## [3.9.2] - 2026-08-01 — Context Governor
 
 The 3.9 line in one release. It was developed as three slices — `3.9.0`

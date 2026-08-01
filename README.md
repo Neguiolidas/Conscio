@@ -14,76 +14,10 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.9.2` "Context Governor":**
-Conscio measures what a session's context actually costs — from the host's own
-`message.usage` records, not from any token counting of ours — and turns that
-into a window you can defend. Automatic capture records every tool call, so a
-smaller window stops meaning lost work: the detail is recoverable after the
-summariser has dropped it. The 3.9 line shipped as three slices (`3.9.0`
-ObsStore, `3.9.1` capture, `3.9.2` Governor); this is the first release to
-carry any of them.
-
-**`v3.8.2` "DeepMiner":**
-An agnostic tool-observation store isolated in its own `obs.db` (SQLite +
-FTS5): `observe()` captures raw tool calls fire-and-forget, `recall_observations()`
-full-text searches them and returns a **snippet window** around each hit, and
-`compress_observations()` turns a session's most recent work into a handoff —
-all at **0 LLM tokens**. Exposed as two MCP tools
-(`conscio.observe` / `conscio.recall_observations`) so any agent can use it.
-Fully offline, stdlib-only core.
-
-**Automatic capture on Claude Code (v3.9).** The installer registers a hook on
-`SessionStart`, `PostToolUse` and `PostToolUseFailure` that records every tool
-call into `obs.db`, scoped to the session and the project. It never alters tool
-output and never blocks a session: any failure exits silently and the output
-reaches the model untouched. At session start it prunes the store and injects a
-short **index** of the previous session — what ran, never what it returned.
-Search it with `conscio.recall_observations`, which stays inside the current
-session unless you widen `scope` to `project` or `all`.
-
-**Context ceiling (v3.9).** `conscio govern prefix` measures your stable prefix
-and the point your compactions actually land at, then prints the cost curve for
-every candidate window. `conscio govern on` applies the cost-optimal one to the
-project's `.claude/settings.local.json` — scoped to that project, gitignored, and
-backed up — and freezes a baseline. `conscio govern report` compares against it
-using the host's own `message.usage` records rather than any token counting of
-ours. `conscio govern off` restores whatever you had before.
-
-The window is a trade, not a limbo bar. A smaller ceiling makes every turn cheaper
-but forces compaction more often, and each compaction invalidates the prompt cache
-and pays for a summary. Measured on an 881-request session that reached 402,722
-tokens: the curve bottoms out around 59% in the abstract, but the summariser lands
-at ~82,000-90,000 tokens **regardless of the window you set**, so anything under
-about 90,000 compacts, lands above its own ceiling, and compacts again. The
-honest, achievable figure for that profile was **45.8% at a 120,000 window**, and
-`govern on` refuses any window below the floor your own transcripts show.
-
-Where the summariser lands is a property of the model, not of your habits. On one
-host `opus-5` landings topped out at 125,586 while `sonnet-5` reached 142,208, so
-the floor is computed from landings billed to the model you are actually running —
-a floor borrowed from a heavier model silently forbids windows that are fine for
-yours. Landings from a manual `/compact` count too: they are still landings the
-next turn has to sit above.
-
-**Compaction bracket (v3.9).** `PreCompact` tells the summariser what is worth
-keeping — the task in progress, what changed in which file, unresolved errors
-with their exact text — and that every tool call is recoverable from `obs.db`, so
-it can summarise freely instead of hoarding detail. `PostCompact` stores the
-summary the host produced and points at the detail that survived it. Neither ever
-blocks compaction: the whole point of the Governor is to compact *more* often.
-
-> Capture is complete, not truncated: a tool's whole input and output are stored
-> (up to 1 MiB per field), so anything a tool reads or writes — including
-> secrets — can land in `obs.db`, which is plain SQLite on disk. This is the same
-> content, on the same machine, that the host already keeps in its own session
-> transcripts; `obs.db` is a second copy with a 30-day retention window. Treat it
-> as one more place to scrub, and set `max_age_days` lower if that matters to you.
-
-Benchmarked on real session transcripts (6,217 tool calls): a recall costs
-**~110 tokens instead of ~350** — a median **80% saving** per query, at
-unchanged retrieval fidelity. The saving is **cross-session**: it is what a
-later session pays to ask "where did I see this?" instead of re-reading the
-file or re-running the command.
+**Latest release — `v3.9.3` "Field Repairs":** a quarantined goal now leaves
+quarantine on its own clock instead of waiting for a sweep that a stopped agent
+never runs; a failed decode reports what the model actually replied; one
+unreadable transcript costs its own row, not the whole context report.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
@@ -375,6 +309,33 @@ report = engine.evaluate
 # report.self_check  → "PASS"
 # report.ranked_improvements  → ["completeness: add more entities", ...]
 ```
+
+### Tool observations & context economy
+
+Every tool call a session makes is recorded in its own SQLite store (`obs.db`,
+separate from `conscio.db`), searchable later at **0 LLM tokens** — so a smaller
+context window stops meaning lost work. On Claude Code the installer wires this
+up automatically; the capture never alters tool output and never blocks a
+session.
+
+```python
+engine.observe(tool="Bash", input_text="ls", output_text="README.md")
+hits = engine.recall_observations("where did I see this?")   # FTS5 snippet window
+handoff = engine.compress_observations()                     # session → handoff
+```
+
+```bash
+conscio govern prefix    # measure your stable prefix and where compactions land
+conscio govern on        # apply the cost-optimal context window to this project
+conscio govern report    # compare against the baseline, from the host's own usage
+conscio govern off       # restore what you had before
+```
+
+> Capture is complete, not truncated: a tool's whole input and output are stored
+> (up to 1 MiB per field), so anything a tool reads or writes — including
+> secrets — can land in `obs.db`. It is a second copy of what the host already
+> keeps in its session transcripts, with a 30-day retention window. Treat it as
+> one more place to scrub, and lower `max_age_days` if that matters to you.
 
 ### Live mode — daemon, sensors & Awake Mode
 

@@ -34,9 +34,18 @@ After this, no secrets are needed — the `publish` job authenticates via OIDC.
    ```bash
    for f in tests/test_*.py; do python -m pytest "$f" -q; done
    ruff check conscio/ tests/
-   mypy conscio/
+   pyright conscio/                # the gate runs pyright, not mypy
    python -m build && twine check dist/*
+   unzip -l dist/*.whl | grep -q __pycache__ && echo "BYTECODE IN WHEEL"
    mkdocs build --strict          # needs: pip install "conscio[docs]"
+   ```
+   Run the test loop on the **oldest** Python the gate covers, not just the
+   local one. `pathlib`, `asyncio` and `typing` all changed behaviour inside
+   the supported range; v3.9.2 was tagged with a green sweep on 3.14 and still
+   failed the gate on 3.11:
+   ```bash
+   uv venv /tmp/gate310 --python 3.10 && uv pip install --python /tmp/gate310/bin/python pytest numpy
+   for f in tests/test_*.py; do PYTHONPATH=. /tmp/gate310/bin/python -m pytest "$f" -q; done
    ```
 5. **TestPyPI dry-run** (recommended before the first real upload):
    ```bash

@@ -284,3 +284,42 @@ class TestTier1Grammar:
         gw = OutputGateway(adapter)
         gw.request_action("BASE", PROPOSAL_SCHEMA)
         assert gw.last_tier == "T2"
+
+
+class TestDecodeFailureIsDiagnosable:
+    """A decode failure must name its cause, not only its outcome.
+
+    Field report (v3.9.2, GLM-5.2): six actions recorded with tool=(none) and
+    args={}, every one of them ending in 'all decode tiers failed'. The reply
+    that caused it was discarded, so there was no way to tell a model that
+    answers prose from one that answers JSON with the wrong keys.
+    """
+
+    def test_a_prose_reply_is_quoted_in_the_error(self):
+        adapter = MockAdapter(script=["I cannot help with that."] * 8)
+        gw = OutputGateway(adapter)
+        with pytest.raises(GatewayError) as exc:
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert "I cannot help with that." in str(exc.value)
+
+    def test_wrong_keys_are_named_in_the_error(self):
+        adapter = MockAdapter(script=['{"action": "think", "why": "x"}'] * 8)
+        gw = OutputGateway(adapter)
+        with pytest.raises(GatewayError) as exc:
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert "last errors:" in str(exc.value)
+
+    def test_the_sample_is_bounded(self):
+        adapter = MockAdapter(script=["x" * 5000] * 8)
+        gw = OutputGateway(adapter)
+        with pytest.raises(GatewayError) as exc:
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert len(str(exc.value)) < 600, "this string reaches the ledger"
+
+    def test_a_previous_reply_does_not_attach_to_a_later_failure(self):
+        adapter = MockAdapter(script=[_valid_json()] + ["nope"] * 8)
+        gw = OutputGateway(adapter)
+        gw.request_action("BASE", PROPOSAL_SCHEMA)
+        with pytest.raises(GatewayError) as exc:
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert "echo" not in str(exc.value), "stale sample from the call before"
