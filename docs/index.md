@@ -33,6 +33,18 @@ recent work into a handoff — all deterministic, at **0 LLM tokens**. Measured
 on real session transcripts, a recall costs **~110 tokens instead of ~350**,
 a median **80% saving** per query at unchanged retrieval fidelity.
 
+**v3.9** ("Context Governor") makes that store automatic and then uses it. On
+Claude Code the installer registers hooks that record every tool call into
+`obs.db` — fail-open, never altering tool output — and bracket compaction:
+`PreCompact` tells the summariser what is worth keeping, `PostCompact` stores
+what it produced and points at the detail that survived. `conscio govern` then
+measures your stable prefix and where your compactions actually land, prints the
+cost curve for every candidate window, and applies the cost-optimal one to the
+project's `.claude/settings.local.json` — refusing any window below the floor
+your own transcripts show, because a window under the landing point compacts,
+lands above its own ceiling, and compacts again. Every measurement comes from
+the host's own `message.usage` records rather than from token counting of ours.
+
 ## Install
 
 ```bash
