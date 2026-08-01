@@ -206,7 +206,8 @@ def compaction_floor(root: str | Path, sessions: int = 10) -> int:
     Derived from the user's own transcripts, because it depends on their prefix
     and their summariser output rather than on anything we can assume.
     """
-    floors: list[int] = []
+    floors: list[tuple[str, int]] = []
+    target = ""
     for path in _recent_transcripts(Path(root), sessions):
         rows: list[dict] = []
         marks: list[int] = []
@@ -235,9 +236,16 @@ def compaction_floor(root: str | Path, sessions: int = 10) -> int:
                         "in": int(usage.get("input_tokens") or 0),
                         "cw": int(usage.get("cache_creation_input_tokens") or 0),
                         "cr": int(usage.get("cache_read_input_tokens") or 0),
-                        "out": int(usage.get("output_tokens") or 0)})
+                        "out": int(usage.get("output_tokens") or 0),
+                        "model": str(message.get("model") or "")})
         except OSError:
             continue
+        # Transcripts arrive newest-first, so the last billed row of the first
+        # one that has any is the model in use right now -- and reading the last
+        # row rather than the first means a mid-session model switch resolves to
+        # what the session switched *to*.
+        if not target and rows:
+            target = rows[-1]["model"]
         # The row right after a compaction is often billed with no context at
         # all — 20 of 95 landings on this host. Taking it verbatim scores that
         # compaction as 0, and under max() a 0 does not lose harmlessly: it
@@ -248,12 +256,24 @@ def compaction_floor(root: str | Path, sessions: int = 10) -> int:
         # compaction — past it the context belongs to a different landing.
         stops = marks[1:] + [len(rows)]
         for start, stop in zip(marks, stops):
-            landed = next((context_of(rows[i])
-                           for i in range(start, min(stop, len(rows)))
-                           if context_of(rows[i]) > 0), 0)
-            if landed:
-                floors.append(landed)
-    return max(floors) if floors else 0
+            hit = next((rows[i] for i in range(start, min(stop, len(rows)))
+                        if context_of(rows[i]) > 0), None)
+            if hit:
+                floors.append((hit["model"], context_of(hit)))
+    # A landing only describes the window it happened in. Pooling models put a
+    # sonnet-5 landing of 142,208 under an opus-5 session whose own landings
+    # topped out at 125,586, and since max() governs, the foreign number won:
+    # hard_floor came out 156,428 instead of 138,144, which forbade the 140,000
+    # candidate outright. On this host the recommendation was 160,000 either way
+    # -- the cost model picks it on its own merits -- so the damage was not a
+    # wrong number but an unfalsifiable one: 160,000 looked chosen while it was
+    # being forced, and no measurement could tell the two apart. Same-model
+    # landings only. Falling back to the pooled maximum when a model has no
+    # landings of its own is deliberate: too high merely wastes headroom, while
+    # returning 0 would drop the floor entirely and re-permit the compaction
+    # loop that this whole number exists to forbid.
+    same = [n for m, n in floors if m == target]
+    return max(same or [n for _, n in floors] or [0])
 
 
 def modelled_cost(window: int, *, prefix: int, requests: int,
