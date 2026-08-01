@@ -26,14 +26,33 @@ def run_hook(event, payload, cfg_path=None, timeout=30):
 
 @pytest.fixture()
 def wired(tmp_path):
-    """A sidecar pointing at a real obsstore and a real space dir."""
+    """A sidecar pointing at a real obsstore and a space dir that does not exist.
+
+    Deliberately not created. A freshly materialized instance has no storage
+    directory yet, and the hook fails open, so a store that cannot be created
+    drops every observation in silence. Creating it here once hid exactly that:
+    the whole capture slice was inert on a fresh install and 27 tests passed.
+    """
     cfg = tmp_path / "hook.json"
     cfg.write_text(json.dumps({
         "obsstore": str(Path(obsstore.__file__)),
         "storage": str(tmp_path / "space"),
     }))
-    (tmp_path / "space").mkdir()
     return cfg
+
+
+def test_capture_works_on_an_instance_whose_storage_dir_does_not_exist_yet(
+        wired, tmp_path):
+    """The first tool call after install must land, not vanish."""
+    assert not (tmp_path / "space").exists()
+    r = run_hook("post-tool-use", {
+        "session_id": "FRESH", "cwd": "/w", "tool_name": "Bash",
+        "tool_input": {"command": "echo hi"},
+        "tool_response": {"stdout": "NEEDLEFRESH"}}, wired)
+    assert r.returncode == 0
+    conn = obsstore.connect(tmp_path / "space" / "obs.db")
+    assert obsstore.search(conn, "NEEDLEFRESH", session_id="FRESH", full=True)
+    conn.close()
 
 
 def test_unknown_event_exits_clean_and_silent(wired):
