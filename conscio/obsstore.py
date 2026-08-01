@@ -154,6 +154,26 @@ def put_observation(conn: sqlite3.Connection, **kwargs) -> int:
     return row
 
 
+def read_observation(conn: sqlite3.Connection, oid: int) -> dict | None:
+    """Return one observation by id with both payloads whole, or None.
+
+    The inverse of ``put_observation``, and the only supported way to read a
+    stored payload back: the text lives in blobs, not in a column.
+    """
+    row = conn.execute(
+        "SELECT id, tool, in_h, out_h, project, agent, ts, session_id, truncated"
+        " FROM observations WHERE id=?", (oid,)
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0], "tool": row[1],
+        "input": _blob_text(conn, row[2]), "output": _blob_text(conn, row[3]),
+        "project": row[4], "agent": row[5], "timestamp": row[6],
+        "session_id": row[7], "truncated": bool(row[8]),
+    }
+
+
 def _is_v1(conn: sqlite3.Connection) -> bool:
     """A v1 database has observations.input; v2 has observations.in_h."""
     cols = {r[1] for r in conn.execute("PRAGMA table_info(observations)")}

@@ -1633,6 +1633,7 @@ class ConsciousnessEngine:
         full: bool = False,
         scope: str = "session",
         project: str = "",
+        session_id: str = "",
     ) -> list[dict]:
         """Full-text (FTS5) search over raw tool observations.
 
@@ -1645,6 +1646,10 @@ class ConsciousnessEngine:
         observations is reasoning over content that was never in its context.
         ``scope="project"`` needs the same project string that was passed to
         observe(); it is not derivable from the storage path.
+
+        ``session_id`` mirrors observe()'s: both default to the session wired by
+        set_session(), and a caller that named a session on the way in must be
+        able to name the same one on the way out.
 
         ``input``/``output`` carry the snippet window around the hit (elided
         with "…"), not the whole stored row: the caller asked where a term
@@ -1659,7 +1664,7 @@ class ConsciousnessEngine:
                     k=k,
                     full=full,
                     scope=scope,
-                    session_id=self._obs_session,
+                    session_id=session_id or self._obs_session,
                     project=project,
                     snippet_tokens=_SNIPPET_TOKENS,
                 )
