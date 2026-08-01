@@ -393,3 +393,35 @@ def prune(
 
     conn.commit()
     return {"observations_deleted": deleted, "blobs_deleted": freed}
+
+
+def last_session_id(conn: sqlite3.Connection, exclude: str = "") -> str | None:
+    """Most recently written session id, or None. ``exclude`` skips one.
+
+    Ordered by row id rather than ts: ts is supplied by the caller and a clock
+    that jumps must not reorder history.
+    """
+    row = conn.execute(
+        "SELECT session_id FROM observations WHERE session_id <> ?"
+        " ORDER BY id DESC LIMIT 1", (exclude,)
+    ).fetchone()
+    return row[0] if row else None
+
+
+def session_summary(conn: sqlite3.Connection, session_id: str) -> dict:
+    """Counts for one session — the data a session-start index is built from."""
+    total, first_ts, last_ts = conn.execute(
+        "SELECT COUNT(*), MIN(ts), MAX(ts) FROM observations WHERE session_id=?",
+        (session_id,),
+    ).fetchone()
+    tools = conn.execute(
+        "SELECT tool, COUNT(*) c FROM observations WHERE session_id=?"
+        " GROUP BY tool ORDER BY c DESC, tool ASC", (session_id,),
+    ).fetchall()
+    return {
+        "session_id": session_id,
+        "total": int(total or 0),
+        "tools": [(t, int(c)) for t, c in tools],
+        "first_ts": first_ts or "",
+        "last_ts": last_ts or "",
+    }
