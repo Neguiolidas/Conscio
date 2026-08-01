@@ -61,6 +61,9 @@ def connect(path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA busy_timeout=2000")
+    # Migration runs *before* the DDL: on a v1 file the index on in_h would be
+    # created against a table that has no such column and raise.
+    migrate(conn)
     for stmt in _DDL:
         conn.execute(stmt)
     conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
@@ -106,7 +109,7 @@ def _clip(text: str) -> tuple[bytes, str, bool]:
 _SCOPES = ("session", "project", "all")
 
 
-def put_observation(
+def _insert_observation(
     conn: sqlite3.Connection,
     *,
     tool: str,
@@ -116,8 +119,14 @@ def put_observation(
     agent: str,
     session_id: str,
     ts: str,
+    truncated: bool = False,
 ) -> int:
-    """Insert one observation with both payloads stored whole. Returns its id."""
+    """Insert one observation without committing. Returns its id.
+
+    Separate from ``put_observation`` so ``migrate`` can write many rows inside a
+    single transaction: a migration that committed per row and then crashed would
+    leave the source table half-drained with no way to resume.
+    """
     in_raw, in_txt, in_clip = _clip(input_text)
     out_raw, out_txt, out_clip = _clip(output_text)
     in_h, in_n, _ = put_blob(conn, in_raw)
@@ -127,15 +136,68 @@ def put_observation(
         "(tool, project, agent, session_id, ts, in_h, out_h, in_n, out_n, truncated)"
         " VALUES(?,?,?,?,?,?,?,?,?,?)",
         (tool[:256], project[:256], agent[:64], session_id, ts,
-         in_h, out_h, in_n, out_n, int(in_clip or out_clip)),
+         in_h, out_h, in_n, out_n, int(truncated or in_clip or out_clip)),
     )
     row = int(cur.lastrowid or 0)
     conn.execute(
         "INSERT INTO obs_fts(rowid, tool, input, output) VALUES(?,?,?,?)",
         (row, tool[:256], in_txt, out_txt),
     )
+    return row
+
+
+def put_observation(conn: sqlite3.Connection, **kwargs) -> int:
+    """Insert one observation with both payloads stored whole. Returns its id."""
+    row = _insert_observation(conn, **kwargs)
     conn.commit()
     return row
+
+
+def _is_v1(conn: sqlite3.Connection) -> bool:
+    """A v1 database has observations.input; v2 has observations.in_h."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(observations)")}
+    return "input" in cols and "in_h" not in cols
+
+
+def migrate(conn: sqlite3.Connection) -> int:
+    """Carry a v3.8.2 obs.db forward. Returns the number of rows rewritten.
+
+    All-or-nothing: on any failure the transaction rolls back and the file is
+    still a valid v1 database, so the next connect retries from the top. Rows
+    stream out of the renamed source table rather than loading into memory.
+
+    v1 payloads were stored clipped at 1024 chars, so every migrated row is
+    flagged ``truncated=1``: that content is already lost and must never be
+    mistaken for a complete capture.
+    """
+    if not _is_v1(conn):
+        return 0
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute("ALTER TABLE observations RENAME TO observations_v1")
+        conn.execute("DROP TABLE IF EXISTS obs_fts")
+        for stmt in _DDL:
+            conn.execute(stmt)
+        src = conn.cursor()
+        src.execute(
+            "SELECT tool, input, output, project, agent, session_id, ts"
+            " FROM observations_v1 ORDER BY id"
+        )
+        moved = 0
+        for tool, inp, out, project, agent, sid, ts in src:
+            _insert_observation(
+                conn, tool=tool or "", input_text=inp or "", output_text=out or "",
+                project=project or "", agent=agent or "", session_id=sid or "",
+                ts=ts or "", truncated=True,
+            )
+            moved += 1
+        src.close()
+        conn.execute("DROP TABLE observations_v1")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return moved
 
 
 def _scope_clause(scope: str, session_id: str, project: str) -> tuple[str, tuple]:
