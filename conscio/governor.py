@@ -229,7 +229,14 @@ def recommend_window(prefix: int, *, requests: int = 0, growth: float = 0.0,
     ``floor`` is the observed post-compaction context: a window at or under it
     cannot be satisfied, because the summariser lands above it and compaction
     fires again at once.
+
+    Returns **0** when there is no measured prefix. Without one the hard floor
+    collapses to zero and the smallest candidate wins — 25,000, which was
+    measured at 36.9% saving against 241 compactions. Guessing there is worse
+    than declining to answer.
     """
+    if prefix <= 0:
+        return 0
     hard = max(int(prefix * MIN_HEADROOM_FACTOR), int(floor * FLOOR_MARGIN))
     usable = [w for w in CANDIDATE_WINDOWS if w >= hard]
     if not usable:
@@ -399,6 +406,7 @@ def snapshot(space_dir: str | Path) -> dict:
     for path in paths:
         rows.extend(read_usage(path))
     agg = summarise(rows)
+    existing = read_baseline(space_dir)
     return {
         "prefix": measure_prefix(projects_dir())["prefix"],
         "avg_context": agg["avg_context"],
@@ -406,8 +414,11 @@ def snapshot(space_dir: str | Path) -> dict:
                               if agg["requests"] else 0.0),
         "requests": agg["requests"],
         # Kept so `govern off` can restore rather than delete, and so the report
-        # can tell a genuine saving from the same work taking more turns.
-        "prior_window": current_window(),
+        # can tell a genuine saving from the same work taking more turns. An
+        # existing baseline wins: running `govern on` twice must not record the
+        # governor's own window as if it were the user's.
+        "prior_window": (existing.get("prior_window")
+                         if existing is not None else current_window()),
         "turns_per_session": agg["requests"] / max(1, len(paths)),
         "taken_at": naive_utcnow().isoformat(timespec="seconds"),
     }

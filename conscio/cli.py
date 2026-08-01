@@ -362,6 +362,13 @@ def _cmd_govern(action: str, window: int | None, storage: str,
         prefix = measured["prefix"]
         landed = governor.compaction_floor(governor.projects_dir())
         _, agg, growth, out_rate = _profile()
+        if prefix <= 0:
+            print("Refusing: no transcripts to measure from, so there is no "
+                  "prefix to size a window against.")
+            print(f"  Looked in {governor.projects_dir()}.")
+            print("  Run a session first, or pass --window explicitly if you "
+                  "know what your prefix is.")
+            return 1
         chosen = window or governor.recommend_window(
             prefix, requests=agg["requests"], growth=growth,
             out_per_request=out_rate, floor=landed)
