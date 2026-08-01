@@ -15,6 +15,7 @@ Layout:
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import sqlite3
 import zlib
@@ -29,19 +30,19 @@ MAX_FIELD_BYTES = 1024 * 1024
 _COMPRESS_LEVEL = 6
 
 _DDL = (
-    "CREATE TABLE IF NOT EXISTS blobs ("
-    " h TEXT PRIMARY KEY, z BLOB NOT NULL, n INTEGER NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS observations ("
-    " id INTEGER PRIMARY KEY AUTOINCREMENT,"
-    " tool TEXT NOT NULL,"
-    " project TEXT NOT NULL DEFAULT '',"
-    " agent TEXT NOT NULL DEFAULT 'claude-code',"
-    " session_id TEXT NOT NULL,"
-    " ts TEXT NOT NULL,"
-    " in_h TEXT, out_h TEXT,"
-    " in_n INTEGER NOT NULL DEFAULT 0,"
-    " out_n INTEGER NOT NULL DEFAULT 0,"
-    " truncated INTEGER NOT NULL DEFAULT 0)",
+    ("CREATE TABLE IF NOT EXISTS blobs ("
+     " h TEXT PRIMARY KEY, z BLOB NOT NULL, n INTEGER NOT NULL)"),
+    ("CREATE TABLE IF NOT EXISTS observations ("
+     " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+     " tool TEXT NOT NULL,"
+     " project TEXT NOT NULL DEFAULT '',"
+     " agent TEXT NOT NULL DEFAULT 'claude-code',"
+     " session_id TEXT NOT NULL,"
+     " ts TEXT NOT NULL,"
+     " in_h TEXT, out_h TEXT,"
+     " in_n INTEGER NOT NULL DEFAULT 0,"
+     " out_n INTEGER NOT NULL DEFAULT 0,"
+     " truncated INTEGER NOT NULL DEFAULT 0)"),
     "CREATE INDEX IF NOT EXISTS ix_obs_session ON observations(session_id, id DESC)",
     "CREATE INDEX IF NOT EXISTS ix_obs_project ON observations(project, id DESC)",
     "CREATE INDEX IF NOT EXISTS ix_obs_blob_in ON observations(in_h)",
@@ -271,3 +272,66 @@ def search(
         }
         for r in rows
     ]
+
+
+def stored_bytes(conn: sqlite3.Connection) -> int:
+    """Total compressed size of every blob currently held."""
+    row = conn.execute("SELECT COALESCE(SUM(LENGTH(z)),0) FROM blobs").fetchone()
+    return int(row[0])
+
+
+def _delete_observations(conn: sqlite3.Connection, ids: list[int]) -> int:
+    if not ids:
+        return 0
+    rows = [(i,) for i in ids]
+    conn.executemany("DELETE FROM obs_fts WHERE rowid=?", rows)
+    conn.executemany("DELETE FROM observations WHERE id=?", rows)
+    return len(ids)
+
+
+def _collect_orphan_blobs(conn: sqlite3.Connection) -> int:
+    """Drop blobs no observation points at. Must run *after* the row deletes."""
+    cur = conn.execute(
+        "DELETE FROM blobs WHERE h NOT IN ("
+        " SELECT in_h FROM observations WHERE in_h IS NOT NULL"
+        " UNION SELECT out_h FROM observations WHERE out_h IS NOT NULL)"
+    )
+    return max(0, cur.rowcount or 0)
+
+
+def prune(
+    conn: sqlite3.Connection,
+    *,
+    max_age_days: int = 30,
+    max_bytes: int = 2 * 1024 ** 3,
+) -> dict:
+    """Drop observations past the age window, then enforce the size cap.
+
+    Order matters: observations first, orphan blobs second, so a blob shared by a
+    surviving row is never collected. Runs at SessionStart, never on the hot path.
+
+    The size cap is a guarantee, not a hint — eviction repeats oldest-first until
+    the store is actually under ``max_bytes`` or empty. Blobs are shared and
+    compressed, so no per-row size arithmetic can predict the cut point; the loop
+    evicts a twentieth of what remains per pass and re-measures, which converges
+    in a couple of dozen passes from any starting size.
+    """
+    cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=max_age_days)
+              ).replace(tzinfo=None).isoformat()
+    expired = [r[0] for r in conn.execute(
+        "SELECT id FROM observations WHERE ts < ?", (cutoff,))]
+    deleted = _delete_observations(conn, expired)
+    freed = _collect_orphan_blobs(conn)
+
+    while max_bytes > 0 and stored_bytes(conn) > max_bytes:
+        left = conn.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
+        batch = [r[0] for r in conn.execute(
+            "SELECT id FROM observations ORDER BY ts, id LIMIT ?",
+            (max(1, left // 20),))]
+        if not batch:
+            break  # nothing left to evict; the cap is smaller than the floor
+        deleted += _delete_observations(conn, batch)
+        freed += _collect_orphan_blobs(conn)
+
+    conn.commit()
+    return {"observations_deleted": deleted, "blobs_deleted": freed}
