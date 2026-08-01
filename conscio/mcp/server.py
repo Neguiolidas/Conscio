@@ -145,10 +145,7 @@ class Bindings:
                 self._require(a, "tool"), a.get("input", ""),
                 a.get("output", ""), a.get("project", ""),
                 a.get("agent", "hermes"))},
-            "conscio.recall_observations": lambda a: {
-                "observations": self.engine.recall_observations(
-                    self._require(a, "query"), int(a.get("k", 5)),
-                    bool(a.get("full", False)))},
+            "conscio.recall_observations": self._recall_observations,
             "conscio.propose_action": lambda a: self.engine.propose_action(
                 self._require(a, "intent")),
             "conscio.propose_plan": lambda a: self.engine.propose_plan(
@@ -395,6 +392,24 @@ class Bindings:
         except Exception as exc:
             print(f"liaison: relay purge failed: {exc}", file=sys.stderr)
         return {"ok": True, "id": mid}
+
+    def _recall_observations(self, args: dict) -> dict:
+        """FTS search over observations, scoped to this session unless widened.
+
+        A bad scope is the caller's mistake, so it comes back as INVALID_PARAMS
+        with the reason — "internal error" would give an agent nothing to correct.
+        """
+        try:
+            found = self.engine.recall_observations(
+                self._require(args, "query"),
+                int(args.get("k", 5)),
+                bool(args.get("full", False)),
+                str(args.get("scope", "session")),
+                str(args.get("project", "")),
+            )
+        except ValueError as exc:
+            raise j.InvalidParams(str(exc)) from exc
+        return {"observations": found}
 
     def _relay_broadcast(self, args: dict) -> dict:
         """v2.8.2: fan-out a relay message to ALL allowlisted peers. Best-effort

@@ -321,11 +321,16 @@ BASE_TOOL_DEFS: list[dict] = [
     {"name": "conscio.recall_observations",
      "description": "FTS5 full-text search over recorded tool observations. "
                     "Returns a snippet window around each hit; pass full=true "
-                    "for the whole stored observation.",
+                    "for the whole stored observation. Searches the current "
+                    "session only unless scope is widened; scope='project' "
+                    "requires project.",
      "inputSchema": {"type": "object",
                      "properties": {"query": {"type": "string"},
                                     "k": {"type": "integer"},
-                                    "full": {"type": "boolean"}},
+                                    "full": {"type": "boolean"},
+                                    "scope": {"type": "string",
+                                              "enum": ["session", "project", "all"]},
+                                    "project": {"type": "string"}},
                      "required": ["query"]}},
 ]
 

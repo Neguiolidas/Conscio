@@ -38,6 +38,9 @@ from .inner_monologue import InnerMonologue
 from .kg_builder import KGBuilder
 from .meta_cognition import MetaCognition
 from .metabolic import MetabolicContext
+from .obsstore import connect as _obs_connect
+from .obsstore import put_observation as _obs_put
+from .obsstore import search as _obs_search
 from .output_filter import build_pipeline_from_dict
 from .reflection_gate import MAX_ENTITIES_FOR_CONTRADICTION, GateContext, ReflectionGate
 from .self_prompt import generate_self_prompts
@@ -89,6 +92,10 @@ _SNIPPET_TOKENS = 32
 # Rows scanned when building a handoff: a hard ceiling well above what
 # HO_MAX_CHARS can spend, so the char budget (not this) decides the cut.
 _HANDOFF_SCAN_LIMIT = 200
+# Chars pulled per field before _obs_line() collapses whitespace and cuts to 70.
+# Generous enough that a whitespace-heavy prefix still leaves visible text, and
+# strictly more than the 1024-char cap this store used to impose.
+_HANDOFF_FIELD_SCAN = 2000
 # Chars reserved for the header/section lines format_handoff() adds itself.
 _HANDOFF_HEADER_RESERVE = 250
 # Per-chunk chrome the formatter wraps around a payload: " 🤖 [obs] " + "\n".
@@ -1556,29 +1563,14 @@ class ConsciousnessEngine:
     # ── v3.8: DeepMiner — agnostic tool-observation store ──────────────────
 
     def _obs_conn(self) -> sqlite3.Connection:
-        """Lazy per-engine obs.db connection (WAL). Isolated from conscio.db.
+        """Lazy per-engine obs.db connection. Isolated from conscio.db.
 
-        Never locks — callers hold self._obs_lock. Standalone FTS5 table keeps
-        raw tool I/O searchable without external-content triggers.
+        Never locks — callers hold self._obs_lock. Schema, migration and
+        retention all live in conscio.obsstore, which the v3.9 hook also loads
+        standalone: one owner, so the two can never drift.
         """
         if self._obs_db is None:
-            conn = sqlite3.connect(str(self.storage / "obs.db"), check_same_thread=False)
-            conn.execute("PRAGMA journal_mode=WAL")
-            # synchronous=NORMAL under WAL: durable across app crashes, only the
-            # newest commits may roll back on power loss — never corruption. The
-            # right tradeoff for high-rate fire-and-forget telemetry (drops the
-            # per-commit fsync, ~10x faster under flood).
-            conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS observations("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, tool TEXT, input TEXT, "
-                "output TEXT, project TEXT, agent TEXT, session_id TEXT, ts TEXT)"
-            )
-            conn.execute(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS obs_fts USING fts5(tool, input, output)"
-            )
-            conn.commit()
-            self._obs_db = conn
+            self._obs_db = _obs_connect(self.storage / "obs.db")
         return self._obs_db
 
     def set_session(self, session_id: str) -> None:
@@ -1602,32 +1594,24 @@ class ConsciousnessEngine:
         recall (recall_observations) and handoff compression
         (compress_observations). Returns the observation id, or -1 if the write
         failed — telemetry must never break the calling agent.
+
+        Payloads are stored whole: reversibility is the whole point of the
+        store, and a capture clipped at 1024 characters cannot restore anything.
         """
         sid = session_id or self._obs_session
         row = -1
         try:
             with self._obs_lock:
-                conn = self._obs_conn()
-                cur = conn.execute(
-                    "INSERT INTO observations"
-                    "(tool, input, output, project, agent, session_id, ts) "
-                    "VALUES(?,?,?,?,?,?,?)",
-                    (
-                        tool[:256],
-                        input_text[:1024],
-                        output_text[:1024],
-                        project[:256],
-                        agent[:64],
-                        sid,
-                        naive_utcnow().isoformat(),
-                    ),
+                row = _obs_put(
+                    self._obs_conn(),
+                    tool=tool,
+                    input_text=input_text,
+                    output_text=output_text,
+                    project=project,
+                    agent=agent,
+                    session_id=sid,
+                    ts=naive_utcnow().isoformat(),
                 )
-                row = int(cur.lastrowid or 0)
-                conn.execute(
-                    "INSERT INTO obs_fts(rowid, tool, input, output) VALUES(?,?,?,?)",
-                    (row, tool[:256], input_text[:1024], output_text[:1024]),
-                )
-                conn.commit()
         except Exception as exc:  # fire-and-forget: never break the agent
             logger.debug("observe() swallowed write error: %s", exc)
             return -1
@@ -1643,7 +1627,13 @@ class ConsciousnessEngine:
         return row
 
     def recall_observations(
-        self, query: str, k: int = 5, full: bool = False
+        self,
+        query: str,
+        k: int = 5,
+        full: bool = False,
+        scope: str = "session",
+        project: str = "",
+        session_id: str = "",
     ) -> list[dict]:
         """Full-text (FTS5) search over raw tool observations.
 
@@ -1651,48 +1641,38 @@ class ConsciousnessEngine:
         matching raw tool calls, most relevant first. The query is bound as a
         literal FTS phrase (AND/OR/NOT and quotes defused) — never run as SQL.
 
+        Scoped to the current session by default. Widening to "project" or "all"
+        is a deliberate act: a caller reasoning over another session's
+        observations is reasoning over content that was never in its context.
+        ``scope="project"`` needs the same project string that was passed to
+        observe(); it is not derivable from the storage path.
+
+        ``session_id`` mirrors observe()'s: both default to the session wired by
+        set_session(), and a caller that named a session on the way in must be
+        able to name the same one on the way out.
+
         ``input``/``output`` carry the snippet window around the hit (elided
         with "…"), not the whole stored row: the caller asked where a term
         appears, and the padding around it is billed to their context. Pass
         ``full=True`` when the entire observation is the answer.
         """
-        if not query.strip():
-            return []
-        safe = '"' + query.replace('"', '""') + '"'
-        # Both branches are fixed literals; `safe` stays a bound parameter.
-        if full:
-            cols = "o.input, o.output"
-            params: tuple = (safe, max(1, k))
-        else:
-            # snippet() resolves the FTS table by NAME, never by the alias.
-            cols = ("snippet(obs_fts, 1, '', '', '…', ?), "
-                    "snippet(obs_fts, 2, '', '', '…', ?)")
-            params = (_SNIPPET_TOKENS, _SNIPPET_TOKENS, safe, max(1, k))
         try:
             with self._obs_lock:
-                cur = self._obs_conn().execute(
-                    "SELECT o.id, o.tool, " + cols + ", o.project, "
-                    "o.agent, o.ts FROM obs_fts f "
-                    "JOIN observations o ON o.id = f.rowid "
-                    "WHERE obs_fts MATCH ? ORDER BY rank LIMIT ?",
-                    params,
+                return _obs_search(
+                    self._obs_conn(),
+                    query,
+                    k=k,
+                    full=full,
+                    scope=scope,
+                    session_id=session_id or self._obs_session,
+                    project=project,
+                    snippet_tokens=_SNIPPET_TOKENS,
                 )
-                rows = cur.fetchall()
+        except ValueError:
+            raise  # a bad scope is a caller bug, not a miss
         except Exception as exc:
             logger.debug("recall_observations swallowed: %s", exc)
             return []
-        return [
-            {
-                "id": r[0],
-                "tool": r[1],
-                "input": r[2],
-                "output": r[3],
-                "project": r[4],
-                "agent": r[5],
-                "timestamp": r[6],
-            }
-            for r in rows
-        ]
 
     def compress_observations(self, session_id: str = "") -> dict:
         """Compress raw tool observations into a handoff via the EXISTING formatter.
@@ -1722,10 +1702,15 @@ class ConsciousnessEngine:
             total = int(conn.execute(
                 "SELECT COUNT(*) FROM observations WHERE session_id=?", (sid,)
             ).fetchone()[0])
+            # Text comes from obs_fts, which holds exactly what the blobs hold,
+            # sliced in SQL: the handoff shows ~70 chars per field, and payloads
+            # are now stored whole, so selecting them raw would drag up to
+            # 200 x 1 MiB into memory to render a few kilobytes.
             rows = conn.execute(
-                "SELECT tool, input, output FROM observations "
-                "WHERE session_id=? ORDER BY id DESC LIMIT ?",
-                (sid, _HANDOFF_SCAN_LIMIT),
+                "SELECT f.tool, substr(f.input, 1, ?), substr(f.output, 1, ?) "
+                "FROM observations o JOIN obs_fts f ON f.rowid = o.id "
+                "WHERE o.session_id=? ORDER BY o.id DESC LIMIT ?",
+                (_HANDOFF_FIELD_SCAN, _HANDOFF_FIELD_SCAN, sid, _HANDOFF_SCAN_LIMIT),
             ).fetchall()
         if not rows:
             return {"handoff": "", "count": 0, "session_id": sid}
