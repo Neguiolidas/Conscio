@@ -18,6 +18,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import sqlite3
+import time
 import zlib
 from pathlib import Path
 
@@ -61,6 +62,38 @@ _DDL = (
 )
 
 
+def _enable_wal(conn: sqlite3.Connection, timeout_ms: int) -> str:
+    """Put ``conn`` into WAL, retrying a contended conversion. Returns the mode.
+
+    Converting a rollback-journal file to WAL needs an EXCLUSIVE lock, and SQLite
+    will *not* run the busy handler to get it: with several connections holding
+    SHARED and wanting to upgrade, waiting could deadlock, so it returns
+    SQLITE_BUSY at once. Patience here has to be ours. Measured on this machine,
+    eight processes first-opening a v3.8.2 store raced ~5% of the time, which is
+    the upgrade path — one store, many sessions, all opening it at once.
+
+    A store already in WAL answers on the first pass and never sleeps, so the
+    steady per-tool-call open costs exactly one pragma as before.
+
+    Giving up returns the mode we are stuck with rather than raising: the journal
+    mode is a concurrency optimisation, and a store that works less well beats a
+    store that will not open.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000.0
+    delay = 0.005
+    while True:
+        try:
+            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+            if str(mode).lower() == "wal":
+                return "wal"
+        except sqlite3.OperationalError:
+            mode = "unknown"  # another opener holds it mid-conversion
+        if time.monotonic() >= deadline:
+            return str(mode).lower()
+        time.sleep(delay)
+        delay = min(delay * 2, 0.05)
+
+
 def connect(
     path: str | Path, *, busy_timeout_ms: int = _BUSY_TIMEOUT_MS
 ) -> sqlite3.Connection:
@@ -85,9 +118,11 @@ def connect(
     give up in milliseconds, while the MCP server can afford to wait.
     """
     conn = sqlite3.connect(str(path), check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
+    # busy_timeout first: it is connection-local, needs no lock, and every
+    # statement below is a potential waiter.
     conn.execute(f"PRAGMA busy_timeout={int(busy_timeout_ms)}")
+    _enable_wal(conn, int(busy_timeout_ms))
+    conn.execute("PRAGMA synchronous=NORMAL")
     if conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION:
         return conn
     # Migration runs *before* the DDL: on a v1 file the index on in_h would be

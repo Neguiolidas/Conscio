@@ -320,6 +320,64 @@ def test_concurrent_first_open_of_a_v1_file_migrates_exactly_once(tmp_path):
     c.close()
 
 
+class _ScriptedConn:
+    """Returns each scripted pragma result in turn; an Exception is raised."""
+
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = 0
+
+    def execute(self, _sql):
+        self.calls += 1
+        r = self.results[min(self.calls, len(self.results)) - 1]
+        if isinstance(r, Exception):
+            raise r
+        return _OneRow(r)
+
+
+class _OneRow:
+    def __init__(self, v):
+        self.v = v
+
+    def fetchone(self):
+        return (self.v,)
+
+
+def test_a_contended_wal_conversion_is_retried_not_surrendered():
+    """SQLite returns SQLITE_BUSY here without ever calling the busy handler.
+
+    It needs an EXCLUSIVE lock while other openers hold SHARED, and waiting
+    could deadlock, so the retry has to be ours. Without it, one of several
+    processes first-opening an upgraded v3.8.2 store dies on `connect`.
+    """
+    busy = sqlite3.OperationalError("database is locked")
+    c = _ScriptedConn([busy, busy, busy, "wal"])
+    assert obsstore._enable_wal(c, 5_000) == "wal"
+    assert c.calls == 4
+
+
+def test_an_already_wal_store_converts_without_sleeping():
+    """The per-tool-call open must cost exactly one pragma, as it did before."""
+    c = _ScriptedConn(["wal"])
+    t0 = time.monotonic()
+    assert obsstore._enable_wal(c, 5_000) == "wal"
+    assert c.calls == 1
+    assert time.monotonic() - t0 < 0.05
+
+
+def test_an_unwinnable_conversion_degrades_instead_of_raising():
+    """A store that will not convert still opens: WAL is a speed choice, not
+    a correctness one, and refusing to open would lose every observation."""
+    c = _ScriptedConn([sqlite3.OperationalError("database is locked")])
+    t0 = time.monotonic()
+    assert obsstore._enable_wal(c, 60) == "unknown"
+    assert 0.05 < time.monotonic() - t0 < 2.0
+    # A silent refusal (no exception, mode unchanged) is bounded the same way.
+    c2 = _ScriptedConn(["delete"])
+    assert obsstore._enable_wal(c2, 60) == "delete"
+    assert c2.calls > 1
+
+
 def test_a_payload_cut_mid_codepoint_still_round_trips(conn):
     """The cap is a byte boundary; a 4-byte emoji straddling it must not raise."""
     head = "a" * (obsstore.MAX_FIELD_BYTES - 2)
