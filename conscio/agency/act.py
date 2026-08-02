@@ -36,7 +36,7 @@ from .fingerprint import goal_fingerprint
 from .gateway import GatewayError, OutputGateway
 from .ledger import ActionLedger
 from .skeptic import Skeptic
-from .tools import Risk, ToolRegistry
+from .tools import Risk, ToolRegistry, tool_doc
 from .trust import TrustMatrix
 
 
@@ -217,7 +217,9 @@ class ActPipeline:
                 if getattr(self.trust, "meta", None) is not None else 0.75)
         if self.skeptic is None:               # F1 wiring: no audit available
             return AuditVerdict(verdict="PASS", audited=False)
-        return self.skeptic.audit(proposal, goal_text=goal_text)
+        return self.skeptic.audit(
+            proposal, goal_text=goal_text,
+            tool_doc=tool_doc(spec.name, spec.description))
 
     def _effective_autonomy(self, task_type: str) -> int:
         earned = (self.trust.autonomy_level(task_type)

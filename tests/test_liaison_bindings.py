@@ -126,7 +126,7 @@ def test_review_approve_unknown_fp(tmp_path):
 class _PassSkeptic:
     """Force the host-act audit to PASS so propose() reaches pending — the
     liaison wiring under test is independent of the real Skeptic/adapter."""
-    def audit(self, proposal, goal_text=""):
+    def audit(self, proposal, goal_text="", tool_doc=""):
         return SimpleNamespace(passed=True, verdict="PASS", reasons=[],
                                risk_flags=[], confidence=0.9)
 

@@ -72,7 +72,8 @@ class TestBuildAdapterFromConfig:
 
 class TestBuildAdapterFromCli:
     def _args(self, **kw):
-        base = {"adapter": "openai", "adapter_model": None, "base_url": None}
+        base = {"adapter": "openai", "adapter_model": None, "base_url": None,
+                "api_key": None}
         base.update(kw)
         return SimpleNamespace(**base)
 
@@ -89,6 +90,58 @@ class TestBuildAdapterFromCli:
         a = daemon._build_adapter_from_cli(
             self._args(adapter="openai-compat", base_url="http://x/v1"), "fb")
         assert a.base_url == "http://x/v1"
+
+
+class TestCliApiKey:
+    """v3.9.4: the config path has resolved keys since v2.7.1, the CLI path
+    never did. A daemon started with --adapter openai-compat posted
+    unauthenticated to a remote endpoint and read the rejection as the model
+    failing to answer (Hermes-Agent field report, 2026-08-01).
+
+    Built through the real parser on purpose: a namespace assembled by hand
+    would pass whether or not the flag exists.
+    """
+
+    def _build(self, argv, model="fb"):
+        return daemon._build_adapter_from_cli(
+            daemon._arg_parser().parse_args(argv), model)
+
+    def test_the_flag_reaches_the_adapter(self, monkeypatch):
+        monkeypatch.delenv("CONSCIO_API_KEY", raising=False)
+        a = self._build(["--adapter", "openai-compat", "--api-key", "sk-cli"])
+        assert a.api_key == "sk-cli"
+
+    def test_the_env_var_is_read_when_there_is_no_flag(self, monkeypatch):
+        monkeypatch.setenv("CONSCIO_API_KEY", "sk-env")
+        a = self._build(["--adapter", "openai-compat"])
+        assert a.api_key == "sk-env"
+
+    def test_the_flag_wins_over_the_env_var(self, monkeypatch):
+        monkeypatch.setenv("CONSCIO_API_KEY", "sk-env")
+        a = self._build(["--adapter", "openai-compat", "--api-key", "sk-cli"])
+        assert a.api_key == "sk-cli"
+
+    def test_a_provider_env_var_still_works_when_neither_is_set(self, monkeypatch):
+        # Empty is not the same as unset. Threading a key through must leave
+        # each adapter's own fallback intact, or this fix would break every
+        # daemon that runs on OPENAI_API_KEY today.
+        monkeypatch.delenv("CONSCIO_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-provider")
+        a = self._build(["--adapter", "openai"])
+        assert a.api_key == "sk-provider"
+
+    def test_the_conscio_key_overrides_the_provider_var(self, monkeypatch):
+        monkeypatch.setenv("CONSCIO_API_KEY", "sk-conscio")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-provider")
+        a = self._build(["--adapter", "openai"])
+        assert a.api_key == "sk-conscio"
+
+    def test_the_local_adapter_is_not_handed_a_key(self, monkeypatch):
+        # Ollama speaks no auth. A key sent there reaches a process that
+        # never asked for one and cannot use it.
+        monkeypatch.setenv("CONSCIO_API_KEY", "sk-env")
+        a = self._build(["--adapter", "ollama"])
+        assert getattr(a, "api_key", None) is None
 
 
 class TestCognizeFlag:

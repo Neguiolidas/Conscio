@@ -13,21 +13,21 @@ import json
 import re
 from typing import TYPE_CHECKING, Any
 
-from .adapter import (
-    AdapterConnectionError,
-    AdapterError,
-    AdapterTimeout,
-    InferenceAdapter,
-)
+from .adapter import AdapterConnectionError, AdapterError, InferenceAdapter
 from .contracts import ActionProposal, proposal_from_dict, validate
 
 # The tier ladder exists for a model that cannot produce structured output. It
 # cannot help when the endpoint was never reached: T3 sends the same request to
-# the same dead host with different instructions. A server that answered badly
-# is not in here — a different tier may well get a better answer out of it. The
-# clearest case is HTTP 400 for an unsupported response_format, which T3 fixes
-# by sending no schema at all.
-_UNREACHABLE = (AdapterTimeout, AdapterConnectionError)
+# the same dead host with different instructions.
+#
+# A timeout is deliberately NOT in here, though it looks like it belongs. The
+# connection was accepted and the request was taken — the host is reachable,
+# and what took too long may well be this particular request. Measured on
+# NVIDIA NIM: response_format=json_object times out where the same prompt
+# without it answers, so T2 stalling is precisely when T3 is worth trying. The
+# same reasoning covers a server that answers badly; HTTP 400 for an
+# unsupported response_format is the case T3 fixes by sending no schema at all.
+_UNREACHABLE = (AdapterConnectionError,)
 
 if TYPE_CHECKING:
     from .intercepter import Intercepter, InterceptionLoop

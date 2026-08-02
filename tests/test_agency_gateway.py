@@ -369,6 +369,17 @@ class TestTransportFailureIsNotADecodeFailure:
             gw.request_action("BASE", PROPOSAL_SCHEMA)
         assert "timeout" in str(exc.value) and "read timed out" in str(exc.value)
 
+    def test_a_timeout_still_earns_the_next_tier(self):
+        """Measured on NVIDIA NIM: response_format=json_object times out where
+        the same prompt without it answers. A timeout means the host took the
+        request, so the request is a candidate cause and T3 changes it — the
+        opposite of a connection that was never accepted."""
+        adapter = MockAdapter(script=[_dies(AdapterTimeout("read timed out")),
+                                      _valid_kv()])
+        gw = OutputGateway(adapter)
+        proposal = gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert proposal.tool == "echo" and gw.last_tier == "T3"
+
     def test_a_dead_host_is_not_asked_again_at_a_lower_tier(self):
         """T3 would send the same request to the same dead host."""
         adapter = MockAdapter(script=[_dies(_DEAD_HOST)] * 4)

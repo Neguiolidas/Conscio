@@ -2112,7 +2112,16 @@ class ConsciousnessEngine:
         except GatewayError as exc:
             return {"verdict": "FAIL", "reasons": [f"decode failed: {exc}"],
                     "risk_flags": [], "confidence": 0.0, "proposal": None}
-        verdict = pipe.skeptic.audit(proposal, goal_text=goal)
+        from .agency.tools import tool_doc
+        # The host declared this vocabulary in this call, so a name drawn from
+        # it is verified by construction — the auditor must not refuse it for
+        # being unfamiliar. A name outside the declaration gets no doc, which
+        # is exactly the case the auditor should be suspicious of.
+        declared = {t["name"]: t.get("description", "") for t in tools}
+        verdict = pipe.skeptic.audit(
+            proposal, goal_text=goal,
+            tool_doc=(tool_doc(proposal.tool, declared[proposal.tool])
+                      if proposal.tool in declared else ""))
         self._emit_proposal(proposal, verdict)
         return self._proposal_result(proposal, verdict)
 

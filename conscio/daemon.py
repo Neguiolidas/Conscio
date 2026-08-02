@@ -380,23 +380,30 @@ def _build_adapter_from_cli(args, fallback_model: str):
         OpenAICompatAdapter,
     )
     adapter_model = args.adapter_model or fallback_model
+    # The config-file path has resolved keys since v2.7.1; the CLI path never
+    # passed one, so a daemon started with --adapter openai-compat posted
+    # unauthenticated to any remote endpoint and read the rejection as the
+    # model failing to answer. Empty is not the same as unset: every adapter
+    # that reads its own provider env var still falls back to it when this is
+    # "", so the precedence is --api-key > CONSCIO_API_KEY > provider env var.
+    key = args.api_key or os.environ.get("CONSCIO_API_KEY", "")
     if args.adapter == "lmstudio":
-        return LMStudioAdapter(model=adapter_model,
+        return LMStudioAdapter(model=adapter_model, api_key=key,
                                 base_url=args.base_url or "http://localhost:1234/v1")
     if args.adapter == "ollama":
-        return OllamaAdapter(model=adapter_model,
+        return OllamaAdapter(model=adapter_model,   # local, no auth
                               base_url=args.base_url or "http://localhost:11434")
     if args.adapter == "openai":
-        return OpenAIAdapter(model=adapter_model,
+        return OpenAIAdapter(model=adapter_model, api_key=key,
                               base_url=args.base_url or "https://api.openai.com/v1")
     if args.adapter == "anthropic":
-        return AnthropicAdapter(model=adapter_model,
+        return AnthropicAdapter(model=adapter_model, api_key=key,
                                  base_url=args.base_url or "https://api.anthropic.com")
     if args.adapter == "gemini":
-        return GeminiAdapter(model=adapter_model,
+        return GeminiAdapter(model=adapter_model, api_key=key,
                               base_url=args.base_url or "https://generativelanguage.googleapis.com")
     # openai-compat
-    return OpenAICompatAdapter(model=adapter_model,
+    return OpenAICompatAdapter(model=adapter_model, api_key=key,
                                 base_url=args.base_url or "http://localhost:8000/v1")
 
 
@@ -427,6 +434,10 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="adapter base URL (overrides config)")
     parser.add_argument("--adapter-model", default=None,
                         help="model name for the adapter (overrides config)")
+    parser.add_argument("--api-key", default=None,
+                        help="adapter API key. Prefer CONSCIO_API_KEY: a key "
+                             "passed here is visible to every process on the "
+                             "machine via the process list")
     parser.add_argument("--liaison-db", default=None,
                         help="mailbox db for the relay sensor "
                              "(default $HERMES_HOME/liaison.db)")

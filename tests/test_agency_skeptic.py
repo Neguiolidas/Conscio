@@ -97,3 +97,77 @@ def test_facts_fn_receives_goal_text():
     sk.audit(_proposal(), goal_text="organize the sandbox")
     assert seen == ["organize the sandbox"]
     assert "fact-x" in adapter.calls[0]["prompt"]
+
+
+# ── the auditor must know the tool exists ───────────────────────────────
+#
+# Field report (v3.9.4, NVIDIA NIM): every maintenance action was refused with
+# 'No evidence that world_prune is a valid or existing tool'. The persona
+# orders the auditor to refuse invented tools and the prompt never said which
+# tools exist, so it judged a project-specific name against its pretraining.
+# 32 actions attempted, 0 executed. The pipeline resolves the name in the
+# registry before the audit runs — an unknown tool fails earlier, with
+# 'unknown tool'. So by this point existence is settled, and re-deciding it
+# from a prior is how a correct proposal gets refused.
+
+
+def test_the_prompt_states_that_the_tool_was_verified():
+    prompt = build_skeptic_prompt(
+        _proposal(tool="world_prune", args={}), facts="", mode="checklist",
+        tool_doc="world_prune — prune entities the world model let go stale")
+    assert "registry" in prompt
+    assert "prune entities the world model let go stale" in prompt
+
+
+def test_the_tool_doc_reaches_the_auditor():
+    adapter = MockAdapter(script=["A1: NO\nA2: NO\nA3: YES"])
+    sk = Skeptic(adapter)
+    sk.audit(_proposal(tool="world_prune", args={}),
+             tool_doc="world_prune — prune stale entities")
+    assert "prune stale entities" in adapter.calls[0]["prompt"]
+
+
+def test_an_unverified_tool_gets_no_endorsement():
+    """propose_action audits a host-supplied intent against no registry.
+    Claiming it was verified there would be a lie the auditor acts on."""
+    prompt = build_skeptic_prompt(_proposal(), facts="", mode="checklist")
+    assert "registry" not in prompt
+
+
+def test_the_pipeline_hands_the_skeptic_the_resolved_spec(tmp_path):
+    """The registry entry, not the auditor's memory, decides what a tool is.
+
+    End-to-end because the defect was in the wiring: the Skeptic could accept
+    a doc all along, and nothing gave it one.
+    """
+    from conscio.agency.act import ActPipeline
+    from conscio.agency.breaker import CircuitBreaker
+    from conscio.agency.ledger import ActionLedger
+    from conscio.agency.tools import Risk, ToolRegistry
+    from conscio.context_manager import ConsciousnessState
+
+    reg = ToolRegistry()
+    reg.register("world_prune", lambda: "pruned 0", params={},
+                 risk=Risk.MEDIUM,
+                 description="prune entities the world model has let go stale")
+
+    class _Bus:
+        def emit(self, **kw):
+            return 1
+
+    auditor = MockAdapter(script=["A1: NO\nA2: NO\nA3: YES"])
+    actor = MockAdapter(script=[('{"tool": "world_prune", "args": {}, '
+                                 '"rationale": "r", "expected_outcome": "e"}')])
+    ledger = ActionLedger(tmp_path / "conscio.db")
+    bus = _Bus()
+    pipe = ActPipeline(adapter=actor, registry=reg, ledger=ledger,
+                       breaker=CircuitBreaker(ledger, bus),
+                       emit_fn=bus.emit, skeptic=Skeptic(auditor))
+    pipe.act(ConsciousnessState(state_summary="s",
+                                active_goals=["prune stale entities"],
+                                coherence_note="epistemic"))
+
+    assert auditor.calls, "the audit never ran"
+    sent = auditor.calls[0]["prompt"]
+    assert "prune entities the world model has let go stale" in sent
+    assert "registry" in sent

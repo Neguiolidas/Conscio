@@ -11,9 +11,11 @@ class _Skeptic:
     def __init__(self, ok=True):
         self.ok = ok
         self.seen = []
+        self.docs = []
 
-    def audit(self, proposal, *, goal_text):
+    def audit(self, proposal, *, goal_text, tool_doc=""):
         self.seen.append(proposal.tool)
+        self.docs.append(tool_doc)
         return AuditVerdict(verdict="PASS" if self.ok else "FAIL",
                             reasons=[] if self.ok else ["nope"])
 
@@ -34,6 +36,18 @@ def test_self_contained_plan_passes(tmp_path):
                           skeptic=_Skeptic(ok=True), registry=reg)
     assert out.passed is True and out.result == "passed"
     assert [s.stage for s in out.steps] == ["ok", "ok"]
+
+
+def test_the_auditor_is_told_the_replayed_tool_is_registered(tmp_path):
+    # v3.9.4: the sandboxed registry has already resolved this name — the
+    # step above stops at 'unknown_tool' when it has not. An auditor left to
+    # judge the name alone refuses a peer's skill for existing.
+    reg = _fs_registry(tmp_path)
+    spy = _Skeptic(ok=True)
+    steps = [{"tool": "fs_write", "args": {"path": "t.txt", "content": "hi"},
+              "rationale": "write"}]
+    trial.run_trial(steps, goal_text="g", skeptic=spy, registry=reg)
+    assert spy.docs and spy.docs[0].startswith("fs_write — ")
 
 
 def test_unknown_tool_fails_and_stops(tmp_path):
