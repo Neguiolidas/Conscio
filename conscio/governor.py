@@ -427,6 +427,27 @@ def _bar(fraction: float, width: int = 24) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
+def _cell(value: float | None) -> str:
+    """A baseline that froze no such figure prints as an em dash.
+
+    Rendering the absence as 0 would make every current row read as an
+    infinite regression, and the row above it — a real measurement — would
+    lend the fabricated one its credibility.
+    """
+    return "—" if value is None else f"{value:,.0f}"
+
+
+def _saved_cell(current: float, base: float | None) -> str:
+    """Share of the baseline row the ceiling removed, or an em dash.
+
+    A zero baseline has no share to take: 0 → 0 is not a 100% saving, and
+    0 → anything is not an infinite loss.
+    """
+    if not base or base <= 0:
+        return "—"
+    return f"{(base - current) / base * 100:.1f}%"
+
+
 def render_report(session: str, now: dict, baseline: dict | None,
                   window: int | None, skipped: int = 0) -> str:
     """The savings report for one session.
@@ -473,9 +494,21 @@ def render_report(session: str, now: dict, baseline: dict | None,
         if saved < 0:
             lines.append("  Context grew against the baseline — the ceiling is "
                          "not in effect, or the profile changed.")
-    lines += ["", f"  {'Breakdown':<18}{'current':>12}",
-              f"  {'cache read':<18}{now['cr']:>12,}",
-              f"  {'cache write':<18}{now['cw']:>12,}"]
+    # Per turn on both sides, never totals: `now` counts only the turns since
+    # the freeze and the baseline counted whatever existed before it, so a
+    # total against a total mostly measures which side had more turns.
+    header = (f"  {'Breakdown':<20}{'current':>12}"
+              f"{'baseline':>12}{'saved':>10}")
+    lines += ["", header]
+    for label, key in (("cache read/turn", "cr"), ("cache write/turn", "cw")):
+        cur = now[key] / now["requests"] if now["requests"] else 0.0
+        base_row = baseline.get(f"{key}_per_request")
+        lines.append(f"  {label:<20}{cur:>12,.0f}{_cell(base_row):>12}"
+                     f"{_saved_cell(cur, base_row):>10}")
+    if any(baseline.get(f"{k}_per_request") is None for k in ("cr", "cw")):
+        lines.append("  This baseline was frozen before v3.9.4 and holds no cache"
+                     " breakdown —")
+        lines.append("  re-run `conscio govern on` to record one.")
     return "\n".join(lines)
 
 
@@ -579,6 +612,13 @@ def snapshot(space_dir: str | Path) -> dict:
         "avg_context": agg["avg_context"],
         "units_per_request": (agg["units"] / agg["requests"]
                               if agg["requests"] else 0.0),
+        # Normalised at freeze time, because that is the only moment the turn
+        # count behind them is known. The report's breakdown divides the
+        # current side the same way and compares like with like.
+        "cr_per_request": (agg["cr"] / agg["requests"]
+                           if agg["requests"] else 0.0),
+        "cw_per_request": (agg["cw"] / agg["requests"]
+                           if agg["requests"] else 0.0),
         "requests": agg["requests"],
         # Kept so `govern off` can restore rather than delete, and so the report
         # can tell a genuine saving from the same work taking more turns. An

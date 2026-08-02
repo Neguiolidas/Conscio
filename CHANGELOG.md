@@ -34,6 +34,9 @@ approved change nobody applied and no gate could see, and a timezone that made a
 live entity look a decade stale. The same pass left the coherence score alone
 and taught the report to say which of its dimensions had nothing to measure,
 and made the proposal file's write atomic so a save that dies cannot empty it.
+A last reading of the governor's own output found its breakdown printing one
+column where the design drew three: the baseline it was meant to compare
+against had never been frozen.
 
 ### Added
 
@@ -110,6 +113,18 @@ and made the proposal file's write atomic so a save that dies cannot empty it.
   from the freeze onward and says how many older ones it left out. A session
   with no turns since the freeze prints why there is nothing to compare, instead
   of dividing a zero cost by a positive baseline and claiming a 100% saving.
+- **`govern report`'s breakdown lost two of its three columns.** The design
+  draws it as `current | baseline | saved` per channel; it shipped rendering a
+  `current` header over a single column, which reads as a table truncated by a
+  formatting bug. It was not formatting: `govern on` never froze the cache
+  figures, so there was nothing to put in the other two. The snapshot now
+  records `cr_per_request` and `cw_per_request`, and the breakdown prints all
+  three columns. Both sides are per turn, never totals — the current side counts
+  only turns taken since the freeze and the baseline counted whatever preceded
+  it, so a total against a total mostly measures which side had more turns. A
+  baseline frozen before this release has no such fields: those cells print `—`
+  and the report says which command records them. Zero would have been the
+  convenient default and a fabricated 100%.
 - **`govern status` reported obs.db from a space nothing writes to.** It read the
   CLI's own storage (`~/.hermes/consciousness`), while the Claude Code hook
   writes to its bound capture space — so a store with 1.3 MB of observations was

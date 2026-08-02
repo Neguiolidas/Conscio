@@ -247,6 +247,74 @@ def test_report_reports_a_regression_honestly():
     assert "-" in saved_line, "a regression must not read as a gain"
 
 
+class TestBreakdownColumns:
+    """spec §6.1 draws the breakdown as `current | baseline | saved`. It
+    shipped with only the first column, which reads as a table that lost its
+    right-hand side — and the baseline it would have compared against was
+    never frozen.
+    """
+
+    def _now(self, turns=10):
+        return governor.summarise(
+            [{"in": 2, "cw": 1_000, "cr": 40_000, "out": 500}] * turns)
+
+    def _base(self, **extra):
+        base = {"avg_context": 172_445, "units_per_request": 41_883.0,
+                "prefix": 45_101, "requests": 800,
+                "taken_at": "2026-08-01T00:00:00"}
+        base.update(extra)
+        return base
+
+    def _row(self, out, label):
+        return next(ln for ln in out.splitlines() if ln.strip().startswith(label))
+
+    def test_the_breakdown_carries_all_three_columns(self):
+        out = governor.render_report("s", self._now(), self._base(
+            cr_per_request=80_000.0, cw_per_request=2_000.0), 120_000)
+        header = self._row(out, "Breakdown")
+        assert header.split() == ["Breakdown", "current", "baseline", "saved"]
+        read = self._row(out, "cache read/turn").split()
+        assert read[-3:] == ["40,000", "80,000", "50.0%"]
+
+    def test_the_figures_are_per_turn_not_totals(self):
+        """Ten turns of 40,000 is 400,000 read — against a baseline of 800
+        turns, printing totals would compare turn counts, not efficiency."""
+        out = governor.render_report("s", self._now(turns=10), self._base(
+            cr_per_request=40_000.0, cw_per_request=1_000.0), 120_000)
+        assert "400,000" not in out
+        assert self._row(out, "cache read/turn").split()[-1] == "0.0%"
+
+    def test_a_baseline_frozen_before_the_fields_existed_shows_no_number(self):
+        """The old snapshot has no cr/cw. Zero would render as a 100% loss on
+        one side or a 100% gain on the other; both are inventions."""
+        out = governor.render_report("s", self._now(), self._base(), 120_000)
+        assert self._row(out, "cache read/turn").split()[-2:] == ["—", "—"]
+        assert "govern on" in out, "must say how to get the comparison"
+        assert "100.0%" not in out and "-100.0%" not in out
+
+    def test_a_zero_baseline_row_is_not_a_hundred_percent_saving(self):
+        out = governor.render_report("s", self._now(), self._base(
+            cr_per_request=0.0, cw_per_request=1_000.0), 120_000)
+        read = self._row(out, "cache read/turn").split()
+        assert read[-2:] == ["0", "—"]
+        assert "before v3.9.4" not in out, "the fields are present, just zero"
+
+    def test_a_regression_in_a_row_reads_negative(self):
+        out = governor.render_report("s", self._now(), self._base(
+            cr_per_request=20_000.0, cw_per_request=1_000.0), 120_000)
+        assert self._row(out, "cache read/turn").split()[-1] == "-100.0%"
+
+    def test_govern_on_freezes_the_cache_breakdown(self, tmp_path, monkeypatch):
+        """The report can only compare what `on` bothered to record."""
+        space = _wire(tmp_path, monkeypatch)
+        assert _cli()._cmd_govern("on", 120_000, str(space), False) == 0
+        base = governor.read_baseline(space)
+        assert base is not None
+        # _wire writes two turns: 60,000 read and 30,100 written in total.
+        assert base["cr_per_request"] == 30_000.0
+        assert base["cw_per_request"] == 15_050.0
+
+
 # ── the baseline cut: only turns the ceiling could have changed ─────────────
 
 class TestSince:
