@@ -307,3 +307,41 @@ def test_handoff_field_newline_cannot_forge_an_entry(eng):
     entries = [ln for ln in h.splitlines() if ln.startswith(" 🤖 [obs]")]
     assert len(entries) == 1  # flattened onto its own line, not a new one
     assert "forged" in entries[0]
+
+
+# ── attribution confidence ─────────────────────────────────────────────────
+
+
+def _attribution(eng, evt_type="tool:observed"):
+    return eng.event_bus.db.execute(
+        "SELECT project_dir, attribution_confidence FROM events"
+        " WHERE type=? ORDER BY id DESC LIMIT 1", (evt_type,)
+    ).fetchone()
+
+
+def test_a_caller_supplied_project_is_certain_attribution(eng):
+    """The project came from the caller, not from a guess.
+
+    Field report (v3.9.4): every event carried attribution_confidence=0.0 and
+    it was read as "never populated". For an event with no project 0.0 is the
+    honest answer; observe() is the one path that is handed the project
+    outright, and inventing doubt about a value nobody inferred would be the
+    actual lie.
+    """
+    eng.observe("edit_file", "fix auth", "done", "/proj")
+    project_dir, confidence = _attribution(eng)
+    assert project_dir == "/proj"
+    assert confidence == 1.0
+
+
+def test_no_project_stays_uncertain(eng):
+    eng.observe("edit_file", "fix auth", "done", "")
+    project_dir, confidence = _attribution(eng)
+    assert project_dir == ""
+    assert confidence == 0.0
+
+
+def test_confidence_is_not_granted_to_events_that_name_no_project(eng):
+    eng.event_bus.emit(type="reflection", category="consciousness", data={"x": 1})
+    _, confidence = _attribution(eng, "reflection")
+    assert confidence == 0.0

@@ -105,3 +105,47 @@ def test_list_entities_empty_world(tmp_path):
     from conscio.world_model import WorldModel
     wm = WorldModel(tmp_path)
     assert wm.list_entities() == []
+
+
+class TestRemovalTakesThePredictionsWithIt:
+    """A prediction about a gone entity can never be settled.
+
+    Field report (v3.9.4, live daemon): 26 predictions against 23 entities.
+    validate_predictions_against() skips any prediction whose entity is not in
+    the perceived set, so an orphan stays pending forever — holding one of the
+    200 capped slots and reporting itself as pending in every summary.
+    """
+
+    def test_a_pending_prediction_dies_with_its_entity(self, wm):
+        wm.add_entity("bot", "system", state="up")
+        wm.add_prediction("bot stays up", "up", 0.9, entity="bot")
+        wm.remove_entity("bot")
+        assert wm._data["predictions"] == []
+
+    def test_a_settled_prediction_survives(self, wm):
+        wm.add_entity("bot", "system", state="up")
+        wm.add_prediction("bot stays up", "up", 0.9, entity="bot")
+        wm.validate_prediction(0, True)
+        wm.remove_entity("bot")
+        assert len(wm._data["predictions"]) == 1     # settled history stays
+
+    def test_other_entities_predictions_are_untouched(self, wm):
+        wm.add_entity("bot", "system", state="up")
+        wm.add_entity("db", "system", state="up")
+        wm.add_prediction("bot stays up", "up", 0.9, entity="bot")
+        wm.add_prediction("db stays up", "up", 0.9, entity="db")
+        wm.remove_entity("bot")
+        assert [p["entity"] for p in wm._data["predictions"]] == ["db"]
+
+    def test_a_free_text_prediction_is_never_collateral(self, wm):
+        wm.add_entity("bot", "system", state="up")
+        wm.add_prediction("something happens", "yes", 0.5)   # no entity link
+        wm.remove_entity("bot")
+        assert len(wm._data["predictions"]) == 1
+
+    def test_prune_stale_leaves_no_orphan(self, wm):
+        wm.add_entity("faded", "system", state="old")
+        wm.add_prediction("faded stays old", "old", 0.9, entity="faded")
+        _age_entity(wm, "faded", hours_old=1, relevance=0.05)
+        assert wm.prune_stale() == ["faded"]
+        assert wm._data["predictions"] == []

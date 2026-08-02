@@ -18,7 +18,11 @@ savings figure compared the baseline against itself. The last five came out of
 validating the first four: the daemon's error messages blamed the model for an
 endpoint that did not resolve, the CLI gave it no key to authenticate with, and
 the auditor refused every tool this project defines because nothing had told it
-they exist.
+they exist. A second validation pass on the same install found the auditor still
+refusing the one goal it had just been taught to serve — it was comparing the
+tool's name against an internal check identifier — and, in the stores behind it,
+four fields the operator read as never populated: three of them were, or should
+have been, and the fourth was honest but growing without limit.
 
 ### Added
 
@@ -151,6 +155,77 @@ they exist.
   empty key leaves that last fallback intact, so daemons running on
   `OPENAI_API_KEY` today are unaffected. Ollama stays unkeyed; it speaks no
   auth.
+- **The maintenance goal stated a measurement where it owed an instruction.**
+  With the tool registered and the auditor told it exists, the audit still
+  refused every attempt at Q1: `the rationale claims the goal is to prune stale
+  entities, but the stated goal does not match`. The goal read `Maintenance:
+  prune_stale — 23 stale entities: a, b, c`. `prune_stale` is the check's
+  internal identifier — it is what `Goal.dedup_key` uses to know one maintenance
+  goal from another — and the rest is a reading off the world model. The actor
+  picked `world_prune` correctly every time; the auditor compared two names,
+  found no match, and was right to, because the goal never asked for anything.
+  38 actions attempted, 0 executed. The identifier now stays where it belongs,
+  in the dedup key, and the description is a sentence that names the tool which
+  satisfies it. `Goal.dedup_key` is unchanged, so goals already in a store still
+  dedup against the new ones. The other maintenance goal built this way — the
+  one a self-prompt raises — had the same shape: it carried the prompt's
+  `target`, an entity name or a dimension label, so it read `Maintenance: botX`
+  and asked for nothing. It now carries the question the self-prompt already
+  formed. That goal is diagnostic and never reaches the actor, so nothing was
+  being refused; it was simply unreadable.
+- **Pruning an entity left its predictions pending forever.** A prediction is
+  settled by `validate_predictions_against()`, which only looks at entities in
+  the perceived set — so once an entity was gone, a prediction naming it could
+  never be settled, held one of the 200 prediction slots for good and reported
+  itself as pending in every summary. Found in the field as 26 predictions
+  against 23 entities. `remove_entity()` now takes the unsettleable ones with
+  it, at the shared removal path so every caller benefits. Already-validated
+  predictions stay: those are history, not a pending claim.
+- **Every autonomous action recorded a cost of zero.** `ActionLedger.record()`
+  has taken `tokens_in`/`tokens_out` since v2.0.1 and no caller ever passed
+  them, so the only per-action cost record the daemon keeps was uniformly 0 —
+  34 of 34 rows in the field. The gateway now totals what one `request_action`
+  spent across every tier and retry the ladder took, because the cost of an
+  action is not the cost of the call that finally decoded, it is all of them.
+  The row carries the actor's cost only: it names one adapter and one model, and
+  under mixed-cortex the audit runs on a different one — that usage belongs to
+  the `TokenLedger`, which is per-model.
+- **Suppressed duplicates were counted nowhere and reported as none.** `emit()`
+  dedups by not inserting, and the code claimed it marked the event instead;
+  reading `0 of 231 events with is_duplicate=1` off a live database therefore
+  looks like dedup never runs. `is_duplicate` is a different mechanism — a
+  soft-delete mark that hides a row from `query()` and feeds `compact()` — and
+  setting it on the surviving row would have hidden the original event.
+  Suppression is now counted on the row that survived, in a new
+  `duplicates_suppressed` column that `stats()` reports separately from the
+  soft-deleted count. Databases created before this version gain the column on
+  open.
+- **A caller-supplied project was recorded as uncertain attribution.**
+  `observe()` is handed the project by its caller and inferred nothing, yet
+  every event it emitted carried `attribution_confidence=0.0` — reading, across
+  a whole database, as a field that is never populated. It now records 1.0 when
+  a project is named. An event that names no project keeps 0.0: that is not a
+  missing value, it is the correct one.
+- **`token_usage` was the one store nothing ever released.** Every `reflect()`
+  appends a row and `TokenTracker.compact()` has existed since v0.2 with no
+  caller — the retention policy was written and never wired, leaving 733,949
+  rows in a field database and driving the WAL churn that made a healthy WAL
+  look like a leak. The dream cycle's Release phase now compacts it on the same
+  window it already used for events, and reports what it removed.
+- **`evolution.reject(proposal)` silently did nothing.** `approve`, `reject`,
+  `mark_applied` and `mark_rolled_back` took an id string and answered `None`
+  for "no such pending proposal". Handed the proposal object a caller already
+  holds — which is what `pending_proposals()` returns — no branch matched, the
+  state change was dropped, and the `None` that came back was indistinguishable
+  from a stale id, so the proposal came back pending in the next instance and
+  the store looked like it was not persisting. All four now accept the proposal
+  or its id, and raise `TypeError` for anything that could never name one rather
+  than borrowing the answer that means "not found".
+- **The lint gate had been red since v3.8.** `vulture` exits non-zero on any
+  finding, and `obsstore.read_observation` — the store's single-row reader,
+  exercised only from tests, which `vulture` does not scan — was one. Every push
+  to `main` since has had a failing `lint` job beside four passing test jobs.
+  Whitelisted, with the reason it exists.
 
 ---
 

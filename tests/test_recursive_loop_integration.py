@@ -82,3 +82,25 @@ def test_self_prompt_goal_id_is_real_when_the_target_shifts(tmp_path):
         assert second.id == first.id            # one goal, not two
     finally:
         eng.close()
+
+
+def test_a_maintenance_self_prompt_goal_states_the_question(tmp_path):
+    """`target` is an entity name; a goal reading "Maintenance: botX" asks for
+    nothing. The self-prompt already carries the question — that is the part
+    worth putting in front of a reader."""
+    from conscio.self_prompt import SelfPrompt
+
+    eng = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
+    try:
+        goal = eng._spawn_self_prompt_goal([SelfPrompt(
+            question="is botX still relevant, or should it be pruned?",
+            drive="maintenance", target="botX",
+            source_signal="stale", severity=0.5)])
+        assert goal is not None
+        assert "is botX still relevant" in goal.description
+        assert "botX" in goal.description
+        # The check identifier belongs to the dedup key, not the sentence.
+        assert "self_prompt" not in goal.description
+        assert goal.dedup_key == "maintenance:self_prompt"
+    finally:
+        eng.close()

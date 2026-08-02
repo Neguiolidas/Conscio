@@ -126,3 +126,52 @@ def test_applied_proposals_with_applied(evo):
     applied = evo.applied_proposals()
     assert len(applied) == 1
     assert applied[0].id == p1.id
+
+
+# --- the argument these methods actually get handed ---
+
+def test_the_proposal_itself_is_accepted_where_its_id_is(evo):
+    """A caller holding a proposal has its id; asking for one and not the other
+    made the state change vanish.
+
+    Field report (v3.9.4): `evo.reject(p)` was read as "reject does not
+    persist" — the proposal came back pending in the next instance. It does
+    persist; the object never equalled the id string, no branch matched, and
+    the None that came back is the same None a bad id returns.
+    """
+    p = evo.propose_skill_create("a", "b", "c", "d")
+    assert evo.reject(p, reason="not now") is p
+    assert p.status is ProposalStatus.REJECTED
+    assert AutoEvolution(storage_path=evo.path.parent).pending_proposals() == []
+
+
+def test_approve_accepts_the_proposal_too(evo):
+    p = evo.propose_skill_create("a", "b", "c", "d")
+    assert evo.approve(p) is p
+    assert p.status is ProposalStatus.APPROVED
+
+
+def test_mark_applied_and_rolled_back_accept_the_proposal(evo):
+    p = evo.propose_skill_create("a", "b", "c", "d")
+    evo.approve(p)
+    assert evo.mark_applied(p) is p
+    assert evo.mark_rolled_back(p) is p
+    assert p.status is ProposalStatus.ROLLED_BACK
+
+
+def test_a_wrong_argument_type_is_loud(evo):
+    """None means "no such pending proposal". Anything that cannot be one at
+    all must not borrow that answer."""
+    evo.propose_skill_create("a", "b", "c", "d")
+    for wrong in (42, None, ["evo_1"], {"id": "evo_1"}):
+        with pytest.raises(TypeError):
+            evo.reject(wrong)
+    with pytest.raises(TypeError):
+        evo.approve(42)
+
+
+def test_an_unknown_id_still_answers_none(evo):
+    assert evo.approve("evo_nope") is None
+    assert evo.reject("evo_nope") is None
+    assert evo.mark_applied("evo_nope") is None
+    assert evo.mark_rolled_back("evo_nope") is None

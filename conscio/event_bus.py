@@ -37,6 +37,7 @@ class Event:
     attribution_confidence: float
     timestamp: str
     is_duplicate: bool = False
+    duplicates_suppressed: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -50,6 +51,7 @@ class Event:
             "attribution_confidence": self.attribution_confidence,
             "timestamp": self.timestamp,
             "is_duplicate": self.is_duplicate,
+            "duplicates_suppressed": self.duplicates_suppressed,
         }
 
 
@@ -109,8 +111,10 @@ class EventBus:
     Session event tracking with dedup by content hash.
 
     Events are recorded with timestamps, types, priorities, and
-    JSON payloads. Duplicate events (same type + data hash) within
-    the dedup window are marked but not re-inserted.
+    JSON payloads. A duplicate (same type + data hash) within the dedup
+    window is not stored at all; the surviving row counts it in
+    `duplicates_suppressed`, so a suppressed event is still visible as a
+    number even though its row was never written.
     """
 
     def __init__(self, db_path: str | Path | None = None):
@@ -139,7 +143,8 @@ class EventBus:
                 project_dir TEXT DEFAULT '',
                 attribution_confidence REAL DEFAULT 0.0,
                 timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-                is_duplicate INTEGER NOT NULL DEFAULT 0
+                is_duplicate INTEGER NOT NULL DEFAULT 0,
+                duplicates_suppressed INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
@@ -148,6 +153,11 @@ class EventBus:
             CREATE INDEX IF NOT EXISTS idx_events_priority ON events(priority);
             CREATE INDEX IF NOT EXISTS idx_events_hash ON events(data_hash);
         """)
+        try:                         # databases created before v3.9.4
+            self.db.execute("ALTER TABLE events ADD COLUMN"
+                            " duplicates_suppressed INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass                     # already present
         self.db.commit()
 
     # ─── Emit ────────────────────────────────────────────────────────
@@ -165,8 +175,10 @@ class EventBus:
         Emit an event. Returns event ID.
 
         Dedup: if an event with the same type + data_hash exists within
-        the dedup window (60s by default), it's marked as duplicate
-        but NOT re-inserted (returns the existing event's ID).
+        the dedup window (60s by default), nothing is inserted — the existing
+        row's `duplicates_suppressed` goes up by one and its ID comes back.
+        Nothing is flagged `is_duplicate`: that marks a row for compact() to
+        delete, and the row here is the one being kept.
 
         Args:
             type: Event type (one of VALID_TYPES)
@@ -200,8 +212,17 @@ class EventBus:
         ).fetchone()
 
         if existing:
-            # Mark as duplicate but don't re-insert
-            return existing["id"]
+            # Suppressed, not stored: there is no second row to flag, so the
+            # count goes on the row that survived. (is_duplicate is a different
+            # thing — a soft-delete mark that hides a row from query() and
+            # feeds compact(); flagging the survivor would hide the original.)
+            self.db.execute(
+                "UPDATE events SET duplicates_suppressed ="
+                " duplicates_suppressed + 1 WHERE id = ?",
+                (existing["id"],),
+            )
+            self.db.commit()
+            return int(existing["id"])
 
         cursor = self.db.execute(
             """
@@ -300,7 +321,8 @@ class EventBus:
         rows = self.db.execute(
             f"""
             SELECT id, type, category, data, priority, data_hash,
-                   project_dir, attribution_confidence, timestamp, is_duplicate
+                   project_dir, attribution_confidence, timestamp,
+                   is_duplicate, duplicates_suppressed
             FROM events
             WHERE {where}
             ORDER BY timestamp DESC
@@ -324,7 +346,8 @@ class EventBus:
         row = self.db.execute(
             """
             SELECT id, type, category, data, priority, data_hash,
-                   project_dir, attribution_confidence, timestamp, is_duplicate
+                   project_dir, attribution_confidence, timestamp,
+                   is_duplicate, duplicates_suppressed
             FROM events WHERE id = ?
             """,
             (event_id,),
@@ -494,6 +517,9 @@ class EventBus:
         duplicates = self.db.execute(
             "SELECT COUNT(*) as c FROM events WHERE is_duplicate = 1"
         ).fetchone()["c"]
+        suppressed = self.db.execute(
+            "SELECT COALESCE(SUM(duplicates_suppressed), 0) as c FROM events"
+        ).fetchone()["c"]
 
         types = self.db.execute(
             "SELECT type, COUNT(*) as c FROM events GROUP BY type"
@@ -501,7 +527,8 @@ class EventBus:
 
         return {
             "total_events": total,
-            "duplicates": duplicates,
+            "duplicates": duplicates,          # soft-deleted, awaiting compact
+            "duplicates_suppressed": suppressed,   # never stored in the first place
             "unique_events": total - duplicates,
             "by_type": {r["type"]: r["c"] for r in types},
         }
@@ -527,6 +554,7 @@ class EventBus:
             attribution_confidence=row["attribution_confidence"],
             timestamp=row["timestamp"],
             is_duplicate=bool(row["is_duplicate"]),
+            duplicates_suppressed=row["duplicates_suppressed"],
         )
 
     # ─── Lifecycle ───────────────────────────────────────────────────

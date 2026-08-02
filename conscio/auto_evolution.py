@@ -256,20 +256,42 @@ class AutoEvolution:
 
     # --- Review & Approval ---
 
-    def approve(self, proposal_id: str) -> EvolutionProposal | None:
+    @staticmethod
+    def _id_of(ref: str | EvolutionProposal) -> str:
+        """The id of a proposal or of its id — a caller holding one has both.
+
+        These methods answer None for "no such pending proposal", so an
+        argument that could never name one must not borrow that answer:
+        `reject(proposal)` returned None and the rejection was silently
+        dropped, indistinguishable from a stale id.
+        """
+        if isinstance(ref, EvolutionProposal):
+            return ref.id
+        if not isinstance(ref, str):
+            raise TypeError(
+                "proposal must be an EvolutionProposal or its id string,"
+                f" got {type(ref).__name__}"
+            )
+        return ref
+
+    def approve(self, proposal_id: str | EvolutionProposal) -> EvolutionProposal | None:
         """Approve a pending proposal. Returns None if not found or not pending."""
+        wanted = self._id_of(proposal_id)
         for p in self._proposals:
-            if p.id == proposal_id and p.status == ProposalStatus.PENDING:
+            if p.id == wanted and p.status == ProposalStatus.PENDING:
                 p.status = ProposalStatus.APPROVED
                 p.reviewed_at = datetime.now().isoformat()
                 self._save()
                 return p
         return None
 
-    def reject(self, proposal_id: str, reason: str = "") -> EvolutionProposal | None:
+    def reject(
+        self, proposal_id: str | EvolutionProposal, reason: str = ""
+    ) -> EvolutionProposal | None:
         """Reject a pending proposal."""
+        wanted = self._id_of(proposal_id)
         for p in self._proposals:
-            if p.id == proposal_id and p.status == ProposalStatus.PENDING:
+            if p.id == wanted and p.status == ProposalStatus.PENDING:
                 p.status = ProposalStatus.REJECTED
                 p.reviewed_at = datetime.now().isoformat()
                 p.changes["rejection_reason"] = reason
@@ -277,20 +299,26 @@ class AutoEvolution:
                 return p
         return None
 
-    def mark_applied(self, proposal_id: str) -> EvolutionProposal | None:
+    def mark_applied(
+        self, proposal_id: str | EvolutionProposal
+    ) -> EvolutionProposal | None:
         """Mark an approved proposal as successfully applied."""
+        wanted = self._id_of(proposal_id)
         for p in self._proposals:
-            if p.id == proposal_id and p.status == ProposalStatus.APPROVED:
+            if p.id == wanted and p.status == ProposalStatus.APPROVED:
                 p.status = ProposalStatus.APPLIED
                 p.applied_at = datetime.now().isoformat()
                 self._save()
                 return p
         return None
 
-    def mark_rolled_back(self, proposal_id: str) -> EvolutionProposal | None:
+    def mark_rolled_back(
+        self, proposal_id: str | EvolutionProposal
+    ) -> EvolutionProposal | None:
         """Mark an applied proposal as rolled back (reverted)."""
+        wanted = self._id_of(proposal_id)
         for p in self._proposals:
-            if p.id == proposal_id and p.status == ProposalStatus.APPLIED:
+            if p.id == wanted and p.status == ProposalStatus.APPLIED:
                 p.status = ProposalStatus.ROLLED_BACK
                 self._save()
                 return p

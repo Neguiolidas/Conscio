@@ -253,7 +253,13 @@ class GoalGenerator:
     def generate_from_maintenance(self, check_type: str, target: str, source: str = "internal") -> Goal | None:
         """
         Generate a maintenance-driven goal.
-        
+
+        `check_type` identifies the check for dedup (see Goal.dedup_key) and
+        stays out of the description: it is an internal identifier, and an
+        agent reading "Maintenance: prune_stale — 23 stale entities" gets a
+        symbol and a reading where it needs an instruction. `target` carries
+        the instruction.
+
         Examples: "check system health", "verify data consistency", "prune stale entries"
         """
         strength = self.drives.get(Drive.MAINTENANCE, 0.5)
@@ -261,7 +267,7 @@ class GoalGenerator:
             return None
 
         goal = Goal(
-            description=f"Maintenance: {check_type} — {target}",
+            description=f"Maintenance: {target}",
             drive=Drive.MAINTENANCE,
             priority=GoalPriority.HIGH,  # Maintenance is usually high priority
             source=source,

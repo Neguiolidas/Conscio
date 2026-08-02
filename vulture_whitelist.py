@@ -295,3 +295,11 @@ IndexResult.chunks_added
 # Single-chunk entry point kept beside embed_batch() for callers that embed
 # one item at a time (ingestion itself now goes through embed_batch).
 EmbeddingPipeline.embed_chunk
+
+# ── observation store (v3.8) ───────────────────────────────────────
+from conscio.obsstore import read_observation
+
+# The single-row reader of the DeepMiner store: the read path callers use is
+# search_observations(), but reversibility is the point of the store and this
+# is how a caller (and every test) gets one observation back whole.
+read_observation

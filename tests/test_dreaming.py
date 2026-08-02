@@ -113,3 +113,49 @@ def test_dream_crystallize_skips_when_below_threshold(engine):
     report = cycle.run(engine)
     assert report.reflections_consolidated == 0
     assert engine.content_store.get_source(sid) is not None  # untouched
+
+
+# ── Release also covers the token ledger ───────────────────────────────────
+
+
+def _seed_old_token_usage(engine, n, days_old=90):
+    """Rows older than the compaction window, written straight to the table."""
+    ts = (naive_utcnow() - timedelta(days=days_old)).isoformat()
+    for _ in range(n):
+        engine.token_tracker.db.execute(
+            "INSERT INTO token_usage (source, raw_chars, filtered_chars,"
+            " raw_tokens, filtered_tokens, saving_pct, timestamp)"
+            " VALUES ('reflection', 100, 100, 25, 25, 0.0, ?)", (ts,))
+    engine.token_tracker.db.commit()
+
+
+def _token_rows(engine):
+    return engine.token_tracker.db.execute(
+        "SELECT COUNT(*) c FROM token_usage").fetchone()["c"]
+
+
+def test_dream_release_compacts_the_token_ledger(engine):
+    """Every reflect() writes a token_usage row and nothing ever deleted one.
+
+    Field report (v3.9.4): 733,949 rows in a live daemon's token_usage while
+    every other store in conscio.db was being pruned. TokenTracker.compact()
+    has existed since v0.2 with no caller — the retention policy was written
+    and never wired.
+    """
+    _seed_old_token_usage(engine, 5)
+    report = engine.dream()
+    assert report.token_records_compacted == 5
+    assert _token_rows(engine) == 0
+
+
+def test_dream_keeps_token_records_inside_the_window(engine):
+    _seed_old_token_usage(engine, 3, days_old=1)
+    report = engine.dream()
+    assert report.token_records_compacted == 0
+    assert _token_rows(engine) == 3
+
+
+def test_dream_dry_run_leaves_the_token_ledger_alone(engine):
+    _seed_old_token_usage(engine, 4)
+    engine.dream(dry_run=True)
+    assert _token_rows(engine) == 4

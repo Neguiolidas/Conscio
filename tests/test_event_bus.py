@@ -573,3 +573,48 @@ class TestEdgeCases:
         assert s["total_events"] == 200
         events = bus.query(type="perception", limit=50)
         assert len(events) == 50
+
+
+# ─── Suppressed Duplicates ──────────────────────────────────────────────
+
+class TestSuppressionIsVisible:
+    """Dedup works by NOT inserting, so it leaves no row to count.
+
+    Field report (v3.9.4, live daemon): 0 of 231 events carried
+    is_duplicate=1, read as "the dedup logic never runs". It runs — it just
+    had nowhere to say so. is_duplicate is a soft-delete flag for compact();
+    a suppressed emit never becomes a row at all, so the only honest place to
+    record it is the row that survived.
+    """
+
+    def test_a_suppressed_emit_is_counted_on_the_surviving_row(self, bus):
+        first = bus.emit("error", "system", {"msg": "same"})
+        again = bus.emit("error", "system", {"msg": "same"})
+        assert again == first                      # unchanged: same row back
+        assert bus.get(first).duplicates_suppressed == 1
+
+    def test_each_repeat_adds_one(self, bus):
+        eid = bus.emit("error", "system", {"msg": "same"})
+        for _ in range(4):
+            bus.emit("error", "system", {"msg": "same"})
+        assert bus.get(eid).duplicates_suppressed == 4
+
+    def test_a_distinct_event_counts_nothing(self, bus):
+        eid = bus.emit("error", "system", {"msg": "one"})
+        bus.emit("error", "system", {"msg": "two"})
+        assert bus.get(eid).duplicates_suppressed == 0
+
+    def test_stats_reports_the_total(self, bus):
+        bus.emit("error", "system", {"msg": "a"})
+        bus.emit("error", "system", {"msg": "a"})
+        bus.emit("error", "system", {"msg": "a"})
+        bus.emit("error", "system", {"msg": "b"})
+        s = bus.stats()
+        assert s["total_events"] == 2              # two rows survived
+        assert s["duplicates_suppressed"] == 2     # two emits were dropped
+
+    def test_the_soft_delete_flag_still_means_what_it_meant(self, bus):
+        eid = bus.emit("error", "system", {"msg": "x"})
+        bus.emit("error", "system", {"msg": "x"})
+        assert bus.get(eid).is_duplicate is False  # suppression is not deletion
+        assert bus.stats()["duplicates"] == 0
