@@ -14,6 +14,10 @@ Four dimensions, each in [0, 1] (1 = coherent):
     ontological  — 1 - contradicted/total entities     (knowledge-graph contradiction)
     temporal     — 1 - excess shard flapping           (cognitive-mode stability)
 
+A dimension with no substrate to read scores its maximum, so the report also
+carries `unmeasured` — the dimensions whose score is a default rather than an
+observation. It changes no score; it says how much the score is worth.
+
 Origin: Claude_Sentience by Dave Shapiro. Operational paraphrase; attribution in
 docs/noosphere/coherence-engine-model.md.
 """
@@ -88,12 +92,19 @@ class CoherenceReport:
     dimensions: dict
     dissonances: list
     dominant: Dissonance | None
+    unmeasured: tuple[str, ...] = ()
 
     def marker(self) -> str:
-        """Heartbeat/state marker text: '0.82' or '0.41 dominant: epistemic'."""
+        """Heartbeat/state marker text.
+
+        '0.82', '0.41 dominant: epistemic', or — on a mind with nothing to
+        measure yet — '0.85 unmeasured: reality, ontological, temporal'.
+        """
         base = f"{self.score:.2f}"
         if self.dominant is not None:
-            return f"{base} dominant: {self.dominant.dimension}"
+            base = f"{base} dominant: {self.dominant.dimension}"
+        if self.unmeasured:
+            base = f"{base} unmeasured: {', '.join(self.unmeasured)}"
         return base
 
 
@@ -146,6 +157,43 @@ def temporal_score(recent_events: list) -> float:
     return _clamp(1.0 - min(1.0, excess / TEMPORAL_SPAN))
 
 
+# --- Evidence predicates (v3.9.4) --------------------------------------------
+#
+# Three of the four scorers return their MAXIMUM on an empty substrate: no
+# prediction log → reality 1.0, no entities → ontological 1.0, no events →
+# temporal 1.0. So a mind that has observed nothing reports 0.85 — the same
+# number a well-measured, genuinely coherent mind reports. The scores stay
+# exactly as they are (they feed thresholds, history and the dream trigger);
+# assess() reports ALONGSIDE them which dimensions had nothing to measure, so a
+# reader can tell "clean" from "untested". Unknown counts as unmeasured: if the
+# accessor raises, we did not observe anything either.
+
+def _has_epistemic_evidence(meta) -> bool:
+    try:
+        return bool(meta.has_calibration_evidence())
+    except Exception:
+        return False
+
+
+def _has_reality_evidence(world) -> bool:
+    try:
+        return world.recent_prediction_outcomes(window_hours=24)[1] > 0
+    except Exception:
+        return False
+
+
+def _has_ontological_evidence(world) -> bool:
+    try:
+        return world.entity_count() > 0
+    except Exception:
+        return False
+
+
+def _has_temporal_evidence(recent_events: list) -> bool:
+    """Events with zero transitions IS a measurement (stability); no events is not."""
+    return bool(recent_events)
+
+
 # --- Engine ------------------------------------------------------------------
 
 class CoherenceEngine:
@@ -172,4 +220,11 @@ class CoherenceEngine:
         dissonances.sort(key=lambda x: x.score)  # worst first; stable for ties
         dominant = dissonances[0] if dissonances else None
 
-        return CoherenceReport(score, dims, dissonances, dominant)
+        unmeasured = tuple(dim for dim, measured in (
+            ("epistemic", _has_epistemic_evidence(self.meta)),
+            ("reality", _has_reality_evidence(self.world)),
+            ("ontological", _has_ontological_evidence(self.world)),
+            ("temporal", _has_temporal_evidence(recent_events or [])),
+        ) if not measured)
+
+        return CoherenceReport(score, dims, dissonances, dominant, unmeasured)

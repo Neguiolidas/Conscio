@@ -1,5 +1,7 @@
 """TDD for CompactionCheckpoint + CheckpointChain (v3.1 Ato 2)."""
+import contextlib
 import json
+import time
 
 from conscio.checkpoint import CheckpointChain, CompactionCheckpoint
 
@@ -223,3 +225,70 @@ class TestConnectionsAreClosedOnFailure:
         assert chain.length() == 1
         assert chain.latest()["durable_memory"] == "kept"
         assert json.loads(chain.latest()["skill_references"]) == ["k"]
+
+
+_WORKER = '''
+import sys, time
+from conscio.checkpoint import CheckpointChain, CompactionCheckpoint
+
+db, tag, count, start = sys.argv[1], sys.argv[2], int(sys.argv[3]), float(sys.argv[4])
+chain = CheckpointChain(db)
+while time.time() < start:      # line every worker up on the same instant
+    time.sleep(0.002)
+for i in range(count):
+    chain.append(CompactionCheckpoint(
+        durable_memory=tag + "-" + str(i), execution_summary="s",
+        user_requirements="u", skill_references=[]))
+'''
+
+
+class TestConcurrentAppendsKeepOneChain:
+    """v3.9.4: appending is a read-modify-write — find the latest row, claim it
+    as parent, insert. Separate processes used to run that unserialized, so two
+    could read the same latest row and both claim it: the chain forks and
+    walking back from the tip silently skips history. Measured before the fix
+    with this exact shape (4 processes × 25 appends): 4 of 5 runs forked, one
+    of them producing three roots.
+    """
+
+    def test_four_processes_produce_one_unbroken_chain(self, tmp_path):
+        import os
+        import sqlite3
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        import conscio.checkpoint as cp_mod
+
+        db = tmp_path / "chain.db"
+        CheckpointChain(db)                     # schema first; the race is over appends
+        script = tmp_path / "worker.py"
+        script.write_text(_WORKER)
+
+        env = {**os.environ,
+               "PYTHONPATH": str(Path(cp_mod.__file__).resolve().parents[1])}
+        start = time.time() + 0.5
+        procs = [
+            subprocess.Popen(
+                [sys.executable, str(script), str(db), f"w{i}", "25", str(start)],
+                env=env, stderr=subprocess.PIPE, text=True)
+            for i in range(4)
+        ]
+        for p in procs:
+            _, err = p.communicate(timeout=120)
+            assert p.returncode == 0, f"worker failed: {err.strip()[-400:]}"
+
+        with contextlib.closing(sqlite3.connect(db)) as conn:
+            rows = conn.execute(
+                "SELECT checkpoint_id, parent_id FROM checkpoints"
+            ).fetchall()
+
+        ids = {cid for cid, _ in rows}
+        parents = [pid for _, pid in rows if pid is not None]
+
+        assert len(rows) == 100, "every append must land"
+        assert len(parents) == len(set(parents)), \
+            "two checkpoints claim the same parent — the chain forked"
+        assert len(rows) - len(parents) == 1, \
+            f"a chain has exactly one root, found {len(rows) - len(parents)}"
+        assert set(parents) <= ids, "a parent_id points at no row"

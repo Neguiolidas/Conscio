@@ -23,14 +23,17 @@ refusing the one goal it had just been taught to serve — it was comparing the
 tool's name against an internal check identifier — and, in the stores behind it,
 four fields the operator read as never populated: three of them were, or should
 have been, and the fourth was honest but growing without limit. A third pass,
-reading the code rather than the install, found nine more — every one of them a
+reading the code rather than the install, found ten more — almost every one a
 place where the thing that cleans up was skipped, aborted, or never asked: the
 dream on two paths, the ledger with no dream to prune it, a handoff overwritten
 with nothing, two failure paths that walked away from an open database handle, a
 foreign key that turned a compaction into an exception, a consolidation that cut
-the chain it was shortening, a proposal that came back after being answered, an
+the chain it was shortening, an append two processes could run at once and fork
+the chain between them, a proposal that came back after being answered, an
 approved change nobody applied and no gate could see, and a timezone that made a
-live entity look a decade stale.
+live entity look a decade stale. The same pass left the coherence score alone
+and taught the report to say which of its dimensions had nothing to measure,
+and made the proposal file's write atomic so a save that dies cannot empty it.
 
 ### Added
 
@@ -44,6 +47,20 @@ live entity look a decade stale.
   leave the goal exactly as unsatisfiable as it was. It is wired into the live
   act and promotion registries only: a trial replays another instance's skill,
   and must not be able to prune this instance's memory.
+- **`CoherenceReport.unmeasured`** — the dimensions whose score is a default
+  rather than an observation. Three of the four scorers return their *maximum*
+  on an empty substrate: no prediction log → reality 1.0, no entities →
+  ontological 1.0, no events → temporal 1.0. So a freshly installed mind reports
+  0.85, the same number a well-measured and genuinely coherent one reports, and
+  nothing in the output distinguishes clean from untested. No score changed —
+  they feed thresholds, history and the dream trigger, and moving them would
+  rewrite the meaning of every stored reading. The report now carries the list
+  alongside, and `marker()` renders it:
+  `0.85 unmeasured: epistemic, reality, ontological, temporal`. Evidence is
+  per dimension: five resolved confidence records (pending ones prove nothing),
+  one prediction outcome in the window, one entity, one event. A window observed
+  with zero mode transitions *is* a measurement of stability; an empty window is
+  not.
 - **`/conscio:govern` slash command**, so the ceiling, the baseline and the
   capture hook's health are reachable without remembering the CLI. It reads
   status by default and passes an explicit action through; `on`/`off` rewrite
@@ -278,12 +295,33 @@ live entity look a decade stale.
   deleted, so walking back from the latest checkpoint hit an id that resolves to
   nothing. The survivor is now re-anchored to the merged row, which is exactly
   the history it lost.
+- **Two processes appending a checkpoint at the same time forked the chain.**
+  An append is a read-modify-write: find the latest row, claim it as parent,
+  insert. That ran unserialized, so two processes could read the same latest row
+  and both claim it — and a chain where two rows share a parent is a chain that
+  silently drops history when you walk back from the tip. Measured with four
+  processes appending 25 checkpoints each: 4 of 5 runs forked, one of them
+  producing three separate roots. The append now opens with `BEGIN IMMEDIATE`,
+  which takes the write lock *before* the parent lookup; late arrivals wait out
+  sqlite's busy timeout instead of racing. Consolidation moved inside that same
+  transaction, so the delete, the merged insert and the re-anchor commit
+  together or not at all.
 - **An answered proposal was proposed again.** `observe_errors` deduplicated
   against `pending_proposals()`, but approving or rejecting a proposal takes it
   out of PENDING — so answering one restored it to the set of things worth
   proposing, and the next observation raised it again. It now dedups against
   every verdict that still stands. `ROLLED_BACK` is excluded on purpose: the
   change was undone, so proposing it again is a fresh question.
+- **A save that died emptied the proposal file.** `AutoEvolution._save()` wrote
+  with `Path.write_text`, which truncates before it writes, and `_load()`
+  deliberately degrades an unreadable file to `[]` so a corrupt store cannot
+  crash startup. Together those two reasonable choices mean a write interrupted
+  by a full disk, a crash or a reader arriving mid-truncate does not surface as
+  corruption — it surfaces as a mind with no proposals, which is a valid state.
+  It now writes through `atomic_write_text` (write sibling, `os.replace`), the
+  same guard the rest of the JSON stores already use. This does not make
+  concurrent *writers* safe: two processes still overwrite each other's list
+  wholesale, which is a design change, not a one-line fix.
 - **An approved change nobody applied blocked nothing.** `delivery_check`
   counted PENDING proposals, and `approve()` moves a proposal out of PENDING —
   so a crash between `approve()` and `mark_applied()` left it decided, unapplied

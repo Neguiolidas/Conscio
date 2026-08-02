@@ -16,6 +16,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .guards import atomic_write_text
+
 if TYPE_CHECKING:
     from .meta_cognition import MetaCognition
 
@@ -123,8 +125,13 @@ class AutoEvolution:
         return []
 
     def _save(self) -> None:
+        # v3.9.4: atomic, because `write_text` truncates before it writes and
+        # `_load` degrades a torn file to [] — a reader landing in that window
+        # does not see a corrupt file, it sees a mind with no proposals at all.
+        # Does NOT make concurrent writers safe: two processes still overwrite
+        # each other's list wholesale (last writer wins).
         data = [p.to_dict() for p in self._proposals]
-        self.path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        atomic_write_text(self.path, json.dumps(data, indent=2, ensure_ascii=False))
 
     # --- Proposal Generation ---
 
