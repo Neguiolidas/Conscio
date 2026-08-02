@@ -46,7 +46,9 @@ lands above its own ceiling, and compacts again. Every measurement comes from
 the host's own `message.usage` records rather than from token counting of ours.
 **v3.9.4** repairs what live installs turned up, and teaches the reports to
 name what they could not measure rather than let a default pass for an
-observation — see the
+observation. **v3.9.5** answers a daemon that came back from a restart alive
+and doing nothing: a safety latch is now released by the same component that
+raises it, once the condition it was latched on is gone — see the
 [changelog](https://github.com/Neguiolidas/Conscio/blob/main/CHANGELOG.md).
 
 ## Install

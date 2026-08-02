@@ -9,7 +9,15 @@ from pathlib import Path
 
 
 def hermes_home() -> Path:
-    return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+    """$HERMES_HOME, or ~/.hermes.
+
+    expanduser: the default is already absolute, but a value read from the
+    environment is whatever a shell, systemd unit or wrapper exported — and
+    `HERMES_HOME=~/.hermes` that nothing expanded is a *relative* path to a
+    directory named `~` under the working directory.
+    """
+    return Path(os.environ.get("HERMES_HOME",
+                               Path.home() / ".hermes")).expanduser()
 
 
 def default_storage() -> Path:

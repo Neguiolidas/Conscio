@@ -252,8 +252,10 @@ class ContextManager:
         return state
 
     def _persisted_lockdown(self) -> bool:
-        """Read the circuit-breaker latch from disk (blueprint §5: the
-        latch survives reflect() cycles until a human clears it)."""
+        """Read the circuit-breaker latch from disk (blueprint §5: the latch
+        survives reflect() cycles, and restarts, for as long as the breaker's
+        quorum stands — ConsciousnessEngine._reconcile_lockdown() releases it
+        once no goal is still quarantined)."""
         path = self.storage_path / "state_summary.json"
         try:
             return bool(json.loads(path.read_text()).get("action_lockdown", False))

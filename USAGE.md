@@ -261,9 +261,12 @@ Or env: `CONSCIO_CONTEXT_WINDOW=1048576`.
 
 ## DB
 
-- Default: `~/.conscio/data/conscio.db` (SQLite WAL + FTS5)
+- Default: `~/.hermes/consciousness/conscio.db` (SQLite WAL + FTS5)
+- Tool observations: `~/.hermes/consciousness/obs.db` (separate store)
+- Cross-instance state (KG, hallways, vectors, handoff, sandbox): `~/.conscio/`
 - Per-host: `~/.conscio/instances/<slug>/`
-- Override: `CONSCIO_DATA_DIR`
+- Override: `storage_path=` / `--storage`; the CLI and daemon also read
+  `$HERMES_HOME` (the library default does not)
 - Vault (API keys): `CONSCIO_VAULT_DIR` (no fallback to global)
 
 ## Python modules — common APIs

@@ -14,12 +14,12 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.9.4` "Reachable Daemon":** `conscio awake` now reaches
-the daemon it was meant to wake instead of the engine it just opened; the
-maintenance drive raises goals that can be cancelled and a `world_prune` tool
-that can serve them; the capture hook says so when it has stopped recording;
-and the coherence score reports which of its dimensions had nothing to measure,
-so a fresh install no longer reads like a well-tested one.
+**Latest release — `v3.9.5` "Latch and Release":** a global lockdown is no
+longer able to outlive the circuit breaker that raised it, so a daemon that once
+hit quorum stops being paralysed forever; the failure-rate brake is reported for
+the heartbeat it belongs to instead of as permanent status; and a path written
+with a `~` — `storage_path`, or `HERMES_HOME` exported by a wrapper — is the
+directory the caller meant rather than one named `~` in the working directory.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
@@ -52,40 +52,43 @@ with ConsciousnessEngine(model_name="glm-5.2") as engine:
         confidence=0.8,
         anomalies=["Unusual latency spike detected"],
     )
-    injection = engine.get_state_for_injection   # compact state for context injection
+    injection = engine.get_state_for_injection()  # compact state for context injection
     engine.world.add_entity("server", "system", state="healthy")
-    hits = engine.recall("latency incidents")       # cross-session memory (FTS5 + optional RAG/vector)
+    hits = engine.recall("latency incidents")     # cross-session memory (FTS5 + optional RAG/vector)
 
-    # v2.15 — 5-axis self-evaluation (accuracy, completeness, clarity, actionability, conciseness)
-    report = engine.evaluate
-    print(report.overall_score, report.self_check)
+    # Self-evaluation — 5-axis rubric, deterministic, no LLM
+    report = engine.evaluate()
+    print(report.overall, report.self_check)
 
-    # v3.0 — Gate tools
-    adr = engine.decide("Use SQLite for session storage", status="proposed")
+    # Gate tools
+    adr = engine.decide(title="Use SQLite for session storage", status="proposed")
     result = engine.council("Should we enable autonomous mode?")
-    gate = engine.loop_gate(verifiable=True, budget_ok=True, has_tools=True)
-    check = engine.delivery_check
-    evidence = engine.investigate("server latency")
+    gate = engine.loop_gate(task="nightly audit", frequency="daily",
+                            verifiable=True, budget_ok=True, has_tools=True)
+    check = engine.delivery_check()
+    evidence = engine.investigate(target="server latency")
+```
 
-    # v3.7 — Safe expression evaluation
-    value = engine.intercept("2 + 2", variables={})
-    x = engine.intercept("solve_linear(2, 3, 1, 7)", variables={})
+Arithmetic a model would otherwise guess at is evaluated, not generated — see
+[Intercepter](#intercepter):
+
+```python
+from conscio.agency.intercepter import Intercepter
+
+itc = Intercepter()
+itc.process("[INTERCEPT: solve_linear(2, 3, 1, 7)]").text
+# '[INTERCEPT: solve_linear(2, 3, 1, 7)] -> [RESULT: 4.0]'
 ```
 
 ```bash
-# v3.7 — CLI council: 4-voice decision analysis
-conscio council "Should I deploy to production?" --mode compact
-
-# v3.7 — CLI reflect with verbosity control
-conscio reflect "System health check" --mode minimal
-
-# v3.6 — CLI search
-conscio search "latency" --k 5
-
-# v3.0 — v3.6 — remaining CLI commands
+conscio init                  # bind this host to its own space (wizard)
 conscio info                  # model context window / mode / budget
+conscio reflect "System health check" --mode minimal
+conscio council "Should I deploy to production?" --mode compact
+conscio search "latency" --k 5
 conscio ingest file.md        # feed documents into episodic memory
-conscio promote --budget 8    # promote single studies through the refinement space
+conscio plugins               # what adapters/sensors/tools are installed
+conscio manual                # where the full usage manual lives
 ```
 
 `reflect` is the **passive heart** and is never allowed to act. Everything that can
@@ -131,7 +134,8 @@ See [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules) for the full tab
 - **Learns procedures** — successful audited plans become reusable skills (procedural
   memory), fed back to the actor as few-shot exemplars.
 - **Judges its own quality** — confidence calibration, blind-spot detection, and
-  coherence/dissonance metrics; formal 5-axis self-evaluation (`evaluate`, v2.15).
+  coherence/dissonance metrics that name the dimensions they could not measure
+  rather than scoring them silently; formal self-evaluation (`evaluate`).
 - **Gates its own decisions** — ADRs (`decide`), multi-voice council
   (`council`), autonomous-loop gate (`loop_gate`), pre-close delivery check
   (`delivery_check`), and read-before-act verification (`investigate`).
@@ -158,18 +162,26 @@ See [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules) for the full tab
 - **Embeds natively** — EmbeddingProvider with 3-tier fallback: Ollama →
   OpenAI-compatible → sentence_transformers all-MiniLM-L6-v2 (384-dim, in-process,
   no daemon). Optional 768-dim via `CONSCIO_EMBED_MODEL=nomic-embed-text-v1.5`.
+- **Remembers what its tools saw** — every tool call the host makes is captured
+  into a separate `obs.db` and searchable later at zero LLM tokens, so a
+  compaction stops costing you the work that preceded it.
+- **Governs its own context cost** — measures the stable prefix and where
+  compactions actually land, derives the cost-optimal window, and reports
+  current-vs-baseline priced per turn from the host's own usage records.
 - **Exports & imports** — tar.gz archive with ContentStore + KG + Hallways +
   metadata.json; MemPalace ChromaDB adapter (import_format_mempalace).
-- **Judges output quality** — 6th evaluation axis: output_quality (LLM-as-judge
-  with heuristic fallback). Overall score averages over active axes.
+- **Judges output quality** — an optional 6th evaluation axis, `output_quality`
+  (LLM-as-judge with heuristic fallback). The overall score averages over the
+  axes actually active, so enabling it never silently reweights the other five.
 - **Consolidates while idle** — a dream cycle that releases, prunes, reconciles,
   crystallizes, and distills.
 - **Persists across sessions** — heartbeat/handoff continuity with on-demand injection.
 - **Knows its codebase structurally** — optional, consent-gated ingestion of a
   Graphify graph, distilled to a compact signal injected budget-aware. Data, never
   code (R10).
-- **Intercepts tool calls** — Intercepter provides TV-DSL integration for
-  host-side tool filtering and routing.
+- **Computes instead of guessing** — Intercepter evaluates `[INTERCEPT: ...]`
+  expressions a model emits with a restricted AST walker, and feeds the real
+  answer back to it.
 - **Plugs into any host** — a stdlib-only MCP stdio server (`conscio-mcp`) feeds any
   CLI/IDE/agent its cognition and audited proposals live.
 
@@ -190,6 +202,10 @@ See [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules) for the full tab
 9. **Autonomous operation requires Awake Mode (R9)** — the self-initiated heartbeat
    only acts when the persisted `awake` flag is on; **default OFF**. Asleep, it
    perceives and `reflect`s only. A human's direct `engine.act` is not gated by R9.
+10. **Imported cognition is data, never code (R10)** — a code graph, a shared
+    skill, or anything else that arrives from outside is parsed, never evaluated,
+    and re-audited locally. No `eval`/`exec`/`pickle`, no runtime dependency on
+    the tool that produced it, and a code-looking label is returned verbatim.
 
 ---
 
@@ -214,13 +230,13 @@ runs (it runs from 8k context up).
 ```python
 from conscio.agency import OllamaAdapter
 
-engine.attach_adapter(OllamaAdapter(model="qwen3.5:0.8b"))   # or a frontier API
-report = engine.act                  # downstream of reflect; proposes only (L1)
+engine.attach_adapter(OllamaAdapter(model="qwen3.5:0.8b"))  # or a frontier API
+report = engine.act()                # downstream of reflect; proposes only (L1)
 if report.status.value == "proposed":
-    engine.approve(report.ledger_id)   # the human gate executes it
+    engine.approve(report.ledger_id)  # the human gate executes it
 
-engine.probe                         # lazy, empirical capability measurement
-engine.run(budget=...)                 # L3 heartbeat: reflect → act → dream, gated
+engine.probe()                       # lazy, empirical capability measurement
+engine.run(budget=...)               # L3 heartbeat — asleep (default) it only reflects
 ```
 
 Autonomy is **earned and measured**, never assumed: `ProbeSuite` measures the attached
@@ -235,24 +251,30 @@ LLM calls:
 
 ```python
 # Architecture Decision Records
-adr = engine.decide("Use SQLite for session storage", status="proposed")
-# adr = {"id": "ADR-20260720-a3f1b2", "status": "proposed", "decision": "..."}
+adr = engine.decide(title="Use SQLite for session storage", status="proposed")
+# {"adr_id": "ADR-20260802145940-48a11e", "title": "...", "status": "proposed", ...}
 
-# Multi-voice council (Architect + Skeptic + Pragmatist + optional Critic)
+# Multi-voice council (Architect + Skeptic + Pragmatist + Critic)
 result = engine.council("Should we enable autonomous mode?")
-# result = {"consensus": True, "votes": {"architect": "yes", ...}}
+# {"question": "...", "recommendation": "proceed", "voices": [...], "votes_summary": {...}}
 
-# Autonomous loop gate — 3 conditions must pass
-gate = engine.loop_gate(verifiable=True, budget_ok=True, has_tools=True)
-# gate = {"allowed": True, "conditions": {...}}
+# Autonomous loop gate — every condition must pass, and an unstated one is a veto
+gate = engine.loop_gate(task="nightly audit", frequency="daily",
+                        verifiable=True, budget_ok=True, has_tools=True)
+# {"approved": True, "conditions": {...}, "vetoed_conditions": []}
 
-# Pre-close delivery check (auto-runs on engine.close)
-check = engine.delivery_check
-# check = {"pass": True, "blockers": [], "rationalization_hits": 0}
+# Pre-close delivery check (auto-runs on engine.close())
+check = engine.delivery_check()
+# {"pass": True, "blockers": [], "rationalization_hits": 0, "stale_proposals": 0, ...}
 
 # Read-before-act evidence verification
-evidence = engine.investigate("server latency")
+evidence = engine.investigate(target="server latency")
+# {"satisfied": False, "missing": ["investigate:read: server latency"], ...}
 ```
+
+`loop_gate` fails closed: leave `frequency` empty and it vetoes on that alone.
+Same for `investigate` — `satisfied` is False until the EventBus actually holds a
+read of that target, so "no evidence" never reads as "verified".
 
 ### Pipeline tools
 
@@ -262,10 +284,11 @@ patterns, compaction advisory, and recursive decision ledger:
 ```python
 # Intent-driven acceptance criteria with auto risk detection
 criteria = engine.acceptance_criteria(goal="Deploy to production", depth="full")
-# criteria = {"goal": "Deploy to production", "risk_tier": "security", "criteria": [...]}
+# {"goal": "...", "risk_level": "low", "risk_domains": [], "acceptance_count": 6, "criteria": [...]}
 
-# Post-implementation verification
-verified = engine.verify(criteria_source="ADR-20260720-a3f1b2")
+# Post-implementation verification against the criteria last raised
+verified = engine.verify(criteria_source="acceptance")
+# {"pass": False, "verified": [], "failed": [{"id": "AC-001", "reason": "no evidence found"}, ...]}
 
 # Loop pattern selection (sequential / continuous_pr / rfc_dag / infinite)
 loop = engine.continuous_loop(pattern="continuous_pr")
@@ -285,32 +308,38 @@ promoted = engine.ledger(action="promote", rollout_id="RL-1")
 Three tools for context auditing, evaluation, and rule extraction:
 
 ```python
-# Context budget audit — per-source breakdown, metabolic tiers, recommendations
-budget = engine.context_budget
-# budget = {"total_tokens": 8000, "sources": [...], "metabolic_tier": "normal"}
+# Context budget audit — token pressure, metabolic tiers, recommendations
+budget = engine.context_budget(context_tokens=8000, context_window=128000)
+# {"token_pressure": ..., "headroom_pct": ..., "metabolic_tiers": [...], "recommendations": [...]}
 
 # Eval harness with pass@k reliability metrics
-result = engine.eval_harness(action="define", eval_type="capability",
-                              name="memory_recall", criteria="...")
+defined = engine.eval_harness(action="define", eval_type="capability",
+                              task="memory recall", criteria=["recalls the goal"])
+engine.eval_harness(action="run", eval_id=defined["eval_id"], results=[True, True, False])
 report = engine.eval_harness(action="report")
 
-# Rule distillation from skills, events, or decisions
-rules = engine.rules_distill(action="scan", source="skills")
-distilled = engine.rules_distill(action="distill", source="events")
+# Rule distillation — scan for recurring patterns, then commit one as a rule
+rules = engine.rules_distill(action="scan", source_types=["skills", "events"])
+distilled = engine.rules_distill(action="distill", rule_text="Always verify before acting")
 ```
 
 ### Self-evaluation
 
-Formal 5-axis rubric — accuracy, completeness, clarity, actionability, conciseness.
-Pure read-only, deterministic, no LLM:
+Formal 5-axis rubric — accuracy, completeness, clarity, actionability, conciseness
+(a 6th, `output_quality`, joins them when an output is passed). Pure read-only,
+deterministic, no LLM:
 
 ```python
-report = engine.evaluate
-# report.overall_score  → 3.4
-# report.axes["accuracy"].score  → 4
-# report.self_check  → "PASS"
-# report.ranked_improvements  → ["completeness: add more entities", ...]
+report = engine.evaluate()
+report.overall        # 4.2 — mean of the axes actually active
+report.axes           # (AxisScore(axis="accuracy", score=4, evidence=..., improvement=...), ...)
+report.self_check     # "User might ask for follow-up on weaker axes"
+report.improvements   # ("Raise confidence by adding verification steps for claims.", ...)
 ```
+
+The scores are read off the engine's real state, so a fresh instance scores
+lower than a working one and the improvements name what is actually missing —
+they are measurements, not a fixed rubric printout.
 
 ### Tool observations & context economy
 
@@ -321,17 +350,27 @@ up automatically; the capture never alters tool output and never blocks a
 session.
 
 ```python
-engine.observe(tool="Bash", input_text="ls", output_text="README.md")
-hits = engine.recall_observations("where did I see this?")   # FTS5 snippet window
-handoff = engine.compress_observations()                     # session → handoff
+engine.observe(tool="Bash", input_text="ls", output_text="README.md", session_id="s1")
+hits = engine.recall_observations("README", session_id="s1")  # FTS5 snippet window
+handoff = engine.compress_observations(session_id="s1")       # session → handoff
 ```
 
+Recall is session-scoped by default, so a session only ever mines its own trail
+unless you widen `scope`. Under the Claude Code hook the session id is supplied
+for you.
+
 ```bash
+conscio govern status    # ceiling, obs.db size, capture health, baseline
 conscio govern prefix    # measure your stable prefix and where compactions land
-conscio govern on        # apply the cost-optimal context window to this project
-conscio govern report    # compare against the baseline, from the host's own usage
+conscio govern on        # freeze a baseline + apply the cost-optimal window here
+conscio govern report    # current vs baseline, from the host's own usage records
 conscio govern off       # restore what you had before
 ```
+
+`govern report` prices both sides per turn rather than as totals — a total
+against a total mostly measures which side ran longer. Where the baseline froze
+no figure to compare against, the cell prints `—` instead of a zero that would
+render as a 100% saving.
 
 > Capture is complete, not truncated: a tool's whole input and output are stored
 > (up to 1 MiB per field), so anything a tool reads or writes — including
@@ -349,12 +388,15 @@ from conscio import ConsciousnessEngine, HostSensor
 from conscio.daemon import Daemon
 
 engine = ConsciousnessEngine("glm-5.1", storage_path="~/.conscio/live")
-engine.wake                                                 # opt in to autonomy (persisted)
-Daemon(engine, sensors=[HostSensor], interval=30).run     # perceive → reflect → act
+engine.wake()                                             # opt in to autonomy (persisted)
+Daemon(engine, sensors=[HostSensor()], interval=30).run()  # perceive → reflect → act
 ```
 
+`storage_path` accepts `str` or `Path` and expands `~`.
+
 `conscio-daemon --sensors host --interval 30` runs it standalone (add `--awake` to
-enable autonomy). Reference sensors `HostSensor` / `AgentSensor` ship as
+enable autonomy); `conscio awake` reaches an already-running daemon rather than
+waking a second engine of its own. Reference sensors `HostSensor` / `AgentSensor` ship as
 `conscio.sensors` entry points; write your own `SensorAdapter`.
 
 ### Structural cognition
@@ -385,9 +427,25 @@ read-only on the live `conscio.db`, no inherited trust, no network.
 
 ### Intercepter
 
-TV-DSL integration for host-side tool filtering and routing. Intercepter sits between
-the host and the tool registry, applying declarative rules to filter, redirect, or
-augment tool calls before they reach the engine.
+A model asked for `0.15 * 8000` will happily invent a number. Intercepter takes the
+`[INTERCEPT: ...]` expressions it emits and *evaluates* them — a restricted AST
+walker over arithmetic, comparisons, a fixed set of math functions (`sqrt`, `floor`,
+`log`, the trig family, `solve_linear`) and bound variables. No `eval`, no `exec`,
+no attribute access, no imports; expressions are length- and depth-capped.
+
+```python
+from conscio.agency.intercepter import Intercepter
+
+itc = Intercepter()
+itc.set_variable("rate", 0.15)
+itc.process("[INTERCEPT: rate * 8000]").text
+# '[INTERCEPT: rate * 8000] -> [RESULT: 1200.0]'
+```
+
+`attach_adapter(..., intercept_enabled=True)` wires it into the act pipeline as an
+`InterceptionLoop` around the inference adapter: the model emits a tag, gets the real
+answer back, and may revise — up to 3 iterations, each one an EventBus record.
+Origin: the Think-Vetor DSL concept (CromIA), reimplemented from scratch.
 
 ---
 
@@ -398,25 +456,30 @@ augment tool calls before they reach the engine.
                                                               │
   ConsciousnessEngine  (orchestrator · lifecycle · injection) │
    ├─ Witness        InnerMonologue · WorldModel · MetaCognition · GoalGenerator
-   ├─ Substrate      ContentStore (FTS5 BM25 + RRF) · VectorBackend + HybridRetriever (opt-in) · EventBus (38 event types) · FilterPipeline
+   ├─ Substrate      ContentStore (FTS5 BM25 + RRF) · VectorBackend + HybridRetriever (opt-in) · EventBus (41 event types) · FilterPipeline
    ├─ Continuity     SessionLifecycle (6-step handoff) · SessionRAG (optional)
    ├─ Metabolism     MetabolicContext · DreamCycle (release→prune→…→distill)
-   ├─ Coherence      CoherenceEngine · semantic reconciliation
+   ├─ Coherence      CoherenceEngine · semantic reconciliation · unmeasured dimensions named
    ├─ Structural     StructuralDistiller (graph → ranked signal; data, not code)
-   ├─ Evaluation evaluate — 5/6-axis rubric (accuracy·completeness·clarity·actionability·conciseness·output_quality)
-   ├─ Gates   decide · council · loop_gate · delivery_check · investigate
-   ├─ Pipelines acceptance_criteria · verify · continuous_loop ·
+   ├─ Evaluation     evaluate — 5/6-axis rubric (accuracy·completeness·clarity·
+   │                 actionability·conciseness·output_quality)
+   ├─ Gates          decide · council · loop_gate · delivery_check · investigate
+   ├─ Pipelines      acceptance_criteria · verify · continuous_loop ·
    │                 strategic_compact · ledger
-   ├─ Diagnostics context_budget · eval_harness · rules_distill
-   ├─ Harness  PromptZones (stable+volatile) · CheckpointChain ·
+   ├─ Diagnostics    context_budget · eval_harness · rules_distill
+   ├─ Harness        PromptZones (stable+volatile) · CheckpointChain ·
    │                 TokenAccount+CPM · FailureGovernor (6-type) ·
    │                 adaptive max_retries · skeptic skip (safe tools)
-   ├─ Adaptive prompt_complexity (full/compact/minimal) ·
+   ├─ Adaptive       prompt_complexity (full/compact/minimal) ·
    │                 auto-detect (--model auto) · FallbackAdapter
-   ├─ Memory  KnowledgeGraph · Hallways · WingManager · VectorBackend ·
+   ├─ Memory         KnowledgeGraph · Hallways · WingManager · VectorBackend ·
    │                 Deduplicator · EntityDetector · EmbeddingProvider ·
    │                 Miner · Migration (export/import tar.gz)
-   ├─ Intercepter TV-DSL tool filtering and routing
+   ├─ Observations   obs.db (FTS5, separate from conscio.db) · capture hooks ·
+   │                 recall_observations · compress_observations
+   ├─ Governor       prefix/landing measurement → cost-optimal window · baseline
+   │                 + report, priced per turn from the host's usage records
+   ├─ Intercepter    restricted-AST evaluation of [INTERCEPT: ...] tags
    └─ Embodiment     conscio-mcp: JSON-RPC 2.0 over stdio (stdlib only)
                                                               │
             act  ── opt-in agency · audited · gated ◀───────┘
@@ -509,10 +572,14 @@ effective cost to ~2–3×.
 ## Bench
 
 ```bash
-python -m conscio.bench --adapter mock                          # offline, deterministic
-python -m conscio.bench --adapter ollama:qwen3.5:0.8b --cycles 20
-python -m conscio.bench --adapter mock --skills 20              # skill-acquisition curve
+conscio-bench --adapter mock                          # offline, deterministic
+conscio-bench --adapter ollama:qwen3.5:0.8b --cycles 20
+conscio-bench --adapter mock --skills 20              # skill-acquisition curve
 ```
+
+Also runnable from a source checkout as `python3 -m conscio.bench`. Backends:
+`mock`, `ollama:<model>`, `llamacpp[:<name>]`, `lmstudio:<model>[@<base_url>]`,
+`openai:<model>[@<base_url>]`.
 
 Reports probe profile, decode tier, per-tier syntactic validity, Skeptic catch-rate,
 latency p50, and calibration. Baselines in `docs/bench/`.
@@ -544,10 +611,15 @@ for f in tests/test_*.py; do pytest "$f" -q; done
 pytest tests/test_agency_act.py -v    # a specific module
 ```
 
-SQLite in WAL mode, default `~/.conscio/data/` (`conscio.db` holds ContentStore +
-EventBus + ActionLedger + skills). **Always** call `engine.close` or use the `with`
-statement so WAL checkpoints flush. Session continuity writes a compact heartbeat
-(`<1.5KB`, auto-injected next session) plus a richer handoff and dated archives.
+SQLite in WAL mode. The engine's storage defaults to `~/.hermes/consciousness/`,
+where `conscio.db` holds ContentStore + EventBus + ActionLedger + skills and
+`obs.db` holds tool observations in a store of its own. Pass `storage_path=` (or
+`--storage`) to move it; the CLI and daemon additionally honour `$HERMES_HOME`,
+which the library default does not read. Cross-instance state — the knowledge
+graph, hallways, vectors, dedup, handoffs, the act sandbox — lives under
+`~/.conscio/`. **Always** call `engine.close()` or use the `with` statement so WAL
+checkpoints flush. Session continuity writes a compact heartbeat (`<1.5KB`,
+auto-injected next session) plus a richer handoff and dated archives.
 
 ---
 

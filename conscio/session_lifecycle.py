@@ -28,7 +28,8 @@ logger = logging.getLogger(__name__)
 # Config
 # ---------------------------------------------------------------------------
 
-HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+HERMES_HOME = Path(os.environ.get("HERMES_HOME",
+                                  Path.home() / ".hermes")).expanduser()
 SESSION_DB = HERMES_HOME / "state.db"
 HANDOFF_DIR = Path.home() / ".conscio" / "handoff"
 HANDOFF_PATH = HANDOFF_DIR / "_session_handoff.md"

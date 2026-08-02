@@ -205,7 +205,8 @@ def _storage(arg: str) -> str:
         return arg
     # Persistent default so awake/sleep state survives across CLI calls. Route
     # through HERMES_HOME (default ~/.hermes) to match session_lifecycle/session_rag.
-    home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+    home = Path(os.environ.get("HERMES_HOME",
+                               Path.home() / ".hermes")).expanduser()
     return str(home / "consciousness")
 
 
