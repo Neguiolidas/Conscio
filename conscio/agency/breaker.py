@@ -68,6 +68,13 @@ class CircuitBreaker:
         return self.max_retries
 
     def should_trip(self, goal_fp: str, task_type: str = "") -> bool:
+        # BUG-49: should_trip only checked consecutive_failures, ignoring
+        # a manual trip() that placed the goal in quarantine. After trip()
+        # the goal is quarantined but consecutive_failures may still be 0,
+        # so should_trip returned False — the agent kept acting on a goal
+        # that was explicitly quarantined. Check is_quarantined first.
+        if self.is_quarantined(goal_fp):
+            return True
         return (self.ledger.consecutive_failures(goal_fp)
                 >= self.threshold(task_type))
 

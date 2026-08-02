@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -121,7 +122,12 @@ class EventBus:
         self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.db = sqlite3.connect(str(self.db_path))
+        # BUG-47: SQLite objects are bound to the thread that created them.
+        # allow cross-thread use and serialize writes with a lock so
+        # concurrent emit() calls don't corrupt the WAL.
+        self._lock = threading.Lock()
+        self.db = sqlite3.connect(str(self.db_path),
+                                   check_same_thread=False)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.row_factory = sqlite3.Row
@@ -200,40 +206,42 @@ class EventBus:
         data_hash = hashlib.sha256(data_json.encode()).hexdigest()
         timestamp = naive_utcnow().isoformat()
 
-        # Check for recent duplicate (same type + hash within dedup window)
-        cutoff = (naive_utcnow() - timedelta(seconds=DEDUP_WINDOW_SECONDS)).isoformat()
-        existing = self.db.execute(
-            """
-            SELECT id FROM events
-            WHERE type = ? AND data_hash = ? AND timestamp >= ?
-            LIMIT 1
-            """,
-            (type, data_hash, cutoff),
-        ).fetchone()
+        # BUG-47: serialize concurrent writes across threads.
+        with self._lock:
+            # Check for recent duplicate (same type + hash within dedup window)
+            cutoff = (naive_utcnow() - timedelta(seconds=DEDUP_WINDOW_SECONDS)).isoformat()
+            existing = self.db.execute(
+                """
+                SELECT id FROM events
+                WHERE type = ? AND data_hash = ? AND timestamp >= ?
+                LIMIT 1
+                """,
+                (type, data_hash, cutoff),
+            ).fetchone()
 
-        if existing:
-            # Suppressed, not stored: there is no second row to flag, so the
-            # count goes on the row that survived. (is_duplicate is a different
-            # thing — a soft-delete mark that hides a row from query() and
-            # feeds compact(); flagging the survivor would hide the original.)
-            self.db.execute(
-                "UPDATE events SET duplicates_suppressed ="
-                " duplicates_suppressed + 1 WHERE id = ?",
-                (existing["id"],),
+            if existing:
+                # Suppressed, not stored: there is no second row to flag, so the
+                # count goes on the row that survived. (is_duplicate is a different
+                # thing — a soft-delete mark that hides a row from query() and
+                # feeds compact(); flagging the survivor would hide the original.)
+                self.db.execute(
+                    "UPDATE events SET duplicates_suppressed ="
+                    " duplicates_suppressed + 1 WHERE id = ?",
+                    (existing["id"],),
+                )
+                self.db.commit()
+                return int(existing["id"])
+
+            cursor = self.db.execute(
+                """
+                INSERT INTO events (type, category, data, priority, data_hash, project_dir, attribution_confidence, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (type, category, data_json, priority, data_hash, project_dir, attribution_confidence, timestamp),
             )
             self.db.commit()
-            return int(existing["id"])
 
-        cursor = self.db.execute(
-            """
-            INSERT INTO events (type, category, data, priority, data_hash, project_dir, attribution_confidence, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (type, category, data_json, priority, data_hash, project_dir, attribution_confidence, timestamp),
-        )
-        self.db.commit()
-
-        return int(cursor.lastrowid or 0)
+            return int(cursor.lastrowid or 0)
 
     def emit_batch(self, events: list[dict]) -> list[int]:
         """

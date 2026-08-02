@@ -58,7 +58,13 @@ def _similarity(a: str, b: str) -> float:
 
 def _rate(row: sqlite3.Row) -> float:
     total = row["successes"] + row["failures"]
-    return row["successes"] / total if total else 0.0
+    # BUG-40: a skill with no trials (successes=0, failures=0) is a freshly
+    # imported skill, not a failed one. Return 1.0 so it passes the
+    # MIN_SERVE_RATE gate — the first local settle() will record real
+    # evidence and the rate will converge to its true value.
+    if total == 0:
+        return 1.0
+    return row["successes"] / total
 
 
 class SkillLibrary:
