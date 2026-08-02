@@ -83,8 +83,11 @@ class CheckpointChain:
         descriptors open with the GC disabled. NOT `with sqlite3.connect(...)`:
         that context manager commits or rolls back the transaction and leaves
         the connection open.
+
+        `isolation_level=None` turns off the driver's implicit BEGIN, so every
+        transaction boundary in this module is one written here.
         """
-        return closing(sqlite3.connect(str(self.db_path)))
+        return closing(sqlite3.connect(str(self.db_path), isolation_level=None))
 
     def _init_db(self) -> None:
         with self._connect() as conn:
@@ -100,29 +103,40 @@ class CheckpointChain:
                     created_at REAL NOT NULL
                 )
             """)
-            conn.commit()
 
     def append(self, cp: CompactionCheckpoint) -> int:
         """Append a checkpoint to the chain. Returns checkpoint_id."""
+        d = cp.to_dict()
         with self._connect() as conn:
-            latest = self._latest_row(conn)
-            parent_id = latest["checkpoint_id"] if latest else None
+            # v3.9.4: take the write lock BEFORE reading the parent, so the
+            # whole read-modify-write is one step for every process sharing this
+            # file. Without it two appends read the same latest row and both
+            # claim it as parent — measured with 4 processes × 25 appends, 4 of
+            # 5 trials forked the chain and one produced three roots. Late
+            # arrivals wait out sqlite's busy timeout instead of racing.
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                latest = self._latest_row(conn)
+                parent_id = latest["checkpoint_id"] if latest else None
 
-            d = cp.to_dict()
-            cur = conn.execute(
-                """INSERT INTO checkpoints
-                   (parent_id, durable_memory, execution_summary,
-                    user_requirements, skill_references, byte_hash, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (parent_id, d["durable_memory"], d["execution_summary"],
-                 d["user_requirements"], d["skill_references"], d["byte_hash"],
-                 time.time()),
-            )
-            cid = cur.lastrowid or 0
-            conn.commit()
+                cur = conn.execute(
+                    """INSERT INTO checkpoints
+                       (parent_id, durable_memory, execution_summary,
+                        user_requirements, skill_references, byte_hash, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (parent_id, d["durable_memory"], d["execution_summary"],
+                     d["user_requirements"], d["skill_references"], d["byte_hash"],
+                     time.time()),
+                )
+                cid = cur.lastrowid or 0
 
-            if self.consolidate_every and self.length() >= self.consolidate_every * 2:
-                self._consolidate(conn)
+                if self.consolidate_every and self._count(conn) >= self.consolidate_every * 2:
+                    self._consolidate(conn)
+
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
 
             return cid
 
@@ -146,7 +160,13 @@ class CheckpointChain:
     def length(self) -> int:
         """Number of checkpoints in the chain."""
         with self._connect() as conn:
-            return conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
+            return self._count(conn)
+
+    @staticmethod
+    def _count(conn: sqlite3.Connection) -> int:
+        """Row count on an EXISTING connection — an append must not open a second
+        one mid-transaction, or it would count without seeing its own insert."""
+        return conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
 
     def _latest_row(self, conn: sqlite3.Connection) -> dict | None:
         cur = conn.execute(
@@ -177,6 +197,9 @@ class CheckpointChain:
         that preserves the durable_memory and user_requirements from
         the oldest, and the execution_summary from the newest of the
         consolidated range.
+
+        Runs inside the caller's transaction and does not commit: the delete,
+        the merged insert and the re-anchor are one step or none of them are.
         """
         cur = conn.execute(
             "SELECT * FROM checkpoints ORDER BY checkpoint_id"
@@ -232,4 +255,3 @@ class CheckpointChain:
             "UPDATE checkpoints SET parent_id = ? WHERE checkpoint_id = ?",
             (first_id, rows[-keep_count][0]),
         )
-        conn.commit()

@@ -16,6 +16,8 @@ from pathlib import Path
 
 from .guards import atomic_write_text, read_json_dict
 
+MIN_CALIBRATION_SAMPLES = 5   # below this, calibration_score() is a prior, not a measurement
+
 
 class MetaCognition:
     """
@@ -106,7 +108,7 @@ class MetaCognition:
 
     def accuracy(self, task_type: str = "") -> float:
         """Get accuracy (success rate) for completed tasks."""
-        entries = [e for e in self._data["confidence_history"] if e["outcome"] != "pending"]
+        entries = self._resolved_entries()
         if task_type:
             entries = [e for e in entries if e["task_type"] == task_type]
         if not entries:
@@ -121,8 +123,8 @@ class MetaCognition:
         Perfect calibration: confidence matches accuracy.
         Returns 0-1 where 1 = perfectly calibrated.
         """
-        entries = [e for e in self._data["confidence_history"] if e["outcome"] != "pending"]
-        if len(entries) < 5:
+        entries = self._resolved_entries()
+        if len(entries) < MIN_CALIBRATION_SAMPLES:
             return 0.5  # Not enough data
 
         # Simple calibration: compare average confidence with accuracy
@@ -131,6 +133,19 @@ class MetaCognition:
         # Distance from perfect calibration (0 = perfect, 1 = worst)
         distance = abs(avg_conf - acc)
         return 1.0 - distance
+
+    def has_calibration_evidence(self) -> bool:
+        """True when calibration_score() reflects outcomes rather than the 0.5 prior.
+
+        v3.9.4: the 0.5 returned below MIN_CALIBRATION_SAMPLES is indistinguishable
+        from a genuinely mediocre calibration. Callers that care about the
+        difference (coherence's `unmeasured`) ask here instead of guessing.
+        """
+        return len(self._resolved_entries()) >= MIN_CALIBRATION_SAMPLES
+
+    def _resolved_entries(self) -> list[dict]:
+        """Confidence records whose outcome is known — pending ones prove nothing."""
+        return [e for e in self._data["confidence_history"] if e["outcome"] != "pending"]
 
     # --- Blind Spot Detection ---
 

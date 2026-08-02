@@ -175,3 +175,24 @@ def test_an_unknown_id_still_answers_none(evo):
     assert evo.reject("evo_nope") is None
     assert evo.mark_applied("evo_nope") is None
     assert evo.mark_rolled_back("evo_nope") is None
+
+
+def test_a_failed_save_leaves_the_previous_proposals_readable(evo, monkeypatch,
+                                                              tmp_path):
+    """v3.9.4: `_load` degrades an unreadable file to [], so a half-written save
+    does not look corrupt — it looks like a mind with no proposals. The write is
+    atomic, so a save that dies leaves the last good file in place.
+    """
+    evo.propose_skill_create("keeper", "desc", "sketch", "why")
+
+    def _die(_path, _text):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr("conscio.auto_evolution.atomic_write_text", _die)
+    with pytest.raises(OSError):
+        evo.propose_skill_create("doomed", "desc", "sketch", "why")
+
+    reopened = AutoEvolution(storage_path=tmp_path)
+    surviving = reopened.pending_proposals()
+    assert len(surviving) == 1
+    assert surviving[0].changes["skill_name"] == "keeper"
