@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [3.9.4] - 2026-08-01 — Reachable Daemon
+## [3.9.4] - 2026-08-02 — Reachable Daemon
 
 A second field report, from an operator trying to turn Awake on and keep it on.
 Three defects made the daemon look like it was ignoring its operator, and a
