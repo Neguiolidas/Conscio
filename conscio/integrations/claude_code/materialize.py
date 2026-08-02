@@ -9,10 +9,18 @@ import shlex
 import shutil
 from pathlib import Path
 
+from ... import __version__
 from ...installer import hostcfg, spaces
 
 _HOOK_NAME = "conscio_awareness.py"
 _CAPTURE_HOOK = "conscio_deepminer.py"
+_CAPTURE_SIDECAR = "conscio_deepminer.json"
+# obsstore is copied next to the hook rather than referenced inside the install
+# tree. A path into site-packages dangles on every pipx upgrade, editable
+# switch or venv rebuild, and the hook fails open by design — so a stale path
+# does not raise, it just stops recording, silently and for good. A copy shares
+# the hook's own lifetime, and the installer refreshes it on every run.
+_OBSSTORE_COPY = "conscio_obsstore.py"
 # event name in settings.json -> argv token the hook dispatches on. The harness
 # sends no event name on stdin, so it has to travel in the command line.
 _CAPTURE_EVENTS = {
@@ -39,6 +47,34 @@ def claude_json_path(override=None) -> Path:
     if override is not None:
         return Path(override)
     return Path(os.environ.get("CLAUDE_JSON", str(Path.home() / ".claude.json")))
+
+
+def obsstore_src() -> Path:
+    """The packaged obsstore.py this install would vendor to the hook."""
+    return Path(__file__).resolve().parents[2] / "obsstore.py"
+
+
+def read_binding(claude_dir: Path | None = None) -> dict | None:
+    """What the installed capture hook is actually bound to, or None.
+
+    The sidecar is the only record of where observations land: the CLI's own
+    default storage is a different space entirely, so reading obs.db from it
+    reports on a store nothing writes to. `ok` is False when the vendored
+    obsstore has gone missing — the one failure the hook cannot report itself,
+    since it fails open on purpose.
+    """
+    path = _claude_dir(claude_dir) / "hooks" / _CAPTURE_SIDECAR
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not data.get("storage"):
+        return None
+    obsstore = Path(data["obsstore"]) if data.get("obsstore") else None
+    return {"storage": Path(data["storage"]),
+            "obsstore": obsstore,
+            "version": str(data.get("version", "")),
+            "ok": bool(obsstore is not None and obsstore.exists())}
 
 
 def _copy_tree(src: Path, dst: Path) -> int:
@@ -71,9 +107,14 @@ def materialize(slug: str, *, flags: dict, model, ts: str, io=None,
     shutil.copy2(a / "hooks" / _CAPTURE_HOOK, capture_dst)
     # The hook loads obsstore by absolute path so it never imports the conscio
     # package (~0.28s) on a path that runs once per tool call.
+    obsstore_dst = cdir / "hooks" / _OBSSTORE_COPY
+    shutil.copy2(obsstore_src(), obsstore_dst)
     capture_dst.with_suffix(".json").write_text(json.dumps({
-        "obsstore": str(Path(__file__).resolve().parents[2] / "obsstore.py"),
+        "obsstore": str(obsstore_dst),
         "storage": str(spaces.space_dir(slug)),
+        # Diagnostic only. The hook never reads it; `govern status` uses it to
+        # say how old the vendored copy beside it is.
+        "version": __version__,
     }, indent=2), encoding="utf-8")
 
     backups = []

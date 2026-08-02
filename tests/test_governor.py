@@ -651,3 +651,81 @@ def test_compaction_floor_takes_the_worst_landing_not_the_best(tmp_path):
     _sess("low", 30_000)
     _sess("high", 115_000)
     assert governor.compaction_floor(tmp_path / "projects") == 115_000
+
+
+# ── v3.9.4: status must report the obs.db that is actually written ──────
+#
+# `govern status` read obs.db from the CLI's own default storage. The capture
+# hook writes into the space it was bound to at install time, a different
+# directory entirely — so status described a database nothing writes to and
+# printed 0.0 MB while 1.3 MB of observations sat in the real one. Reading that
+# as "capture is dead" is the correct reading of the number, and it was wrong.
+
+
+def _bind_capture(tmp_path, storage, *, obsstore_exists=True):
+    """Write the sidecar a real install writes, under CLAUDE_DIR."""
+    hooks = tmp_path / "hooks"
+    hooks.mkdir(parents=True, exist_ok=True)
+    obsstore = hooks / "conscio_obsstore.py"
+    if obsstore_exists:
+        obsstore.write_text("# vendored\n", encoding="utf-8")
+    storage.mkdir(parents=True, exist_ok=True)
+    (hooks / "conscio_deepminer.json").write_text(json.dumps({
+        "obsstore": str(obsstore), "storage": str(storage),
+        "version": "3.9.4"}), encoding="utf-8")
+    return storage
+
+
+def _obs_of_size(space, megabytes):
+    (space / "obs.db").write_bytes(b"\0" * int(megabytes * 1_048_576))
+
+
+def test_status_reads_obs_db_from_the_bound_capture_space(
+        tmp_path, monkeypatch, capsys):
+    cli_space = _wire(tmp_path, monkeypatch)
+    monkeypatch.setenv("HERMES_HOME", str(cli_space.parent / "hermes"))
+    cli_space.mkdir(parents=True, exist_ok=True)
+    _obs_of_size(cli_space, 0.0)                       # the wrong one, empty
+    capture = _bind_capture(tmp_path, tmp_path / "capture-space")
+    _obs_of_size(capture, 2.0)                         # the one being written
+
+    assert _cli()._cmd_govern("status", None, "", False) == 0
+    out = capsys.readouterr().out
+    assert "2.0 MB" in out
+    assert "capture-space" in out
+    assert "BROKEN" not in out
+
+
+def test_status_names_the_repair_when_the_hook_cannot_record(
+        tmp_path, monkeypatch, capsys):
+    """The hook fails open, so a missing obsstore is indistinguishable from a
+    quiet session. status is the only place that can say it out loud."""
+    _wire(tmp_path, monkeypatch)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
+    _bind_capture(tmp_path, tmp_path / "capture-space", obsstore_exists=False)
+
+    assert _cli()._cmd_govern("status", None, "", False) == 0
+    out = capsys.readouterr().out
+    assert "BROKEN" in out and "conscio init --repair" in out
+
+
+def test_an_explicit_storage_still_wins(tmp_path, monkeypatch, capsys):
+    """Naming a path means that path — discovery is only for the default."""
+    _wire(tmp_path, monkeypatch)
+    _bind_capture(tmp_path, tmp_path / "capture-space")
+    _obs_of_size(tmp_path / "capture-space", 2.0)
+    chosen = tmp_path / "chosen"
+    chosen.mkdir()
+    _obs_of_size(chosen, 3.0)
+
+    assert _cli()._cmd_govern("status", None, str(chosen), False) == 0
+    out = capsys.readouterr().out
+    assert "3.0 MB" in out and "capture-space" not in out
+
+
+def test_status_works_with_no_bundle_installed(tmp_path, monkeypatch, capsys):
+    _wire(tmp_path, monkeypatch)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
+    assert _cli()._cmd_govern("status", None, "", False) == 0
+    out = capsys.readouterr().out
+    assert "obs.db" in out and "BROKEN" not in out
