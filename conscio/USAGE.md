@@ -112,8 +112,15 @@ review channel. Payload cap 64KB, retention 7 days after read.
 ```
 
 Fields: `id` (recommended — idempotency key), `type` (required),
-`category` (required), `data` (required — JSON-serializable payload),
-`ts` (optional — epoch seconds, server stamps when absent).
+`category` (optional — defaults to `type`), `data` (required — JSON-serializable
+payload, also accepted as `payload`), `ts` (optional — epoch seconds, server
+stamps when absent), `source` (optional — defaults to `"host"` when absent).
+
+> **Aliases (v3.9.5+):** The server normalizes host-side aliases before
+> validation: `data` is mapped to `payload`, `source` defaults to `"host"`,
+> and `category` defaults to `type`. Canonical events with explicit `source`
+> and `payload` pass through unchanged. This fixes a crash where hosts that
+> predate the schema sent `data` instead of `payload` and omitted `source`.
 
 A duplicate `id` returns the exact prior result — retries never inflate
 the world model or the event log.
