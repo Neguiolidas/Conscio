@@ -14,16 +14,12 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.9.5` "Latch and Release":** a global lockdown is no
-longer able to outlive the circuit breaker that raised it, so a daemon that once
-hit quorum stops being paralysed forever; the failure-rate brake is reported for
-the heartbeat it belongs to instead of as permanent status; every path written
-with a `~` — `storage_path`, `HERMES_HOME`, `CONSCIO_SESSION_DB`,
-`CONSCIO_VAULT_DIR`, `CLAUDE_DIR` and eleven other env vars — resolves to the
-directory the caller meant rather than one named `~` in the working directory;
-and `conscio.feed` / `conscio.note` no longer crash the MCP server when the host
-sends `data` instead of `payload` — a normalization layer maps the aliases
-before validation, leaving canonical events untouched.
+**Latest release — `v3.9.6` "Deep Audit":** the automatic skill-generation
+pipeline that had been silently broken since v3.9 is now fixed end to end —
+executed actions are captured by `distill()`, imported skills with no local
+trials are served (not filtered), manual quarantines apply instantly to
+`should_trip()`, and the `EventBus` is thread-safe so concurrent emits never
+crash.  (See also ["v3.9.5" "Latch and Release"](CHANGELOG.md#395---2026-08-02)
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 

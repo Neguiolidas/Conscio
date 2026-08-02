@@ -7,7 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [3.9.5] - 2026-08-02 — Latch and Release
+## [3.9.6] - 2026-08-02 — Deep Audit
+
+A thorough audit of every public module uncovered four bugs that had been broken
+since v3.9. **BUG-48:** actions recorded with `status=executed` never appeared in
+`executed_since` because `ok` stayed `NULL` when it should have defaulted to `1` —
+`distill()` read that feed and was producing **zero skills**. **BUG-40:** skills
+imported via `graft()` with `successes=0, failures=0` had a rate of `0.0` and were
+filtered by `few_shot()` — the agent guarded its DB but never served a single
+imported skill. **BUG-49:** `should_trip()` checked only `consecutive_failures` and
+ignored a manual `trip()` quarantine — the agent kept acting on goals it had
+explicitly barred. **BUG-47:** the `EventBus` was built for a single thread and
+crashed on any concurrent `emit()`.
+
+### Added
+- 10 regression tests (test_audit_bugs.py) verifying BUG-40/47/48/49
+
+### Fixed
+- **BUG-48:** `ActionLedger.record(status='executed')` now defaults `ok=True` when
+  the caller signals success and does not pass an explicit ok value
+- **BUG-40:** `SkillLibrary._rate(0/0)` returns `1.0` (fresh import, not failure)
+  so that freshly imported skills pass the `MIN_SERVE_RATE` gate
+- **BUG-49:** `CircuitBreaker.should_trip()` checks `is_quarantined()` before the
+  fail-count threshold, so a manual trip() is never silently ignored
+- **BUG-47:** `EventBus` uses `check_same_thread=False` and a `threading.Lock` so
+  that concurrent emits never crash
+
+## [3.9.5] - 2026-08-02
 
 A third report from the field, from a daemon that was alive and doing nothing.
 It came back from a restart with the right adapter and the right mode, said so
