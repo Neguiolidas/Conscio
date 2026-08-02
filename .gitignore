@@ -61,3 +61,8 @@ docs/superpowers/
 
 # Claude Code harness reference — internal research, local only
 docs/reference/claude-code-harness.md
+
+# Local Claude Code state: the governor writes the context ceiling (and a dated
+# backup) into settings.local.json, which is per-machine by definition.
+.claude/settings.local.json*
+.claude/worktrees/

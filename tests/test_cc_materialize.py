@@ -23,10 +23,10 @@ def _run(tmp_path, **kw):
 def test_materialize_copies_commands_skill_hook(tmp_path):
     summ = _run(tmp_path)
     cdir = tmp_path / "claude"
-    assert len(list((cdir / "commands" / "conscio").glob("*.md"))) == 10
+    assert len(list((cdir / "commands" / "conscio").glob("*.md"))) == 11
     assert (cdir / "skills" / "conscio" / "SKILL.md").is_file()
     assert (cdir / "hooks" / "conscio_awareness.py").is_file()
-    assert summ["commands"] == 10 and summ["skill"] and summ["hook"]
+    assert summ["commands"] == 11 and summ["skill"] and summ["hook"]
 
 
 def test_materialize_registers_mcp_with_storage_and_vault(tmp_path):
@@ -53,6 +53,73 @@ def test_materialize_installs_the_capture_hook_and_its_sidecar(tmp_path):
     assert cfg["obsstore"].endswith("obsstore.py")
     assert Path(cfg["obsstore"]).is_file()
     assert str(spaces.space_dir("host-a")) == cfg["storage"]
+
+
+class TestObsstoreIsVendored:
+    """The sidecar used to point at obsstore.py inside the install tree. That
+    path dangles on a pipx upgrade, an editable switch, or a venv rebuild — and
+    the hook fails open, so it stops recording in silence. A copy beside the
+    hook cannot be invalidated by anything that touches the install."""
+
+    def test_the_copy_lives_beside_the_hook(self, tmp_path):
+        _run(tmp_path)
+        hooks = tmp_path / "claude" / "hooks"
+        cfg = json.loads((hooks / "conscio_deepminer.json").read_text())
+        assert Path(cfg["obsstore"]).parent == hooks
+        assert (hooks / "conscio_obsstore.py").is_file()
+
+    def test_the_copy_is_the_packaged_module(self, tmp_path):
+        _run(tmp_path)
+        vendored = (tmp_path / "claude" / "hooks" / "conscio_obsstore.py")
+        assert (vendored.read_bytes()
+                == materialize.obsstore_src().read_bytes())
+
+    def test_the_copy_loads_standalone(self, tmp_path):
+        """The hook loads it by absolute path, never as part of the package."""
+        import importlib.util
+        _run(tmp_path)
+        path = tmp_path / "claude" / "hooks" / "conscio_obsstore.py"
+        spec = importlib.util.spec_from_file_location("_vendored_obs", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        assert callable(mod.connect) and callable(mod.put_observation)
+
+    def test_reinstall_refreshes_a_stale_copy(self, tmp_path):
+        _run(tmp_path)
+        vendored = tmp_path / "claude" / "hooks" / "conscio_obsstore.py"
+        vendored.write_text("# stale build\n", encoding="utf-8")
+        _run(tmp_path)
+        assert vendored.read_bytes() == materialize.obsstore_src().read_bytes()
+
+
+class TestReadBinding:
+    """`govern status` asks the sidecar where observations land, because the
+    CLI's own storage is a different space and reporting its obs.db describes a
+    database nothing writes to."""
+
+    def test_reports_the_bound_space_and_a_healthy_hook(self, tmp_path):
+        _run(tmp_path)
+        b = materialize.read_binding(tmp_path / "claude")
+        assert b is not None
+        assert b["storage"] == spaces.space_dir("host-a")
+        assert b["ok"] is True
+        assert b["version"]
+
+    def test_a_dangling_obsstore_is_not_ok(self, tmp_path):
+        """The one failure the hook cannot report itself: it fails open, so a
+        missing obsstore looks exactly like a session with no tool calls."""
+        _run(tmp_path)
+        (tmp_path / "claude" / "hooks" / "conscio_obsstore.py").unlink()
+        assert materialize.read_binding(tmp_path / "claude")["ok"] is False
+
+    def test_no_bundle_installed_is_none_not_an_error(self, tmp_path):
+        assert materialize.read_binding(tmp_path / "nothing-here") is None
+
+    def test_a_corrupt_sidecar_is_none_not_an_error(self, tmp_path):
+        _run(tmp_path)
+        sidecar = tmp_path / "claude" / "hooks" / "conscio_deepminer.json"
+        sidecar.write_text("{not json", encoding="utf-8")
+        assert materialize.read_binding(tmp_path / "claude") is None
 
 
 def test_materialize_registers_all_three_capture_events(tmp_path):

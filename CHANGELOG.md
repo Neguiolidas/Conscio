@@ -11,7 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 A second field report, from an operator trying to turn Awake on and keep it on.
 Three defects made the daemon look like it was ignoring its operator, and a
-fourth left it asking for work no tool could do.
+fourth left it asking for work no tool could do. Two more, found while reading
+the governor's own numbers, made observation capture unreadable: one where the
+report described the wrong database, and one where the hook could stop recording
+without ever saying so.
 
 ### Added
 
@@ -25,6 +28,10 @@ fourth left it asking for work no tool could do.
   leave the goal exactly as unsatisfiable as it was. It is wired into the live
   act and promotion registries only: a trial replays another instance's skill,
   and must not be able to prune this instance's memory.
+- **`/conscio:govern` slash command**, so the ceiling, the baseline and the
+  capture hook's health are reachable without remembering the CLI. It reads
+  status by default and passes an explicit action through; `on`/`off` rewrite
+  settings, so it never runs them as a follow-up to a status check.
 
 ### Fixed
 
@@ -50,6 +57,23 @@ fourth left it asking for work no tool could do.
   resolved the stored goal by description while the store deduped by key, so a
   shifted target returned the discarded duplicate. It now resolves by the same
   key, and returns `None` when nothing is tracked rather than naming a phantom.
+- **The capture hook's obsstore path could dangle, and then it recorded nothing
+  forever, in silence.** The sidecar pointed at `obsstore.py` inside the install
+  tree, a path that dies on any pipx upgrade, editable switch or venv rebuild.
+  The hook fails open on purpose — it must never break a tool call — so a dead
+  path does not raise: it exits 0 with no output, and a session with a broken
+  hook looks exactly like a session with no tool calls. The installer now copies
+  `obsstore.py` beside the hook, where nothing that touches the install can
+  invalidate it, and refreshes the copy on every run. `govern status` prints a
+  `Capture hook BROKEN` line naming the repair when the copy is missing, since
+  that check is the only signal that exists.
+- **`govern status` reported obs.db from a space nothing writes to.** It read the
+  CLI's own storage (`~/.hermes/consciousness`), while the Claude Code hook
+  writes to its bound capture space — so a store with 1.3 MB of observations was
+  reported as `0.0 MB`, which reads as "capture is broken" when capture is fine.
+  Status now asks the hook binding where observations land and names the space it
+  is reporting on. An explicit `--storage` still wins: naming a path means that
+  path.
 
 ---
 

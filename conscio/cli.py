@@ -305,6 +305,33 @@ def _cmd_council(question: str, context: str, options: str, model: str,
     return 0
 
 
+def _capture_space(space: str, storage_arg: str) -> tuple[str, str, str]:
+    """Where observations actually land, how to name it, and any hook warning.
+
+    The capture hook writes obs.db into the space it was bound to at install
+    time, which is not the CLI's default storage. Reading the CLI's own space
+    reports the size of a database nothing writes to — a near-empty file that
+    reads as "capture is dead" when capture is fine, and as "0.0 MB" either
+    way. An explicit --storage still wins: the operator naming a path means
+    that path.
+    """
+    if storage_arg:
+        return space, "explicit --storage", ""
+    try:
+        from .integrations.claude_code.materialize import read_binding
+        binding = read_binding()
+    except Exception:            # never let a diagnostic break `govern status`
+        binding = None
+    if binding is None:
+        return space, "cli storage — no capture hook installed", ""
+    note = ""
+    if not binding["ok"]:
+        note = (f"BROKEN — obsstore missing at {binding['obsstore']}. "
+                f"It records nothing until you run `conscio init --repair`.")
+    return (str(binding["storage"]),
+            f"capture space {Path(binding['storage']).name}", note)
+
+
 def _cmd_govern(action: str, window: int | None, storage: str,
                 all_sessions: bool) -> int:
     """Measure, apply, or report on the context ceiling."""
@@ -361,9 +388,12 @@ def _cmd_govern(action: str, window: int | None, storage: str,
                 mark = "  <- recommended" if w == best else ""
                 print(f"  {w:>9,}  {cost:>14,.0f}{mark}")
         else:
-            obs = Path(space) / "obs.db"
+            obs_dir, where, hook_note = _capture_space(space, storage)
+            obs = Path(obs_dir) / "obs.db"
             size = obs.stat().st_size if obs.exists() else 0
-            print(f"obs.db          {size / 1_048_576:>10,.1f} MB")
+            print(f"obs.db          {size / 1_048_576:>10,.1f} MB  ({where})")
+            if hook_note:
+                print(f"Capture hook    {hook_note}")
             print(f"Baseline        "
                   f"{'recorded' if governor.read_baseline(space) else 'none'}")
         return 0
