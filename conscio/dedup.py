@@ -136,5 +136,8 @@ class Deduplicator:
 
     def dump(self, target_path: str | Path) -> None:
         dst = sqlite3.connect(str(target_path))
-        self._conn_get().backup(dst)
-        dst.close()
+        try:
+            with self._lock:                 # same shared connection as everything else
+                self._conn_get().backup(dst)
+        finally:
+            dst.close()

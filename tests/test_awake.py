@@ -18,6 +18,7 @@ from conscio.agency.adapter import MockAdapter
 from conscio.agency.loop import ActBudget
 from conscio.content_layer import _RAG_DISABLED
 from conscio.context_manager import ConsciousnessState
+from conscio.dreaming import DreamRecommendation
 from conscio.engine import ConsciousnessEngine
 
 _PROBES = [
@@ -239,3 +240,58 @@ def test_act_lockdown_does_not_clobber_persisted_awake(tmp_path):
         assert reopened.awake is True        # persisted awake survived lockdown
     finally:
         reopened.close()
+
+
+def _record_dreams(eng) -> list:
+    """Replace dream() with a recorder — the point under test is whether run()
+    reaches it, not what a dream does."""
+    seen: list = []
+    eng.dream = lambda *a, **k: seen.append(1)            # type: ignore[method-assign]
+    return seen
+
+
+def _recommend_dream_after_reflect(eng) -> None:
+    """reflect() computes dream_recommended, so setting it beforehand is
+    erased. Let the real reflect run, then force its verdict — that is the
+    production order: reflect -> recommendation -> dream."""
+    real_reflect = eng.reflect
+
+    def reflect_then_recommend(*a, **k):
+        out = real_reflect(*a, **k)
+        eng.dream_recommended = DreamRecommendation(True, "epistemic", 0.4)
+        return out
+
+    eng.reflect = reflect_then_recommend                  # type: ignore[method-assign]
+
+
+def test_run_without_adapter_still_dreams_when_recommended(tmp_path):
+    """v3.9.4: housekeeping is not autonomy.
+
+    An awake host with no inference backend reflects every cycle — and every
+    reflection writes to the ledgers the dream prunes. DreamCycle makes no
+    model call, so gating it behind an adapter only makes those ledgers grow.
+    """
+    eng = _engine(tmp_path)
+    dreams = _record_dreams(eng)
+    _recommend_dream_after_reflect(eng)
+    try:
+        eng.wake()
+        report = eng.run()
+        assert report.stopped == "no adapter attached"
+        assert dreams == [1]
+    finally:
+        eng.close()
+
+
+def test_run_asleep_never_dreams(tmp_path):
+    """R9 is unchanged: asleep means ZERO arbiter/act/dream, even when the
+    dream is recommended. The ledgers stay bounded at their writer instead."""
+    eng = _engine(tmp_path)
+    dreams = _record_dreams(eng)
+    _recommend_dream_after_reflect(eng)
+    try:
+        report = eng.run()
+        assert report.stopped == "asleep"
+        assert dreams == []
+    finally:
+        eng.close()

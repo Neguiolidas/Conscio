@@ -19,6 +19,8 @@ import shutil
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from conscio.auto_evolution import ProposalStatus
+
 if TYPE_CHECKING:
     from conscio.engine import ConsciousnessEngine
 
@@ -493,10 +495,17 @@ def delivery_check(engine: ConsciousnessEngine) -> dict:
     if rat_hits >= 2:
         blockers.append(f"Rationalization detected: {rat_hits} note(s) contain self-deception patterns")
 
-    # 2. Stale proposals
-    pending = engine.evolution.pending_proposals()
+    # 2. Stale proposals — PENDING *and* APPROVED-but-never-applied (v3.9.4).
+    # approve() moves a proposal out of PENDING, so a crash between approve and
+    # mark_applied left it unfinished and unseen by this gate forever.
+    unresolved = engine.evolution.unresolved_proposals()
+    pending = [p for p in unresolved if p.status is ProposalStatus.PENDING]
+    approved = [p for p in unresolved if p.status is ProposalStatus.APPROVED]
     if pending:
         blockers.append(f"{len(pending)} pending evolution proposal(s) not resolved")
+    if approved:
+        blockers.append(
+            f"{len(approved)} approved evolution proposal(s) never applied")
 
     # 3. Disk space
     try:
@@ -513,7 +522,7 @@ def delivery_check(engine: ConsciousnessEngine) -> dict:
         "pass": passed,
         "blockers": blockers,
         "rationalization_hits": rat_hits,
-        "stale_proposals": len(pending),
+        "stale_proposals": len(unresolved),
         "disk_free_gb": round(free_gb, 3) if free_gb >= 0 else -1.0,
     }
 

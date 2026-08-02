@@ -339,3 +339,76 @@ class TestEdgeCases:
 
         s = tracker.stats()
         assert s["total_recordings"] == 200
+
+
+# --- the ledger has to bound itself (v3.9.4) ---
+
+def test_the_ledger_bounds_itself_without_a_dream(tmp_path):
+    """Field report: 733k rows in one install's token ledger.
+
+    ``compact()`` is only ever called from the dream, and the dream is gated
+    behind autonomy — an asleep daemon still reflects, so it still writes here,
+    and nothing ever prunes. A store whose only pruner is optional is unbounded.
+    """
+    t = TokenTracker(db_path=tmp_path / "bounded.db")
+    t.max_rows = 20
+    t.prune_every = 5
+
+    for i in range(200):
+        t.record("reflection", "A" * 400, f"{i}")
+
+    rows = t.db.execute(
+        "SELECT filtered_chars FROM token_usage ORDER BY id DESC").fetchall()
+    assert len(rows) <= t.max_rows + t.prune_every
+    # what survives is the newest, not an arbitrary slice
+    assert rows[0]["filtered_chars"] == len("199")
+    t.close()
+
+
+def test_enforce_cap_keeps_the_newest(tmp_path):
+    t = TokenTracker(db_path=tmp_path / "cap.db")
+    t.prune_every = 10_000                       # never fires from record()
+    for i in range(50):
+        t.record("reflection", "A" * 400, f"{i}")
+
+    removed = t.enforce_cap(10)
+
+    assert removed == 40
+    kept = [r["filtered_chars"] for r in t.db.execute(
+        "SELECT filtered_chars FROM token_usage ORDER BY id ASC")]
+    assert len(kept) == 10
+    assert kept[0] == len("40") and kept[-1] == len("49")
+    t.close()
+
+
+def test_a_short_lived_writer_still_prunes_on_its_first_record(tmp_path):
+    """Most writers here are one hook or one MCP call: they record a handful of
+    rows and exit. A counter starting at zero would never reach an interval, so
+    a fleet of short processes could grow the ledger without bound."""
+    db = tmp_path / "shortlived.db"
+    seed = TokenTracker(db_path=db)
+    seed.prune_every = 10_000                    # never fires while seeding
+    for i in range(60):
+        seed.record("reflection", "A" * 400, f"{i}")
+    seed.close()
+
+    fresh = TokenTracker(db_path=db)             # a new process
+    fresh.max_rows = 20
+    fresh.record("reflection", "A" * 400, "last")
+
+    count = fresh.db.execute("SELECT COUNT(*) FROM token_usage").fetchone()[0]
+    assert count == 20
+    newest = fresh.db.execute(
+        "SELECT filtered_chars FROM token_usage ORDER BY id DESC LIMIT 1"
+    ).fetchone()["filtered_chars"]
+    assert newest == len("last")
+    fresh.close()
+
+
+def test_enforce_cap_under_the_cap_is_a_noop(tmp_path):
+    t = TokenTracker(db_path=tmp_path / "small.db")
+    t.prune_every = 10_000
+    t.record("reflection", "A" * 400, "B" * 100)
+    assert t.enforce_cap(10) == 0
+    assert t.db.execute("SELECT COUNT(*) FROM token_usage").fetchone()[0] == 1
+    t.close()

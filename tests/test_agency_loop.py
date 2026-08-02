@@ -149,3 +149,21 @@ class TestReportShape:
         assert len(report.reports) == 2
         assert all(isinstance(r, ActReport) for r in report.reports)
         assert report.wall_s >= 0.0
+
+
+class TestLockdownStillMaintains:
+    """v3.9.4: the dream check sits at the bottom of the loop body, so every
+    ``break`` jumps over it. Lockdown stops *acting* — dream() makes no model
+    call, and skipping it only leaves the mind's ledgers unpruned."""
+
+    def test_lockdown_still_dreams_when_recommended(self):
+        engine = _FakeEngine(lockdown_after=1, recommend_dream=True)
+        report = _run(engine, ActBudget(max_cycles=5))
+        assert report.stopped == "lockdown"
+        assert engine.dreams == 1
+
+    def test_lockdown_does_not_dream_when_not_recommended(self):
+        engine = _FakeEngine(lockdown_after=1)
+        report = _run(engine, ActBudget(max_cycles=5))
+        assert report.stopped == "lockdown"
+        assert engine.dreams == 0

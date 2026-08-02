@@ -1,4 +1,6 @@
 """TDD: Dedup — hash + similarity."""
+import pytest
+
 from conscio.dedup import Deduplicator
 
 
@@ -58,3 +60,39 @@ def test_dedup_unicode_normalization(tmp_path):
     h1 = dd.compute_hash("São Paulo")
     h2 = dd.compute_hash("sao paulo")
     assert h1 == h2
+
+
+def test_dump_closes_the_destination_when_the_copy_fails(tmp_path, monkeypatch):
+    """v3.9.4: same unguarded `backup()` as Hallways.dump, and the same leaked
+    destination handle when it raises."""
+    import sqlite3
+
+    dd = Deduplicator(db_path=tmp_path / "dd.db")
+    closed: list[str] = []
+    real_connect = sqlite3.connect
+
+    class _Tracked:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def close(self):
+            closed.append("dst")
+            self._conn.close()
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    monkeypatch.setattr(sqlite3, "connect",
+                        lambda *a, **k: _Tracked(real_connect(*a, **k)))
+
+    def _explode():
+        raise RuntimeError("backup source unavailable")
+
+    monkeypatch.setattr(dd, "_conn_get", _explode)
+
+    with pytest.raises(RuntimeError):
+        dd.dump(tmp_path / "copy.db")
+
+    assert closed == ["dst"]
+    monkeypatch.undo()
+    dd.close()

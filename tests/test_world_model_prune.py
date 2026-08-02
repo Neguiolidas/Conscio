@@ -149,3 +149,48 @@ class TestRemovalTakesThePredictionsWithIt:
         _age_entity(wm, "faded", hours_old=1, relevance=0.05)
         assert wm.prune_stale() == ["faded"]
         assert wm._data["predictions"] == []
+
+
+# --- a timestamp with an offset is a timestamp (v3.9.4) ---
+
+def test_a_timezone_aware_timestamp_does_not_get_the_entity_purged(wm):
+    """world_model.json is a plain JSON file. Every reader parsed
+    ``last_updated`` with a bare ``fromisoformat`` and compared it against a
+    naive ``datetime.now()``; an offset-aware value raised TypeError, and
+    prune's except branch treats an unparseable timestamp as *stale*. One
+    tz-stamped file would therefore delete the entire world model.
+    """
+    from datetime import timezone
+
+    wm.add_entity("fresh_but_aware", "system", state="ok")
+    wm._data["entities"]["fresh_but_aware"]["last_updated"] = (
+        datetime.now(timezone.utc).isoformat())      # e.g. ...+00:00
+    wm._data["entities"]["fresh_but_aware"]["relevance"] = 1.0
+    wm._save()
+
+    removed = wm.prune_stale()
+
+    assert removed == []
+    assert wm.get_entity("fresh_but_aware") is not None
+
+
+def test_an_aware_timestamp_still_ages_out_when_it_is_actually_old(wm):
+    """Tolerating the offset must not make old entities immortal."""
+    from datetime import timezone
+
+    wm.add_entity("ancient_aware", "system", state="x")
+    wm._data["entities"]["ancient_aware"]["last_updated"] = (
+        datetime.now(timezone.utc) - timedelta(hours=240)).isoformat()
+    wm._data["entities"]["ancient_aware"]["relevance"] = 0.9
+    wm._save()
+
+    assert "ancient_aware" in wm.prune_stale()
+
+
+def test_garbage_is_still_treated_as_stale(wm):
+    wm.add_entity("broken", "system", state="x")
+    wm._data["entities"]["broken"]["last_updated"] = "not a timestamp"
+    wm._data["entities"]["broken"]["relevance"] = 0.9
+    wm._save()
+
+    assert "broken" in wm.prune_stale()
