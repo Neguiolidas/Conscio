@@ -17,9 +17,13 @@ measurement, not assertion.
 **Latest release — `v3.9.5` "Latch and Release":** a global lockdown is no
 longer able to outlive the circuit breaker that raised it, so a daemon that once
 hit quorum stops being paralysed forever; the failure-rate brake is reported for
-the heartbeat it belongs to instead of as permanent status; and a path written
-with a `~` — `storage_path`, or `HERMES_HOME` exported by a wrapper — is the
-directory the caller meant rather than one named `~` in the working directory.
+the heartbeat it belongs to instead of as permanent status; every path written
+with a `~` — `storage_path`, `HERMES_HOME`, `CONSCIO_SESSION_DB`,
+`CONSCIO_VAULT_DIR`, `CLAUDE_DIR` and eleven other env vars — resolves to the
+directory the caller meant rather than one named `~` in the working directory;
+and `conscio.feed` / `conscio.note` no longer crash the MCP server when the host
+sends `data` instead of `payload` — a normalization layer maps the aliases
+before validation, leaving canonical events untouched.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
