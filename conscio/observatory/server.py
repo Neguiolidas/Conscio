@@ -37,10 +37,10 @@ def _workspace_id(root: Path) -> str:
     import hashlib
     return hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:16]
 # Reference: conscio/noosphere/paths.py:default_noosphere_db — keep in sync.
-_DEFAULT_NOOSPHERE = Path(
-    os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "noosphere.db"
-_DEFAULT_LIAISON = Path(
-    os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "liaison.db"
+_HERMES_HOME = Path(
+    os.environ.get("HERMES_HOME", Path.home() / ".hermes")).expanduser()
+_DEFAULT_NOOSPHERE = _HERMES_HOME / "noosphere.db"
+_DEFAULT_LIAISON = _HERMES_HOME / "liaison.db"
 
 
 @dataclass

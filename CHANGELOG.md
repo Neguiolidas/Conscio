@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.9.5] - 2026-08-02 — Latch and Release
+
+A third report from the field, from a daemon that was alive and doing nothing.
+It came back from a restart with the right adapter and the right mode, said so
+in its own log, and then refused every action — while the circuit breaker whose
+quorum had latched the lockdown in the first place had already released every
+goal it held. Two components disagreed about the same fact and nothing in the
+system was responsible for asking. Two smaller readings came out of the same
+advisory call: a brake that belonged to one heartbeat was being reported as
+permanent status, and a storage path written with a `~` became a directory
+named `~`. Going looking for that last one elsewhere found it six more times,
+in every place that reads `HERMES_HOME`.
+
+### Fixed
+
+- **A global lockdown outlived the condition that caused it (BUG-37).** Repeated
+  failures quarantine a goal; a quorum of quarantines latches `action_lockdown`,
+  and that latch is written to disk so a lockdown survives a restart. But the
+  breaker behind it is deliberately self-healing — `quarantined_count()` ignores
+  rows whose cooldown has lapsed, because "expiry has to hold whether or not
+  anything sweeps the table". Nothing reconciled the two, and `ActPipeline.act()`
+  short-circuits on the persisted flag *before* consulting the breaker, so the
+  release the breaker had already granted was never reachable. In the field this
+  read as a daemon that restarted cleanly ten thousand times and stayed
+  paralysed through every one of them, with `advisory()` reporting a lockdown
+  and the quarantine table holding nothing but expired rows. The latch is now
+  re-derived from the breaker — at `attach_adapter()`, where the breaker first
+  exists and a latch loaded from disk can finally be checked against it, and at
+  `act()`, because a long-lived daemon never re-attaches and its cooldowns lapse
+  mid-process. Safety is not weakened in either direction: the latch is released
+  only by the same component that raises it, only when it says no lockdown is
+  due, and never when there is no breaker to ask. A lockdown still survives a
+  restart for exactly as long as its quorum stands, and a release is emitted as
+  a system event rather than happening quietly.
+- **A per-run brake was reported as permanent status.** The aggregate
+  failure-rate brake stops one `run()`; the next starts with a fresh count. But
+  `advisory()` found it by scanning the whole event log, so a brake from a
+  previous heartbeat — or a previous process, or a previous week — was reported
+  as the current reason the loop was stopped. The scan now starts at the most
+  recent `run()`, falling back to the engine's construction. The event log still
+  holds every brake ever raised; only the claim that one of them is *current*
+  was wrong.
+- **`storage_path` took `~` literally.** A `"~/.conscio/live"` string created a
+  directory named `~` in the working directory and stored a mind inside it. It
+  is now expanded, which also means `conscio-daemon --storage '~/…'` works when
+  the shell did not expand it first.
+- **`HERMES_HOME` took `~` literally, in six places.** The session database, the
+  session RAG store, the noosphere layout, the CLI's default storage and both of
+  the observatory's default databases each read the variable straight into a
+  `Path`. The fallback they share is already absolute, so with the variable
+  unset every one of them was correct — the defect only appeared once something
+  exported an unexpanded tilde, at which point all six became paths *relative to
+  the working directory*, the existing files stopped being found, and the layers
+  above created new ones somewhere else without complaining. All six now expand.
+
+---
+
 ## [3.9.4] - 2026-08-02 — Reachable Daemon
 
 A second field report, from an operator trying to turn Awake on and keep it on.

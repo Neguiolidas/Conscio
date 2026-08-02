@@ -265,8 +265,15 @@ class ConsciousnessEngine:
         max_reflection_cycles: int = 3,
         delivery_check: bool = True,
     ):
-        self.storage = Path(storage_path) if storage_path else self.DEFAULT_STORAGE
+        # expanduser: a "~/…" string is a path the caller means, not a directory
+        # literally named "~" in the working directory.
+        self.storage = (Path(storage_path).expanduser() if storage_path
+                        else self.DEFAULT_STORAGE)
         self.storage.mkdir(parents=True, exist_ok=True)
+        # Recency floor for status readings that must not report another
+        # process's outcome as current (see _last_brake_message).
+        self._started_at = naive_utcnow().isoformat()
+        self._run_started_at: str | None = None
 
         # Detect model and set up context management
         self.ctx = ContextManager(model_name, context_window, self.storage,
@@ -1099,13 +1106,21 @@ class ConsciousnessEngine:
         }
 
     def _last_brake_message(self) -> str | None:
-        """Most recent aggregate failure-rate brake message, if any (#8).
+        """Aggregate failure-rate brake message from the latest heartbeat (#8).
+
+        The brake is a per-run outcome, not a persistent condition: the next
+        run() starts with a fresh failure count. Scanning the whole event log
+        therefore reported a brake from a previous process — or a previous
+        heartbeat — as current status forever (BUG-37b). The window starts at
+        the most recent run(), falling back to this engine's construction.
 
         Read-only scan of recent system events; returns None when no brake has
-        tripped. Never raises (a strict bus must not break the advisory)."""
+        tripped in that window. Never raises (a strict bus must not break the
+        advisory)."""
         try:
             events = self.event_bus.query(
-                type="system", category="system", limit=20)
+                type="system", category="system",
+                since=self._run_started_at or self._started_at, limit=20)
         except Exception:
             return None
         for e in events:                      # newest first
@@ -1893,6 +1908,9 @@ class ConsciousnessEngine:
         pipeline = self._act_pipeline
         pipeline.few_shot_provider = lambda goal: skills.few_shot(
             goal, tier=pipeline.gateway.effective_tier())
+        # The breaker that owns the lockdown condition only exists from here on;
+        # a latch loaded from disk can finally be checked against it (BUG-37).
+        self._reconcile_lockdown()
         return self._act_pipeline
 
     def _trips_since(self, ts: float) -> int:
@@ -1903,6 +1921,48 @@ class ConsciousnessEngine:
         return sum(1 for e in (events or [])
                    if "Intractable dissonance" in str(
                        e.to_dict() if hasattr(e, "to_dict") else e))
+
+    def _reconcile_lockdown(self, state=None) -> bool:
+        """Re-derive the persisted global lockdown latch from the breaker (R5).
+
+        The latch is written to disk so a lockdown survives a restart, but the
+        condition behind it does not: CircuitBreaker.quarantined_count()
+        deliberately ignores rows whose cooldown has lapsed, so expiry holds
+        "whether or not anything sweeps the table". Nothing reconciled the two,
+        and ActPipeline.act() short-circuits on the flag *before* consulting the
+        breaker — so an agent that once hit quorum stayed paralysed for good
+        (BUG-37). Safety is not weakened: the latch is released only by the same
+        component that raises it, and only once it says no lockdown is due.
+
+        Fails closed — with no breaker to ask, the latch stands.
+
+        Returns the reconciled value."""
+        state = self._state if state is None else state
+        if not state.action_lockdown:
+            return False
+        breaker = getattr(getattr(self, "_act_pipeline", None), "breaker", None)
+        if breaker is None or breaker.global_lockdown_due():
+            return True
+
+        # Persist through the engine's own state only. A caller-supplied state
+        # may be older than what is on disk; writing it back would clobber the
+        # rest of the summary to clear one flag. Read the engine's flag before
+        # the mutation below — `state` is usually the same object.
+        persist = self._state.action_lockdown
+        state.action_lockdown = False
+        if persist:
+            self._state.action_lockdown = False
+            self.ctx.save_state(self._state)
+            try:                              # a strict bus must not re-paralyse
+                self.event_bus.emit(
+                    type="system", category="system",
+                    data={"message": ("global lockdown released: no goal is "
+                                      "still quarantined"),
+                          "quarantined": breaker.quarantined_count()},
+                    priority=5)
+            except Exception:
+                pass
+        return False
 
     def act(self, state=None):
         """Run one L1 PROPOSE cycle downstream of reflect().
@@ -1922,6 +1982,9 @@ class ConsciousnessEngine:
             return ActReport(status=ActStatus.FAILED,
                              reason="no adapter attached")
         state = state or self._state          # current state held by engine
+        # A long-lived daemon never re-attaches, so cooldowns lapse mid-process:
+        # reconcile here too, before the pipeline short-circuits on the latch.
+        self._reconcile_lockdown(state)
         report = self._act_pipeline.act(state)
         skills = getattr(self, "_skills", None)
         if skills is not None:                # v1.1: outcome -> skill score
@@ -2279,6 +2342,9 @@ class ConsciousnessEngine:
         A direct human engine.act() call is deliberately NOT gated."""
         from .agency.loop import ActBudget, AutonomyLoop, RunReport
 
+        # The failure-rate brake belongs to one heartbeat; opening the window
+        # here is what stops the previous one's brake being read as current.
+        self._run_started_at = naive_utcnow().isoformat()
         if not self.awake:
             self.reflect(world_state=world_state)
             return RunReport(stopped="asleep")

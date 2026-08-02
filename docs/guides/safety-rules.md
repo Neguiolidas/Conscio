@@ -24,6 +24,14 @@ just documented.
    choice (`engine.wake()`/`sleep()`, `conscio awake|sleep`, an `awake:changed`
    event). R9 governs *self-initiated* autonomy; a human's direct `engine.act()`
    call remains available (already gated by R1–R8) and is not newly blocked.
+10. **Imported cognition is data, never code** — anything that arrives from
+    outside this instance is parsed, never evaluated. A Graphify `graph.json` is
+    read with `json` only: no `eval`/`exec`/`pickle`, no `networkx` or other
+    runtime dependency on the tool that produced it, and a label that happens to
+    look like code is carried through verbatim. A skill imported from another
+    instance over the noosphere is quarantined, statically revalidated, and
+    trialed in a sandbox before it can be promoted — no trust is inherited along
+    with the data.
 
 ## How the gates compose
 
@@ -37,7 +45,9 @@ When `act()` proposes an action, it must clear, in order:
 4. **Earned autonomy** — `TrustMatrix` grants L1 (propose) / L2 (auto-LOW) / L3
    (heartbeat) only from measured calibration and real ledger history.
 5. **Circuit breaker** — repeated failures quarantine a goal; a quorum of
-   quarantines latches a global lockdown that survives restart.
+   quarantines latches a global lockdown. The latch is persisted and survives
+   restart for as long as the quorum stands; once the quarantine cooldowns
+   lapse, the breaker — and only the breaker — releases it.
 6. **Ledger** — every external effect is recorded append-only before and after
    execution.
 
