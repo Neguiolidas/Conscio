@@ -14,7 +14,9 @@ Three defects made the daemon look like it was ignoring its operator, and a
 fourth left it asking for work no tool could do. Three more came out of reading
 the governor's own numbers and disbelieving them: the report described the wrong
 database, the capture hook could stop recording without ever saying so, and the
-savings figure compared the baseline against itself.
+savings figure compared the baseline against itself. The last three came out of
+validating the first four, where the daemon's error messages blamed the model
+for an endpoint that did not resolve.
 
 ### Added
 
@@ -84,6 +86,33 @@ savings figure compared the baseline against itself.
   Status now asks the hook binding where observations land and names the space it
   is reporting on. An explicit `--storage` still wins: naming a path means that
   path.
+- **An unreachable endpoint was reported as a decode failure.** When the base
+  URL did not resolve, no tier ever received a reply, so `last_raw` stayed empty
+  and the operator got `all decode tiers failed` with nothing after it — a
+  message that sends you to the schema and the model's output format to explain
+  a DNS failure. The cause was already held in `last_adapter_error` and dropped
+  on the way out. Found while validating the maintenance-goal fix above, where
+  every action failed for this reason and the report read as though `world_prune`
+  had not been registered. The gateway now says `adapter call failed
+  (provider_outage): <error>` when nothing was ever decoded, and appends the
+  adapter error to the decode detail when a reply did arrive before the
+  transport died — neither half explains that cycle alone.
+- **The tier ladder retried failures no lower tier could fix.** A downgrade
+  exists for a model that cannot produce structured output; it cannot help when
+  the host was never reached or the request was rejected outright, and T3 spends
+  a second call to be told the same thing. `should_retry` was consulted inside
+  each tier, where both branches returned `None` identically, so the decision
+  was computed and discarded — a permanent 401 still bought a downgrade. The
+  cascade now stops on timeouts, connection failures and permanent errors, and
+  continues on everything else: a server that answered badly may well answer a
+  different tier, and HTTP 400 for an unsupported `response_format` is exactly
+  the case T3 rescues by sending no schema at all.
+- **Adapter errors did not say which endpoint failed.** `[Errno -5] No address
+  associated with hostname` never names the hostname, and a misconfigured base
+  URL is otherwise indistinguishable from a provider outage. Every failure out
+  of `_post_json` now leads with the URL it was posting to, minus the query
+  string — some providers accept a key there, and these messages reach the
+  ledger and the event bus.
 
 ---
 
