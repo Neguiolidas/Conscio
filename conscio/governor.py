@@ -489,7 +489,11 @@ def render_report(session: str, now: dict, baseline: dict | None,
                     f"{baseline.get('avg_context', 0):>12,}")
     if base_per > 0:
         saved = (base_per - per) / base_per
-        lines += ["", f"  {'Saved':<22}{saved * 100:>11.1f}%",
+        # What these same turns would have cost at the baseline rate, less what
+        # they did cost. Priced over the turns actually taken, so the absolute
+        # and the share are the same statement twice and cannot disagree.
+        saved_units = base_per * now["requests"] - now["units"]
+        lines += ["", f"  {'Saved':<22}{saved_units:>12,.0f}{saved * 100:>11.1f}%",
                   f"  {_bar(max(0.0, saved))}"]
         if saved < 0:
             lines.append("  Context grew against the baseline — the ceiling is "

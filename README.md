@@ -14,10 +14,12 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.9.3` "Field Repairs":** a quarantined goal now leaves
-quarantine on its own clock instead of waiting for a sweep that a stopped agent
-never runs; a failed decode reports what the model actually replied; one
-unreadable transcript costs its own row, not the whole context report.
+**Latest release — `v3.9.4` "Reachable Daemon":** `conscio awake` now reaches
+the daemon it was meant to wake instead of the engine it just opened; the
+maintenance drive raises goals that can be cancelled and a `world_prune` tool
+that can serve them; the capture hook says so when it has stopped recording;
+and the coherence score reports which of its dimensions had nothing to measure,
+so a fresh install no longer reads like a well-tested one.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 

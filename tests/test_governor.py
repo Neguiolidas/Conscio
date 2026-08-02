@@ -247,6 +247,41 @@ def test_report_reports_a_regression_honestly():
     assert "-" in saved_line, "a regression must not read as a gain"
 
 
+class TestTheSavedLine:
+    """spec §6.1 draws `Saved` with two figures: what the ceiling took off the
+    bill, and what share of it that was. A percentage alone cannot be sized —
+    40% of a rounding error and 40% of a month's spend read identically."""
+
+    def _line(self, base_per=41_883.0, turns=10):
+        now = governor.summarise(
+            [{"in": 2, "cw": 1_000, "cr": 40_000, "out": 500}] * turns)
+        out = governor.render_report("s", now, {
+            "avg_context": 172_445, "units_per_request": base_per,
+            "prefix": 45_101, "requests": 800,
+            "taken_at": "2026-08-01T00:00:00"}, 120_000)
+        return next(ln for ln in out.splitlines() if "Saved" in ln)
+
+    def test_the_line_carries_the_absolute_and_the_share(self):
+        # 10 turns at 7,752 units each, against a baseline rate of 41,883.
+        assert self._line().split() == ["Saved", "341,310", "81.5%"]
+
+    def test_the_absolute_is_priced_over_the_turns_actually_taken(self):
+        """Not over the baseline's own 800 turns — those are not turns this
+        ceiling could have changed."""
+        assert self._line(turns=5).split()[1] == "170,655"
+
+    def test_the_two_figures_cannot_disagree(self):
+        """One statement twice. If they are computed apart they drift apart."""
+        _, absolute, share = self._line().split()
+        units = float(absolute.replace(",", ""))
+        would_have = 41_883.0 * 10
+        assert abs(units / would_have * 100 - float(share.rstrip("%"))) < 0.05
+
+    def test_a_regression_shows_a_negative_on_both(self):
+        _, absolute, share = self._line(base_per=1_000.0).split()
+        assert absolute.startswith("-") and share.startswith("-")
+
+
 class TestBreakdownColumns:
     """spec §6.1 draws the breakdown as `current | baseline | saved`. It
     shipped with only the first column, which reads as a table that lost its
