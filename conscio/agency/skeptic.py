@@ -55,12 +55,22 @@ _ANSWER_RE = re.compile(r"A([123])\s*[:\-]\s*(YES|NO)", re.IGNORECASE)
 
 
 def build_skeptic_prompt(proposal: ActionProposal, *, facts: str,
-                         mode: str) -> str:
+                         mode: str, tool_doc: str = "") -> str:
     payload = json.dumps({
         "tool": proposal.tool, "args": proposal.args,
         "rationale": proposal.rationale,
         "expected_outcome": proposal.expected_outcome})
     sections = [SKEPTIC_PERSONA, "", f"Proposed action: {payload}"]
+    if tool_doc:
+        # The auditor is told to refuse invented tools but was never told
+        # which tools exist, so it judged the name against its pretraining
+        # and refused every one this project defines: 'No evidence that
+        # world_prune is a valid or existing tool'. The pipeline has already
+        # resolved the name in the registry by the time the audit runs — an
+        # unknown tool fails before this. What is left to audit is whether
+        # the action fits the goal, which needs the tool's own description.
+        sections.append(
+            f"Verified tool (exists in this agent's registry): {tool_doc}")
     if facts:
         sections.append(f"Known facts: {facts}")
     sections.append(SAFETY_RULES)
@@ -103,10 +113,11 @@ class Skeptic:
         self.facts_fn = facts_fn
 
     def audit(self, proposal: ActionProposal, *,
-              goal_text: str = "") -> AuditVerdict:
+              goal_text: str = "", tool_doc: str = "") -> AuditVerdict:
         facts = (self.facts_fn(goal_text)
                  if (self.facts_fn and goal_text) else "")
-        prompt = build_skeptic_prompt(proposal, facts=facts, mode=self.mode)
+        prompt = build_skeptic_prompt(proposal, facts=facts, mode=self.mode,
+                                      tool_doc=tool_doc)
         try:
             raw = self.adapter.generate(prompt, max_tokens=256).text
         except AdapterError as exc:

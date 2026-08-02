@@ -31,6 +31,13 @@ the key is never echoed back over the API (a GET reports only
 inputs and validated against the env-var-name regex, so a hostile provider
 `type` cannot escape the vault directory.
 
+The vault is read when the adapter is built **from the config**. A daemon
+started with an explicit `--adapter` flag never reads the config's adapter
+block at all, so it never reaches the vault: give that one `CONSCIO_API_KEY`
+in its environment, or `--api-key` if the process list is not a concern. Either
+one overrides the provider's own variable (`OPENAI_API_KEY` and friends), which
+still applies when neither is set.
+
 ### Daemon control (opt-in, v2.8)
 
 The Hub can also toggle a running daemon's **awake** state — without signals,

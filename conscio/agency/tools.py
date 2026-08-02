@@ -33,6 +33,15 @@ class ToolSpec:
     approval_policy: str = "require_approval"      # v2.0.1: host-act gate
 
 
+def tool_doc(name: str, description: str) -> str:
+    """One line naming a tool, for a reader that must not guess what it is.
+
+    A description is optional in a manifest, and 'deploy — ' reads as a
+    sentence that got cut off rather than as a tool nobody documented.
+    """
+    return f"{name} — {description}" if description else name
+
+
 class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, ToolSpec] = {}

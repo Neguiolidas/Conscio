@@ -4,10 +4,10 @@ import conscio.integrations.claude_code as cc
 
 ASSETS = pathlib.Path(cc.__file__).parent / "assets"
 EXPECTED = {"recall", "remember", "state", "society", "relay", "reflect",
-            "propose", "handoff", "awake", "sleep"}
+            "propose", "handoff", "awake", "sleep", "govern"}
 
 
-def test_all_ten_commands_present():
+def test_every_command_asset_is_accounted_for():
     got = {p.stem for p in (ASSETS / "commands").glob("*.md")}
     assert got == EXPECTED
 

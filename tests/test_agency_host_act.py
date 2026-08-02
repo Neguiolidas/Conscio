@@ -10,8 +10,10 @@ from conscio.agency.tools import registry_from_manifest
 class FakeSkeptic:
     def __init__(self, verdict="PASS"):
         self._v = verdict
+        self.tool_docs = []
 
-    def audit(self, proposal, *, goal_text=""):
+    def audit(self, proposal, *, goal_text="", tool_doc=""):
+        self.tool_docs.append(tool_doc)
         return AuditVerdict(verdict=self._v,
                             reasons=([] if self._v == "PASS" else ["nope"]),
                             risk_flags=[], confidence=0.8)
@@ -74,6 +76,17 @@ def test_propose_low_auto_returns_executable_packet(tmp_path):
     assert out["packet"] == {"tool": "deploy", "args": {"env": "prod"},
                              "ledger_id": out["ledger_id"]}
     assert led.get(out["ledger_id"])["status"] == "executing"
+    led.close()
+
+
+def test_the_auditor_is_told_the_tool_was_resolved(tmp_path):
+    # v3.9.4: the registry settles that this tool exists before the audit
+    # runs. An auditor left to judge the name against its pretraining
+    # refuses it, and then no host action ever executes. This manifest
+    # carries no description, so the doc is the bare name — not 'deploy — '.
+    chan, led = _chan(tmp_path)
+    chan.propose(_intent())
+    assert chan.skeptic.tool_docs == ["deploy"]
     led.close()
 
 

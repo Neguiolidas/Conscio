@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .contracts import ActionProposal, validate
-from .tools import Risk
+from .tools import Risk, tool_doc
 
 # stage -> the word used in TrialOutcome.result
 _RESULT_WORD = {
@@ -77,7 +77,9 @@ def run_trial(steps: list[dict], *, goal_text: str, skeptic: Any,
             done.append(StepResult(tool, False, "high_risk",
                                    "HIGH-risk tool blocked in trial"))
             break
-        verdict = skeptic.audit(proposal, goal_text=goal_text)   # forced audit
+        verdict = skeptic.audit(                                 # forced audit
+            proposal, goal_text=goal_text,
+            tool_doc=tool_doc(spec.name, spec.description))
         if not verdict.passed:
             done.append(StepResult(tool, False, "skeptic",
                                    "; ".join(verdict.reasons)))

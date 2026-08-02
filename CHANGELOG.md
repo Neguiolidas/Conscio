@@ -14,9 +14,11 @@ Three defects made the daemon look like it was ignoring its operator, and a
 fourth left it asking for work no tool could do. Three more came out of reading
 the governor's own numbers and disbelieving them: the report described the wrong
 database, the capture hook could stop recording without ever saying so, and the
-savings figure compared the baseline against itself. The last three came out of
-validating the first four, where the daemon's error messages blamed the model
-for an endpoint that did not resolve.
+savings figure compared the baseline against itself. The last five came out of
+validating the first four: the daemon's error messages blamed the model for an
+endpoint that did not resolve, the CLI gave it no key to authenticate with, and
+the auditor refused every tool this project defines because nothing had told it
+they exist.
 
 ### Added
 
@@ -103,16 +105,52 @@ for an endpoint that did not resolve.
   a second call to be told the same thing. `should_retry` was consulted inside
   each tier, where both branches returned `None` identically, so the decision
   was computed and discarded — a permanent 401 still bought a downgrade. The
-  cascade now stops on timeouts, connection failures and permanent errors, and
-  continues on everything else: a server that answered badly may well answer a
-  different tier, and HTTP 400 for an unsupported `response_format` is exactly
-  the case T3 rescues by sending no schema at all.
+  cascade now stops on connection failures and permanent errors, and continues
+  on everything else. A timeout continues, though it looks like it belongs with
+  the others: the connection was accepted and the request was taken, so the host
+  is reachable and this particular request is a candidate cause. Measured on
+  NVIDIA NIM, `response_format: json_object` times out where the same prompt
+  without it answers — precisely when T3 is worth trying. HTTP 400 for an
+  unsupported `response_format` is the same case, rescued by sending no schema
+  at all.
 - **Adapter errors did not say which endpoint failed.** `[Errno -5] No address
   associated with hostname` never names the hostname, and a misconfigured base
   URL is otherwise indistinguishable from a provider outage. Every failure out
   of `_post_json` now leads with the URL it was posting to, minus the query
   string — some providers accept a key there, and these messages reach the
   ledger and the event bus.
+- **The auditor refused every tool this project defines.** The Skeptic is
+  ordered never to accept an invented tool, and was never told which tools
+  exist — so it judged each name against its pretraining and answered `No
+  evidence that world_prune is a valid or existing tool`. Field-measured on the
+  same install: 32 actions attempted, 0 executed, with the actor choosing the
+  right tool every time. The name is already resolved against the registry
+  before the audit runs — an unknown tool fails deterministically, long before
+  an LLM sees it — so the audit was re-deciding a settled question with less
+  information than the code that settled it. The Skeptic now receives the
+  resolved tool's own name and description, marked as verified, and is left to
+  judge what only it can: whether this action fits this goal. Every path that
+  resolves a spec before auditing passes it — the act pipeline, the host
+  channel and the trial runner, where a peer's replayed skill was being refused
+  for the same reason. Nothing was weakened. A tool that is not in the registry
+  never gets there, and a
+  host-declared vocabulary that does not contain the proposed name hands the
+  auditor no endorsement — which is exactly when it should be suspicious.
+  Skipping the audit for these tools was the other available route; it would
+  have exempted a tool that deletes world-model entities and a tool that
+  cancels goals from the only semantic check they get.
+- **The daemon had no way to be given an API key.** The config path has
+  resolved keys since v2.7.1, including from the Hub vault, but the CLI path
+  never passed one — so `conscio-daemon --adapter openai-compat --base-url
+  <remote>` posted unauthenticated and read the rejection as the model failing
+  to answer. The only working route was `--adapter openai`, which reads
+  `OPENAI_API_KEY` itself whatever the endpoint. There is now `--api-key`, and
+  `CONSCIO_API_KEY` for when a key on the command line is not acceptable — `ps`
+  shows that to every process on the machine. Precedence is the flag, then
+  `CONSCIO_API_KEY`, then whatever the adapter reads on its own: passing an
+  empty key leaves that last fallback intact, so daemons running on
+  `OPENAI_API_KEY` today are unaffected. Ollama stays unkeyed; it speaks no
+  auth.
 
 ---
 

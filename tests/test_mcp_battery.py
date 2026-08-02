@@ -150,7 +150,7 @@ class _PassSkeptic:
     """Deterministic PASS — the MCP wiring/idempotency is under test here, not
     the Skeptic (unit-tested separately with the engine's real adapter)."""
 
-    def audit(self, proposal, *, goal_text=""):
+    def audit(self, proposal, *, goal_text="", tool_doc=""):
         from conscio.agency.contracts import AuditVerdict
         return AuditVerdict(verdict="PASS", reasons=[], risk_flags=[],
                             confidence=0.9)

@@ -20,7 +20,7 @@ REVIEWER = "hermet-instance-0002"
 
 
 class _PassSkeptic:
-    def audit(self, proposal, *, goal_text=""):
+    def audit(self, proposal, *, goal_text="", tool_doc=""):
         return AuditVerdict(verdict="PASS", reasons=[], risk_flags=[],
                             confidence=0.9)
 

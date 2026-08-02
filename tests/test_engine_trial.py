@@ -16,7 +16,7 @@ class _Skeptic:
     def __init__(self, ok=True):
         self.ok = ok
 
-    def audit(self, proposal, *, goal_text):
+    def audit(self, proposal, *, goal_text, tool_doc=""):
         return AuditVerdict(verdict="PASS" if self.ok else "FAIL",
                             reasons=[] if self.ok else ["nope"])
 

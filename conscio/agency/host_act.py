@@ -15,6 +15,7 @@ from ..guards import clamp_int
 from ..risk import Risk
 from . import goal_fingerprint
 from .contracts import PROPOSAL_SCHEMA, proposal_from_dict, validate
+from .tools import tool_doc
 
 _PENDING_POLICIES = {"require_approval", "hermes_review"}
 
@@ -75,7 +76,9 @@ class HostActChannel:
 
         goal = str(intent.get("goal", ""))
         proposal = proposal_from_dict(intent, goal_id=goal)
-        verdict = self.skeptic.audit(proposal, goal_text=goal)
+        verdict = self.skeptic.audit(
+            proposal, goal_text=goal,
+            tool_doc=tool_doc(spec.name, spec.description))
         if not verdict.passed:
             return self._reject(intent, verdict.reasons, verdict.risk_flags)
 
