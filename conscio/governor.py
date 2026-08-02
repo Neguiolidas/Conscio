@@ -26,7 +26,7 @@ WEIGHTS = {"in": 1.0, "cw": 1.25, "cr": 0.1, "out": 5.0}
 def projects_dir() -> Path:
     """Where the host keeps session transcripts."""
     return Path(os.environ.get(
-        "CLAUDE_DIR", str(Path.home() / ".claude"))) / "projects"
+        "CLAUDE_DIR", str(Path.home() / ".claude"))).expanduser() / "projects"
 
 
 def read_usage(path: str | Path) -> list[dict]:
@@ -539,8 +539,10 @@ def settings_path(scope: str = "local") -> Path:
     """
     if scope == "global":
         return Path(os.environ.get(
-            "CLAUDE_DIR", str(Path.home() / ".claude"))) / "settings.json"
-    return Path(os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())) \
+            "CLAUDE_DIR", str(Path.home() / ".claude"))).expanduser() \
+            / "settings.json"
+    return Path(os.environ.get(
+        "CLAUDE_PROJECT_DIR", os.getcwd())).expanduser() \
         / ".claude" / "settings.local.json"
 
 

@@ -61,6 +61,15 @@ in every place that reads `HERMES_HOME`.
   exported an unexpanded tilde, at which point all six became paths *relative to
   the working directory*, the existing files stopped being found, and the layers
   above created new ones somewhere else without complaining. All six now expand.
+- **Eight more environment variables took `~` literally (BUG-38b).** The same
+  defect was present in every other path read from the environment:
+  ``CONSCIO_SESSION_DB``, ``CONSCIO_HANDOFF_DIR``, ``CONSCIO_BASE``,
+  ``CONSCIO_VAULT_DIR``, ``CONSCIO_WORKSPACE``, ``CLAUDE_DIR``, ``CLAUDE_JSON``
+  and ``CLAUDE_PROJECT_DIR``. The most incriminating was ``CONSCIO_SESSION_DB``,
+  two lines below a site the previous fix had just corrected in the same file.
+  The test harness from BUG-38 was extended to cover all fifteen sites (eight
+  original + seven extension), each tested in isolation so environment overrides
+  do not cross-talk.
 
 ---
 

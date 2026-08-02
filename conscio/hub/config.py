@@ -28,10 +28,10 @@ def _vault_dir(override: str | os.PathLike[str] | None = None) -> Path:
     legacy default is byte-identical to the pre-v2.11 behavior, so existing
     single-host installs and the Hub keep working unchanged."""
     if override is not None:
-        return Path(override)
+        return Path(override).expanduser()
     env = os.environ.get("CONSCIO_VAULT_DIR")
     if env:
-        return Path(env)
+        return Path(env).expanduser()
     return adapter_config._CONFIG_PATHS[0].parent / "keys"
 
 

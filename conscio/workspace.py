@@ -93,7 +93,7 @@ class WorkspaceContext:
             return self.explicit_root.resolve()
         env_root = self._environ.get("CONSCIO_WORKSPACE")
         if env_root:
-            return Path(env_root).resolve()
+            return Path(env_root).expanduser().resolve()
         git_root = self._git_root(Path.cwd())
         if git_root is not None:
             return git_root

@@ -38,15 +38,17 @@ def assets_root() -> Path:
 
 def _claude_dir(override) -> Path:
     if override is not None:
-        return Path(override)
-    return Path(os.environ.get("CLAUDE_DIR", str(Path.home() / ".claude")))
+        return Path(override).expanduser()
+    return Path(os.environ.get(
+        "CLAUDE_DIR", str(Path.home() / ".claude"))).expanduser()
 
 
 def claude_json_path(override=None) -> Path:
     """Public: the wizard's --repair path reads existing flags from here."""
     if override is not None:
-        return Path(override)
-    return Path(os.environ.get("CLAUDE_JSON", str(Path.home() / ".claude.json")))
+        return Path(override).expanduser()
+    return Path(os.environ.get(
+        "CLAUDE_JSON", str(Path.home() / ".claude.json"))).expanduser()
 
 
 def obsstore_src() -> Path:
