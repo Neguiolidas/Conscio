@@ -122,6 +122,12 @@ class OutputGateway:
         # decode failure names its cause instead of only its outcome.
         self.last_raw = ""
         self.last_decode_errors: list[str] = []
+        # What the last request_action spent, summed over every tier and retry
+        # it took. The ladder can call the model several times for one
+        # proposal, so the cost of an action is not the cost of the call that
+        # finally decoded — it is all of them.
+        self.last_tokens_in = 0
+        self.last_tokens_out = 0
         self._token_ledger = None
         # v3.1: failure classification + circuit breaker
         from conscio.failure import FailureGovernor
@@ -156,6 +162,8 @@ class OutputGateway:
             result = self._loop.generate(prompt, **kwargs)
         else:
             result = self.adapter.generate(prompt, **kwargs)
+        self.last_tokens_in += int(getattr(result, "tokens_in", 0) or 0)
+        self.last_tokens_out += int(getattr(result, "tokens_out", 0) or 0)
         # v3.1: record token usage if ledger attached
         ledger = getattr(self, "_token_ledger", None)
         if ledger is not None and hasattr(result, "tokens_in"):
@@ -178,6 +186,8 @@ class OutputGateway:
         self.last_adapter_error = None
         self.last_raw = ""
         self.last_decode_errors = []
+        self.last_tokens_in = 0
+        self.last_tokens_out = 0
         caps = self.adapter.capabilities()
         tier = self.effective_tier()
         if tier == "T1":

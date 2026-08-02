@@ -45,6 +45,7 @@ class DreamReport:
     """Summary of a single dream cycle."""
     events_purged: int = 0
     events_compacted: int = 0
+    token_records_compacted: int = 0
     entities_pruned: list[str] = field(default_factory=list)
     reflections_consolidated: int = 0
     reflections_deferred: int = 0
@@ -60,6 +61,7 @@ class DreamReport:
         return {
             "events_purged": self.events_purged,
             "events_compacted": self.events_compacted,
+            "token_records_compacted": self.token_records_compacted,
             "entities_pruned": self.entities_pruned,
             "reflections_consolidated": self.reflections_consolidated,
             "reflections_deferred": self.reflections_deferred,
@@ -113,6 +115,12 @@ class DreamCycle:
         report.events_purged = engine.event_bus.purge_duplicates(dry_run=dry_run)
         if not dry_run:
             report.events_compacted = engine.event_bus.compact(
+                before_days=self.compact_before_days
+            )
+            # Same window, same phase: every reflect() appends a token_usage
+            # row, so this table grows with the same appetite as events and
+            # was the one store in conscio.db nothing ever released.
+            report.token_records_compacted = engine.token_tracker.compact(
                 before_days=self.compact_before_days
             )
 

@@ -616,8 +616,16 @@ class ConsciousnessEngine:
         # Generate maintenance goals for stale world model entities
         stale = self.world.stale_entities()
         if stale:
+            # Phrased as an instruction that names the tool which satisfies it.
+            # A goal reading "prune_stale — 23 stale entities: a, b, c" states a
+            # measurement, not a task: the actor still picked world_prune, but
+            # the auditor compared the two names, found no match and refused
+            # every attempt ("the stated goal does not match").
             self.goals.generate_from_maintenance(
-                "prune_stale", f"{len(stale)} stale entities: {', '.join(stale[:3])}"
+                "prune_stale",
+                f"release the {len(stale)} entities the world model has let go"
+                f" stale ({', '.join(stale[:3])}) — the world_prune tool"
+                " does exactly this",
             )
 
         # v3.4.2: if awake and no executable goals exist, spawn a periodic
@@ -821,8 +829,12 @@ class ConsciousnessEngine:
             return None
         p = prompts[0]
         if p.drive == "maintenance":
+            # The question, not the target: `target` is an entity name or a
+            # dimension label, and a goal reading "Maintenance: botX" asks for
+            # nothing. The question says what to settle about it.
             goal = self.goals.generate_from_maintenance(
-                "self_prompt", p.target, source="self_prompt"
+                "self_prompt", f"{p.question} (target: {p.target})",
+                source="self_prompt",
             )
         elif p.drive == "evolution":
             goal = self.goals.generate_from_evolution(
@@ -1627,6 +1639,10 @@ class ConsciousnessEngine:
                 category="session",
                 data={"tool": tool[:256], "project": project[:256], "obs_id": row},
                 project_dir=project[:256],
+                # The caller handed us this project; nothing here inferred it.
+                # An event that names no project keeps 0.0 — that is not a
+                # missing value, it is the honest one.
+                attribution_confidence=1.0 if project else 0.0,
             )
         except Exception as exc:
             logger.debug("observe() emit skipped: %s", exc)

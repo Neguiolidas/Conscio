@@ -175,6 +175,11 @@ class ActPipeline:
             args_json=json.dumps(proposal.args),
             rationale=proposal.rationale,
             tier=self.gateway.last_tier or "T2", status="proposed",
+            # The actor's cost only: this row names one adapter and one model,
+            # and the audit may run on a different one (mixed-cortex). Auditor
+            # usage belongs to the TokenLedger, which is per-model.
+            tokens_in=self.gateway.last_tokens_in,
+            tokens_out=self.gateway.last_tokens_out,
             adapter=getattr(self.adapter, "wrapped_name",
                             type(self.adapter).__name__),
             model=self.adapter.capabilities().model_name)

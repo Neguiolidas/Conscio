@@ -119,3 +119,28 @@ class TestDedupKey:
         goal = g.generate_from_curiosity("why did X spike")
         assert goal.drive is Drive.CURIOSITY
         assert goal.dedup_key == goal.description
+
+
+class TestDescriptionIsForTheReader:
+    """The description is read by an LLM; the check id is read by dedup.
+
+    Field report (v3.9.4, live daemon): the actor picked `world_prune` for the
+    stale-entity goal and the Skeptic refused it — "the rationale claims the
+    goal is to prune stale entities, but the stated goal does not match". The
+    goal said "Maintenance: prune_stale — 23 stale entities: a, b, c": an
+    internal identifier and a reading, with nothing an agent could act on.
+    """
+
+    def test_the_check_identifier_stays_out_of_the_description(self, tmp_path):
+        g = GoalGenerator(tmp_path)
+        goal = g.generate_from_maintenance(
+            "prune_stale", "release the entities the world model let go stale")
+        assert "prune_stale" not in goal.description
+        assert goal.description.startswith("Maintenance: ")
+        assert "release the entities" in goal.description
+
+    def test_the_check_identifier_is_still_the_dedup_key(self, tmp_path):
+        g = GoalGenerator(tmp_path)
+        goal = g.generate_from_maintenance("prune_stale", "anything")
+        assert goal.metadata["check_type"] == "prune_stale"
+        assert goal.dedup_key == "maintenance:prune_stale"

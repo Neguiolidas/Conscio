@@ -234,3 +234,60 @@ class TestDoubleApprove:
             assert second.status is ActStatus.FAILED
             assert "already handled" in (second.reason or "")
             assert (tmp_path / "sb" / "out.md").read_text() == "hi"
+
+
+class TestTokensReachTheLedger:
+    """What an autonomous action cost, on the row that records the action.
+
+    Field report (v3.9.4, live daemon): 34 of 34 action rows carried
+    tokens_in=0 and tokens_out=0. ActionLedger.record has taken both since
+    v2.0.1 and no caller ever passed them, so the only per-action cost record
+    the daemon keeps was always zero.
+    """
+
+    def _row(self, ledger, row_id):
+        return ledger.get(row_id)
+
+    def test_a_proposed_action_records_what_the_decode_cost(self, tmp_path):
+        pipeline, ledger, _ = _pipeline(
+            tmp_path, MockAdapter(script=[_proposal_json(),
+                                          "A1: NO\nA2: NO\nA3: YES"]))
+        report = pipeline.act(_state())
+        row = ledger.get(report.ledger_id)
+        assert row["tokens_in"] > 0
+        assert row["tokens_out"] > 0
+
+    def test_the_count_covers_every_call_the_ladder_made(self, tmp_path):
+        # One proposal can take several calls. The action cost is all of them,
+        # not the cost of the call that finally decoded.
+        first_try = MockAdapter(script=[_proposal_json(),
+                                        "A1: NO\nA2: NO\nA3: YES"])
+        pipe_one, led_one, _ = _pipeline(tmp_path, first_try)
+        cheap = led_one.get(pipe_one.act(_state()).ledger_id)
+
+        retried = MockAdapter(script=["not json at all",      # T2 retries
+                                      _proposal_json(),
+                                      "A1: NO\nA2: NO\nA3: YES"])
+        (tmp_path / "b").mkdir()
+        pipe_two, led_two, _ = _pipeline(tmp_path / "b", retried)
+        report = pipe_two.act(_state())
+        assert report.status is ActStatus.PROPOSED     # the retry succeeded
+        dear = led_two.get(report.ledger_id)
+
+        assert dear["tokens_in"] > cheap["tokens_in"]
+        assert dear["tokens_out"] > cheap["tokens_out"]
+
+    def test_a_gateway_that_reports_nothing_records_zero(self, tmp_path):
+        # Not every adapter returns usage; the row must degrade to 0, not crash.
+        class _NoUsage(MockAdapter):
+            def generate(self, prompt, **kw):
+                result = super().generate(prompt, **kw)
+                result.tokens_in = 0
+                result.tokens_out = 0
+                return result
+
+        pipeline, ledger, _ = _pipeline(
+            tmp_path, _NoUsage(script=[_proposal_json(),
+                                       "A1: NO\nA2: NO\nA3: YES"]))
+        row = ledger.get(pipeline.act(_state()).ledger_id)
+        assert row["tokens_in"] == 0 and row["tokens_out"] == 0

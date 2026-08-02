@@ -134,11 +134,23 @@ class WorldModel:
         self._save()
 
     def remove_entity(self, name: str) -> None:
-        """Remove an entity and its relations."""
+        """Remove an entity, its relations, and any prediction left unsettleable.
+
+        A pending prediction linked to this entity can never be validated once
+        it is gone — validate_predictions_against() only settles predictions
+        whose entity is in the perceived set — so it would sit pending forever,
+        holding one of the PREDICTIONS_MAX slots and reporting itself as pending
+        in every summary. Predictions already settled are history and stay; so
+        do free-text ones, which were never this entity's to begin with.
+        """
         self._data["entities"].pop(name, None)
         self._data["relations"] = [
             r for r in self._data["relations"]
             if r["from"] != name and r["to"] != name
+        ]
+        self._data["predictions"] = [
+            p for p in self._data["predictions"]
+            if p.get("entity") != name or "validated" in p
         ]
         self._save()
 
