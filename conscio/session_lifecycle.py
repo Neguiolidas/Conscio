@@ -37,7 +37,7 @@ HEARTBEAT_PATH = HANDOFF_DIR / "_latest_heartbeat.md"
 
 _ENV_SESSION_DB = os.environ.get("CONSCIO_SESSION_DB")
 if _ENV_SESSION_DB:
-    SESSION_DB = Path(_ENV_SESSION_DB)
+    SESSION_DB = Path(_ENV_SESSION_DB).expanduser()
 
 _CONSCIO_HANDOFF_DIR = os.environ.get("CONSCIO_HANDOFF_DIR")
 if _CONSCIO_HANDOFF_DIR:
@@ -46,7 +46,7 @@ if _CONSCIO_HANDOFF_DIR:
         HANDOFF_PATH = None  # type: ignore[assignment]
         HEARTBEAT_PATH = None  # type: ignore[assignment]
     else:
-        HANDOFF_DIR = Path(_CONSCIO_HANDOFF_DIR)
+        HANDOFF_DIR = Path(_CONSCIO_HANDOFF_DIR).expanduser()
         HANDOFF_PATH = HANDOFF_DIR / "_session_handoff.md"
         HEARTBEAT_PATH = HANDOFF_DIR / "_latest_heartbeat.md"
 

@@ -10,7 +10,8 @@ from ..noosphere.identity import Identity, load_or_create
 
 
 def _base() -> Path:
-    return Path(os.environ.get("CONSCIO_BASE", str(Path.home() / ".conscio")))
+    return Path(os.environ.get(
+        "CONSCIO_BASE", str(Path.home() / ".conscio"))).expanduser()
 
 
 def INSTANCES_ROOT() -> Path:
