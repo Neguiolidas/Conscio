@@ -11,10 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 A second field report, from an operator trying to turn Awake on and keep it on.
 Three defects made the daemon look like it was ignoring its operator, and a
-fourth left it asking for work no tool could do. Two more, found while reading
-the governor's own numbers, made observation capture unreadable: one where the
-report described the wrong database, and one where the hook could stop recording
-without ever saying so.
+fourth left it asking for work no tool could do. Three more came out of reading
+the governor's own numbers and disbelieving them: the report described the wrong
+database, the capture hook could stop recording without ever saying so, and the
+savings figure compared the baseline against itself.
 
 ### Added
 
@@ -67,6 +67,16 @@ without ever saying so.
   invalidate it, and refreshes the copy on every run. `govern status` prints a
   `Capture hook BROKEN` line naming the repair when the copy is missing, since
   that check is the only signal that exists.
+- **`govern report` compared the baseline against itself, so a working ceiling
+  read as a loss.** The current figure counted every turn in the session,
+  including the ones taken before `govern on` froze the baseline — turns the
+  baseline itself measured. On a long session that straddles the freeze those
+  old turns dominate the average, and the report showed a small negative saving
+  no matter how well the ceiling was working. Measured on a real 1,643-turn
+  session: −2.0% reported, +41.6% actual. The report now counts only turns taken
+  from the freeze onward and says how many older ones it left out. A session
+  with no turns since the freeze prints why there is nothing to compare, instead
+  of dividing a zero cost by a positive baseline and claiming a 100% saving.
 - **`govern status` reported obs.db from a space nothing writes to.** It read the
   CLI's own storage (`~/.hermes/consciousness`), while the Claude Code hook
   writes to its bound capture space — so a store with 1.3 MB of observations was

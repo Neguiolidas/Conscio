@@ -27,6 +27,11 @@ def _write_session(projects_dir, project, name, turns):
     return p
 
 
+def _freeze(space_dir, snapshot):
+    """Record a baseline, as `govern on` would."""
+    return governor.write_baseline(space_dir, snapshot)
+
+
 def test_read_usage_returns_one_row_per_billed_request(tmp_path):
     p = _write_session(tmp_path, "proj", "s1", [(2, 100, 0, 50), (2, 10, 100, 20)])
     rows = governor.read_usage(p)
@@ -240,6 +245,120 @@ def test_report_reports_a_regression_honestly():
     out = governor.render_report("s", now, base, 120_000)
     saved_line = next(ln for ln in out.splitlines() if "Saved" in ln)
     assert "-" in saved_line, "a regression must not read as a gain"
+
+
+# ── the baseline cut: only turns the ceiling could have changed ─────────────
+
+class TestSince:
+    """A ceiling applies from the moment it is set. Turns older than that are
+    the ones the baseline itself measured, so counting them as "current"
+    compares the baseline against itself."""
+
+    def _rows(self):
+        return [{"in": 1, "cw": 0, "cr": 0, "out": 1,
+                 "ts": f"2026-08-01T00:{m:02d}:00Z"} for m in (0, 4, 6, 9)]
+
+    def test_only_turns_from_the_freeze_onward_are_current(self):
+        kept = governor.since(self._rows(), "2026-08-01T00:05:00")
+        assert [r["ts"] for r in kept] == ["2026-08-01T00:06:00Z",
+                                           "2026-08-01T00:09:00Z"]
+
+    def test_the_turn_at_the_freeze_instant_counts(self):
+        """The boundary is inclusive: the freeze and the ceiling are one action,
+        so the turn stamped at that second was taken under it."""
+        kept = governor.since(self._rows(), "2026-08-01T00:04:00")
+        assert len(kept) == 3
+
+    def test_no_baseline_time_keeps_every_turn(self):
+        rows = self._rows()
+        assert governor.since(rows, None) == rows
+        assert governor.since(rows, "") == rows
+
+    def test_an_unparseable_baseline_time_keeps_every_turn(self):
+        """Better to over-report turns than to silently report none."""
+        rows = self._rows()
+        assert governor.since(rows, "whenever") == rows
+
+    def test_an_offset_is_converted_not_compared_as_text(self):
+        """`02:30+03:00` is 23:30 the previous day — before a 00:05 cut. Compared
+        as strings it sorts after it, and the turn would be counted as governed."""
+        row = {"in": 1, "cw": 0, "cr": 0, "out": 1,
+               "ts": "2026-08-01T02:30:00+03:00"}
+        assert governor.since([row], "2026-08-01T00:05:00") == []
+
+    def test_a_turn_with_no_timestamp_is_left_out(self):
+        """It cannot be placed, and counting it as governed inflates a saving."""
+        row = {"in": 1, "cw": 0, "cr": 0, "out": 1, "ts": ""}
+        assert governor.since([row], "2026-08-01T00:05:00") == []
+
+
+class TestReportCutsAtTheBaseline:
+    """The defect this guards: a long session that straddles `govern on` mixed
+    its ungoverned turns into the current figure, so a working ceiling reported
+    a small loss."""
+
+    # Costs 33,752 units — the ungoverned profile, above the baseline.
+    BEFORE = (2, 1_000, 300_000, 500)
+    # Costs 7,752 units — what the ceiling brought it down to.
+    AFTER = (2, 1_000, 40_000, 500)
+    BASE = {"avg_context": 150_000, "units_per_request": 20_000.0,
+            "prefix": 40_000, "requests": 900,
+            "taken_at": "2026-08-01T00:05:00"}
+
+    def _session(self, tmp_path):
+        return _write_session(tmp_path / "projects", "p", "straddle",
+                              [self.BEFORE] * 5 + [self.AFTER] * 5)
+
+    def test_a_working_ceiling_does_not_report_a_loss(self, tmp_path):
+        path = self._session(tmp_path)
+        _freeze(tmp_path / "space", self.BASE)
+        out = governor.report_for_session(path, tmp_path / "space", 120_000)
+        saved = next(ln for ln in out.splitlines() if "Saved" in ln)
+        assert "-" not in saved, f"governed turns cost less than the baseline: {saved}"
+
+    def test_the_figures_describe_the_governed_turns_only(self, tmp_path):
+        path = self._session(tmp_path)
+        _freeze(tmp_path / "space", self.BASE)
+        out = governor.report_for_session(path, tmp_path / "space", 120_000)
+        assert "41,002" in out, "avg context of the AFTER turns"
+        assert "301,002" not in out
+
+    def test_the_header_says_how_many_turns_were_left_out(self, tmp_path):
+        path = self._session(tmp_path)
+        _freeze(tmp_path / "space", self.BASE)
+        out = governor.report_for_session(path, tmp_path / "space", 120_000)
+        assert "5 turns since baseline (5 earlier)" in out
+
+    def test_with_no_baseline_every_turn_is_still_reported(self, tmp_path):
+        """No freeze, no cut — the absolute figures must not shrink."""
+        path = self._session(tmp_path)
+        out = governor.report_for_session(path, tmp_path / "space", 120_000)
+        assert "10 turns" in out and "earlier" not in out
+
+
+class TestNoTurnsSinceTheFreeze:
+    """Zero cost against a positive baseline is a 100% saving — the most
+    flattering possible lie, and the one a fresh `govern on` would tell."""
+
+    def _out(self, tmp_path):
+        _write_session(tmp_path / "projects", "p", "old",
+                       [(2, 1_000, 300_000, 500)] * 3)
+        _freeze(tmp_path / "space", {"avg_context": 150_000, "requests": 900,
+                                     "units_per_request": 20_000.0,
+                                     "prefix": 40_000,
+                                     "taken_at": "2026-09-01T00:00:00"})
+        return governor.report_for_session(
+            tmp_path / "projects" / "p" / "old.jsonl", tmp_path / "space",
+            120_000)
+
+    def test_it_claims_no_saving_at_all(self, tmp_path):
+        out = self._out(tmp_path)
+        assert "Saved" not in out and "%" not in out
+
+    def test_it_says_why_there_is_nothing_to_compare(self, tmp_path):
+        out = self._out(tmp_path)
+        assert "No turns recorded since the baseline was frozen" in out
+        assert "2026-09-01T00:00:00" in out, "name the moment, not just the fact"
 
 
 # ── CLI: prefix / status / on / off / report (Tasks 4-6) ────────────────────

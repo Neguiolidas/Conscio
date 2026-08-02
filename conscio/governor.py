@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import statistics
+from datetime import datetime, timezone
 from pathlib import Path
 from stat import S_ISREG
 
@@ -69,6 +70,43 @@ def read_usage(path: str | Path) -> list[dict]:
 def context_of(row: dict) -> int:
     """Tokens of context the model was sent, however they were billed."""
     return row["in"] + row["cw"] + row["cr"]
+
+
+def _as_utc(stamp: str) -> datetime | None:
+    """An ISO-8601 stamp as a naive UTC datetime, or None if it will not parse.
+
+    Transcript rows carry a trailing ``Z``; the baseline is written naive and
+    already in UTC. Comparing the two as strings happens to work while both keep
+    exactly that shape, which is not a property either format promises.
+    """
+    try:
+        parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        return parsed
+    return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def since(rows: list[dict], taken_at: str | None) -> list[dict]:
+    """The turns a ceiling could have changed: those recorded from ``taken_at``.
+
+    Turns older than the freeze are the ones the baseline itself measured, so
+    counting them as "current" compares the baseline against itself. On a long
+    session that straddles the freeze the old turns dominate the average and the
+    report shows a small loss no matter how well the ceiling is working — the
+    failure is silent, and it points the operator at the ceiling instead of at
+    the arithmetic.
+
+    A row whose timestamp is missing or unparseable is left out. It cannot be
+    placed on either side, and counting it as governed is the error that
+    inflates a saving; leaving it out can only understate one.
+    """
+    cut = _as_utc(taken_at) if taken_at else None
+    if cut is None:
+        return rows
+    return [r for r in rows
+            if (stamp := _as_utc(r.get("ts", ""))) is not None and stamp >= cut]
 
 
 def _recent_transcripts(root: Path, limit: int) -> list[Path]:
@@ -390,16 +428,28 @@ def _bar(fraction: float, width: int = 24) -> str:
 
 
 def render_report(session: str, now: dict, baseline: dict | None,
-                  window: int | None) -> str:
+                  window: int | None, skipped: int = 0) -> str:
     """The savings report for one session.
 
-    Only cache read and cache write appear: they are what a ceiling moves.
-    Output is untouched by this version, and a zero row with a caveat beside it
-    would be noise pretending to be information.
+    ``now`` covers only the turns taken since the baseline was frozen, and
+    ``skipped`` counts the older ones left out — see ``since``. Only cache read
+    and cache write appear: they are what a ceiling moves. Output is untouched
+    by this version, and a zero row with a caveat beside it would be noise
+    pretending to be information.
     """
     state = f"governor ON (window {window:,})" if window else "governor OFF"
     per = now["units"] / now["requests"] if now["requests"] else 0.0
-    lines = [f"Session {session} · {now['requests']:,} turns · {state}", ""]
+    counted = (f"{now['requests']:,} turns since baseline "
+               f"({skipped:,} earlier)" if skipped
+               else f"{now['requests']:,} turns")
+    lines = [f"Session {session} · {counted} · {state}", ""]
+    if baseline and not now["requests"]:
+        # Every figure below would be zero, and a zero cost against a positive
+        # baseline renders as a 100% saving — the most flattering possible lie.
+        frozen = baseline.get("taken_at", "?")
+        lines += [f"  No turns recorded since the baseline was frozen ({frozen}Z).",
+                  "  Nothing to compare yet; take a turn and run this again."]
+        return "\n".join(lines)
     lines.append(f"  {'Avg context/turn':<22}{now['avg_context']:>12,}")
     lines.append(f"  {'Cost (equiv. units)':<22}{now['units']:>12,.0f}")
     lines.append(f"  {'Per request':<22}{per:>12,.0f}")
@@ -433,8 +483,10 @@ def report_for_session(path: str | Path, space_dir: str | Path,
                        window: int | None) -> str:
     """Render the report for one transcript file."""
     rows = read_usage(path)
-    return render_report(Path(path).stem[:8], summarise(rows),
-                         read_baseline(space_dir), window)
+    baseline = read_baseline(space_dir)
+    fresh = since(rows, (baseline or {}).get("taken_at"))
+    return render_report(Path(path).stem[:8], summarise(fresh), baseline,
+                         window, len(rows) - len(fresh))
 
 
 def settings_path(scope: str = "local") -> Path:
@@ -558,6 +610,7 @@ def report_all(space_dir: str | Path, window: int | None,
         lines.append(f"{path.stem[:10]:<12}{path.parent.name[:22]:<24}"
                      f"{agg['requests']:>7,}{agg['avg_context']:>11,}"
                      f"{agg['units']:>14,.0f}")
-    lines += ["", render_report(f"{len(paths)} sessions", summarise(every),
-                                baseline, window)]
+    fresh = since(every, (baseline or {}).get("taken_at"))
+    lines += ["", render_report(f"{len(paths)} sessions", summarise(fresh),
+                                baseline, window, len(every) - len(fresh))]
     return "\n".join(lines)
