@@ -105,7 +105,8 @@ def _resolve_sandboxed(root: Path, path: str) -> Path:
 def make_default_registry(*, sandbox_root: Path,
                           content_store: Any = None,
                           event_bus: Any = None,
-                          goal_generator: Any = None) -> ToolRegistry:
+                          goal_generator: Any = None,
+                          world_model: Any = None) -> ToolRegistry:
     sandbox_root = Path(sandbox_root)
     sandbox_root.mkdir(parents=True, exist_ok=True)
     reg = ToolRegistry()
@@ -179,6 +180,35 @@ def make_default_registry(*, sandbox_root: Path,
                     "goal_id": {"type": "str", "required": True}},
             risk=Risk.MEDIUM,
             description="complete or cancel one of the agent's goals")
+
+    if world_model is not None:
+        def world_prune() -> str:
+            """Run the world model's own stale-entity sweep.
+
+            The maintenance drive raises a `prune_stale` goal whenever entities
+            go stale, and that goal is auto-executable — but nothing in this
+            registry could ever satisfy it, so the actor had to invent a
+            filesystem action for work that is entirely in-process. It invented
+            paths that do not exist, failed three times, and collapsed the
+            action thread. This is the remedy the goal was always asking for.
+            """
+            removed = world_model.prune_stale()
+            if not removed:
+                # Deliberate gap: the drive flags an entity as stale after 24h,
+                # while prune_stale only removes after 7 days. Say so, or the
+                # actor reads an empty result as a broken tool.
+                return ("nothing pruned — no entity is older than 7 days or "
+                        "below the relevance floor yet")
+            shown = ", ".join(removed[:10])
+            more = f" (+{len(removed) - 10} more)" if len(removed) > 10 else ""
+            return f"pruned {len(removed)} stale entities: {shown}{more}"
+
+        # MEDIUM, not HIGH: HIGH never auto-executes (R6), which would leave the
+        # maintenance goal exactly as unsatisfiable as it was before this tool.
+        reg.register(
+            "world_prune", world_prune, params={}, risk=Risk.MEDIUM,
+            description="prune entities the world model has let go stale "
+                        "(no update in 7 days, or relevance below the floor)")
 
     return reg
 

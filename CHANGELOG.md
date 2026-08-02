@@ -7,10 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [3.9.4] - 2026-08-01 — Reachable Daemon
 
 A second field report, from an operator trying to turn Awake on and keep it on.
-Both defects made the daemon look like it was ignoring its operator.
+Three defects made the daemon look like it was ignoring its operator, and a
+fourth left it asking for work no tool could do.
+
+### Added
+
+- **`world_prune` tool.** The maintenance drive raises an auto-executable goal
+  to prune stale entities, but no tool in the registry could prune anything —
+  the work lives in `WorldModel.prune_stale()`, entirely in-process. With
+  nothing that fit, the actor reached for the closest thing it had, `fs_write`,
+  invented sandbox paths that did not exist, failed three times and tripped the
+  breaker. `world_prune` is the action the goal was always asking for. It is
+  MEDIUM, not HIGH, because HIGH never auto-executes (R6) and a HIGH tool would
+  leave the goal exactly as unsatisfiable as it was. It is wired into the live
+  act and promotion registries only: a trial replays another instance's skill,
+  and must not be able to prune this instance's memory.
 
 ### Fixed
 
