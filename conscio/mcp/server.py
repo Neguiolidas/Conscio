@@ -644,8 +644,36 @@ class Bindings:
             hw.close()
         return {"metadata": meta}
 
+    def _normalize_event(self, event: Any) -> Any:
+        """Map host-side event aliases to the internal Event schema.
+
+        The schema (schemas.py EVENT_SCHEMA) requires ``type``, ``source``,
+        ``category`` and ``payload``. Hosts that predate the schema — or use
+        different conventions — send ``data`` instead of ``payload`` and omit
+        ``source``. This normalises those aliases *before* validation so the
+        caller does not need to know the internal field names. Fields already
+        in schema form pass through unchanged.
+
+        Never raises: if the input is not a dict, it is returned as-is and
+        validate_event will produce the appropriate error.
+        """
+        if not isinstance(event, dict):
+            return event
+        # Copy so the caller's dict is not mutated.
+        out = dict(event)
+        # data -> payload (the one field hosts commonly alias).
+        if "payload" not in out and "data" in out:
+            out["payload"] = out["data"]
+        # source defaults to "host" when absent.
+        if "source" not in out:
+            out["source"] = "host"
+        # category defaults to the type when absent (common in host reports).
+        if "category" not in out and "type" in out:
+            out["category"] = out["type"]
+        return out
+
     def _feed(self, args: dict) -> dict:
-        event = self._require(args, "event")
+        event = self._normalize_event(self._require(args, "event"))
         errors = validate_event(event)
         if errors:
             raise j.InvalidParams("; ".join(errors))
@@ -668,7 +696,7 @@ class Bindings:
         return result
 
     def _note(self, args: dict) -> dict:
-        event = self._require(args, "event")
+        event = self._normalize_event(self._require(args, "event"))
         errors = validate_event(event)
         if errors:
             raise j.InvalidParams("; ".join(errors))

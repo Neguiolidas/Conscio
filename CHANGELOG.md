@@ -70,6 +70,16 @@ in every place that reads `HERMES_HOME`.
   The test harness from BUG-38 was extended to cover all fifteen sites (eight
   original + seven extension), each tested in isolation so environment overrides
   do not cross-talk.
+- **MCP tools ``conscio.feed`` and ``conscio.note`` crashed on host events
+  (BUG-39).** The internal Event schema requires ``type``, ``source``,
+  ``category`` and ``payload``, but hosts that predate the schema send ``data``
+  instead of ``payload`` and omit ``source`` and sometimes ``category``. The
+  validator rejected these and the server raised ``InvalidParams``, dropping
+  the MCP connection. ``conscio.health`` was unaffected because it is
+  read-only. ``_normalize_event()`` now maps ``data`` to ``payload``, defaults
+  ``source`` to ``"host"`` and ``category`` to ``type`` before validation, so
+  both canonical and host-aliased events pass through. Canonical events are
+  unchanged.
 
 ---
 
