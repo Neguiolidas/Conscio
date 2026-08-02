@@ -14,6 +14,7 @@ import hashlib
 import json
 import sqlite3
 import time
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -72,75 +73,80 @@ class CheckpointChain:
         self.consolidate_every = consolidate_every
         self._init_db()
 
+    def _connect(self) -> closing[sqlite3.Connection]:
+        """Open a connection that closes even when the body raises.
+
+        v3.9.4: every method here used a bare connect/…/close pair. A raise in
+        between leaves the handle to the traceback, and the exception →
+        traceback → frame cycle means only the *cyclic* collector frees it —
+        refcounting alone does not. Measured: 30 failed appends held 30
+        descriptors open with the GC disabled. NOT `with sqlite3.connect(...)`:
+        that context manager commits or rolls back the transaction and leaves
+        the connection open.
+        """
+        return closing(sqlite3.connect(str(self.db_path)))
+
     def _init_db(self) -> None:
-        conn = sqlite3.connect(str(self.db_path))
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS checkpoints (
-                checkpoint_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                parent_id INTEGER,
-                durable_memory TEXT NOT NULL,
-                execution_summary TEXT NOT NULL,
-                user_requirements TEXT NOT NULL,
-                skill_references TEXT NOT NULL,
-                byte_hash TEXT NOT NULL,
-                created_at REAL NOT NULL
-            )
-        """)
-        conn.commit()
-        conn.close()
+        with self._connect() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS checkpoints (
+                    checkpoint_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    parent_id INTEGER,
+                    durable_memory TEXT NOT NULL,
+                    execution_summary TEXT NOT NULL,
+                    user_requirements TEXT NOT NULL,
+                    skill_references TEXT NOT NULL,
+                    byte_hash TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                )
+            """)
+            conn.commit()
 
     def append(self, cp: CompactionCheckpoint) -> int:
         """Append a checkpoint to the chain. Returns checkpoint_id."""
-        conn = sqlite3.connect(str(self.db_path))
-        latest = self._latest_row(conn)
-        parent_id = latest["checkpoint_id"] if latest else None
+        with self._connect() as conn:
+            latest = self._latest_row(conn)
+            parent_id = latest["checkpoint_id"] if latest else None
 
-        d = cp.to_dict()
-        cur = conn.execute(
-            """INSERT INTO checkpoints
-               (parent_id, durable_memory, execution_summary,
-                user_requirements, skill_references, byte_hash, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (parent_id, d["durable_memory"], d["execution_summary"],
-             d["user_requirements"], d["skill_references"], d["byte_hash"],
-             time.time()),
-        )
-        cid = cur.lastrowid or 0
-        conn.commit()
+            d = cp.to_dict()
+            cur = conn.execute(
+                """INSERT INTO checkpoints
+                   (parent_id, durable_memory, execution_summary,
+                    user_requirements, skill_references, byte_hash, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (parent_id, d["durable_memory"], d["execution_summary"],
+                 d["user_requirements"], d["skill_references"], d["byte_hash"],
+                 time.time()),
+            )
+            cid = cur.lastrowid or 0
+            conn.commit()
 
-        if self.consolidate_every and self.length() >= self.consolidate_every * 2:
-            self._consolidate(conn)
+            if self.consolidate_every and self.length() >= self.consolidate_every * 2:
+                self._consolidate(conn)
 
-        conn.close()
-        return cid
+            return cid
 
     def latest(self) -> dict | None:
         """Return the most recent checkpoint as dict with metadata, or None."""
-        conn = sqlite3.connect(str(self.db_path))
-        row = self._latest_row(conn)
-        conn.close()
-        return row
+        with self._connect() as conn:
+            return self._latest_row(conn)
 
     def get(self, checkpoint_id: int) -> dict | None:
         """Retrieve a checkpoint by ID as dict with metadata."""
-        conn = sqlite3.connect(str(self.db_path))
-        cur = conn.execute(
-            "SELECT * FROM checkpoints WHERE checkpoint_id = ?",
-            (checkpoint_id,),
-        )
-        row = cur.fetchone()
-        conn.close()
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT * FROM checkpoints WHERE checkpoint_id = ?",
+                (checkpoint_id,),
+            )
+            row = cur.fetchone()
         if row is None:
             return None
         return self._row_to_dict(row)
 
     def length(self) -> int:
         """Number of checkpoints in the chain."""
-        conn = sqlite3.connect(str(self.db_path))
-        cur = conn.execute("SELECT COUNT(*) FROM checkpoints")
-        count = cur.fetchone()[0]
-        conn.close()
-        return count
+        with self._connect() as conn:
+            return conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
 
     def _latest_row(self, conn: sqlite3.Connection) -> dict | None:
         cur = conn.execute(
@@ -216,5 +222,14 @@ class CheckpointChain:
             (first_id, d["durable_memory"], d["execution_summary"],
              d["user_requirements"], d["skill_references"], d["byte_hash"],
              time.time()),
+        )
+
+        # v3.9.4: the merged range is gone, so the first surviving checkpoint
+        # now points at a parent that no longer exists. Re-anchor it to the
+        # merged row — that row IS its history, and a chain you cannot walk
+        # back is not a chain.
+        conn.execute(
+            "UPDATE checkpoints SET parent_id = ? WHERE checkpoint_id = ?",
+            (first_id, rows[-keep_count][0]),
         )
         conn.commit()

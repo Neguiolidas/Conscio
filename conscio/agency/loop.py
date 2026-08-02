@@ -144,12 +144,15 @@ class AutonomyLoop:
                 report.cycles += 1
                 if act_report.status in _FAILURE_STATUSES:
                     report.failures += 1
+                # v3.9.4: housekeeping, not autonomy — DreamCycle makes no model
+                # call. This ran *after* the lockdown check, so the break jumped
+                # over it and a locked-down mind never pruned its ledgers again.
+                if self.engine.dream_recommended.recommended:
+                    self.engine.dream()
                 if (act_report.lockdown or state.action_lockdown
                         or act_report.status is ActStatus.LOCKED):
                     report.stopped = "lockdown"
                     break
-                if self.engine.dream_recommended.recommended:
-                    self.engine.dream()
         finally:
             self.pipeline.autonomy_cap = cap0
         report.wall_s = time.monotonic() - start

@@ -40,6 +40,26 @@ def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
 
 
+def _parse_ts(value: object) -> datetime:
+    """Parse a stored timestamp into one comparable with ``datetime.now()``.
+
+    v3.9.4: world_model.json is a plain file, and every reader here parsed it
+    with a bare ``fromisoformat`` and compared the result against a naive
+    ``datetime.now()``. An offset-aware value ("...+00:00") raised TypeError on
+    the comparison, not the parse — and prune's handler reads any failure as
+    "stale", so a single tz-stamped file would purge the whole world model.
+    An offset is a timestamp, so it is converted to local naive here; genuine
+    garbage still raises ValueError/TypeError for each caller to answer its
+    own way.
+    """
+    if not isinstance(value, str):
+        raise TypeError(f"timestamp must be a string, got {type(value).__name__}")
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed
+    return parsed.astimezone().replace(tzinfo=None)
+
+
 class WorldModel:
     """
     Simple knowledge graph for agent world awareness.
@@ -381,7 +401,7 @@ class WorldModel:
                 stale.append(name)
                 continue
             try:
-                updated = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
+                updated = _parse_ts(info.get("last_updated", "2000-01-01"))
                 if updated < cutoff:
                     stale.append(name)
             except (ValueError, TypeError):
@@ -427,7 +447,7 @@ class WorldModel:
 
         now = datetime.now()
         try:
-            last = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
+            last = _parse_ts(info.get("last_updated", "2000-01-01"))
             age_days = max((now - last).total_seconds() / 86400.0, 0.0)
             age_norm = 1.0 - math.exp(-age_days / HALFLIFE_DAYS)
         except (ValueError, TypeError):
@@ -451,7 +471,7 @@ class WorldModel:
         updated = 0
         for info in self._data["entities"].values():
             try:
-                last = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
+                last = _parse_ts(info.get("last_updated", "2000-01-01"))
                 hours = (now - last).total_seconds() / 3600
                 current = info.get("relevance", 1.0)
                 new_rel = self._compute_relevance(hours, current)
@@ -503,7 +523,7 @@ class WorldModel:
             relevance = info.get("relevance", 1.0)
             if dry_run:
                 try:
-                    last = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
+                    last = _parse_ts(info.get("last_updated", "2000-01-01"))
                     hours = (now - last).total_seconds() / 3600
                     relevance = self._compute_relevance(hours, relevance)
                 except (ValueError, TypeError):
@@ -513,7 +533,7 @@ class WorldModel:
                 to_remove.append(name)
                 continue
             try:
-                updated = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
+                updated = _parse_ts(info.get("last_updated", "2000-01-01"))
                 if updated < cutoff:
                     to_remove.append(name)
             except (ValueError, TypeError):
@@ -546,7 +566,7 @@ class WorldModel:
         for name, info in self._data["entities"].items():
             if dry_run:
                 try:
-                    last = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
+                    last = _parse_ts(info.get("last_updated", "2000-01-01"))
                     hours = (now - last).total_seconds() / 3600.0
                     current = info.get("relevance", 1.0)
                     projected = self._compute_relevance(hours, current)
@@ -575,7 +595,7 @@ class WorldModel:
         changed: set[str] = set()
         for name, info in self._data["entities"].items():
             try:
-                updated = datetime.fromisoformat(info.get("last_updated", "2000-01-01"))
+                updated = _parse_ts(info.get("last_updated", "2000-01-01"))
                 if updated >= cutoff:
                     changed.add(name)
             except (ValueError, TypeError):
@@ -604,7 +624,7 @@ class WorldModel:
         kept: list[dict] = []
         for e in log:
             try:
-                if datetime.fromisoformat(e["ts"]) >= cutoff:
+                if _parse_ts(e["ts"]) >= cutoff:
                     kept.append(e)
             except (ValueError, TypeError, KeyError):
                 continue
@@ -637,7 +657,7 @@ class WorldModel:
         total = 0
         for e in self._data.get("prediction_log", []):
             try:
-                if datetime.fromisoformat(e["ts"]) >= cutoff:
+                if _parse_ts(e["ts"]) >= cutoff:
                     total += 1
                     errors += int(e.get("error", 0))
             except (ValueError, TypeError, KeyError):

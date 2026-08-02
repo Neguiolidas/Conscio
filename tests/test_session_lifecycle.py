@@ -516,8 +516,7 @@ class TestRecordSessionLifecycle:
         disk writes crash with UnboundLocalError.
 
         This test forces an early exception (in enrich_with_conscio) and
-        verifies the function still completes without UnboundLocalError,
-        writing empty fallback values to disk rather than crashing.
+        verifies the function still completes without UnboundLocalError.
         """
         heartbeat_path = tmp_path / "_latest_heartbeat.md"
         handoff_path = tmp_path / "_session_handoff.md"
@@ -537,11 +536,14 @@ class TestRecordSessionLifecycle:
                 engine=mock_engine,
             )
 
-            # The function should not crash — it should return the summary
-            # (or at minimum not raise UnboundLocalError)
-            # Files should be written (possibly empty if exception was early)
-            assert heartbeat_path.exists()
-            assert handoff_path.exists()
+            # Reaching this line at all is the assertion: the call returned
+            # instead of raising UnboundLocalError.
+            # v3.9.4: it must NOT write the empty fallbacks. An empty handoff
+            # carries no information, and writing one would erase whatever the
+            # previous session left at that path — see
+            # TestHandoffIsNotDestroyedOnFailure below.
+            assert not heartbeat_path.exists()
+            assert not handoff_path.exists()
 
 # ─── EventBus Integration Tests ────────────────────────────────────────────
 
@@ -601,3 +603,32 @@ class TestContentStoreIntegration:
             assert len(results) >= 1
         finally:
             store.close()
+
+
+class TestHandoffIsNotDestroyedOnFailure:
+    """v3.9.4: when enrichment raises, `handoff`/`heartbeat` stay "" and the
+    persist step wrote them anyway — the previous session's handoff, the only
+    record of it, was replaced with an empty file. An empty handoff carries no
+    information, so refusing to write one cannot lose anything."""
+
+    def test_previous_handoff_survives_an_enrichment_failure(
+            self, tmp_db, mock_engine, tmp_path):
+        handoff_path = tmp_path / "_session_handoff.md"
+        heartbeat_path = tmp_path / "_latest_heartbeat.md"
+        handoff_path.write_text("previous session: shipped v3.9.3", encoding="utf-8")
+        heartbeat_path.write_text("previous heartbeat", encoding="utf-8")
+
+        def boom(*_a, **_k):
+            raise RuntimeError("enrichment exploded")
+
+        with patch("conscio.session_lifecycle.SESSION_DB", tmp_db), \
+             patch("conscio.session_lifecycle.HANDOFF_DIR", tmp_path), \
+             patch("conscio.session_lifecycle.enrich_with_conscio", boom):
+            record_session_lifecycle(
+                event_type="session:reset",
+                context={"session_id": "test_20260605"},
+                engine=mock_engine,
+            )
+
+        assert handoff_path.read_text() == "previous session: shipped v3.9.3"
+        assert heartbeat_path.read_text() == "previous heartbeat"

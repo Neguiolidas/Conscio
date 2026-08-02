@@ -1197,6 +1197,12 @@ class ContentStore:
         for table in ("chunks", "chunks_trigram"):
             self.db.execute(f"DELETE FROM {table} WHERE source_id = ?", (source_id,))
 
+        # v3.9.4: the tombstone goes FIRST. It carries a FOREIGN KEY onto
+        # sources(id), so deleting the source while one exists raised
+        # IntegrityError — and this is the path compact() takes, so one
+        # tombstoned source aborted a whole compaction run.
+        self.db.execute(
+            "DELETE FROM source_tombstones WHERE source_id = ?", (source_id,))
         self.db.execute("DELETE FROM sources WHERE id = ?", (source_id,))
         self.db.commit()
         return True
@@ -1221,10 +1227,15 @@ class ContentStore:
         source_ids = [row["id"] for row in old_sources]
         placeholders = ",".join("?" for _ in source_ids)
 
-        # Batch delete in single transaction: 3 DELETEs + 1 commit
+        # Batch delete in single transaction: 4 DELETEs + 1 commit. Tombstones
+        # go before sources — they hold a FOREIGN KEY onto sources(id), and one
+        # tombstoned source used to abort the entire compaction (v3.9.4).
         for table in ("chunks", "chunks_trigram"):
             self.db.execute(f"DELETE FROM {table} WHERE source_id IN ({placeholders})", source_ids)
 
+        self.db.execute(
+            f"DELETE FROM source_tombstones WHERE source_id IN ({placeholders})",
+            source_ids)
         self.db.execute(f"DELETE FROM sources WHERE id IN ({placeholders})", source_ids)
         self.db.commit()
 

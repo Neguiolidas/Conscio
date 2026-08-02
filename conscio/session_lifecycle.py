@@ -858,10 +858,16 @@ def record_session_lifecycle(
             engine.close()
 
     # 4. Persist
+    # v3.9.4: never overwrite a good handoff with an empty one. When enrichment
+    # raises, these stay "" — writing them would erase the previous session's
+    # record, which is the only copy there is. An empty handoff carries no
+    # information, so declining to write it cannot lose any.
     if _handoff_dir is not None:
         _handoff_dir.mkdir(parents=True, exist_ok=True)
-        (_handoff_dir / "_session_handoff.md").write_text(handoff, encoding="utf-8")
-        (_handoff_dir / "_latest_heartbeat.md").write_text(heartbeat, encoding="utf-8")
+        if handoff:
+            (_handoff_dir / "_session_handoff.md").write_text(handoff, encoding="utf-8")
+        if heartbeat:
+            (_handoff_dir / "_latest_heartbeat.md").write_text(heartbeat, encoding="utf-8")
 
     return summary
 

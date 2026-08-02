@@ -22,7 +22,15 @@ they exist. A second validation pass on the same install found the auditor still
 refusing the one goal it had just been taught to serve — it was comparing the
 tool's name against an internal check identifier — and, in the stores behind it,
 four fields the operator read as never populated: three of them were, or should
-have been, and the fourth was honest but growing without limit.
+have been, and the fourth was honest but growing without limit. A third pass,
+reading the code rather than the install, found nine more — every one of them a
+place where the thing that cleans up was skipped, aborted, or never asked: the
+dream on two paths, the ledger with no dream to prune it, a handoff overwritten
+with nothing, two failure paths that walked away from an open database handle, a
+foreign key that turned a compaction into an exception, a consolidation that cut
+the chain it was shortening, a proposal that came back after being answered, an
+approved change nobody applied and no gate could see, and a timezone that made a
+live entity look a decade stale.
 
 ### Added
 
@@ -226,6 +234,70 @@ have been, and the fourth was honest but growing without limit.
   exercised only from tests, which `vulture` does not scan — was one. Every push
   to `main` since has had a failing `lint` job beside four passing test jobs.
   Whitelisted, with the reason it exists.
+- **Two paths through `run()` never dreamed, and the ledger had no other
+  pruner.** Wiring `compact()` into the dream fixed retention only for minds
+  that dream. A host with no adapter attached reflects and returns before the
+  dream check, and a locked-down autonomy loop `break`s past it — both keep
+  writing to the stores the dream prunes. `DreamCycle` makes no model call, so
+  gating housekeeping behind an inference backend or an unlocked actor was never
+  the intent: both paths now dream when the recommendation says to. R9 is
+  untouched — an asleep host still does nothing. And because retention should
+  not depend on whether a mind ever dreams, `token_usage` now bounds itself at
+  the writer: a hard cap checked on the first record of each process and once
+  per thousand after that, so the file stays bounded no matter who is asleep.
+- **An enrichment failure erased the previous session's handoff.** When
+  `enrich_with_conscio` raised, `handoff` and `heartbeat` stayed `""` — and the
+  persist step wrote them anyway, replacing the last good handoff with an empty
+  file. That handoff is the only record of the session before it. Empty content
+  is no longer written: it carries no information, so declining to write it
+  cannot lose any.
+- **A failed `dump()` leaked its destination handle.** `Hallways.dump()` and
+  `Deduplicator.dump()` opened the target database, called `backup()`, and
+  closed the target on the line after — so any error in `backup()` skipped the
+  close and left an open SQLite connection, with its journal, behind. Both now
+  close in a `finally`, and take the same lock every other method on that
+  connection takes.
+- **A tombstoned source could not be deleted, and one aborted a whole
+  compaction.** `source_tombstones.source_id` is a foreign key onto
+  `sources(id)` and `PRAGMA foreign_keys=ON`, so deleting a source while its
+  tombstone stood raised `IntegrityError` — inside `ContentStore.compact()`,
+  inside the dream's `_crystallize`, and in any direct `delete_source()`. The
+  tombstone is now deleted first in both paths. It cannot outlive its source
+  anyway: `list_tombstones` inner-joins `sources`, so an orphan is invisible.
+- **A failing checkpoint write held its connection open.** Every method on
+  `CheckpointChain` opened a connection, worked, and closed it on the last line.
+  A raise in between hands the connection to the traceback, and the exception →
+  traceback → frame cycle means only the *cyclic* collector frees it —
+  refcounting does not. Measured with the GC disabled: 30 failed appends held 30
+  descriptors. They now open through `contextlib.closing`. Not
+  `with sqlite3.connect(...)`, which commits or rolls back the transaction and
+  leaves the connection open — that idiom would have leaked on *every* call.
+- **Consolidating the checkpoint chain cut it.** `_consolidate` merges the
+  oldest checkpoints into one row and deletes the range — but the first
+  surviving checkpoint kept pointing at a `parent_id` that had just been
+  deleted, so walking back from the latest checkpoint hit an id that resolves to
+  nothing. The survivor is now re-anchored to the merged row, which is exactly
+  the history it lost.
+- **An answered proposal was proposed again.** `observe_errors` deduplicated
+  against `pending_proposals()`, but approving or rejecting a proposal takes it
+  out of PENDING — so answering one restored it to the set of things worth
+  proposing, and the next observation raised it again. It now dedups against
+  every verdict that still stands. `ROLLED_BACK` is excluded on purpose: the
+  change was undone, so proposing it again is a fresh question.
+- **An approved change nobody applied blocked nothing.** `delivery_check`
+  counted PENDING proposals, and `approve()` moves a proposal out of PENDING —
+  so a crash between `approve()` and `mark_applied()` left it decided, unapplied
+  and invisible to the gate forever. The gate now reports both, separately: the
+  undecided and the decided-but-never-done.
+- **A timezone-aware timestamp made a live entity look a decade stale.**
+  `WorldModel` parsed `last_updated` with a bare `datetime.fromisoformat()` and
+  compared it against a naive `now`. An offset-carrying timestamp — what any
+  external source or a `datetime.now(tz).isoformat()` writes — produced an aware
+  datetime, and subtracting a naive one raises `TypeError`, which the pruner
+  treated the same as garbage: unparseable means infinitely old, so the entity
+  was purged. All nine parse sites now go through one helper that converts an
+  offset to local naive time. Genuine garbage still raises, and each caller
+  still answers it its own way.
 
 ---
 

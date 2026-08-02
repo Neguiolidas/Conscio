@@ -2286,7 +2286,12 @@ class ConsciousnessEngine:
         if getattr(self, "_act_pipeline", None) is None:
             # Awake but no inference backend: autonomy is impossible, yet
             # observation stays always-on — perceive + reflect, then report.
+            # v3.9.4: and housekeeping is not autonomy. Every reflection here
+            # writes to the ledgers the dream prunes, and DreamCycle makes no
+            # model call, so gating it on an adapter only makes them grow.
             self.reflect(world_state=world_state)
+            if self.dream_recommended.recommended:
+                self.dream()
             return RunReport(stopped="no adapter attached")
         self.probe()
         loop = AutonomyLoop(self, self._act_pipeline, self._act_meter)

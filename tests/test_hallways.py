@@ -1,4 +1,6 @@
 """TDD: Hallways — wing/room/drawer hierarchy."""
+import pytest
+
 from conscio.hallways import Hallways
 
 
@@ -94,4 +96,43 @@ def test_hallways_dump(tmp_path):
     hw.dump(target)
     assert target.exists()
     assert target.stat().st_size > 0
+    hw.close()
+
+
+def test_dump_closes_the_destination_when_the_copy_fails(tmp_path, monkeypatch):
+    """v3.9.4: `dump()` was the one method that touched the shared connection
+    without `self._lock`, and it also left the destination handle open on any
+    error. The lock is unprovable from the outside — SQLite is built
+    SERIALIZED, so the shared handle is already mutex-protected and the lock
+    buys snapshot consistency, not survival. The leak is provable."""
+    import sqlite3
+
+    hw = Hallways(db_path=tmp_path / "hw.db")
+    closed: list[str] = []
+    real_connect = sqlite3.connect
+
+    class _Tracked:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def close(self):
+            closed.append("dst")
+            self._conn.close()
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    monkeypatch.setattr(sqlite3, "connect",
+                        lambda *a, **k: _Tracked(real_connect(*a, **k)))
+
+    def _explode():
+        raise RuntimeError("backup source unavailable")
+
+    monkeypatch.setattr(hw, "_conn_get", _explode)
+
+    with pytest.raises(RuntimeError):
+        hw.dump(tmp_path / "copy.db")
+
+    assert closed == ["dst"]
+    monkeypatch.undo()
     hw.close()

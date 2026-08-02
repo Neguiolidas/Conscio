@@ -232,6 +232,29 @@ class TestDeliveryCheck:
         result = delivery_check(engine)
         assert result["pass"] is False
 
+    def test_an_approved_proposal_that_was_never_applied_blocks(self, engine):
+        """v3.9.4: the gate counted PENDING only. approve() moves a proposal
+        out of PENDING, so a crash between approve and apply left it resolved
+        in nobody's eyes and invisible to the gate forever."""
+        p = engine.evolution.propose_skill_create("deploy", "d", "sketch", "why")
+        engine.evolution.approve(p)
+
+        result = delivery_check(engine)
+
+        assert result["pass"] is False
+        assert result["stale_proposals"] == 1
+        assert any("approved" in b.lower() for b in result["blockers"]), result["blockers"]
+
+    def test_an_applied_proposal_does_not_block(self, engine):
+        p = engine.evolution.propose_skill_create("deploy", "d", "sketch", "why")
+        engine.evolution.approve(p)
+        engine.evolution.mark_applied(p)
+
+        result = delivery_check(engine)
+
+        assert result["pass"] is True
+        assert result["stale_proposals"] == 0
+
     def test_delivery_check_emits_system_event(self, engine):
         delivery_check(engine)
         events = engine.event_bus.query(type="system")

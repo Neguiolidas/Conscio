@@ -908,3 +908,17 @@ class TestPrivateMethods:
         assert size > 0
         # Should include main DB at minimum
         assert os.path.getsize(store.db_path) <= size
+
+
+def test_deleting_a_source_takes_its_tombstone(tmp_path):
+    """v3.9.4: `delete_source` cleared chunks and the source row but left the
+    tombstone behind, pointing at an id that no longer exists."""
+    store = ContentStore(db_path=tmp_path / "cs.db")
+    source_id = store.index("note", "some content worth keeping", "reflection")
+    store._mark_stale(source_id, reason="content_changed")
+    assert source_id in store._stale_source_ids()
+
+    assert store.delete_source(source_id) is True
+
+    assert store._stale_source_ids() == set()
+    store.close()

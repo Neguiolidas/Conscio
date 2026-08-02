@@ -575,6 +575,34 @@ class TestAutoEvolutionObserver:
         new = evo.observe_errors(meta)
         assert len(new) == 0
 
+    def test_a_rejected_proposal_is_not_offered_again(self, tmp_storage):
+        """v3.9.4: dedup only looked at PENDING, so rejecting a proposal moved
+        it out of the set that suppresses it — the same proposal came back on
+        the next observation. "No" has to stick."""
+        meta = MetaCognition(tmp_storage)
+        evo = AutoEvolution(tmp_storage)
+        meta.record_error("API timeout")
+        meta.record_error("API timeout")
+
+        first = evo.observe_errors(meta)
+        assert len(first) == 1
+        evo.reject(first[0], reason="known, wontfix")
+
+        assert evo.observe_errors(meta) == []
+
+    def test_an_applied_proposal_is_not_offered_again(self, tmp_storage):
+        """The lesson was already learned; proposing it again is noise."""
+        meta = MetaCognition(tmp_storage)
+        evo = AutoEvolution(tmp_storage)
+        meta.record_error("API timeout")
+        meta.record_error("API timeout")
+
+        first = evo.observe_errors(meta)
+        evo.approve(first[0])
+        evo.mark_applied(first[0])
+
+        assert evo.observe_errors(meta) == []
+
 
 # --- Meta-Cognition → Goal Generator Connection Tests ---
 

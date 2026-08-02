@@ -227,8 +227,15 @@ class AutoEvolution:
         if not frequent:
             return []
 
-        # Dedup: existing pending proposal descriptions
-        existing_descs = {p.description for p in self.pending_proposals()}
+        # Dedup against every verdict that still stands (v3.9.4). Checking only
+        # PENDING meant answering a proposal — rejecting it, or applying it —
+        # took it out of the set that suppresses it, so the same one came back
+        # on the next observation. ROLLED_BACK is excluded on purpose: the
+        # change was undone, so proposing it again is a fresh question.
+        existing_descs = {
+            p.description for p in self._proposals
+            if p.status is not ProposalStatus.ROLLED_BACK
+        }
 
         new_proposals = []
         for error in frequent:
@@ -337,6 +344,13 @@ class AutoEvolution:
     def applied_proposals(self) -> list[EvolutionProposal]:
         """Get all successfully applied proposals."""
         return [p for p in self._proposals if p.status == ProposalStatus.APPLIED]
+
+    def unresolved_proposals(self) -> list[EvolutionProposal]:
+        """Proposals nobody has finished with: PENDING (undecided) and APPROVED
+        (decided but never applied — where a crash between approve() and
+        mark_applied() leaves them, invisible to a PENDING-only query)."""
+        return [p for p in self._proposals
+                if p.status in (ProposalStatus.PENDING, ProposalStatus.APPROVED)]
 
     # --- Summary ---
 

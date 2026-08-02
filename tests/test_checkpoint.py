@@ -117,3 +117,109 @@ class TestCheckpointChain:
         # After 6 appends with consolidate_every=3, should have ~4 entries
         # (3 + 3 → 1 consolidated + 3 new)
         assert chain.length() <= 5
+
+
+class TestConsolidationKeepsTheChainWalkable:
+    """v3.9.4: `_consolidate` deletes the merged range and re-inserts one row
+    under the *oldest* id. The first surviving checkpoint still pointed at the
+    id of the newest deleted row — a parent that no longer exists."""
+
+    def _chain(self, tmp_path, n=6):
+        chain = CheckpointChain(tmp_path / "cp.db", consolidate_every=3)
+        for i in range(n):
+            chain.append(CompactionCheckpoint(
+                durable_memory=f"mem {i}", execution_summary=f"sum {i}",
+                user_requirements=f"req {i}", skill_references=[],
+            ))
+        return chain
+
+    def test_every_parent_id_resolves(self, tmp_path):
+        chain = self._chain(tmp_path)
+        ids = {row["checkpoint_id"] for row in self._rows(chain)}
+        for row in self._rows(chain):
+            parent = row["parent_id"]
+            assert parent is None or parent in ids, (
+                f"checkpoint {row['checkpoint_id']} points at deleted parent {parent}")
+
+    def test_the_chain_walks_back_to_the_root(self, tmp_path):
+        chain = self._chain(tmp_path)
+        rows = {r["checkpoint_id"]: r for r in self._rows(chain)}
+        seen, node = 0, chain.latest()["checkpoint_id"]
+        while node is not None:
+            seen += 1
+            assert seen <= len(rows), "cycle in the checkpoint chain"
+            node = rows[node]["parent_id"]
+        assert seen == len(rows)
+
+    @staticmethod
+    def _rows(chain):
+        import sqlite3
+        conn = sqlite3.connect(str(chain.db_path))
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute("SELECT * FROM checkpoints")]
+        conn.close()
+        return rows
+
+
+class TestConnectionsAreClosedOnFailure:
+    """v3.9.4: a raise between connect() and close() used to hold the handle.
+
+    The exception → traceback → frame cycle keeps the connection alive, so only
+    the *cyclic* collector frees it — refcounting alone does not. Disabling the
+    GC makes the leak deterministic instead of timing-dependent.
+    """
+
+    @staticmethod
+    def _fd_count():
+        import os
+        return len(os.listdir("/proc/self/fd"))
+
+    def _failing_checkpoint(self):
+        cp = CompactionCheckpoint(
+            durable_memory="d", execution_summary="s",
+            user_requirements="r", skill_references=[],
+        )
+        # Unserializable payload: to_dict() raises after connect() succeeded.
+        object.__setattr__(cp, "skill_references", object())
+        return cp
+
+    def test_failed_append_closes_its_connection(self, tmp_path):
+        import gc
+
+        chain = CheckpointChain(tmp_path / "leak.db")
+        chain.append(CompactionCheckpoint(
+            durable_memory="warm", execution_summary="up",
+            user_requirements="", skill_references=[],
+        ))
+        bad = self._failing_checkpoint()
+
+        gc.disable()
+        try:
+            before = self._fd_count()
+            raised = 0
+            for _ in range(30):
+                try:
+                    chain.append(bad)
+                except Exception:  # the raise is the precondition of this test
+                    raised += 1
+            leaked = self._fd_count() - before
+        finally:
+            gc.enable()
+
+        assert raised == 30, "the fixture stopped raising — the test proves nothing"
+        assert leaked == 0, f"{leaked} descriptors held after 30 failed appends"
+
+    def test_reads_still_work_after_failed_appends(self, tmp_path):
+        chain = CheckpointChain(tmp_path / "after.db")
+        chain.append(CompactionCheckpoint(
+            durable_memory="kept", execution_summary="s",
+            user_requirements="r", skill_references=["k"],
+        ))
+        for _ in range(5):
+            try:
+                chain.append(self._failing_checkpoint())
+            except Exception:
+                pass
+        assert chain.length() == 1
+        assert chain.latest()["durable_memory"] == "kept"
+        assert json.loads(chain.latest()["skill_references"]) == ["k"]

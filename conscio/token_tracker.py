@@ -33,6 +33,16 @@ VALID_SOURCES = {
     "system", "consciousness", "tool_output", "external",
 }
 
+# Self-bounding ledger (v3.9.4). compact() is time-based and only the dream
+# calls it, but the dream is gated behind autonomy while the writer —
+# reflect() — is not: an asleep host writes here forever and nothing prunes.
+# A hard row cap enforced at the writer bounds the file no matter who dreams.
+# The cap is checked on the first record of each process and once every
+# TOKEN_LOG_PRUNE_EVERY records after that, so the steady state is at most
+# MAX + PRUNE_EVERY rows and the common path stays a bare INSERT.
+TOKEN_LOG_MAX = 100_000
+TOKEN_LOG_PRUNE_EVERY = 1_000
+
 
 # ─── TokenTracker ───────────────────────────────────────────────────────
 
@@ -52,6 +62,14 @@ class TokenTracker:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.row_factory = sqlite3.Row
+
+        self.max_rows = TOKEN_LOG_MAX
+        self.prune_every = TOKEN_LOG_PRUNE_EVERY
+        # Start due: most writers here are short-lived (a hook, an MCP call, a
+        # CLI run) and never reach an interval boundary, so a counter starting
+        # at zero would let a fleet of them grow the file forever. The check is
+        # O(1) when the ledger is under the cap.
+        self._since_prune = self.prune_every - 1
 
         self._init_schema()
 
@@ -117,6 +135,7 @@ class TokenTracker:
             (source, raw_chars, filtered_chars, raw_tokens, filtered_tokens, saving_pct, timestamp),
         )
         self.db.commit()
+        self._prune_if_due()
 
         return {
             "source": source,
@@ -255,6 +274,49 @@ class TokenTracker:
         }
 
     # ─── Maintenance ─────────────────────────────────────────────────
+
+    def _prune_if_due(self) -> None:
+        """Enforce the row cap on the first record and every ``prune_every``
+        records after that.
+
+        Amortized so the common path stays a single INSERT. The counter is
+        in-process only, and it starts due so that a process writing fewer
+        records than one interval still checks once.
+        """
+        self._since_prune += 1
+        if self._since_prune < self.prune_every:
+            return
+        self._since_prune = 0
+        self.enforce_cap(self.max_rows)
+
+    def enforce_cap(self, max_rows: int) -> int:
+        """Keep only the newest ``max_rows`` records. Returns rows removed.
+
+        Complements compact(): that one applies an age policy when the mind
+        dreams, this one bounds the file regardless of whether it ever does.
+
+        The id span is an upper bound on the row count (ids are AUTOINCREMENT
+        and every delete here takes the oldest), so the under-cap case costs two
+        index seeks and no scan.
+        """
+        span = self.db.execute(
+            "SELECT MIN(id) AS lo, MAX(id) AS hi FROM token_usage"
+        ).fetchone()
+        if span["hi"] is None or span["hi"] - span["lo"] + 1 <= max_rows:
+            return 0
+
+        cutoff = self.db.execute(
+            "SELECT id FROM token_usage ORDER BY id DESC LIMIT 1 OFFSET ?",
+            (max_rows,),
+        ).fetchone()
+        if cutoff is None:
+            return 0
+
+        cur = self.db.execute(
+            "DELETE FROM token_usage WHERE id <= ?", (cutoff["id"],)
+        )
+        self.db.commit()
+        return max(0, cur.rowcount)
 
     def compact(self, before_days: int = 30) -> int:
         """Remove old token usage records."""
