@@ -376,6 +376,30 @@ class TestErrors:
         with pytest.raises(AdapterBadResponse):
             adapters._post_json("http://x", {}, 1.0)
 
+    def test_the_error_names_the_endpoint_it_could_not_reach(self):
+        """'No address associated with hostname' never says which hostname,
+        and that is the only thing the operator can act on."""
+        adapter = OllamaAdapter(base_url="http://127.0.0.1:9", model="m",
+                                timeout=0.3)
+        with pytest.raises(AdapterConnectionError) as exc:
+            adapter.generate("hi")
+        assert "127.0.0.1:9" in str(exc.value)
+
+    def test_a_key_in_the_query_string_is_not_named(self, monkeypatch):
+        """These messages reach the ledger and the event bus."""
+        import urllib.error
+        import urllib.request
+
+        def fake_urlopen(*args, **kwargs):
+            raise urllib.error.URLError("nope")
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        with pytest.raises(AdapterConnectionError) as exc:
+            adapters._post_json("http://host/v1/chat?key=sk-SEKRET-LEAK-7f3a",
+                                {}, 1.0)
+        assert "sk-SEKRET-LEAK-7f3a" not in str(exc.value)
+        assert "http://host/v1/chat" in str(exc.value)
+
 
 class TestAdapterTaxonomyHardening:
     """v1.9 I-D — every failure maps to the Adapter* taxonomy; no raw exception

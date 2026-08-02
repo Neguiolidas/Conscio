@@ -22,25 +22,38 @@ from .adapter import (
 )
 
 
+def _endpoint(url: str) -> str:
+    """The address to name in an error, without anything secret in it.
+
+    A DNS failure reads '[Errno -5] No address associated with hostname' and
+    never says which hostname, which is the one thing the operator needs. The
+    query string is dropped because some providers accept a key there, and
+    these messages reach the ledger and the event bus.
+    """
+    return url.split("?", 1)[0]
+
+
 def _post_json(url: str, payload: dict, timeout: float,
                headers: dict | None = None) -> dict:
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url, data=body,
         headers={"Content-Type": "application/json", **(headers or {})})
+    where = _endpoint(url)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     except TimeoutError as exc:
-        raise AdapterTimeout(str(exc)) from exc
+        raise AdapterTimeout(f"{where}: {exc}") from exc
     except urllib.error.HTTPError as exc:        # server responded 4xx/5xx
-        raise AdapterBadResponse(f"HTTP {exc.code}: {exc.reason}") from exc
+        raise AdapterBadResponse(
+            f"{where}: HTTP {exc.code}: {exc.reason}") from exc
     except urllib.error.URLError as exc:
         if isinstance(getattr(exc, "reason", None), TimeoutError):
-            raise AdapterTimeout(str(exc)) from exc
-        raise AdapterConnectionError(str(exc)) from exc
+            raise AdapterTimeout(f"{where}: {exc}") from exc
+        raise AdapterConnectionError(f"{where}: {exc}") from exc
     except (json.JSONDecodeError, ValueError) as exc:
-        raise AdapterBadResponse(str(exc)) from exc
+        raise AdapterBadResponse(f"{where}: {exc}") from exc
 
 
 class OllamaAdapter(InferenceAdapter):

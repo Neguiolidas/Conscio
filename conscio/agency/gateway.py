@@ -13,8 +13,21 @@ import json
 import re
 from typing import TYPE_CHECKING, Any
 
-from .adapter import AdapterError, InferenceAdapter
+from .adapter import (
+    AdapterConnectionError,
+    AdapterError,
+    AdapterTimeout,
+    InferenceAdapter,
+)
 from .contracts import ActionProposal, proposal_from_dict, validate
+
+# The tier ladder exists for a model that cannot produce structured output. It
+# cannot help when the endpoint was never reached: T3 sends the same request to
+# the same dead host with different instructions. A server that answered badly
+# is not in here — a different tier may well get a better answer out of it. The
+# clearest case is HTTP 400 for an unsupported response_format, which T3 fixes
+# by sending no schema at all.
+_UNREACHABLE = (AdapterTimeout, AdapterConnectionError)
 
 if TYPE_CHECKING:
     from .intercepter import Intercepter, InterceptionLoop
@@ -170,7 +183,7 @@ class OutputGateway:
         if tier == "T1":
             self.last_tier = "T1"
             data = self._try_grammar(base_prompt, schema, tool_names)
-            if data is None:                   # single downgrade per cycle
+            if data is None and not self._no_lower_tier_can_help():  # one/cycle
                 if caps.json_mode:
                     self.last_tier = "T2"
                     data = self._try_json(base_prompt, schema)
@@ -180,7 +193,7 @@ class OutputGateway:
         elif tier == "T2":
             self.last_tier = "T2"
             data = self._try_json(base_prompt, schema)
-            if data is None:                   # single downgrade T2 -> T3
+            if data is None and not self._no_lower_tier_can_help():  # T2 -> T3
                 self.last_tier = "T3"
                 data = self._try_kv(base_prompt, schema, attempts=1)
         else:
@@ -191,10 +204,32 @@ class OutputGateway:
             # v3.1: check if failure was PERMANENT — if so, don't try more tiers
             if self.last_adapter_error is not None:
                 from conscio.failure import FailureGovernor as _FG
-                if not _FG.should_retry(_FG.classify(self.last_adapter_error)):
+                cls = _FG.classify(self.last_adapter_error)
+                if not _FG.should_retry(cls):
                     raise GatewayError("permanent failure: " + str(self.last_adapter_error))
+                if not self.last_raw:
+                    # Nothing was ever decoded, so "decode failed" would send the
+                    # operator to the schema and the model's output format to
+                    # explain an unreachable host or a rejected request.
+                    raise GatewayError(
+                        f"adapter call failed ({cls.value}): "
+                        f"{self.last_adapter_error}")
             raise GatewayError("all decode tiers failed" + self._decode_detail())
         return proposal_from_dict(data, goal_id=goal_id)
+
+    def _no_lower_tier_can_help(self) -> bool:
+        """Would the next tier down just repeat this failure?
+
+        Two cases: the endpoint was never reached, and the request was
+        rejected for a reason no rewording changes (auth, content filter).
+        Both spend a second call to be told the same thing.
+        """
+        if self.last_adapter_error is None:
+            return False          # a plain decode failure — that is what T3 is for
+        if isinstance(self.last_adapter_error, _UNREACHABLE):
+            return True
+        from conscio.failure import FailureGovernor as _FG
+        return not _FG.should_retry(_FG.classify(self.last_adapter_error))
 
     def _decode_detail(self) -> str:
         """What the model said and why it was rejected, for the error message.
@@ -210,6 +245,11 @@ class OutputGateway:
         if self.last_raw:
             sample = " ".join(self.last_raw.split())[:_RAW_SAMPLE_CHARS]
             parts.append(f"last reply: {sample!r}")
+        if self.last_adapter_error is not None:
+            # A tier that answered and a tier that never ran both end up here.
+            # Without this the adapter failure is dropped and the message reads
+            # as though every tier got a reply it could not parse.
+            parts.append(f"adapter error: {self.last_adapter_error}")
         return f" ({', '.join(parts)})" if parts else ""
 
     # ── tiers ──
@@ -226,11 +266,10 @@ class OutputGateway:
                 raw = self._generate(prompt + feedback, schema=schema,
                                             grammar=grammar).text
             except AdapterError as exc:
+                # Both arms of the old classification returned None, so the
+                # class was computed and discarded. request_action owns that
+                # decision now: it can see every tier, this block sees one.
                 self.last_adapter_error = exc
-                # v3.1: skip remaining tiers if PERMANENT failure
-                from conscio.failure import FailureGovernor as _FG
-                if not _FG.should_retry(_FG.classify(exc)):
-                    return None
                 return None
             self.last_raw = raw
             try:
@@ -255,11 +294,10 @@ class OutputGateway:
                 raw = self._generate(prompt + feedback,
                                             schema=schema).text
             except AdapterError as exc:
+                # Both arms of the old classification returned None, so the
+                # class was computed and discarded. request_action owns that
+                # decision now: it can see every tier, this block sees one.
                 self.last_adapter_error = exc
-                # v3.1: skip remaining tiers if PERMANENT failure
-                from conscio.failure import FailureGovernor as _FG
-                if not _FG.should_retry(_FG.classify(exc)):
-                    return None
                 return None
             self.last_raw = raw
             try:
@@ -284,11 +322,10 @@ class OutputGateway:
             try:
                 raw = self._generate(prompt + feedback).text
             except AdapterError as exc:
+                # Both arms of the old classification returned None, so the
+                # class was computed and discarded. request_action owns that
+                # decision now: it can see every tier, this block sees one.
                 self.last_adapter_error = exc
-                # v3.1: skip remaining tiers if PERMANENT failure
-                from conscio.failure import FailureGovernor as _FG
-                if not _FG.should_retry(_FG.classify(exc)):
-                    return None
                 return None
             self.last_raw = raw
             data = parse_kv(raw)

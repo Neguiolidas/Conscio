@@ -2,7 +2,14 @@
 """Tests for OutputGateway: tier-2 JSON decode w/ repair+retry, tier-3 KV-line."""
 import pytest
 
-from conscio.agency.adapter import AdapterCaps, MockAdapter
+from conscio.agency.adapter import (
+    AdapterBadResponse,
+    AdapterCaps,
+    AdapterConnectionError,
+    AdapterError,
+    AdapterTimeout,
+    MockAdapter,
+)
 from conscio.agency.contracts import PROPOSAL_SCHEMA, ActionProposal
 from conscio.agency.gateway import (
     GatewayError,
@@ -323,3 +330,95 @@ class TestDecodeFailureIsDiagnosable:
         with pytest.raises(GatewayError) as exc:
             gw.request_action("BASE", PROPOSAL_SCHEMA)
         assert "echo" not in str(exc.value), "stale sample from the call before"
+
+
+def _dies(exc: Exception):
+    """A script entry that raises instead of answering."""
+    def entry(_prompt: str) -> str:
+        raise exc
+    return entry
+
+
+_DEAD_HOST = AdapterConnectionError(
+    "<urlopen error [Errno -5] No address associated with hostname>")
+
+
+class TestTransportFailureIsNotADecodeFailure:
+    """A host that was never reached must not be reported as a bad decoder.
+
+    Field report (v3.9.3, daemon): every maintenance goal collapsed with
+    'all decode tiers failed'. The base URL did not resolve, so no tier ever
+    saw a reply — the message sent the operator to the schema and the prompt
+    to explain a DNS failure. The cause was held in last_adapter_error and
+    dropped on the way out.
+    """
+
+    def test_an_unreachable_host_is_named_instead_of_the_decoder(self):
+        adapter = MockAdapter(script=[_dies(_DEAD_HOST)] * 4)
+        gw = OutputGateway(adapter)
+        with pytest.raises(GatewayError) as exc:
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert "provider_outage" in str(exc.value)
+        assert "No address associated with hostname" in str(exc.value)
+        assert "decode" not in str(exc.value), "blames the model for a dead host"
+
+    def test_a_timeout_is_named_too(self):
+        adapter = MockAdapter(script=[_dies(AdapterTimeout("read timed out"))] * 4)
+        gw = OutputGateway(adapter)
+        with pytest.raises(GatewayError) as exc:
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert "timeout" in str(exc.value) and "read timed out" in str(exc.value)
+
+    def test_a_dead_host_is_not_asked_again_at_a_lower_tier(self):
+        """T3 would send the same request to the same dead host."""
+        adapter = MockAdapter(script=[_dies(_DEAD_HOST)] * 4)
+        gw = OutputGateway(adapter)
+        with pytest.raises(GatewayError):
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert len(adapter.calls) == 1, "downgraded onto an unreachable endpoint"
+
+    def test_the_grammar_tier_does_not_downgrade_onto_a_dead_host_either(self):
+        caps = AdapterCaps(model_name="llamacpp", json_mode=False, grammar=True)
+        adapter = MockAdapter(script=[_dies(_DEAD_HOST)] * 4, caps=caps)
+        gw = OutputGateway(adapter)
+        with pytest.raises(GatewayError):
+            gw.request_action("BASE", PROPOSAL_SCHEMA, tool_names=["echo"])
+        assert gw.last_tier == "T1"
+        assert len(adapter.calls) == 1
+
+    def test_a_server_that_answered_badly_still_earns_the_next_tier(self):
+        """A 400 for an unsupported schema is exactly what T3 rescues: it
+        sends no schema at all. Reaching the host is what makes a lower tier
+        worth trying, so this failure must keep cascading."""
+        adapter = MockAdapter(script=[
+            _dies(AdapterBadResponse("HTTP 400: response_format unsupported")),
+            _valid_kv()])
+        gw = OutputGateway(adapter)
+        proposal = gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert proposal.tool == "echo" and gw.last_tier == "T3"
+
+    def test_a_permanent_failure_is_still_named_permanent(self):
+        adapter = MockAdapter(script=[_dies(AdapterError("HTTP 401: unauthorized"))] * 4)
+        gw = OutputGateway(adapter)
+        with pytest.raises(GatewayError) as exc:
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert str(exc.value).startswith("permanent failure:")
+        assert len(adapter.calls) == 1
+
+    def test_a_reply_and_a_transport_failure_are_both_reported(self):
+        """T2 got prose, then the host died under T3. Neither half explains
+        the cycle on its own, so the message has to carry both."""
+        adapter = MockAdapter(script=["I cannot help with that."] * 3
+                              + [_dies(_DEAD_HOST)])
+        gw = OutputGateway(adapter)
+        with pytest.raises(GatewayError) as exc:
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert "I cannot help with that." in str(exc.value)
+        assert "No address associated with hostname" in str(exc.value)
+
+    def test_a_dead_host_does_not_haunt_the_next_cycle(self):
+        adapter = MockAdapter(script=[_dies(_DEAD_HOST), _valid_json()])
+        gw = OutputGateway(adapter)
+        with pytest.raises(GatewayError):
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert gw.request_action("BASE", PROPOSAL_SCHEMA).tool == "echo"
