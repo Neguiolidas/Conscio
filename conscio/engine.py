@@ -1833,7 +1833,8 @@ class ConsciousnessEngine:
         sandbox = Path(sandbox_root or Path.home() / ".conscio" / "sandbox")
         registry = registry or make_default_registry(
             sandbox_root=sandbox, content_store=self.content_store,
-            event_bus=self.event_bus, goal_generator=self.goals)
+            event_bus=self.event_bus, goal_generator=self.goals,
+            world_model=self.world)
         db = self.storage / "conscio.db"                    # shared DB
         meter = Meter()
         metered = MeteredAdapter(adapter, meter)
@@ -2042,7 +2043,7 @@ class ConsciousnessEngine:
         reg = make_default_registry(
             sandbox_root=self.storage / "sandbox",
             content_store=self.content_store, event_bus=self.event_bus,
-            goal_generator=self.goals)
+            goal_generator=self.goals, world_model=self.world)
         decision = promote_mod.evaluate_promotion(
             trial_successes=row.trial_successes,
             trial_failures=row.trial_failures,
