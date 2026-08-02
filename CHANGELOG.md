@@ -34,9 +34,10 @@ approved change nobody applied and no gate could see, and a timezone that made a
 live entity look a decade stale. The same pass left the coherence score alone
 and taught the report to say which of its dimensions had nothing to measure,
 and made the proposal file's write atomic so a save that dies cannot empty it.
-A last reading of the governor's own output found its breakdown printing one
-column where the design drew three: the baseline it was meant to compare
-against had never been frozen.
+A last reading of the governor's own output found two of its figures missing:
+a breakdown printing one column where the design drew three, because the
+baseline it was meant to compare against had never been frozen, and a saving
+given only as a percentage, with nothing to say what it was a percentage of.
 
 ### Added
 
@@ -113,6 +114,14 @@ against had never been frozen.
   from the freeze onward and says how many older ones it left out. A session
   with no turns since the freeze prints why there is nothing to compare, instead
   of dividing a zero cost by a positive baseline and claiming a 100% saving.
+- **`govern report`'s `Saved` line printed a share with nothing to size it.**
+  The design puts two figures there — what the ceiling took off the bill and
+  what proportion of it that was — and only the percentage shipped. 40% of a
+  rounding error and 40% of a month's spend read identically. The line now
+  carries both, the absolute priced over the turns actually taken since the
+  freeze: what they would have cost at the baseline rate, less what they did
+  cost. It is derived from the same two numbers as the share, so the pair
+  cannot drift apart.
 - **`govern report`'s breakdown lost two of its three columns.** The design
   draws it as `current | baseline | saved` per channel; it shipped rendering a
   `current` header over a single column, which reads as a table truncated by a
