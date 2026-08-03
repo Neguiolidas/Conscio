@@ -569,24 +569,35 @@ class SqliteVecBackend:
         if limit <= 0:
             return []
 
+        # sqlite-vec vec0 has a hard limit of 4096 for k in knn queries.
+        # Cap the k value and return at most that many; callers wanting more
+        # should paginate or use a different backend.
+        effective_limit = min(limit, 4096)
+
         vec_str = self._serialize_for_vec0(query)
         with self._lock:
             conn = self._conn_get()
             if category is not None:
+                # sqlite-vec applies k BEFORE the JOIN+category filter, so
+                # we over-fetch by 4x and slice to `limit` after filtering.
+                # This ensures category-scoped searches return `limit` results
+                # even when the raw top-k is dominated by other categories.
+                over_k = min(effective_limit * 4, 4096)
                 rows = conn.execute(
                     "SELECT m.id, c.distance "
                     "FROM vec_chunks c JOIN vec_metadata m ON c.rowid = m.rowid "
                     "WHERE c.embedding MATCH ? AND m.category = ? AND k = ? "
                     "ORDER BY c.distance",
-                    (vec_str, category, limit),
+                    (vec_str, category, over_k),
                 ).fetchall()
+                rows = rows[:limit]
             else:
                 rows = conn.execute(
                     "SELECT m.id, c.distance "
                     "FROM vec_chunks c JOIN vec_metadata m ON c.rowid = m.rowid "
                     "WHERE c.embedding MATCH ? AND k = ? "
                     "ORDER BY c.distance",
-                    (vec_str, limit),
+                    (vec_str, effective_limit),
                 ).fetchall()
 
         # cosine distance: 0 = identical, 2 = opposite. score = 1 - distance.
