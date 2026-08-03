@@ -591,7 +591,7 @@ class SqliteVecBackend:
 
         # cosine distance: 0 = identical, 2 = opposite. score = 1 - distance.
         return [
-            {"id": r[0], "score": max(0.0, 1.0 - r[1])}
+            {"id": r[0], "score": max(0.0, 1.0 - (r[1] or 0.0))}
             for r in rows
         ]
 
