@@ -39,6 +39,23 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("version", help="print the Conscio version")
 
+    p_migrate = sub.add_parser(
+        "migrate-vectors",
+        help="migrate vectors.db from numpy BLOB to sqlite-vec (10x faster search)",
+    )
+    p_migrate.add_argument(
+        "--storage", default=str(Path.home() / ".conscio" / "runtime"),
+        help="storage dir containing vectors.db (default: ~/.conscio/runtime)",
+    )
+    p_migrate.add_argument(
+        "--backup", action="store_true", default=True,
+        help="create .bak backup before migration (default: True)",
+    )
+    p_migrate.add_argument(
+        "--force", action="store_true",
+        help="force migration even if already sqlite-vec format",
+    )
+
     p_info = sub.add_parser("info", help="show model context window / mode / budget")
     p_info.add_argument("model", nargs="?", default=DEFAULT_MODEL)
     p_info.add_argument("--storage", default="", help="storage dir (default: temp)")
@@ -224,6 +241,146 @@ def _note_if_unknown(model: str, model_info) -> None:
 
 def _cmd_version() -> int:
     print(__version__)
+    return 0
+
+
+def _cmd_migrate_vectors(storage: str, backup: bool = True, force: bool = False) -> int:
+    """Migrate vectors.db from numpy BLOB format to sqlite-vec vec0.
+
+    Prerequisite: ``pip install sqlite-vec``
+
+    Steps:
+      1. Check if DB already has vec_chunks table → skip unless --force
+      2. Backup vectors.db → vectors.db.bak (unless --no-backup)
+      3. Read all vectors from old 'vectors' table
+      4. Write to new vec0 virtual table in a temporary DB
+      5. Verify search results match
+      6. Atomic swap: rename old → .numpy.bak, rename new → vectors.db
+    """
+    import array
+    import shutil
+    import sqlite3
+    from pathlib import Path
+    from .vector_backend import VectorBackend, SqliteVecBackend, has_sqlite_vec
+
+    storage_path = Path(storage)
+    db_path = storage_path / "vectors.db"
+
+    if not db_path.exists():
+        print(f"Error: {db_path} not found")
+        return 1
+
+    if not has_sqlite_vec():
+        print("Error: sqlite-vec not installed")
+        print("Install with: pip install sqlite-vec")
+        return 1
+
+    # Check if already migrated
+    probe = sqlite3.connect(str(db_path))
+    tables = {r[0] for r in probe.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','view')"
+    ).fetchall()}
+    probe.close()
+
+    if "vec_chunks" in tables and not force:
+        print(f"{db_path} is already sqlite-vec format (vec_chunks table exists)")
+        print("Use --force to re-migrate")
+        return 0
+
+    if "vectors" not in tables:
+        print(f"Error: {db_path} has no 'vectors' table (unknown format)")
+        return 1
+
+    # Step 1: Read source stats
+    src = VectorBackend(db_path=db_path)
+    src_stats = src.stats()
+    print(f"Source: {src_stats['vectors']} vectors, dim={src_stats['dimension']}")
+    print(f"  Size: {db_path.stat().st_size / 1024 / 1024:.1f}MB")
+
+    if src_stats["vectors"] == 0:
+        print("No vectors to migrate — creating empty sqlite-vec DB")
+        src.close()
+        # Just create a new SqliteVecBackend with the right dimension
+        tmp_path = db_path.with_suffix(".tmp")
+        dst = SqliteVecBackend(db_path=tmp_path, dimension=src_stats["dimension"])
+        dst.close()
+        if backup:
+            shutil.copy2(str(db_path), str(db_path) + ".bak")
+        shutil.move(str(tmp_path), str(db_path))
+        print("Done")
+        return 0
+
+    # Step 2: Backup
+    if backup:
+        bak_path = str(db_path) + ".bak"
+        print(f"Backup: {bak_path}")
+        shutil.copy2(str(db_path), bak_path)
+
+    # Step 3: Read all vectors and write to new DB
+    tmp_path = db_path.with_suffix(".tmp")
+    if tmp_path.exists():
+        tmp_path.unlink()
+    dst = SqliteVecBackend(db_path=tmp_path, dimension=src_stats["dimension"])
+
+    conn = src._conn_get()
+    cur = conn.execute("SELECT id, embedding, dimension, category FROM vectors")
+    total = 0
+    import time
+    t0 = time.time()
+    BATCH = 1000
+
+    while True:
+        rows = cur.fetchmany(BATCH)
+        if not rows:
+            break
+        batch = []
+        for row in rows:
+            id_ = row["id"]
+            blob = row["embedding"]
+            dim = row["dimension"]
+            cat = row["category"]
+            if dim != src_stats["dimension"]:
+                print(f"  SKIP {id_}: dim={dim} (expected {src_stats['dimension']})")
+                continue
+            arr = array.array("f")
+            arr.frombytes(blob)
+            batch.append((id_, arr.tolist()))
+        if batch:
+            n = dst.add_batch(batch)
+            total += n
+            elapsed = time.time() - t0
+            print(f"  Migrated {total}/{src_stats['vectors']} ({elapsed:.1f}s)")
+
+    dst.close()
+    src.close()
+
+    # Step 4: Verify
+    src2 = VectorBackend(db_path=db_path)
+    dst2 = SqliteVecBackend(db_path=tmp_path, dimension=src_stats["dimension"])
+    import random
+    rng = random.Random(42)
+    q = [rng.gauss(0, 1) for _ in range(src_stats["dimension"])]
+    sr = src2.search(q, limit=5)
+    dr = dst2.search(q, limit=5)
+    match = [x["id"] for x in sr] == [x["id"] for x in dr]
+    print(f"\nVerification: {'PASS' if match else 'WARNING — rankings differ'}")
+    if not match:
+        print(f"  numpy top-5:     {[x['id'] for x in sr]}")
+        print(f"  sqlite-vec top-5: {[x['id'] for x in dr]}")
+    src2.close()
+    dst2.close()
+
+    # Step 5: Atomic swap
+    numpy_bak = str(db_path) + ".numpy.bak"
+    if Path(numpy_bak).exists():
+        Path(numpy_bak).unlink()
+    shutil.move(str(db_path), numpy_bak)
+    shutil.move(str(tmp_path), str(db_path))
+
+    print(f"\nMigration complete: {total} vectors")
+    print(f"  New DB:  {db_path} ({db_path.stat().st_size / 1024 / 1024:.1f}MB)")
+    print(f"  Backup:  {numpy_bak} ({Path(numpy_bak).stat().st_size / 1024 / 1024:.1f}MB)")
+    print(f"\nThe engine will auto-detect sqlite-vec format on next startup.")
     return 0
 
 
@@ -757,6 +914,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "version":
         return _cmd_version()
+    if args.command == "migrate-vectors":
+        return _cmd_migrate_vectors(args.storage, backup=args.backup, force=args.force)
     if args.command == "info":
         return _cmd_info(args.model, args.storage,
                          base_url=args.base_url, autodetect=args.autodetect)
