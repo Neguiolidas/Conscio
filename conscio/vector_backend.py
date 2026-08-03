@@ -110,6 +110,23 @@ class VectorBackend:
             except (ImportError, Exception):
                 logger.warning("HNSW backend init failed, falling back to numpy", exc_info=True)
 
+        # Auto-detect: if the DB has a vec_chunks virtual table, use sqlite-vec
+        if not engine and db_path and Path(db_path).exists():
+            try:
+                probe = sqlite3.connect(str(db_path))
+                tables = {r[0] for r in probe.execute(
+                    "SELECT name FROM sqlite_master WHERE type IN ('table','view')"
+                ).fetchall()}
+                probe.close()
+                if "vec_chunks" in tables:
+                    logger.info("Auto-detected sqlite-vec schema, using SqliteVecBackend")
+                    try:
+                        return SqliteVecBackend(db_path=db_path, dimension=dimension)
+                    except Exception:
+                        logger.warning("sqlite-vec backend init failed, falling back to numpy", exc_info=True)
+            except Exception:
+                pass
+
         return VectorBackend(db_path=db_path, dimension=dimension)
 
     def __init__(self, db_path: str | Path | None = None, dimension: int = 768):

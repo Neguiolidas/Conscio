@@ -24,7 +24,10 @@ from pathlib import Path
 from .constants import DEFAULT_DB_PATH
 from .embedding_pipeline import EmbeddingPipeline
 from .timeutil import naive_utcnow
-from .vector_backend import VectorBackend
+from .vector_backend import VectorBackend, SqliteVecBackend, HNSWBackend
+
+# Type alias for any vector backend (all share the same API)
+VectorBackendType = VectorBackend | SqliteVecBackend | HNSWBackend
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +114,7 @@ class ContentStore:
     def __init__(
         self,
         db_path: str | Path | None = None,
-        vector_backend: VectorBackend | None = None,
+        vector_backend: VectorBackendType | None = None,
         embeddings: EmbeddingPipeline | None = None,
     ):
         self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH

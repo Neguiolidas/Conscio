@@ -67,7 +67,8 @@ from .structural_drift import (
 )
 from .timeutil import naive_utc_from_epoch, naive_utcnow
 from .token_tracker import TokenTracker
-from .vector_backend import VectorBackend
+from .vector_backend import VectorBackend, SqliteVecBackend, HNSWBackend
+from .content_store import VectorBackendType
 from .voice_preset import resolve_voice_preset
 from .world_extract import extract_entities, extract_relations
 from .world_model import WorldModel
@@ -349,7 +350,7 @@ class ConsciousnessEngine:
         # probes lazily on first embed() call and falls back to None (no-op)
         # when no embedder is actually available, so this degrades gracefully.
         # Kept as a sibling file under the same storage root as conscio.db.
-        self.vector_backend: VectorBackend | None = None
+        self.vector_backend: VectorBackendType | None = None
         self.embedding_pipeline: EmbeddingPipeline | None = None
         self._init_vectors()
         self.content_store = ContentStore(
@@ -1564,30 +1565,37 @@ class ConsciousnessEngine:
         - "0" → force disable (FTS5-only even if dep available)
         - "1"/"true"/"yes"/"on" → force enable (construct VectorBackend regardless)
         - absent → auto-detect: try import sentence_transformers, enable if available
+
+        Vector backend engine is selected by CONSCIO_VEC_BACKEND env var:
+        - "sqlite_vec" → SqliteVecBackend (C-native cosine, 10x faster search)
+        - "hnsw" → HNSWBackend (O(log n) approximate, requires hnswlib)
+        - unset/"numpy" → VectorBackend (original numpy O(n) scan)
         """
         env = os.getenv("CONSCIO_VECTORS", "").strip().lower()
         if env in ("0", "false", "no", "off"):
             logger.info("CONSCIO_VECTORS=%s — vectors disabled by env", env)
             return
         if env in ("1", "true", "yes", "on"):
-            self.vector_backend = VectorBackend(
+            self.vector_backend = VectorBackend.with_engine(
                 db_path=self.storage / "vectors.db", dimension=384
             )
             self.embedding_pipeline = EmbeddingPipeline(
                 vector_backend=self.vector_backend, dimension=384
             )
-            logger.info("CONSCIO_VECTORS=%s — vectors force-enabled", env)
+            logger.info("CONSCIO_VECTORS=%s — vectors force-enabled (backend=%s)",
+                        env, type(self.vector_backend).__name__)
             return
         # Auto-detect: try import sentence_transformers
         try:
             import sentence_transformers  # noqa: F401
-            self.vector_backend = VectorBackend(
+            self.vector_backend = VectorBackend.with_engine(
                 db_path=self.storage / "vectors.db", dimension=384
             )
             self.embedding_pipeline = EmbeddingPipeline(
                 vector_backend=self.vector_backend, dimension=384
             )
-            logger.info("Vectors auto-enabled (sentence_transformers available)")
+            logger.info("Vectors auto-enabled (sentence_transformers available, backend=%s)",
+                        type(self.vector_backend).__name__)
         except Exception:
             logger.info("sentence_transformers not available — FTS5 only")
 
