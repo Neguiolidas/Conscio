@@ -642,7 +642,7 @@ class HNSWBackend:
     """HNSW vector index via hnswlib — O(log n) approximate search.
 
     Opt-in backend for large-scale deployments (1M+ vectors). Holds the
-    HNSW graph in RAM during operation, persists to SQLite on close.
+    HNSW graph in RAM during operation, persists to disk on close.
 
     Requires: ``pip install hnswlib`` (Apache-2.0, C++ with Python bindings).
     """
@@ -675,12 +675,9 @@ class HNSWBackend:
 
     def _init_index(self) -> None:
         self._index = hnswlib.Index(space="cosine", dim=self.dimension)
-        self._index.init_max_hnsw = False
-        # Try to load from disk
         index_path = str(self.db_path)
         if Path(index_path).exists():
             self._index.load_index(index_path)
-            # Load metadata from SQLite companion
             meta_path = str(self.db_path.with_suffix(".meta.db"))
             if Path(meta_path).exists():
                 conn = sqlite3.connect(meta_path)
@@ -713,9 +710,10 @@ class HNSWBackend:
                 self._reverse_map[id] = hnsw_id
                 if len(self._id_map) > self.max_elements:
                     self._index.resize_index(len(self._id_map) + 10000)
-            self._index.add_items(
-                [hnsw_id], [vec],
-            )
+            # hnswlib requires contiguous float32 numpy arrays
+            data = np.ascontiguousarray([vec], dtype=np.float32)
+            labels = np.array([hnsw_id], dtype=np.int64)
+            self._index.add_items(data, labels)
             self._categories[hnsw_id] = category
 
     def add_batch(
@@ -723,31 +721,33 @@ class HNSWBackend:
         items: Iterable[tuple[str, Sequence[float]]],
         category: str | None = None,
     ) -> int:
-        ids_list = []
-        vecs_list = []
+        ids_list: list[int] = []
+        vecs_list: list[list[float]] = []
         for id_, vec in items:
             _check_no_nan(vec)
             if len(vec) != self.dimension:
                 raise ValueError(
                     f"Dimension mismatch: expected {self.dimension}, got {len(vec)}"
                 )
-            with self._lock:
-                if id_ in self._reverse_map:
-                    hnsw_id = self._reverse_map[id_]
-                else:
-                    hnsw_id = self._next_id
-                    self._next_id += 1
-                    self._id_map[hnsw_id] = id_
-                    self._reverse_map[id_] = hnsw_id
-                    if len(self._id_map) > self.max_elements:
+            if id_ in self._reverse_map:
+                hnsw_id = self._reverse_map[id_]
+            else:
+                hnsw_id = self._next_id
+                self._next_id += 1
+                self._id_map[hnsw_id] = id_
+                self._reverse_map[id_] = hnsw_id
+                if len(self._id_map) > self.max_elements:
+                    with self._lock:
                         self._index.resize_index(len(self._id_map) + 10000)
-                ids_list.append(hnsw_id)
-                vecs_list.append(list(vec))
-                self._categories[hnsw_id] = category
+            ids_list.append(hnsw_id)
+            vecs_list.append(list(vec))
+            self._categories[hnsw_id] = category
         if not ids_list:
             return 0
         with self._lock:
-            self._index.add_items(ids_list, vecs_list)
+            data = np.ascontiguousarray(vecs_list, dtype=np.float32)
+            labels = np.array(ids_list, dtype=np.int64)
+            self._index.add_items(data, labels)
         return len(ids_list)
 
     def ensure_dimension(self, dim: int) -> bool:
@@ -780,7 +780,8 @@ class HNSWBackend:
 
         with self._lock:
             self._index.set_ef(max(limit * 4, 64))
-            labels, distances = self._index.knn_query([query], k=min(limit * 4, len(self._id_map)))
+            q = np.ascontiguousarray([query], dtype=np.float32)
+            labels, distances = self._index.knn_query(q, k=min(limit * 4, len(self._id_map)))
 
         results = []
         for label, dist in zip(labels[0], distances[0]):
@@ -790,7 +791,7 @@ class HNSWBackend:
             orig_id = self._id_map.get(hnsw_id)
             if orig_id is None:
                 continue
-            # hnswlib cosine space returns distance = 1 - cosine_similarity
+            # hnswlib cosine space: distance = 1 - cosine_similarity
             score = max(0.0, 1.0 - float(dist))
             results.append({"id": orig_id, "score": score})
             if len(results) >= limit:
@@ -804,7 +805,6 @@ class HNSWBackend:
         with self._lock:
             if self._index is not None:
                 self._index.save_index(str(self.db_path))
-                # Save metadata to SQLite companion
                 meta_path = str(self.db_path.with_suffix(".meta.db"))
                 conn = sqlite3.connect(meta_path)
                 conn.execute("CREATE TABLE IF NOT EXISTS id_map (hnsw_id INT, original_id TEXT, category TEXT)")
