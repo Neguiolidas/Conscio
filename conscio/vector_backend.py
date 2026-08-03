@@ -524,11 +524,6 @@ class SqliteVecBackend:
             count = 0
             with conn:
                 for id_, vec_blob in validated:
-                    existing = conn.execute(
-                        "SELECT rowid FROM vec_chunks WHERE id = ?", (id_,)
-                    ).fetchone()
-                    if existing:
-                        conn.execute("DELETE FROM vec_chunks WHERE rowid = ?", (existing[0],))
                     conn.execute(
                         "INSERT INTO vec_chunks (embedding, id, category) VALUES (?, ?, ?)",
                         (vec_blob, id_, category or ""),
