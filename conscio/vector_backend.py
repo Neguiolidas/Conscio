@@ -28,6 +28,7 @@ import array
 import heapq
 import logging
 import math
+import os
 import sqlite3
 import threading
 from collections.abc import Iterable, Sequence
@@ -81,6 +82,36 @@ def _check_no_nan(vec: Sequence[float]) -> None:
 class VectorBackend:
     """SQLite-cosine vector store."""
 
+    @staticmethod
+    def with_engine(
+        db_path: str | Path | None = None,
+        dimension: int = 768,
+    ) -> "VectorBackend | SqliteVecBackend | HNSWBackend":
+        """Factory: pick the vector backend based on CONSCIO_VEC_BACKEND env var.
+
+        - ``sqlite_vec``: sqlite-vec C-native cosine (opt-in, requires pip install sqlite-vec)
+        - ``hnsw``: hnswlib approx search (opt-in, requires pip install hnswlib)
+        - unset / ``numpy``: original Python/numpy O(n) backend (default)
+
+        Falls back to the original VectorBackend if the requested engine
+        is unavailable (dep not installed, extension won't load).
+        """
+        engine = os.environ.get("CONSCIO_VEC_BACKEND", "").strip().lower()
+
+        if engine == "sqlite_vec":
+            try:
+                return SqliteVecBackend(db_path=db_path, dimension=dimension)
+            except Exception:
+                logger.warning("sqlite-vec backend init failed, falling back to numpy", exc_info=True)
+
+        if engine == "hnsw":
+            try:
+                return HNSWBackend(db_path=db_path, dimension=dimension)
+            except (ImportError, Exception):
+                logger.warning("HNSW backend init failed, falling back to numpy", exc_info=True)
+
+        return VectorBackend(db_path=db_path, dimension=dimension)
+
     def __init__(self, db_path: str | Path | None = None, dimension: int = 768):
         self.db_path = Path(db_path) if db_path else Path.home() / ".conscio" / "runtime" / "vec.db"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -88,6 +119,17 @@ class VectorBackend:
         self._lock = threading.Lock()
         self._conn: sqlite3.Connection | None = None
         self._init_db()
+        # Auto-detect dimension from existing data so a fresh VectorBackend
+        # pointing at a populated DB adopts the stored dimension instead of
+        # rejecting every search with a mismatch error.
+        try:
+            row = self._conn_get().execute(
+                "SELECT dimension FROM vectors LIMIT 1"
+            ).fetchone()
+            if row and row[0] and row[0] != self.dimension:
+                self.dimension = row[0]
+        except Exception:
+            pass
 
     def _conn_get(self) -> sqlite3.Connection:
         if self._conn is None:
@@ -348,3 +390,413 @@ class VectorBackend:
         dst = sqlite3.connect(str(target_path))
         self._conn_get().backup(dst)
         dst.close()
+
+
+# ── sqlite-vec detection ────────────────────────────────────────────
+
+def has_sqlite_vec() -> bool:
+    """True if the sqlite-vec extension can be loaded in this environment."""
+    try:
+        import sqlite_vec  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+# ── SqliteVecBackend — C-native cosine via sqlite-vec extension ──────
+
+class SqliteVecBackend:
+    """Vector store backed by sqlite-vec's vec0 virtual table.
+
+    Uses sqlite-vec's ``distance_metric=cosine`` for native C cosine search,
+    replacing the Python/numpy O(n) scan in :class:`VectorBackend`.
+
+    API-compatible with VectorBackend: add, add_batch, search,
+    ensure_dimension, stats, close, dump.
+
+    The vec0 table uses INTEGER rowid as primary key. We maintain a
+    separate ``vec_metadata`` table mapping rowid → original string id +
+    category, so the public API stays string-id based.
+    """
+
+    def __init__(self, db_path: str | Path | None = None, dimension: int = 768):
+        self.db_path = Path(db_path) if db_path else Path.home() / ".conscio" / "runtime" / "vec.db"
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.dimension = dimension
+        self._lock = threading.Lock()
+        self._conn: sqlite3.Connection | None = None
+        self._init_db()
+
+    def _conn_get(self) -> sqlite3.Connection:
+        if self._conn is None:
+            self._conn = sqlite3.connect(str(self.db_path), timeout=10, check_same_thread=False)
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.row_factory = sqlite3.Row
+            self._conn.enable_load_extension(True)
+            import sqlite_vec
+            sqlite_vec.load(self._conn)
+            self._conn.enable_load_extension(False)
+        return self._conn
+
+    def _init_db(self) -> None:
+        with self._lock:
+            conn = self._conn_get()
+            conn.executescript(
+                f"""
+                CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
+                    embedding float[{self.dimension}] distance_metric=cosine
+                );
+                CREATE TABLE IF NOT EXISTS vec_metadata (
+                    rowid INTEGER PRIMARY KEY,
+                    id TEXT NOT NULL UNIQUE,
+                    category TEXT
+                );
+                """
+            )
+            conn.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
+
+    def _row_for(self, id: str, vec: Sequence[float], category: str | None) -> tuple:
+        _check_no_nan(vec)
+        if len(vec) != self.dimension:
+            raise ValueError(
+                f"Dimension mismatch: expected {self.dimension}, got {len(vec)}"
+            )
+        return (id, array.array("f", vec).tobytes(), category)
+
+    def _serialize_for_vec0(self, vec: Sequence[float]) -> str:
+        """Serialize vector as JSON array for vec0 INSERT."""
+        return "[" + ",".join(f"{v}" for v in vec) + "]"
+
+    def add(self, id: str, vec: list[float], category: str | None = None) -> None:
+        _check_no_nan(vec)
+        if len(vec) != self.dimension:
+            raise ValueError(
+                f"Dimension mismatch: expected {self.dimension}, got {len(vec)}"
+            )
+        vec_str = self._serialize_for_vec0(vec)
+        with self._lock:
+            conn = self._conn_get()
+            with conn:
+                # Delete existing if replacing
+                existing = conn.execute(
+                    "SELECT rowid FROM vec_metadata WHERE id = ?", (id,)
+                ).fetchone()
+                if existing:
+                    conn.execute("DELETE FROM vec_chunks WHERE rowid = ?", (existing[0],))
+                    conn.execute("DELETE FROM vec_metadata WHERE rowid = ?", (existing[0],))
+                rowid = conn.execute("INSERT INTO vec_metadata (id, category) VALUES (?, ?)", (id, category)).lastrowid
+                conn.execute(
+                    "INSERT INTO vec_chunks (rowid, embedding) VALUES (?, ?)",
+                    (rowid, vec_str),
+                )
+
+    def add_batch(
+        self,
+        items: Iterable[tuple[str, Sequence[float]]],
+        category: str | None = None,
+    ) -> int:
+        with self._lock:
+            conn = self._conn_get()
+            count = 0
+            with conn:
+                for id_, vec in items:
+                    _check_no_nan(vec)
+                    if len(vec) != self.dimension:
+                        raise ValueError(
+                            f"Dimension mismatch: expected {self.dimension}, got {len(vec)}"
+                        )
+                    existing = conn.execute(
+                        "SELECT rowid FROM vec_metadata WHERE id = ?", (id_,)
+                    ).fetchone()
+                    if existing:
+                        conn.execute("DELETE FROM vec_chunks WHERE rowid = ?", (existing[0],))
+                        conn.execute("DELETE FROM vec_metadata WHERE rowid = ?", (existing[0],))
+                    rowid = conn.execute(
+                        "INSERT INTO vec_metadata (id, category) VALUES (?, ?)",
+                        (id_, category),
+                    ).lastrowid
+                    conn.execute(
+                        "INSERT INTO vec_chunks (rowid, embedding) VALUES (?, ?)",
+                        (rowid, self._serialize_for_vec0(vec)),
+                    )
+                    count += 1
+            return count
+
+    def ensure_dimension(self, dim: int) -> bool:
+        if dim == self.dimension:
+            return True
+        with self._lock:
+            conn = self._conn_get()
+            # Check both metadata and vec_chunks tables
+            occupied = conn.execute("SELECT 1 FROM vec_metadata LIMIT 1").fetchone() is not None
+            if not occupied:
+                occupied = conn.execute("SELECT 1 FROM vec_chunks LIMIT 1").fetchone() is not None
+        if occupied:
+            return False
+        logger.info(
+            "SqliteVecBackend: adopting embedder dimension %d (was %d, store empty)",
+            dim, self.dimension,
+        )
+        self.dimension = dim
+        # Recreate the vec0 virtual table with the new dimension
+        with self._lock:
+            conn = self._conn_get()
+            conn.execute("DROP TABLE IF EXISTS vec_chunks")
+            conn.execute(
+                f"CREATE VIRTUAL TABLE vec_chunks USING vec0("
+                f"embedding float[{self.dimension}] distance_metric=cosine)"
+            )
+            conn.commit()
+        return True
+
+    def search(
+        self,
+        query: list[float],
+        limit: int = 5,
+        category: str | None = None,
+    ) -> list[dict]:
+        _check_no_nan(query)
+        if len(query) != self.dimension:
+            raise ValueError(
+                f"Dimension mismatch: expected {self.dimension}, got {len(query)}"
+            )
+        if limit <= 0:
+            return []
+
+        vec_str = self._serialize_for_vec0(query)
+        with self._lock:
+            conn = self._conn_get()
+            if category is not None:
+                rows = conn.execute(
+                    "SELECT m.id, c.distance "
+                    "FROM vec_chunks c JOIN vec_metadata m ON c.rowid = m.rowid "
+                    "WHERE c.embedding MATCH ? AND m.category = ? AND k = ? "
+                    "ORDER BY c.distance",
+                    (vec_str, category, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT m.id, c.distance "
+                    "FROM vec_chunks c JOIN vec_metadata m ON c.rowid = m.rowid "
+                    "WHERE c.embedding MATCH ? AND k = ? "
+                    "ORDER BY c.distance",
+                    (vec_str, limit),
+                ).fetchall()
+
+        # cosine distance: 0 = identical, 2 = opposite. score = 1 - distance.
+        return [
+            {"id": r[0], "score": max(0.0, 1.0 - r[1])}
+            for r in rows
+        ]
+
+    def stats(self) -> dict:
+        with self._lock:
+            conn = self._conn_get()
+            cnt = conn.execute("SELECT COUNT(*) FROM vec_metadata").fetchone()[0]
+        return {"vectors": cnt, "dimension": self.dimension}
+
+    def dump(self, target_path: str | Path) -> None:
+        dst = sqlite3.connect(str(target_path))
+        self._conn_get().backup(dst)
+        dst.close()
+
+
+# ── HNSWBackend — optional HNSW via hnswlib (opt-in, no hard dep) ───
+
+try:
+    import hnswlib
+    _HAS_HNSW = True
+except ImportError:
+    _HAS_HNSW = False
+
+
+class HNSWBackend:
+    """HNSW vector index via hnswlib — O(log n) approximate search.
+
+    Opt-in backend for large-scale deployments (1M+ vectors). Holds the
+    HNSW graph in RAM during operation, persists to SQLite on close.
+
+    Requires: ``pip install hnswlib`` (Apache-2.0, C++ with Python bindings).
+    """
+
+    def __init__(
+        self,
+        db_path: str | Path | None = None,
+        dimension: int = 768,
+        max_elements: int = 1_000_000,
+        ef_construction: int = 200,
+        M: int = 16,
+    ):
+        if not _HAS_HNSW:
+            raise ImportError(
+                "HNSWBackend requires hnswlib: pip install hnswlib"
+            )
+        self.db_path = Path(db_path) if db_path else Path.home() / ".conscio" / "runtime" / "hnsw.db"
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.dimension = dimension
+        self.max_elements = max_elements
+        self.ef_construction = ef_construction
+        self.M = M
+        self._lock = threading.Lock()
+        self._index: hnswlib.Index | None = None
+        self._id_map: dict[int, str] = {}
+        self._reverse_map: dict[str, int] = {}
+        self._categories: dict[int, str | None] = {}
+        self._next_id = 0
+        self._init_index()
+
+    def _init_index(self) -> None:
+        self._index = hnswlib.Index(space="cosine", dim=self.dimension)
+        self._index.init_max_hnsw = False
+        # Try to load from disk
+        index_path = str(self.db_path)
+        if Path(index_path).exists():
+            self._index.load_index(index_path)
+            # Load metadata from SQLite companion
+            meta_path = str(self.db_path.with_suffix(".meta.db"))
+            if Path(meta_path).exists():
+                conn = sqlite3.connect(meta_path)
+                for row in conn.execute("SELECT hnsw_id, original_id, category FROM id_map"):
+                    self._id_map[row[0]] = row[1]
+                    self._reverse_map[row[1]] = row[0]
+                    self._categories[row[0]] = row[2]
+                self._next_id = max(self._id_map.keys(), default=-1) + 1
+                conn.close()
+        else:
+            self._index.init_index(
+                max_elements=self.max_elements,
+                ef_construction=self.ef_construction,
+                M=self.M,
+            )
+
+    def add(self, id: str, vec: list[float], category: str | None = None) -> None:
+        _check_no_nan(vec)
+        if len(vec) != self.dimension:
+            raise ValueError(
+                f"Dimension mismatch: expected {self.dimension}, got {len(vec)}"
+            )
+        with self._lock:
+            if id in self._reverse_map:
+                hnsw_id = self._reverse_map[id]
+            else:
+                hnsw_id = self._next_id
+                self._next_id += 1
+                self._id_map[hnsw_id] = id
+                self._reverse_map[id] = hnsw_id
+                if len(self._id_map) > self.max_elements:
+                    self._index.resize_index(len(self._id_map) + 10000)
+            self._index.add_items(
+                [hnsw_id], [vec],
+            )
+            self._categories[hnsw_id] = category
+
+    def add_batch(
+        self,
+        items: Iterable[tuple[str, Sequence[float]]],
+        category: str | None = None,
+    ) -> int:
+        ids_list = []
+        vecs_list = []
+        for id_, vec in items:
+            _check_no_nan(vec)
+            if len(vec) != self.dimension:
+                raise ValueError(
+                    f"Dimension mismatch: expected {self.dimension}, got {len(vec)}"
+                )
+            with self._lock:
+                if id_ in self._reverse_map:
+                    hnsw_id = self._reverse_map[id_]
+                else:
+                    hnsw_id = self._next_id
+                    self._next_id += 1
+                    self._id_map[hnsw_id] = id_
+                    self._reverse_map[id_] = hnsw_id
+                    if len(self._id_map) > self.max_elements:
+                        self._index.resize_index(len(self._id_map) + 10000)
+                ids_list.append(hnsw_id)
+                vecs_list.append(list(vec))
+                self._categories[hnsw_id] = category
+        if not ids_list:
+            return 0
+        with self._lock:
+            self._index.add_items(ids_list, vecs_list)
+        return len(ids_list)
+
+    def ensure_dimension(self, dim: int) -> bool:
+        if dim == self.dimension:
+            return True
+        if self._id_map:
+            return False
+        self.dimension = dim
+        self._index = hnswlib.Index(space="cosine", dim=dim)
+        self._index.init_index(
+            max_elements=self.max_elements,
+            ef_construction=self.ef_construction,
+            M=self.M,
+        )
+        return True
+
+    def search(
+        self,
+        query: list[float],
+        limit: int = 5,
+        category: str | None = None,
+    ) -> list[dict]:
+        _check_no_nan(query)
+        if len(query) != self.dimension:
+            raise ValueError(
+                f"Dimension mismatch: expected {self.dimension}, got {len(query)}"
+            )
+        if limit <= 0 or not self._id_map:
+            return []
+
+        with self._lock:
+            self._index.set_ef(max(limit * 4, 64))
+            labels, distances = self._index.knn_query([query], k=min(limit * 4, len(self._id_map)))
+
+        results = []
+        for label, dist in zip(labels[0], distances[0]):
+            hnsw_id = int(label)
+            if category is not None and self._categories.get(hnsw_id) != category:
+                continue
+            orig_id = self._id_map.get(hnsw_id)
+            if orig_id is None:
+                continue
+            # hnswlib cosine space returns distance = 1 - cosine_similarity
+            score = max(0.0, 1.0 - float(dist))
+            results.append({"id": orig_id, "score": score})
+            if len(results) >= limit:
+                break
+        return results
+
+    def stats(self) -> dict:
+        return {"vectors": len(self._id_map), "dimension": self.dimension}
+
+    def close(self) -> None:
+        with self._lock:
+            if self._index is not None:
+                self._index.save_index(str(self.db_path))
+                # Save metadata to SQLite companion
+                meta_path = str(self.db_path.with_suffix(".meta.db"))
+                conn = sqlite3.connect(meta_path)
+                conn.execute("CREATE TABLE IF NOT EXISTS id_map (hnsw_id INT, original_id TEXT, category TEXT)")
+                conn.execute("DELETE FROM id_map")
+                for hnsw_id, orig_id in self._id_map.items():
+                    conn.execute("INSERT INTO id_map VALUES (?, ?, ?)", (hnsw_id, orig_id, self._categories.get(hnsw_id)))
+                conn.commit()
+                conn.close()
+
+    def dump(self, target_path: str | Path) -> None:
+        self.close()
+        import shutil
+        shutil.copy2(str(self.db_path), str(target_path))
+        meta_src = str(self.db_path.with_suffix(".meta.db"))
+        meta_dst = str(Path(target_path).with_suffix(".meta.db"))
+        if Path(meta_src).exists():
+            shutil.copy2(meta_src, meta_dst)
