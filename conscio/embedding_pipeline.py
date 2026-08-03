@@ -28,7 +28,10 @@ import hashlib
 import logging
 
 from .embedding import EmbeddingProvider
-from .vector_backend import VectorBackend
+from .vector_backend import VectorBackend, SqliteVecBackend, HNSWBackend
+
+# Type alias for any vector backend (all share the same API)
+VectorBackendType = VectorBackend | SqliteVecBackend | HNSWBackend
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +41,7 @@ class EmbeddingPipeline:
 
     def __init__(
         self,
-        vector_backend: VectorBackend,
+        vector_backend: VectorBackendType,
         embedding_provider: EmbeddingProvider | None = None,
         dimension: int = 384,
         enabled: bool = True,
