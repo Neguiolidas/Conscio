@@ -98,17 +98,29 @@ class VectorBackend:
         """
         engine = os.environ.get("CONSCIO_VEC_BACKEND", "").strip().lower()
 
+        # HNSW uses a separate file (hnsw.db) to avoid clobbering vectors.db
+        hnsw_path = Path(db_path).parent / "hnsw.db" if db_path else None
+
+        # Auto-detect priority: HNSW first (fastest), then sqlite-vec, then numpy
+        # Check HNSW index exists
+        if not engine and hnsw_path and _HAS_HNSW and hnsw_path.exists():
+            logger.info("Auto-detected HNSW index (hnsw.db), using HNSWBackend")
+            try:
+                return HNSWBackend(db_path=hnsw_path, dimension=dimension)
+            except Exception:
+                logger.warning("HNSW backend init failed, falling back", exc_info=True)
+
+        if engine == "hnsw":
+            try:
+                return HNSWBackend(db_path=hnsw_path, dimension=dimension)
+            except (ImportError, Exception):
+                logger.warning("HNSW backend init failed, falling back to numpy", exc_info=True)
+
         if engine == "sqlite_vec":
             try:
                 return SqliteVecBackend(db_path=db_path, dimension=dimension)
             except Exception:
                 logger.warning("sqlite-vec backend init failed, falling back to numpy", exc_info=True)
-
-        if engine == "hnsw":
-            try:
-                return HNSWBackend(db_path=db_path, dimension=dimension)
-            except (ImportError, Exception):
-                logger.warning("HNSW backend init failed, falling back to numpy", exc_info=True)
 
         # Auto-detect: if the DB has a vec_chunks virtual table, use sqlite-vec
         if not engine and db_path and Path(db_path).exists():
@@ -652,8 +664,8 @@ class HNSWBackend:
         db_path: str | Path | None = None,
         dimension: int = 768,
         max_elements: int = 1_000_000,
-        ef_construction: int = 200,
-        M: int = 16,
+        ef_construction: int = 400,
+        M: int = 32,
     ):
         if not _HAS_HNSW:
             raise ImportError(
@@ -721,6 +733,8 @@ class HNSWBackend:
         items: Iterable[tuple[str, Sequence[float]]],
         category: str | None = None,
     ) -> int:
+        # Collect all items, then do ONE add_items call (O(n log n) build)
+        # instead of per-item calls (O(n² log n) — 100x slower on 37k vectors).
         ids_list: list[int] = []
         vecs_list: list[list[float]] = []
         for id_, vec in items:
@@ -779,7 +793,7 @@ class HNSWBackend:
             return []
 
         with self._lock:
-            self._index.set_ef(max(limit * 4, 64))
+            self._index.set_ef(max(limit * 16, 256))
             q = np.ascontiguousarray([query], dtype=np.float32)
             labels, distances = self._index.knn_query(q, k=min(limit * 4, len(self._id_map)))
 
