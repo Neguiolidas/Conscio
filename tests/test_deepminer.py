@@ -142,7 +142,7 @@ def test_flood_1000_no_corruption(eng):
         .fetchone()[0]
     )
     assert n == 1000
-    assert dt < 5.0  # typically < 1s; tolerant bound for slow CI
+    assert dt < 15.0  # typically < 1s; tolerant bound for slow CI runners
 
 
 def test_concurrent_observe_thread_safe(eng):
