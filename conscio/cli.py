@@ -280,9 +280,13 @@ def _cmd_migrate_vectors(
     import sqlite3
     import time
     from pathlib import Path
+
     from .vector_backend import (
-        VectorBackend, SqliteVecBackend, HNSWBackend,
-        has_sqlite_vec, _HAS_HNSW,
+        _HAS_HNSW,
+        HNSWBackend,
+        SqliteVecBackend,
+        VectorBackend,
+        has_sqlite_vec,
     )
 
     storage_path = Path(storage)
@@ -411,7 +415,8 @@ def _migrate_to_sqlite_vec(all_vecs, dim, db_path, storage_path, backup, force):
     """Write vectors to sqlite-vec and atomic swap."""
     import shutil
     import time
-    from .vector_backend import VectorBackend, SqliteVecBackend
+
+    from .vector_backend import SqliteVecBackend, VectorBackend
 
     tmp_path = db_path.with_suffix(".tmp")
     if tmp_path.exists():
@@ -455,13 +460,14 @@ def _migrate_to_sqlite_vec(all_vecs, dim, db_path, storage_path, backup, force):
     print(f"\nMigration complete: {total} vectors")
     print(f"  New DB:  {db_path} ({db_path.stat().st_size / 1024 / 1024:.1f}MB)")
     print(f"  Backup:  {numpy_bak} ({Path(numpy_bak).stat().st_size / 1024 / 1024:.1f}MB)")
-    print(f"\nThe engine will auto-detect sqlite-vec format on next startup.")
+    print("\nThe engine will auto-detect sqlite-vec format on next startup.")
     return 0
 
 
 def _migrate_to_hnsw(all_vecs, dim, hnsw_path, storage_path):
     """Write vectors to HNSW index (hnsw.db). Original vectors.db preserved."""
     import time
+
     from .vector_backend import HNSWBackend
 
     # Clean old HNSW files
@@ -499,13 +505,12 @@ def _migrate_to_hnsw(all_vecs, dim, hnsw_path, storage_path):
         print(f"  top-5: {[x['id'] for x in dr]}")
     dst2.close()
 
-    import os
     print(f"\nMigration complete: {total} vectors")
     print(f"  HNSW index: {hnsw_path} ({hnsw_path.stat().st_size / 1024 / 1024:.1f}MB)")
     print(f"  Metadata:   {meta_path} ({meta_path.stat().st_size / 1024 / 1024:.1f}MB)")
-    print(f"  Original DB preserved as fallback")
-    print(f"\nThe engine will auto-detect HNSW (hnsw.db) on next startup.")
-    print(f"  Priority: HNSW > sqlite-vec > numpy")
+    print("  Original DB preserved as fallback")
+    print("\nThe engine will auto-detect HNSW (hnsw.db) on next startup.")
+    print("  Priority: HNSW > sqlite-vec > numpy")
     return 0
 
 

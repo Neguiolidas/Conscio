@@ -24,7 +24,7 @@ from pathlib import Path
 from .constants import DEFAULT_DB_PATH
 from .embedding_pipeline import EmbeddingPipeline
 from .timeutil import naive_utcnow
-from .vector_backend import VectorBackend, SqliteVecBackend, HNSWBackend
+from .vector_backend import HNSWBackend, SqliteVecBackend, VectorBackend
 
 # Type alias for any vector backend (all share the same API)
 VectorBackendType = VectorBackend | SqliteVecBackend | HNSWBackend

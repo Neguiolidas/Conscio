@@ -28,7 +28,7 @@ import hashlib
 import logging
 
 from .embedding import EmbeddingProvider
-from .vector_backend import VectorBackend, SqliteVecBackend, HNSWBackend
+from .vector_backend import HNSWBackend, SqliteVecBackend, VectorBackend
 
 # Type alias for any vector backend (all share the same API)
 VectorBackendType = VectorBackend | SqliteVecBackend | HNSWBackend

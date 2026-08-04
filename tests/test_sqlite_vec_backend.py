@@ -4,13 +4,10 @@ Tests the SqliteVecBackend which uses sqlite-vec's vec0 virtual table
 for C-native brute-force cosine search, replacing the Python/numpy O(n)
 scan in VectorBackend.
 """
-import os
-import sqlite3
 
 import pytest
 
-from conscio.vector_backend import VectorBackend, SqliteVecBackend, has_sqlite_vec
-
+from conscio.vector_backend import SqliteVecBackend, VectorBackend, has_sqlite_vec
 
 # Skip all if sqlite-vec not installed
 pytestmark = pytest.mark.skipif(
@@ -169,12 +166,10 @@ def test_vector_backend_factory_default(tmp_path, monkeypatch):
 
 def test_vector_backend_factory_hnsw_nonexistent(tmp_path, monkeypatch):
     """HNSW backend is opt-in but gracefully degrades if hnswlib not installed."""
+    import importlib.util
     monkeypatch.setenv("CONSCIO_VEC_BACKEND", "hnsw")
-    try:
-        from conscio.vector_backend import HNSWBackend
-        has_hnsw = True
-    except ImportError:
-        has_hnsw = False
-        # Should fall back to default VectorBackend
-        vb = VectorBackend.with_engine(db_path=tmp_path / "vec.db", dimension=4)
-        assert type(vb) is VectorBackend
+    if importlib.util.find_spec("hnswlib") is not None:
+        pytest.skip("hnswlib is installed — skip degradation test")
+    # Should fall back to default VectorBackend
+    vb = VectorBackend.with_engine(db_path=tmp_path / "vec.db", dimension=4)
+    assert type(vb) is VectorBackend

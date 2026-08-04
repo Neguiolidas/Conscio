@@ -27,7 +27,7 @@ from .coherence import COHERENCE_EVENT_THRESHOLD, CoherenceEngine, CoherenceRepo
 from .content_layer import (
     ContentLayerManager,
 )
-from .content_store import ContentStore
+from .content_store import ContentStore, VectorBackendType
 from .context_manager import ContextManager
 from .dreaming import DreamRecommendation
 from .embedding_pipeline import EmbeddingPipeline
@@ -67,8 +67,7 @@ from .structural_drift import (
 )
 from .timeutil import naive_utc_from_epoch, naive_utcnow
 from .token_tracker import TokenTracker
-from .vector_backend import VectorBackend, SqliteVecBackend, HNSWBackend
-from .content_store import VectorBackendType
+from .vector_backend import VectorBackend
 from .voice_preset import resolve_voice_preset
 from .world_extract import extract_entities, extract_relations
 from .world_model import WorldModel

@@ -19,7 +19,6 @@ from pathlib import Path
 from .content_store import ContentStore
 from .hallways import Hallways
 from .kg import KnowledgeGraph
-from .wings import WingManager
 
 
 def _utcnow() -> str:
