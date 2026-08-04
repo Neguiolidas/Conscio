@@ -353,8 +353,13 @@ class ConsciousnessEngine:
         self.vector_backend: VectorBackendType | None = None
         self.embedding_pipeline: EmbeddingPipeline | None = None
         self._init_vectors()
+        # ContentStore uses a separate DB file (content_store.db) to avoid
+        # bloating the EventBus DB (conscio.db). If content_store.db doesn't
+        # exist but content exists in conscio.db (legacy), the ContentStore
+        # will use conscio.db automatically (0 migration needed).
+        cs_db_path = self.storage / "content_store.db"
         self.content_store = ContentStore(
-            db_path=db_path,
+            db_path=cs_db_path,
             vector_backend=self.vector_backend,
             embeddings=self.embedding_pipeline,
         )
