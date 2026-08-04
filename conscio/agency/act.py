@@ -15,10 +15,13 @@ profile-driven tool visibility (max_visible_tools).
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from conscio.context_manager import ConsciousnessState
 from conscio.prompt_zones import build_zoned_prompt
@@ -107,6 +110,14 @@ class ActPipeline:
 
         goal_text = self.arbiter.choose(state)
         if goal_text is None:
+            logger.warning(
+                "arbiter returned None — active_goals=%s quarantined=%s",
+                state.active_goals[:3],
+                [fp for fp in
+                 (goal_fingerprint(g) for g in state.active_goals)
+                 if self.breaker.is_quarantined(fp)]
+            )
+        if goal_text is None:
             # No goal the actor may run: every active goal is either quarantined
             # (breaker) or diagnostic-only (v1.6 #7 provenance gate).
             return ActReport(
@@ -190,9 +201,14 @@ class ActPipeline:
                      data={"action": "proposed", "tool": proposal.tool,
                            "goal_fp": goal_fp})
 
-        # HIGH risk never auto-executes (R6); L2 must be earned AND allowed
-        if spec.risk is Risk.HIGH or self._effective_autonomy(
-                proposal.tool) < 2:
+        # HIGH risk never auto-executes (R6); L2 must be earned AND allowed.
+        # Exception: LOW-risk read-only tools with auto approval execute at L1
+        # to bootstrap the trust matrix (otherwise the daemon can never earn
+        # its first success, freezing the entire cognitive loop).
+        _auto = getattr(spec, "approval_policy", "require_approval") == "auto"
+        if spec.risk is Risk.HIGH or (
+                not (spec.risk is Risk.LOW and _auto)
+                and self._effective_autonomy(proposal.tool) < 2):
             return ActReport(status=ActStatus.PROPOSED, proposal=proposal,
                              verdict=verdict, ledger_id=row_id)
 
@@ -204,7 +220,7 @@ class ActPipeline:
     # v3.1: tools with no external side effects — skeptic audit is overkill.
     # think: pure reasoning, no I/O. memory_note: append-only local note.
     # fs_read excluded: it accesses filesystem (side-channel info leak risk).
-    _SKEPTIC_SKIP_TOOLS = frozenset({"think", "memory_note"})
+    _SKEPTIC_SKIP_TOOLS = frozenset({"think", "memory_note", "host_health"})
 
     def _audit(self, spec, proposal: ActionProposal,
                goal_text: str) -> AuditVerdict:

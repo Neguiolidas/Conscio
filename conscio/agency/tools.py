@@ -219,6 +219,64 @@ def make_default_registry(*, sandbox_root: Path,
             description="prune entities the world model has let go stale "
                         "(no update in 7 days, or relevance below the floor)")
 
+    # ── host_health: system diagnostics for the daemon's maintenance goal ──
+    # The daemon spawns "host health check — run diagnostics and record state"
+    # (source="daemon") every cycle when awake and no other executable goal
+    # exists. Without this tool the actor could never satisfy that goal,
+    # every act() failed, and the dream's distill phase had zero successful
+    # executions to crystallize into skills — freezing the cognitive loop.
+    import os as _os
+    import platform as _platform
+    import shutil as _shutil
+
+    def host_health(**_kwargs) -> str:
+        """Read system vitals (disk, memory, load, uptime) and return a
+        compact diagnostic digest. Pure read, no side effects."""
+        # Disk
+        disk = _shutil.disk_usage("/")
+        disk_pct = disk.used / disk.total * 100
+        # Memory (Linux /proc/meminfo)
+        mem_info = {}
+        try:
+            with open("/proc/meminfo", "r") as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        mem_info[parts[0].rstrip(":")] = int(parts[1])
+            mem_total_mb = mem_info.get("MemTotal", 0) // 1024
+            mem_avail_mb = mem_info.get("MemAvailable", 0) // 1024
+            mem_used_mb = mem_total_mb - mem_avail_mb
+            mem_pct = (mem_used_mb / mem_total_mb * 100) if mem_total_mb else 0
+        except Exception:
+            mem_total_mb = mem_avail_mb = mem_used_mb = 0
+            mem_pct = 0
+        # Load average
+        try:
+            load1, load5, load15 = _os.getloadavg()
+        except Exception:
+            load1 = load5 = load15 = 0.0
+        # Uptime
+        try:
+            with open("/proc/uptime", "r") as f:
+                uptime_s = float(f.readline().split()[0])
+            uptime_h = uptime_s / 3600
+        except Exception:
+            uptime_h = 0.0
+        digest = (
+            f"disk: {disk.used // (1024**3)}G/{disk.total // (1024**3)}G "
+            f"({disk_pct:.0f}%) | "
+            f"mem: {mem_used_mb}M/{mem_total_mb}M ({mem_pct:.0f}%) | "
+            f"load: {load1:.1f}/{load5:.1f}/{load15:.1f} | "
+            f"uptime: {uptime_h:.1f}h | "
+            f"python: {_platform.python_version()}"
+        )
+        return digest
+
+    reg.register("host_health", host_health, params={}, risk=Risk.LOW,
+                description="read system diagnostics (disk, memory, load, "
+                            "uptime) and return a compact health digest",
+                approval_policy="auto")
+
     return reg
 
 

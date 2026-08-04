@@ -646,11 +646,33 @@ class ConsciousnessEngine:
         # Without this, the daemon wakes, finds only diagnostic goals,
         # fails every cycle, and trips the failure-rate brake.
         if self._state.awake:
-            has_executable = any(
-                g.status == "active" and g.executable
-                for g in self.goals._goals
-            )
+            # v3.9.8: also check the breaker — a goal may be executable by
+            # origin but quarantined by the circuit breaker, leaving the
+            # daemon with zero actable goals and no daemon_check spawned.
+            _breaker = getattr(getattr(self, "_act_pipeline", None),
+                               "breaker", None)
+            def _is_actable(g) -> bool:
+                if g.status != "active" or not g.executable:
+                    return False
+                if _breaker is not None:
+                    from .agency.fingerprint import goal_fingerprint
+                    if _breaker.is_quarantined(goal_fingerprint(g.description)):
+                        return False
+                return True
+            has_executable = any(_is_actable(g) for g in self.goals._goals)
             if not has_executable:
+                # v3.9.9: expire quarantined goals so that the new
+                # daemon_check goal is not suppressed by _is_suppressed.
+                # Without this, a quarantined daemon_check with status
+                # "active" blocks the regeneration, leaving the daemon
+                # stuck with zero actable goals forever.
+                if _breaker is not None:
+                    from .agency.fingerprint import goal_fingerprint
+                    for g in list(self.goals._goals):
+                        if (g.status == "active"
+                                and _breaker.is_quarantined(
+                                    goal_fingerprint(g.description))):
+                            g.status = "expired"
                 self.goals.generate_from_maintenance(
                     "daemon_check",
                     "host health check — run diagnostics and record state",
@@ -1852,7 +1874,7 @@ class ConsciousnessEngine:
 
     def attach_adapter(self, adapter, *, sandbox_root=None, registry=None,
                        skeptic_adapter=None, skeptic_mode=None,
-                       autonomy_cap=1, intercept_enabled=False):
+                       autonomy_cap=2, intercept_enabled=False):
         """Wire the agentic pipeline. reflect() is unaffected.
 
         skeptic_adapter: optional second cortex for the audit

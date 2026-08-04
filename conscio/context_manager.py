@@ -202,9 +202,7 @@ class ContextManager:
         the allowed token budget for the current mode.
         """
         goals = active_goals or []
-        max_goals = 0 if self.mode == ContextMode.MINIMAL else (
-            3 if self.mode == ContextMode.COMPACT else 5
-        )
+        max_goals = 0 if self.mode == ContextMode.MINIMAL else 5
 
         # Trim each component to its budget (rough: 1 word ≈ 1.3 tokens)
         def trim(text: str, word_budget: int) -> str:
