@@ -292,21 +292,41 @@ BASE_TOOL_DEFS: list[dict] = [
      "description": "Evaluate a safe expression or [INTERCEPT: ...] tag using "
                     "the Intercepter AST evaluator. Supports arithmetic, math "
                     "functions (sqrt, floor, ceil, log, sin, cos, tan, "
-                    "solve_linear), bound variables, and comparisons. "
+                    "solve_linear), bound variables, comparisons, LaTeX "
+                    "input (\\frac{a}{b}, \\Big, \\big, \\sqrt, implied "
+                    "multiplication like 9(2x-3)), and automatic equation "
+                    "solving. If the expression contains '=' and no "
+                    "variables are provided, automatically solves for the "
+                    "unknown using sympy and returns the solution. "
                     "Pass variables as a dict of name->value to bind them "
-                    "before evaluation. Returns the result or error.",
+                    "before evaluation (disables auto-solve). Set "
+                    "solve=true to force solving, solve=false to force "
+                    "evaluation. Returns the result, exact value, or error.",
      "inputSchema": {"type": "object",
                      "properties": {
                          "expression": {"type": "string",
-                            "description": "Expression to evaluate. If wrapped "
-                                           "in [INTERCEPT: ...] the tag is "
+                            "description": "Expression to evaluate. Accepts "
+                                           "Python syntax (2*x + 3), LaTeX "
+                                           "(\\frac{1}{2}\\Big(9(2x-3)\\Big)), "
+                                           "or mixed. If wrapped in "
+                                           "[INTERCEPT: ...] the tag is "
                                            "parsed; otherwise the raw "
-                                           "expression is evaluated directly."},
+                                           "expression is evaluated. "
+                                           "Equations with '=' are auto-solved "
+                                           "when no variables are given."},
                          "variables": {"type": "object",
                             "description": "Variables to bind before "
                                            "evaluation. Keys are names, "
                                            "values must be int, float, str, "
-                                           "or bool."},
+                                           "or bool. When provided, "
+                                           "auto-solve is disabled and "
+                                           "the expression is evaluated "
+                                           "as-is."},
+                         "solve": {"type": "boolean",
+                            "description": "Force solve mode (true) or "
+                                           "evaluation mode (false). "
+                                           "Default: auto (solve when '=' "
+                                           "present and no variables)."},
                      },
                      "required": ["expression"]}},
     {"name": "conscio.observe",

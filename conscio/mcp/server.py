@@ -470,12 +470,85 @@ class Bindings:
         return {"ok": True, "marked": n}
 
     def _intercept(self, args: dict) -> dict:
-        """Evaluate a safe expression via the Intercepter AST evaluator."""
-        from conscio.agency.intercepter import Intercepter
+        """Evaluate a safe expression via the Intercepter AST evaluator.
+
+        If the expression is an equation (contains ``=``) and ``solve`` is
+        true (default when no variables are provided), automatically solve
+        for the unknown variable using sympy.
+        """
+        from conscio.agency.intercepter import Intercepter, _latex_to_python
 
         expr = self._require(args, "expression")
         variables = args.get("variables") or {}
+        solve_flag = args.get("solve")
 
+        # Auto-enable solve when: expression has '=', no variables given,
+        # and solve not explicitly set to false.
+        has_eq = '=' in expr and '==' not in expr
+        auto_solve = has_eq and not variables and solve_flag is not False
+        if solve_flag is True:
+            auto_solve = True
+
+        # Equation solving path (requires sympy)
+        if auto_solve:
+            try:
+                import sympy
+                from sympy import symbols, Eq, solve as sym_solve, sympify
+                from sympy.parsing.sympy_parser import (
+                    parse_expr, standard_transformations,
+                    implicit_multiplication_application,
+                )
+                transformations = standard_transformations + (
+                    implicit_multiplication_application,
+                )
+
+                # Convert LaTeX if needed
+                from conscio.agency.intercepter import _LATEX_MARKERS
+                py_expr = expr
+                if _LATEX_MARKERS.search(expr):
+                    py_expr = _latex_to_python(expr)
+
+                if '=' in py_expr and '==' not in py_expr:
+                    lhs_str, rhs_str = py_expr.split('=', 1)
+                    lhs = parse_expr(lhs_str, transformations=transformations)
+                    rhs = parse_expr(rhs_str, transformations=transformations)
+                else:
+                    lhs = parse_expr(py_expr, transformations=transformations)
+                    rhs = sympy.Integer(0)
+
+                # Find free symbols (the unknowns)
+                free = lhs.free_symbols | rhs.free_symbols
+                if len(free) == 0:
+                    return {"ok": False, "error": "no variable found in expression",
+                            "expression": expr}
+                if len(free) > 1:
+                    return {"ok": False,
+                            "error": f"multiple variables found: {sorted(str(s) for s in free)}. "
+                                     f"Provide values via 'variables' or use a single variable.",
+                            "expression": expr}
+
+                var = list(free)[0]
+                eq = Eq(lhs, rhs)
+                solutions = sym_solve(eq, var)
+                if not solutions:
+                    return {"ok": False, "error": "no solution found",
+                            "expression": expr, "equation": str(eq)}
+                if len(solutions) == 1:
+                    sol = solutions[0]
+                    return {"ok": True, "expression": expr,
+                            "equation": str(eq), "variable": str(var),
+                            "result": float(sol) if sol.is_real else str(sol),
+                            "exact": str(sol)}
+                else:
+                    return {"ok": True, "expression": expr,
+                            "equation": str(eq), "variable": str(var),
+                            "result": [float(s) if s.is_real else str(s) for s in solutions],
+                            "exact": [str(s) for s in solutions]}
+            except Exception as exc:
+                # Fall through to normal evaluation
+                pass
+
+        # Normal evaluation path
         itc = Intercepter()
         for name, value in variables.items():
             try:
