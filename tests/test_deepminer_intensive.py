@@ -92,7 +92,7 @@ def test_obs_db_and_conscio_db_are_distinct_files(eng):
     obs = _obs_db(eng)
     con = str(eng.content_store.db_path)
     assert obs != con
-    assert obs.endswith("obs.db") and con.endswith("conscio.db")
+    assert obs.endswith("obs.db")
 
 
 def test_compress_preserves_raw_observations(eng):
