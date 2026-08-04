@@ -14,12 +14,13 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.9.6` "Deep Audit":** the automatic skill-generation
-pipeline that had been silently broken since v3.9 is now fixed end to end —
-executed actions are captured by `distill()`, imported skills with no local
-trials are served (not filtered), manual quarantines apply instantly to
-`should_trip()`, and the `EventBus` is thread-safe so concurrent emits never
-crash.  (See also ["v3.9.5" "Latch and Release"](CHANGELOG.md#395---2026-08-02)
+**Latest release — `v3.9.7` "Vector Backends & Hard Purge":** three native vector
+backends with auto-detect — **HNSW** (hnswlib, 0.6–3ms/search, 50× faster than numpy),
+**sqlite-vec** (17ms, 10×), and **numpy** (zero-dep default). One-command CLI migration
+(`conscio migrate-vectors --target hnsw`). ContentStore DB path bug fixed (recall was
+returning 0 snippets — now opens `content_store.db` with 49687 chunks). MemPalace and
+ChromaDB completely removed from code, packages, and the machine. Full migration guide:
+[docs/MIGRATION.md](docs/MIGRATION.md). (See also [v3.9.6 "Deep Audit"](CHANGELOG.md#396---2026-08-02))
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
@@ -148,10 +149,12 @@ See [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules) for the full tab
   semantic recall; KnowledgeGraph with entities, triples, and timeline.
 - **Semantic chunking + vector search** — `ContentStore` splits by heading
   (markdown), `---` boundary (yaml), or paragraph (everything else); auto-detect
-  embedding pipeline via sentence_transformers + `VectorBackend` (batched numpy
-  cosine search) fused into `recall()` via `HybridRetriever` (RRF, lexical + dense).
-  Override with `CONSCIO_VECTORS=0` to disable. `conscio ingest <path>` bulk-indexes
-  a directory.
+  embedding pipeline via sentence_transformers + `VectorBackend` fused into
+  `recall()` via `HybridRetriever` (RRF, lexical + dense). Three backends with
+  auto-detect: **HNSW** (hnswlib, 0.6–3ms, 50× faster), **sqlite-vec** (17ms, 10×),
+  **numpy** (zero-dep default). Override with `CONSCIO_VECTORS=0` to disable.
+  `conscio ingest <path>` bulk-indexes a directory. Migrate with
+  `conscio migrate-vectors --target hnsw` (see [Migration guide](docs/MIGRATION.md)).
 - **Organizes memory in wings and rooms** — Hallways hierarchy: wing → room →
   drawer, with auto-created defaults and FK enforcement; WingManager integrates
   Hallways + ContentStore for filtered search.
@@ -169,7 +172,7 @@ See [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules) for the full tab
   compactions actually land, derives the cost-optimal window, and reports
   current-vs-baseline priced per turn from the host's own usage records.
 - **Exports & imports** — tar.gz archive with ContentStore + KG + Hallways +
-  metadata.json; MemPalace ChromaDB adapter (import_format_mempalace).
+  metadata.json.
 - **Judges output quality** — an optional 6th evaluation axis, `output_quality`
   (LLM-as-judge with heuristic fallback). The overall score averages over the
   axes actually active, so enabling it never silently reweights the other five.
@@ -456,7 +459,7 @@ Origin: the Think-Vetor DSL concept (CromIA), reimplemented from scratch.
                                                               │
   ConsciousnessEngine  (orchestrator · lifecycle · injection) │
    ├─ Witness        InnerMonologue · WorldModel · MetaCognition · GoalGenerator
-   ├─ Substrate      ContentStore (FTS5 BM25 + RRF) · VectorBackend + HybridRetriever (opt-in) · EventBus (41 event types) · FilterPipeline
+   ├─ Substrate      ContentStore (FTS5 BM25 + RRF) · VectorBackend (HNSW/sqlite-vec/numpy auto-detect) · HybridRetriever · EventBus (41 event types) · FilterPipeline
    ├─ Continuity     SessionLifecycle (6-step handoff) · SessionRAG (optional)
    ├─ Metabolism     MetabolicContext · DreamCycle (release→prune→…→distill)
    ├─ Coherence      CoherenceEngine · semantic reconciliation · unmeasured dimensions named
@@ -472,9 +475,9 @@ Origin: the Think-Vetor DSL concept (CromIA), reimplemented from scratch.
    │                 adaptive max_retries · skeptic skip (safe tools)
    ├─ Adaptive       prompt_complexity (full/compact/minimal) ·
    │                 auto-detect (--model auto) · FallbackAdapter
-   ├─ Memory         KnowledgeGraph · Hallways · WingManager · VectorBackend ·
+   ├─ Memory         KnowledgeGraph · Hallways · WingManager · VectorBackend (3 backends) ·
    │                 Deduplicator · EntityDetector · EmbeddingProvider ·
-   │                 Miner · Migration (export/import tar.gz)
+   │                 Miner · Migration (export/import tar.gz + vector migrate CLI)
    ├─ Observations   obs.db (FTS5, separate from conscio.db) · capture hooks ·
    │                 recall_observations · compress_observations
    ├─ Governor       prefix/landing measurement → cost-optimal window · baseline
@@ -569,6 +572,49 @@ effective cost to ~2–3×.
 
 ---
 
+## Vector backends & migration
+
+Three backends, auto-detected at startup — no config needed:
+
+| Backend | Search | Recall@10 | Setup | When to use |
+|---------|--------|-----------|-------|-------------|
+| **HNSW** (hnswlib) | 2.9ms | 99% | `pip install hnswlib` | Production, >1k vectors |
+| **sqlite-vec** | 17ms | 100% | `pip install sqlite-vec` | Mid-tier, no extra RAM |
+| **numpy** (default) | 180ms | 100% | zero deps | Fresh installs, <1k vectors |
+
+Auto-detect priority: **HNSW → sqlite-vec → numpy**. Override with
+`CONSCIO_VEC_BACKEND=hnsw|sqlite_vec|numpy`.
+
+### Migrate
+
+```bash
+# numpy → sqlite-vec (10×, default target)
+conscio migrate-vectors
+
+# numpy → HNSW (50×, direct — skips sqlite-vec)
+conscio migrate-vectors --target hnsw
+
+# sqlite-vec → HNSW (preserves original as fallback)
+conscio migrate-vectors --target hnsw
+```
+
+All paths auto-detect source format, backup before migration, verify search
+rankings, and write the target. HNSW writes to a separate `hnsw.db` so the
+original `vectors.db` is never clobbered.
+
+### Production benchmark (37,042 vectors, 384-dim, all-MiniLM-L6-v2)
+
+| Backend     | Search  | Recall@10 | Ingest | Disk  | RAM    |
+|-------------|---------|-----------|--------|-------|--------|
+| **HNSW**    | 2.9ms   | 99%       | 28s    | 65MB  | 300MB  |
+| sqlite-vec  | 17ms    | 100%      | 12s    | 58MB  | 0      |
+| numpy       | 180ms   | 100%      | 0      | 74MB  | 0      |
+
+HNSW is 62× faster than numpy, 6× faster than sqlite-vec. Full guide:
+[docs/MIGRATION.md](docs/MIGRATION.md).
+
+---
+
 ## Bench
 
 ```bash
@@ -612,8 +658,10 @@ pytest tests/test_agency_act.py -v    # a specific module
 ```
 
 SQLite in WAL mode. The engine's storage defaults to `~/.hermes/consciousness/`,
-where `conscio.db` holds ContentStore + EventBus + ActionLedger + skills and
-`obs.db` holds tool observations in a store of its own. Pass `storage_path=` (or
+where `conscio.db` holds EventBus + ActionLedger + skills, `content_store.db`
+holds the ContentStore (FTS5 + chunks, separate from the EventBus DB), and
+`obs.db` holds tool observations in a store of its own. Vector backends write
+to `vectors.db` (sqlite-vec/numpy) and `hnsw.db` (HNSW, separate file). Pass `storage_path=` (or
 `--storage`) to move it; the CLI and daemon additionally honour `$HERMES_HOME`,
 which the library default does not read. Cross-instance state — the knowledge
 graph, hallways, vectors, dedup, handoffs, the act sandbox — lives under
