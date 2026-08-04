@@ -264,10 +264,8 @@ rm -rf ~/.mempalace ~/mempalace ~/.mempalace-backup-* ~/.cache/chroma
 rm -f ~/.local/bin/mempalace ~/.local/bin/mempalace-mcp
 
 # Remove old configs
-rm -f ~/clawd/mempalace.yaml ~/nextep-session-logs/mempalace.yaml
-
-# Remove Hermes skill (if present)
-rm -rf ~/.hermes/skills/mempalace-preservation
+rm -f ~/mempalace.yaml
+rm -rf ~/.local/share/mempalace-preservation
 
 # Verify cleanup
 find / -maxdepth 5 -iname "*chroma*" -not -path "/proc/*" -not -path "/sys/*" 2>/dev/null
@@ -318,7 +316,7 @@ pip install 'numpy<2' --force
 
 After changing backend, reload the MCP server:
 - In Hermes: run `reload-mcp` command
-- Or restart the gateway: `hermes gateway restart` (from a separate shell)
+- Or restart your MCP client / gateway
 
 The MCP process caches code in memory — it needs a restart to pick up changes.
 

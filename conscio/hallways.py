@@ -1,7 +1,6 @@
 """Hallways — wing/room/drawer hierarchy.
 
-Standalone implementation.6 hallways.py, simplified for Conscio:
-- Removed dep on mempalace.config
+Standalone implementation, simplified for Conscio.
 - Auto-creates wing 'default' and room 'default' in __init__ (Protocol G fix)
 - Default wing/room = 'default'/'default' when assign_drawer called without them
 
