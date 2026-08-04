@@ -1,6 +1,6 @@
 """Miner — file + conversation ingestion for Conscio.
 
-Simplified version (not porting 2742L of MemPalace miner/convo_miner):
+Simplified standalone miner:
 - ingest_file: parse .md/.txt/.jsonl → chunks → WingManager.index
 - ingest_conversation: parse JSONL chat → each turn = drawer
 - ingest_directory: walk dir, skip DEFAULT_SKIP_DIRS

@@ -54,7 +54,6 @@ from .migrate import Migrator
 from .migration import (
     export_archive,
     import_archive,
-    import_format_mempalace,
 )
 from .miner import Miner
 from .models import ModelRegistry
@@ -175,7 +174,6 @@ __all__ = [
     "evaluate",
     "export_archive",
     "import_archive",
-    "import_format_mempalace",
     "read_head_commit",
     "record_session_lifecycle",
     "sync_structure",

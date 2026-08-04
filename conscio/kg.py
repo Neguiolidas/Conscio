@@ -1,7 +1,7 @@
 """KnowledgeGraph — SQLite-backed entities + triples.
 
-Ported from MemPalace 3.6 knowledge_graph.py, simplified for Conscio:
-- Removed deps on mempalace.config and mempalace.ids
+Standalone implementation.6 knowledge_graph.py, simplified for Conscio:
+
 - IDs generated via deterministic slug: name.lower().replace(" ", "_")
 - WAL mode + FK enforcement
 - Thread-safe with threading.Lock

@@ -1,6 +1,6 @@
 """EntityDetector — simplified, Conscio-only (no i18n).
 
-Ported concept from MemPalace entity_detector.py, drastically simplified:
+Simplified standalone implementation.py, drastically simplified:
 - Regex patterns with re.UNICODE (supports Portuguese accents: São, João, Ção)
 - Detects: persons/projects (capitalized words), domains (x.y.tld), versions (vX.Y.Z)
 - Stopword filter (common capitalized English words: The, That, This, etc)
