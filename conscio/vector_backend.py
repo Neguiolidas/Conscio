@@ -86,7 +86,7 @@ class VectorBackend:
     def with_engine(
         db_path: str | Path | None = None,
         dimension: int = 768,
-    ) -> "VectorBackend | SqliteVecBackend | HNSWBackend":
+    ) -> VectorBackend | SqliteVecBackend | HNSWBackend:
         """Factory: pick the vector backend based on CONSCIO_VEC_BACKEND env var.
 
         - ``sqlite_vec``: sqlite-vec C-native cosine (opt-in, requires pip install sqlite-vec)
@@ -493,7 +493,7 @@ class SqliteVecBackend:
                 schema = conn.execute(
                     "SELECT sql FROM sqlite_master WHERE type='table' AND name='vec_chunks'"
                 ).fetchone()
-                if schema and f"float[" in schema[0]:
+                if schema and "float[" in schema[0]:
                     import re
                     m = re.search(r"float\[(\d+)\]", schema[0])
                     if m and int(m.group(1)) != self.dimension:
