@@ -1,6 +1,6 @@
 """VectorBackend — cosine vector store in SQLite BLOB float32.
 
-Standalone implementation.py, simplified:
+Standalone implementation, simplified:
 - BLOB serialization via array.array('f', vec).tobytes() (stdlib, no numpy needed)
 - Cosine via numpy if available (fast), else math.fsum stdlib fallback
 - Hostile review: rejects NaN input with ValueError
@@ -34,6 +34,7 @@ import threading
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 # Optional numpy for fast cosine
 try:
@@ -656,9 +657,10 @@ class SqliteVecBackend:
 # ── HNSWBackend — optional HNSW via hnswlib (opt-in, no hard dep) ───
 
 try:
-    import hnswlib
-    _HAS_HNSW = True
+    import hnswlib  # type: ignore
+    _HAS_HNSW: bool = True
 except ImportError:
+    hnswlib = None  # type: ignore
     _HAS_HNSW = False
 
 
@@ -690,7 +692,7 @@ class HNSWBackend:
         self.ef_construction = ef_construction
         self.M = M
         self._lock = threading.Lock()
-        self._index: hnswlib.Index | None = None
+        self._index: Any = None  # hnswlib.Index at runtime
         self._id_map: dict[int, str] = {}
         self._reverse_map: dict[str, int] = {}
         self._categories: dict[int, str | None] = {}
@@ -698,6 +700,7 @@ class HNSWBackend:
         self._init_index()
 
     def _init_index(self) -> None:
+        assert hnswlib is not None  # guaranteed by __init__ check
         self._index = hnswlib.Index(space="cosine", dim=self.dimension)
         index_path = str(self.db_path)
         if Path(index_path).exists():
