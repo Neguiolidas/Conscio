@@ -17,9 +17,7 @@ measurement, not assertion.
 **Latest release — `v3.9.7` "Vector Backends & Hard Purge":** three native vector
 backends with auto-detect — **HNSW** (hnswlib, 0.6–3ms/search, 50× faster than numpy),
 **sqlite-vec** (17ms, 10×), and **numpy** (zero-dep default). One-command CLI migration
-(`conscio migrate-vectors --target hnsw`). ContentStore DB path bug fixed (recall was
-returning 0 snippets — now opens `content_store.db` with 49687 chunks). MemPalace and
-ChromaDB completely removed from code, packages, and the machine. Full migration guide:
+(`conscio migrate-vectors --target hnsw`). Full migration guide:
 [docs/MIGRATION.md](docs/MIGRATION.md). (See also [v3.9.6 "Deep Audit"](CHANGELOG.md#396---2026-08-02))
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
