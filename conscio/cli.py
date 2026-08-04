@@ -41,11 +41,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_migrate = sub.add_parser(
         "migrate-vectors",
-        help="migrate vectors.db from numpy BLOB to sqlite-vec (10x faster search)",
+        help="migrate vectors.db to a faster backend (sqlite-vec 10x, HNSW 50x)",
     )
     p_migrate.add_argument(
         "--storage", default=str(Path.home() / ".conscio" / "runtime"),
         help="storage dir containing vectors.db (default: ~/.conscio/runtime)",
+    )
+    p_migrate.add_argument(
+        "--target", default="sqlite_vec", choices=["sqlite_vec", "hnsw"],
+        help="target backend: sqlite_vec (10x faster, no extra RAM) or hnsw "
+             "(50x faster, ~300MB RAM for 37k vectors). Default: sqlite_vec",
     )
     p_migrate.add_argument(
         "--backup", action="store_true", default=True,
@@ -53,7 +58,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_migrate.add_argument(
         "--force", action="store_true",
-        help="force migration even if already sqlite-vec format",
+        help="force migration even if already at target format",
     )
 
     p_info = sub.add_parser("info", help="show model context window / mode / budget")
@@ -244,24 +249,41 @@ def _cmd_version() -> int:
     return 0
 
 
-def _cmd_migrate_vectors(storage: str, backup: bool = True, force: bool = False) -> int:
-    """Migrate vectors.db from numpy BLOB format to sqlite-vec vec0.
+def _cmd_migrate_vectors(
+    storage: str,
+    backup: bool = True,
+    force: bool = False,
+    target: str = "sqlite_vec",
+) -> int:
+    """Migrate vectors.db to a faster backend.
 
-    Prerequisite: ``pip install sqlite-vec``
+    numpy BLOB → sqlite-vec vec0 (--target sqlite_vec, default)
+    numpy BLOB → HNSW index (--target hnsw, requires hnswlib)
+    sqlite-vec  → HNSW index (--target hnsw, requires hnswlib)
+
+    For HNSW, the index is written to hnsw.db (separate from vectors.db)
+    so the original DB is preserved as fallback.
+
+    Prerequisite: ``pip install sqlite-vec`` (for sqlite_vec) or
+    ``pip install hnswlib`` (for hnsw).
 
     Steps:
-      1. Check if DB already has vec_chunks table → skip unless --force
-      2. Backup vectors.db → vectors.db.bak (unless --no-backup)
-      3. Read all vectors from old 'vectors' table
-      4. Write to new vec0 virtual table in a temporary DB
+      1. Detect source format (numpy 'vectors' table or sqlite-vec 'vec_chunks')
+      2. Backup if requested
+      3. Read all vectors from source
+      4. Write to target backend
       5. Verify search results match
-      6. Atomic swap: rename old → .numpy.bak, rename new → vectors.db
+      6. For sqlite_vec: atomic swap. For HNSW: write hnsw.db alongside.
     """
     import array
     import shutil
     import sqlite3
+    import time
     from pathlib import Path
-    from .vector_backend import VectorBackend, SqliteVecBackend, has_sqlite_vec
+    from .vector_backend import (
+        VectorBackend, SqliteVecBackend, HNSWBackend,
+        has_sqlite_vec, _HAS_HNSW,
+    )
 
     storage_path = Path(storage)
     db_path = storage_path / "vectors.db"
@@ -270,107 +292,160 @@ def _cmd_migrate_vectors(storage: str, backup: bool = True, force: bool = False)
         print(f"Error: {db_path} not found")
         return 1
 
-    if not has_sqlite_vec():
-        print("Error: sqlite-vec not installed")
-        print("Install with: pip install sqlite-vec")
-        return 1
-
-    # Check if already migrated
+    # --- Detect source format ---
     probe = sqlite3.connect(str(db_path))
     tables = {r[0] for r in probe.execute(
         "SELECT name FROM sqlite_master WHERE type IN ('table','view')"
     ).fetchall()}
     probe.close()
 
-    if "vec_chunks" in tables and not force:
-        print(f"{db_path} is already sqlite-vec format (vec_chunks table exists)")
-        print("Use --force to re-migrate")
-        return 0
+    is_sqlite_vec = "vec_chunks" in tables
+    is_numpy = "vectors" in tables
 
-    if "vectors" not in tables:
-        print(f"Error: {db_path} has no 'vectors' table (unknown format)")
+    if not is_sqlite_vec and not is_numpy:
+        print(f"Error: {db_path} has no 'vectors' or 'vec_chunks' table (unknown format)")
         return 1
 
-    # Step 1: Read source stats
-    src = VectorBackend(db_path=db_path)
-    src_stats = src.stats()
-    print(f"Source: {src_stats['vectors']} vectors, dim={src_stats['dimension']}")
-    print(f"  Size: {db_path.stat().st_size / 1024 / 1024:.1f}MB")
+    # --- Check target availability ---
+    if target == "sqlite_vec" and not has_sqlite_vec():
+        print("Error: sqlite-vec not installed")
+        print("Install with: pip install sqlite-vec")
+        return 1
 
-    if src_stats["vectors"] == 0:
-        print("No vectors to migrate — creating empty sqlite-vec DB")
-        src.close()
-        # Just create a new SqliteVecBackend with the right dimension
-        tmp_path = db_path.with_suffix(".tmp")
-        dst = SqliteVecBackend(db_path=tmp_path, dimension=src_stats["dimension"])
-        dst.close()
-        if backup:
-            shutil.copy2(str(db_path), str(db_path) + ".bak")
-        shutil.move(str(tmp_path), str(db_path))
+    if target == "hnsw":
+        if not _HAS_HNSW:
+            print("Error: hnswlib not installed")
+            print("Install with: pip install hnswlib")
+            return 1
+        # HNSW reads from any source, so we just need the source to exist
+    elif not has_sqlite_vec():
+        print("Error: sqlite-vec not installed")
+        print("Install with: pip install sqlite-vec")
+        return 1
+
+    # --- Determine source dimension ---
+    if is_sqlite_vec:
+        src_backend = SqliteVecBackend(db_path=db_path)
+    else:
+        src_backend = VectorBackend(db_path=db_path)
+    src_stats = src_backend.stats()
+    dim = src_stats["dimension"]
+    n_vectors = src_stats["vectors"]
+    print(f"Source: {n_vectors} vectors, dim={dim} ({'sqlite-vec' if is_sqlite_vec else 'numpy'})")
+    print(f"  Size: {db_path.stat().st_size / 1024 / 1024:.1f}MB")
+    print(f"Target: {target}")
+
+    # --- Already at target? ---
+    hnsw_path = storage_path / "hnsw.db"
+    if target == "hnsw" and hnsw_path.exists() and not force:
+        print(f"\n{hnsw_path} already exists (HNSW index present)")
+        print("Use --force to rebuild")
+        src_backend.close()
+        return 0
+
+    if target == "sqlite_vec" and is_sqlite_vec and not force:
+        print(f"\n{db_path} is already sqlite-vec format (vec_chunks table exists)")
+        print("Use --force to re-migrate")
+        src_backend.close()
+        return 0
+
+    if n_vectors == 0:
+        print("No vectors to migrate — creating empty target DB")
+        src_backend.close()
+        if target == "sqlite_vec":
+            tmp_path = db_path.with_suffix(".tmp")
+            dst = SqliteVecBackend(db_path=tmp_path, dimension=dim)
+            dst.close()
+            if backup:
+                shutil.copy2(str(db_path), str(db_path) + ".bak")
+            shutil.move(str(tmp_path), str(db_path))
+        else:
+            dst = HNSWBackend(db_path=hnsw_path, dimension=dim)
+            dst.close()
         print("Done")
         return 0
 
-    # Step 2: Backup
+    # --- Backup ---
     if backup:
         bak_path = str(db_path) + ".bak"
         print(f"Backup: {bak_path}")
         shutil.copy2(str(db_path), bak_path)
 
-    # Step 3: Read all vectors and write to new DB
-    tmp_path = db_path.with_suffix(".tmp")
-    if tmp_path.exists():
-        tmp_path.unlink()
-    dst = SqliteVecBackend(db_path=tmp_path, dimension=src_stats["dimension"])
-
-    conn = src._conn_get()
-    cur = conn.execute("SELECT id, embedding, dimension, category FROM vectors")
-    total = 0
-    import time
+    # --- Read all vectors from source ---
+    print(f"\nReading {n_vectors} vectors...")
     t0 = time.time()
-    BATCH = 1000
+    all_vecs = []
 
-    while True:
-        rows = cur.fetchmany(BATCH)
-        if not rows:
-            break
-        batch = []
-        for row in rows:
+    if is_sqlite_vec:
+        conn = src_backend._conn_get()
+        cur = conn.execute("SELECT id, embedding FROM vec_chunks")
+        for row in cur:
+            arr = array.array("f")
+            arr.frombytes(row["embedding"])
+            all_vecs.append((row["id"], arr.tolist()))
+    else:
+        conn = src_backend._conn_get()
+        cur = conn.execute("SELECT id, embedding, dimension, category FROM vectors")
+        for row in cur:
             id_ = row["id"]
             blob = row["embedding"]
-            dim = row["dimension"]
-            cat = row["category"]
-            if dim != src_stats["dimension"]:
-                print(f"  SKIP {id_}: dim={dim} (expected {src_stats['dimension']})")
+            row_dim = row["dimension"]
+            if row_dim != dim:
+                print(f"  SKIP {id_}: dim={row_dim} (expected {dim})")
                 continue
             arr = array.array("f")
             arr.frombytes(blob)
-            batch.append((id_, arr.tolist()))
-        if batch:
-            n = dst.add_batch(batch)
-            total += n
-            elapsed = time.time() - t0
-            print(f"  Migrated {total}/{src_stats['vectors']} ({elapsed:.1f}s)")
+            all_vecs.append((id_, arr.tolist()))
+
+    src_backend.close()
+    print(f"Read {len(all_vecs)} vectors in {time.time()-t0:.1f}s")
+
+    # --- Write to target ---
+    if target == "sqlite_vec":
+        return _migrate_to_sqlite_vec(all_vecs, dim, db_path, storage_path, backup, force)
+    else:
+        return _migrate_to_hnsw(all_vecs, dim, hnsw_path, storage_path)
+
+
+def _migrate_to_sqlite_vec(all_vecs, dim, db_path, storage_path, backup, force):
+    """Write vectors to sqlite-vec and atomic swap."""
+    import shutil
+    import time
+    from .vector_backend import VectorBackend, SqliteVecBackend
+
+    tmp_path = db_path.with_suffix(".tmp")
+    if tmp_path.exists():
+        tmp_path.unlink()
+    dst = SqliteVecBackend(db_path=tmp_path, dimension=dim)
+
+    total = 0
+    t0 = time.time()
+    BATCH = 1000
+    for i in range(0, len(all_vecs), BATCH):
+        batch = all_vecs[i:i + BATCH]
+        n = dst.add_batch(batch)
+        total += n
+        print(f"  Migrated {total}/{len(all_vecs)} ({time.time()-t0:.1f}s)")
 
     dst.close()
-    src.close()
 
-    # Step 4: Verify
+    # Verify
     src2 = VectorBackend(db_path=db_path)
-    dst2 = SqliteVecBackend(db_path=tmp_path, dimension=src_stats["dimension"])
+    dst2 = SqliteVecBackend(db_path=tmp_path, dimension=dim)
     import random
     rng = random.Random(42)
-    q = [rng.gauss(0, 1) for _ in range(src_stats["dimension"])]
+    q = [rng.gauss(0, 1) for _ in range(dim)]
     sr = src2.search(q, limit=5)
     dr = dst2.search(q, limit=5)
     match = [x["id"] for x in sr] == [x["id"] for x in dr]
     print(f"\nVerification: {'PASS' if match else 'WARNING — rankings differ'}")
     if not match:
-        print(f"  numpy top-5:     {[x['id'] for x in sr]}")
-        print(f"  sqlite-vec top-5: {[x['id'] for x in dr]}")
+        print(f"  source top-5: {[x['id'] for x in sr]}")
+        print(f"  target top-5: {[x['id'] for x in dr]}")
     src2.close()
     dst2.close()
 
-    # Step 5: Atomic swap
+    # Atomic swap
     numpy_bak = str(db_path) + ".numpy.bak"
     if Path(numpy_bak).exists():
         Path(numpy_bak).unlink()
@@ -381,6 +456,56 @@ def _cmd_migrate_vectors(storage: str, backup: bool = True, force: bool = False)
     print(f"  New DB:  {db_path} ({db_path.stat().st_size / 1024 / 1024:.1f}MB)")
     print(f"  Backup:  {numpy_bak} ({Path(numpy_bak).stat().st_size / 1024 / 1024:.1f}MB)")
     print(f"\nThe engine will auto-detect sqlite-vec format on next startup.")
+    return 0
+
+
+def _migrate_to_hnsw(all_vecs, dim, hnsw_path, storage_path):
+    """Write vectors to HNSW index (hnsw.db). Original vectors.db preserved."""
+    import time
+    from .vector_backend import HNSWBackend
+
+    # Clean old HNSW files
+    if hnsw_path.exists():
+        hnsw_path.unlink()
+    meta_path = hnsw_path.with_name("hnsw.meta.db")
+    if meta_path.exists():
+        meta_path.unlink()
+
+    dst = HNSWBackend(
+        db_path=hnsw_path,
+        dimension=dim,
+        M=32,
+        ef_construction=400,
+    )
+    print(f"HNSW params: M={dst.M} ef_construction={dst.ef_construction}")
+    print(f"  Index: {hnsw_path}")
+
+    # One-shot batch insert (O(n log n) graph build)
+    t0 = time.time()
+    total = dst.add_batch(all_vecs)
+    t_ingest = time.time() - t0
+    print(f"Ingest: {total} vectors in {t_ingest:.1f}s")
+
+    dst.close()
+
+    # Verify
+    dst2 = HNSWBackend(db_path=hnsw_path, dimension=dim)
+    import random
+    rng = random.Random(42)
+    q = [rng.gauss(0, 1) for _ in range(dim)]
+    dr = dst2.search(q, limit=5)
+    print(f"\nVerification: HNSW returned {len(dr)} results")
+    if dr:
+        print(f"  top-5: {[x['id'] for x in dr]}")
+    dst2.close()
+
+    import os
+    print(f"\nMigration complete: {total} vectors")
+    print(f"  HNSW index: {hnsw_path} ({hnsw_path.stat().st_size / 1024 / 1024:.1f}MB)")
+    print(f"  Metadata:   {meta_path} ({meta_path.stat().st_size / 1024 / 1024:.1f}MB)")
+    print(f"  Original DB preserved as fallback")
+    print(f"\nThe engine will auto-detect HNSW (hnsw.db) on next startup.")
+    print(f"  Priority: HNSW > sqlite-vec > numpy")
     return 0
 
 
@@ -915,7 +1040,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "version":
         return _cmd_version()
     if args.command == "migrate-vectors":
-        return _cmd_migrate_vectors(args.storage, backup=args.backup, force=args.force)
+        return _cmd_migrate_vectors(
+            args.storage, backup=args.backup, force=args.force,
+            target=args.target,
+        )
     if args.command == "info":
         return _cmd_info(args.model, args.storage,
                          base_url=args.base_url, autodetect=args.autodetect)

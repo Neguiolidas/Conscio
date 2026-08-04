@@ -488,6 +488,18 @@ class SqliteVecBackend:
     def _init_db(self) -> None:
         with self._lock:
             conn = self._conn_get()
+            # Auto-detect dimension from existing table schema
+            try:
+                schema = conn.execute(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name='vec_chunks'"
+                ).fetchone()
+                if schema and f"float[" in schema[0]:
+                    import re
+                    m = re.search(r"float\[(\d+)\]", schema[0])
+                    if m and int(m.group(1)) != self.dimension:
+                        self.dimension = int(m.group(1))
+            except Exception:
+                pass
             # vec0 with aux columns: id and category stored directly in the
             # virtual table, eliminating the vec_metadata JOIN (27% faster
             # category search) and the separate metadata table entirely.
