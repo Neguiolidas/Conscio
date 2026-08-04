@@ -92,7 +92,7 @@ _UNSET: Any = object()
 
 @dataclass
 class SemanticChunk:
-    """A single dense information unit — like a ChromaDB document."""
+    """A single dense information unit."""
     tag: str           # e.g. "fix", "decision", "task", "state"
     domain: str  # e.g. "trading", "conscio", "infra", "general"
     payload: str       # ultra-short: "warmup_mode_added|3ticks_hold"
@@ -320,7 +320,7 @@ def compress_message(content: str, role: str) -> SemanticChunk | None:
     if not kws:
         return None
 
-    # Build dense payload: kw1·kw2·kw3 (dot-separated, like ChromaDB tags)
+    # Build dense payload: kw1·kw2·kw3 (dot-separated)
     payload = '·'.join(kws[:4])
     # Add action hint if space allows
     if tag in ("fix", "bug", "create", "decision") and len(payload) < 45:

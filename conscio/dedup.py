@@ -1,6 +1,6 @@
 """Deduplicator — hash + Jaccard bigram similarity.
 
-URL: ported concept from MemPalace dedup.py, simplified for Conscio.
+Standalone dedup implementation.py, simplified for Conscio.
 
 - Hash: SHA256 of NFC-normalized lowercase text (handles Unicode accents)
 - Similarity: Jaccard on bigrams (stdlib only)

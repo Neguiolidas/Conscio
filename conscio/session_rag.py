@@ -301,7 +301,7 @@ class OllamaEmbedder:
 class SessionVectorStore:
     """SQLite-backed vector store for session chunks.
 
-    Why not FAISS/ChromaDB? Because we want:
+    Why not FAISS? Because we want:
     - Zero external deps beyond numpy (already installed)
     - WAL mode for concurrent reads
     - Full control over schema and queries

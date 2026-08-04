@@ -1,6 +1,6 @@
 """VectorBackend — cosine vector store in SQLite BLOB float32.
 
-Ported from MemPalace backends/sqlite_exact.py, simplified:
+Standalone implementation.py, simplified:
 - BLOB serialization via array.array('f', vec).tobytes() (stdlib, no numpy needed)
 - Cosine via numpy if available (fast), else math.fsum stdlib fallback
 - Hostile review: rejects NaN input with ValueError

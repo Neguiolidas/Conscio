@@ -1,5 +1,5 @@
 """Declarative extras registry. Today: Graphify only (Conscio already reads
-graph.json; zero runtime dep). Obsidian/MemPalace are added here later as
+graph.json; zero runtime dep). Obsidian importer is added here later as
 their own opt-in plugin packages WITHOUT touching the wizard."""
 from __future__ import annotations
 
