@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import math
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -70,7 +71,108 @@ def _solve_linear(a: float, b: float, c: float, d: float) -> float:
     denom = a - c
     if denom == 0:
         raise ValueError("no unique solution: a == c")
-    return (d - b) / denom
+    return (d - b) / (a - c)
+
+
+# ── LaTeX pre-processing ──
+
+# Patterns that indicate the expression is LaTeX, not plain Python.
+# Matches \frac, \Big, etc. (with backslash) OR bare frac{ (models
+# like Qwen 0.8B frequently drop the backslash).
+_LATEX_MARKERS = re.compile(
+    r'\\?(?:frac\s*\{|Big[l|r]?\b|big[l|r]?\b|Bigg[l|r]?\b|bigg[l|r]?\b'
+    r'|left\b|right\b|cdot|times|div|sqrt\s*\{|sum|prod|int)',
+    re.IGNORECASE,
+)
+
+
+def _latex_to_python(expr: str) -> str:
+    """Convert a LaTeX math expression to a Python-evaluable string.
+
+    Handles ``\\frac{a}{b}`` (with or without leading backslash), sizing
+    commands (``\\Big``, ``\\big``, ``\\left``, ``\\right``), ``\\cdot``,
+    ``\\times``, ``\\div``, implied multiplication (``9(2x-3)`` →
+    ``9*(2*x-3)``), and equations (``LHS = RHS`` → ``LHS - (RHS)``).
+
+    No external dependencies — pure regex + brace matching.
+    """
+    s = expr.strip()
+    # Strip math delimiters
+    s = s.replace('\\[', '').replace('\\]', '')
+    s = s.replace('\\(', '').replace('\\)', '')
+    s = s.strip('$').strip()
+
+    # \frac{a}{b} → (a/b) — handle nested braces.
+    # Accept \frac or bare frac (models often drop the backslash).
+    while '\\frac' in s or re.search(r'(?<!\\)frac\s*\{', s):
+        m = re.search(r'\\?frac\s*\{', s)
+        if not m:
+            break
+        start = m.start()
+        brace_start = s.index('{', m.end() - 1)
+        # Find matching close brace for numerator
+        depth = 0
+        num_end = brace_start
+        for j in range(brace_start, len(s)):
+            if s[j] == '{':
+                depth += 1
+            elif s[j] == '}':
+                depth -= 1
+                if depth == 0:
+                    num_end = j
+                    break
+        numerator = s[brace_start + 1:num_end]
+        # Find denominator
+        den_start = num_end + 1
+        den_end = den_start
+        if den_start < len(s) and s[den_start] == '{':
+            depth = 0
+            den_end = den_start
+            for j in range(den_start, len(s)):
+                if s[j] == '{':
+                    depth += 1
+                elif s[j] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        den_end = j
+                        break
+            denominator = s[den_start + 1:den_end]
+        else:
+            denominator = '1'
+        replacement = f"({numerator}/{denominator})"
+        s = s[:start] + replacement + s[den_end + 1:]
+
+    # Remove sizing commands (with or without backslash)
+    s = re.sub(r'\\?Big[l|r]?\b', '', s)
+    s = re.sub(r'\\?big[l|r]?\b', '', s)
+    s = re.sub(r'\\?Bigg[l|r]?\b', '', s)
+    s = re.sub(r'\\?bigg[l|r]?\b', '', s)
+    s = re.sub(r'\\?left\b', '', s)
+    s = re.sub(r'\\?right\b', '', s)
+
+    # Operators
+    s = re.sub(r'\\?times\b', '*', s)
+    s = re.sub(r'\\?cdot\b', '*', s)
+    s = re.sub(r'\\?div\b', '/', s)
+
+    # \sqrt{x} → sqrt(x) (with or without backslash)
+    s = re.sub(r'\\?sqrt\s*\{([^{}]*)\}', r'sqrt(\1)', s)
+
+    # Implied multiplication
+    s = re.sub(r'(\d)\s*\(', r'\1*(', s)        # 9( → 9*(
+    s = re.sub(r'\)\s*\(', ')*(', s)             # )( → )*(
+    s = re.sub(r'(\d)([a-zA-Z])', r'\1*\2', s)   # 2x → 2*x
+    s = re.sub(r'([a-zA-Z])\s*\(', r'\1*(', s)   # x( → x*(
+
+    # Equation: LHS = RHS → (LHS) - (RHS)
+    if '=' in s and '==' not in s:
+        parts = s.split('=', 1)
+        s = f"({parts[0]}) - ({parts[1]})"
+
+    # Convert remaining braces to parens
+    s = s.replace('{', '(').replace('}', ')')
+
+    return s
 
 
 class Intercepter:
@@ -251,6 +353,12 @@ class Intercepter:
             raise InterceptError("expression too long")
         if not expr.strip():
             raise InterceptError("empty expression")
+
+        # LaTeX auto-detection: if the expression contains LaTeX markers,
+        # convert to Python before parsing.
+        if _LATEX_MARKERS.search(expr):
+            expr = _latex_to_python(expr)
+
         try:
             tree = ast.parse(expr, mode="eval")
         except SyntaxError as exc:
