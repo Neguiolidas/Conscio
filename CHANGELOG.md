@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.9.7] - 2026-08-04 — Vector Backends & Hard Purge
+
+Three vector backends with auto-detect, HNSW as the active production backend,
+one-command CLI migration, and the complete removal of MemPalace/ChromaDB.
+
+### Vector backends (new)
+
+- **HNSW** (`hnswlib`) — 0.6–3ms/search, 50× faster than numpy. O(log n)
+  graph stored in `hnsw.db` (separate from `vectors.db`). Tuned params:
+  M=32, ef_construction=400, ef_search=max(limit×16, 256). Recall@10 = 99%
+  on 37k real embeddings (384-dim). ~300MB RAM for the graph.
+- **sqlite-vec** (`sqlite-vec`) — 17ms/search, 10× faster than numpy. Native
+  C cosine distance via `vec0` virtual table. Zero extra RAM. Default for
+  mid-tier installs without `hnswlib`.
+- **numpy** (default, zero-dep) — 180ms/search. No extension required.
+  Fallback when neither `hnswlib` nor `sqlite-vec` is installed.
+
+Auto-detect priority at startup: **HNSW → sqlite-vec → numpy**.
+No env var needed — if `hnsw.db` exists and `hnswlib` is installed, HNSW is
+used. Override with `CONSCIO_VEC_BACKEND=hnsw|sqlite_vec|numpy`.
+
+`VectorBackend.with_engine()` is the factory — detects HNSW by `hnsw.db`,
+sqlite-vec by the `vec_chunks` virtual table, numpy by the `vectors` table.
+
+### CLI migration tool
+
+```bash
+# numpy → sqlite-vec (default, 10×)
+conscio migrate-vectors --storage ~/.conscio/runtime
+
+# numpy → HNSW (direct, 50×)
+conscio migrate-vectors --storage ~/.conscio/runtime --target hnsw
+
+# sqlite-vec → HNSW (preserves original as fallback)
+conscio migrate-vectors --storage ~/.conscio/runtime --target hnsw
+```
+
+All paths auto-detect source format, backup before migration, verify search
+rankings, and write results in the correct target format. HNSW writes to a
+separate `hnsw.db` so the original `vectors.db` is never clobbered.
+
+### MemPalace / ChromaDB — completely removed
+
+- **Deleted** `import_format_mempalace()` from `migration.py` (ChromaDB
+  importer, 81 lines).
+- **Deleted** `tests/test_import_mempalace.py` (15 assertions).
+- **Uninstalled** `chromadb`, `chromadb-client`, `pipx mempalace` from every
+  Python on the production machine.
+- **Removed** all MemPalace/ChromaDB references from docstrings and comments
+  in 9 source files (`dedup.py`, `entity_detector.py`, `hallways.py`, `kg.py`,
+  `miner.py`, `session_lifecycle.py`, `session_rag.py`, `vector_backend.py`,
+  `installer/extras.py`).
+- **Removed** `docs/superpowers/mempalace/` and `mempalace/` directories.
+- Full migration guide: [docs/MIGRATION.md](docs/MIGRATION.md).
+
+### Bug fixes
+
+- **ContentStore DB path** — engine was opening `conscio.db` (0.4MB, 2 chunks)
+  as the ContentStore, ignoring `content_store.db` (595MB, 49687 chunks) where
+  all real content lives. `recall()` always returned 0 snippets. Fixed: engine
+  now passes `content_store.db` as the ContentStore path. EventBus and
+  TokenTracker still use `conscio.db` (correct).
+- **SqliteVecBackend dimension auto-detect** — reopening an existing
+  `vec_chunks` table without passing `dimension=` defaulted to 768 instead of
+  reading the actual dimension from the table schema. Fixed: `_init_db()` now
+  parses `float[N]` from the CREATE VIRTUAL TABLE DDL and adopts the stored
+  dimension.
+
+### Production benchmark (37,042 vectors, 384-dim, all-MiniLM-L6-v2)
+
+| Backend     | Search latency | Recall@10 | Ingest  | Disk  | RAM    | Setup |
+|-------------|---------------|-----------|---------|-------|--------|-------|
+| **HNSW**    | 2.9ms         | 99%       | 28s     | 65MB  | 300MB  | `pip install hnswlib` |
+| sqlite-vec  | 17ms          | 100%      | 12s     | 58MB  | 0      | `pip install sqlite-vec` |
+| numpy       | 180ms         | 100%      | 0       | 74MB  | 0      | zero deps |
+
+HNSW is 62× faster than numpy, 6× faster than sqlite-vec, with 99% recall.
+sqlite-vec is the zero-RAM fallback. numpy is the zero-dep default.
+
+### Tests
+
+3249 passed, 3 skipped, 0 failures. 66 vector-specific tests pass.
+
+---
+
 ## [3.9.6] - 2026-08-02 — Deep Audit
 
 A thorough audit of every public module uncovered four bugs that had been broken
