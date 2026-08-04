@@ -701,7 +701,7 @@ class HNSWBackend:
 
     def _init_index(self) -> None:
         assert hnswlib is not None  # guaranteed by __init__ check
-        self._index = hnswlib.Index(space="cosine", dim=self.dimension)
+        self._index = hnswlib.Index(space="cosine", dim=self.dimension)  # type: ignore[reportOptionalMemberAccess]
         index_path = str(self.db_path)
         if Path(index_path).exists():
             self._index.load_index(index_path)
@@ -738,8 +738,8 @@ class HNSWBackend:
                 if len(self._id_map) > self.max_elements:
                     self._index.resize_index(len(self._id_map) + 10000)
             # hnswlib requires contiguous float32 numpy arrays
-            data = np.ascontiguousarray([vec], dtype=np.float32)
-            labels = np.array([hnsw_id], dtype=np.int64)
+            data = np.ascontiguousarray([vec], dtype=np.float32)  # type: ignore[reportOptionalMemberAccess]
+            labels = np.array([hnsw_id], dtype=np.int64)  # type: ignore[reportOptionalMemberAccess]
             self._index.add_items(data, labels)
             self._categories[hnsw_id] = category
 
@@ -774,8 +774,8 @@ class HNSWBackend:
         if not ids_list:
             return 0
         with self._lock:
-            data = np.ascontiguousarray(vecs_list, dtype=np.float32)
-            labels = np.array(ids_list, dtype=np.int64)
+            data = np.ascontiguousarray(vecs_list, dtype=np.float32)  # type: ignore[reportOptionalMemberAccess]
+            labels = np.array(ids_list, dtype=np.int64)  # type: ignore[reportOptionalMemberAccess]
             self._index.add_items(data, labels)
         return len(ids_list)
 
@@ -785,7 +785,7 @@ class HNSWBackend:
         if self._id_map:
             return False
         self.dimension = dim
-        self._index = hnswlib.Index(space="cosine", dim=dim)
+        self._index = hnswlib.Index(space="cosine", dim=dim)  # type: ignore[reportOptionalMemberAccess]
         self._index.init_index(
             max_elements=self.max_elements,
             ef_construction=self.ef_construction,
@@ -809,7 +809,7 @@ class HNSWBackend:
 
         with self._lock:
             self._index.set_ef(max(limit * 16, 256))
-            q = np.ascontiguousarray([query], dtype=np.float32)
+            q = np.ascontiguousarray([query], dtype=np.float32)  # type: ignore[reportOptionalMemberAccess]
             labels, distances = self._index.knn_query(q, k=min(limit * 4, len(self._id_map)))
 
         results = []
