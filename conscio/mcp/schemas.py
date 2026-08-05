@@ -289,44 +289,23 @@ BASE_TOOL_DEFS: list[dict] = [
      "inputSchema": {"type": "object",
                      "properties": {}}},
     {"name": "conscio.intercept",
-     "description": "Evaluate a safe expression or [INTERCEPT: ...] tag using "
-                    "the Intercepter AST evaluator. Supports arithmetic, math "
-                    "functions (sqrt, floor, ceil, log, sin, cos, tan, "
-                    "solve_linear), bound variables, comparisons, LaTeX "
-                    "input (\\frac{a}{b}, \\Big, \\big, \\sqrt, implied "
-                    "multiplication like 9(2x-3)), and automatic equation "
-                    "solving. If the expression contains '=' and no "
-                    "variables are provided, automatically solves for the "
-                    "unknown using sympy and returns the solution. "
-                    "Pass variables as a dict of name->value to bind them "
-                    "before evaluation (disables auto-solve). Set "
-                    "solve=true to force solving, solve=false to force "
-                    "evaluation. Returns the result, exact value, or error.",
+     "description": "Evaluate math expression or solve equation. "
+                    "Accepts Python, LaTeX (\\frac, \\sqrt, x^2, implied mult), "
+                    "or mixed. Auto-solves equations with '='. "
+                    "Returns result, exact value, or error.",
      "inputSchema": {"type": "object",
                      "properties": {
                          "expression": {"type": "string",
-                            "description": "Expression to evaluate. Accepts "
-                                           "Python syntax (2*x + 3), LaTeX "
-                                           "(\\frac{1}{2}\\Big(9(2x-3)\\Big)), "
-                                           "or mixed. If wrapped in "
-                                           "[INTERCEPT: ...] the tag is "
-                                           "parsed; otherwise the raw "
-                                           "expression is evaluated. "
-                                           "Equations with '=' are auto-solved "
-                                           "when no variables are given."},
+                            "description": "Expression or equation to evaluate/solve. "
+                                           "Accepts Python (2*x+3=7), LaTeX "
+                                           "(\\frac{1}{2}x+\\frac{1}{3}x=5), "
+                                           "or mixed (2x+3=7). Auto-solves "
+                                           "when '=' present and no variables."},
                          "variables": {"type": "object",
-                            "description": "Variables to bind before "
-                                           "evaluation. Keys are names, "
-                                           "values must be int, float, str, "
-                                           "or bool. When provided, "
-                                           "auto-solve is disabled and "
-                                           "the expression is evaluated "
-                                           "as-is."},
+                            "description": "Variables to bind (disables auto-solve)."},
                          "solve": {"type": "boolean",
-                            "description": "Force solve mode (true) or "
-                                           "evaluation mode (false). "
-                                           "Default: auto (solve when '=' "
-                                           "present and no variables)."},
+                            "description": "Force solve (true) or eval (false). "
+                                           "Default: auto."},
                      },
                      "required": ["expression"]}},
     {"name": "conscio.observe",

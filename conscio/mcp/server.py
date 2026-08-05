@@ -47,7 +47,8 @@ class Bindings:
                  liaison_db: Path | None = None,
                  relay: bool = False,
                  relay_peers: tuple[str, ...] = (),
-                 auto_review: bool = False) -> None:
+                 auto_review: bool = False,
+                 lite: bool = False) -> None:
         self.engine = engine
         self.seen = seen
         self.adapter_name = adapter_name
@@ -63,6 +64,7 @@ class Bindings:
         self.relay_peers = tuple(relay_peers)
         self.auto_review = auto_review        # v2.6.2: --auto-review
         self.last_auto_apply_ts = 0.0         # v2.6.3 #2: throttle clock
+        self.lite = lite                      # v3.9.9: --lite (minimal schemas)
 
         # v3.7: ModeRouter — chunkifica output conforme prompt_complexity
         import tempfile as _tempfile
@@ -120,6 +122,36 @@ class Bindings:
                 defs.append(d)
         if self.relay:
             defs += list(RELAY_TOOL_DEFS)
+        
+        # v3.9.9: lite mode — strip inputSchema, keep name + short description
+        # Saves ~80% of schema bytes for small models (Qwen 0.8B, etc.)
+        if self.lite:
+            # Only expose essential tools for small models
+            ESSENTIAL = {
+                "conscio.intercept", "conscio.recall", "conscio.advisory",
+                "conscio.health", "conscio.note", "conscio.feed",
+                "conscio.state", "conscio.events",
+            }
+            lite_defs = []
+            for d in defs:
+                if d["name"] not in ESSENTIAL:
+                    continue
+                desc = d.get("description", "")
+                first = desc.split(".")[0] + "." if "." in desc else desc
+                lite_d = {"name": d["name"], "description": first[:120]}
+                if "inputSchema" in d:
+                    schema = d["inputSchema"]
+                    props = {}
+                    if "properties" in schema:
+                        for k, v in schema["properties"].items():
+                            props[k] = {"type": v.get("type", "string")}
+                    lite_d["inputSchema"] = {
+                        "type": "object",
+                        "properties": props,
+                        "required": schema.get("required", []),
+                    }
+                lite_defs.append(lite_d)
+            return lite_defs
         return defs
 
     def resource_defs(self) -> list[dict]:
@@ -939,6 +971,10 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="auto-apply inbound review verdicts each request "
                              "when awake (needs --enable-act + "
                              "--enable-hermes-review)")
+    parser.add_argument("--lite", action="store_true",
+                        help="lite mode: strip verbose descriptions from tool "
+                             "schemas to reduce token usage for small models "
+                             "(Qwen 0.8B, etc.). Saves ~80%% of schema tokens.")
     return parser
 
 
@@ -1177,7 +1213,8 @@ def main(argv: list[str] | None = None) -> int:
                         liaison_db=liaison_db,
                         relay=args.enable_relay,
                         relay_peers=tuple(args.relay_peer),
-                        auto_review=args.auto_review)
+                        auto_review=args.auto_review,
+                        lite=args.lite)
     mode = "act" if args.enable_act else "propose-only"
     if args.enable_hermes_review:
         if args.reviewer:
