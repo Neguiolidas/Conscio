@@ -502,11 +502,14 @@ class Bindings:
                     implicit_multiplication_application,
                 )
 
-                # Convert LaTeX if needed
-                from conscio.agency.intercepter import _LATEX_MARKERS
+                # Convert LaTeX if needed, or fix implied multiplication
+                from conscio.agency.intercepter import _LATEX_MARKERS, _fix_implied_mult
                 py_expr = expr
                 if _LATEX_MARKERS.search(expr):
                     py_expr = _latex_to_python(expr)
+                else:
+                    # Fix plain expressions with ^ or implied mult (x^2, 2x)
+                    py_expr = _fix_implied_mult(expr)
 
                 if '=' in py_expr and '==' not in py_expr:
                     lhs_str, rhs_str = py_expr.split('=', 1)
@@ -533,16 +536,26 @@ class Bindings:
                 if not solutions:
                     return {"ok": False, "error": "no solution found",
                             "expression": expr, "equation": str(eq)}
+                
+                def _sol_to_float(s):
+                    """Safely convert sympy solution to float or string."""
+                    try:
+                        if hasattr(s, 'is_real') and s.is_real:
+                            return float(s)
+                        return str(s)
+                    except (TypeError, ValueError):
+                        return str(s)
+                
                 if len(solutions) == 1:
                     sol = solutions[0]
                     return {"ok": True, "expression": expr,
                             "equation": str(eq), "variable": str(var),
-                            "result": float(sol) if sol.is_real else str(sol),
+                            "result": _sol_to_float(sol),
                             "exact": str(sol)}
                 else:
                     return {"ok": True, "expression": expr,
                             "equation": str(eq), "variable": str(var),
-                            "result": [float(s) if s.is_real else str(s) for s in solutions],
+                            "result": [_sol_to_float(s) for s in solutions],
                             "exact": [str(s) for s in solutions]}
             except Exception as exc:
                 # Fall through to normal evaluation
