@@ -382,26 +382,25 @@ class Intercepter:
             raise InterceptError("expression too long")
         if not expr.strip():
             raise InterceptError("empty expression")
+        self._current_expr = expr  # for richer error hints in _eval_node
 
         # LaTeX auto-detection: if the expression contains LaTeX markers,
         # convert to Python before parsing.
         if _LATEX_MARKERS.search(expr):
             expr = _latex_to_python(expr)
 
+        # Pre-apply implied-mult and caret fix BEFORE ast.parse so that
+        # expressions like ``2(3+4)`` (valid Python: Call) and ``2^10``
+        # (valid Python: BitXor) get rewritten to ``2*(3+4)`` / ``2**10``
+        # instead of being parsed as a function call / bitwise xor.
+        fixed = _fix_implied_mult(expr)
+        if fixed != expr:
+            expr = fixed
+
         try:
             tree = ast.parse(expr, mode="eval")
         except SyntaxError as exc:
-            # Fallback: try implied-multiplication fix for plain expressions
-            # like "2x + 3" that models send without LaTeX markers.
-            fixed = _fix_implied_mult(expr)
-            if fixed != expr:
-                try:
-                    tree = ast.parse(fixed, mode="eval")
-                    expr = fixed
-                except SyntaxError:
-                    raise InterceptError(f"syntax error: {exc.msg}")
-            else:
-                raise InterceptError(f"syntax error: {exc.msg}")
+            raise InterceptError(f"syntax error: {exc.msg}")
         return self._eval_node(tree.body, depth=0)
 
     def _eval_node(self, node: ast.AST, depth: int) -> Any:
@@ -481,9 +480,18 @@ class Intercepter:
             # Check math constants
             if var_name in ("pi", "e", "tau", "inf"):
                 return getattr(math, var_name)
+            # Helpful hint for equations — suggest the MCP intercept tool
+            # which has sympy-based auto-solve, or set_variable.
+            _ctx = getattr(self, "_current_expr", "")
+            hint = (
+                "use set_variable() to bind it"
+                if "=" not in _ctx
+                else "equation detected — use the MCP intercept tool with "
+                "solve=true (defaults on when no variables are provided) to "
+                "auto-solve with sympy"
+            )
             raise InterceptError(
-                f"variable '{var_name}' not bound — "
-                f"use set_variable() to bind it"
+                f"variable '{var_name}' not bound — {hint}"
             )
         if isinstance(node, ast.BoolOp):
             raise InterceptError("boolean operators not supported")

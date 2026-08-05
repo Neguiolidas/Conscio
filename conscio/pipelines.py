@@ -257,6 +257,9 @@ def verify(
     failed_list: list[dict] = []
 
     for c in criteria:
+        # Accept strings as shorthand: "ID" → {"id": "ID", "description": "ID"}
+        if isinstance(c, str):
+            c = {"id": c, "description": c}
         cid = c.get("id", "")
         desc = c.get("description", "")
         if cid in evidence_map:

@@ -35,6 +35,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="conscio",
         description="Conscio — self-awareness framework for AI agents.")
+    parser.add_argument(
+        "--version", action="version",
+        version=f"conscio {__version__}",
+        help="print the Conscio version and exit",
+    )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
     sub.add_parser("version", help="print the Conscio version")
