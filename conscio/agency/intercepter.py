@@ -139,7 +139,7 @@ def _latex_to_python(expr: str) -> str:
             denominator = s[den_start + 1:den_end]
         else:
             denominator = '1'
-        replacement = f"({numerator}/{denominator})"
+        replacement = f"(({numerator})/({denominator}))"
         s = s[:start] + replacement + s[den_end + 1:]
 
     # Remove sizing commands (with or without backslash)
@@ -158,11 +158,15 @@ def _latex_to_python(expr: str) -> str:
     # \sqrt{x} → sqrt(x) (with or without backslash)
     s = re.sub(r'\\?sqrt\s*\{([^{}]*)\}', r'sqrt(\1)', s)
 
-    # Implied multiplication
+    # Exponent: x^2 → x**2, x^{n} → x**(n)
+    s = re.sub(r'([a-zA-Z0-9)])\s*\^\s*\{([^{}]*)\}', r'\1**(\2)', s)
+    s = re.sub(r'([a-zA-Z0-9)])\s*\^\s*([a-zA-Z0-9])', r'\1**\2', s)
+
+    # Implied multiplication — but NOT for multi-char function names
     s = re.sub(r'(\d)\s*\(', r'\1*(', s)        # 9( → 9*(
     s = re.sub(r'\)\s*\(', ')*(', s)             # )( → )*(
     s = re.sub(r'(\d)([a-zA-Z])', r'\1*\2', s)   # 2x → 2*x
-    s = re.sub(r'([a-zA-Z])\s*\(', r'\1*(', s)   # x( → x*(
+    s = re.sub(r'(?<![a-zA-Z])([a-zA-Z])\s*\(', r'\1*(', s)  # x( → x*( not sqrt(
 
     # Equation: LHS = RHS → (LHS) - (RHS)
     if '=' in s and '==' not in s:
@@ -172,6 +176,31 @@ def _latex_to_python(expr: str) -> str:
     # Convert remaining braces to parens
     s = s.replace('{', '(').replace('}', ')')
 
+    return s
+
+
+def _fix_implied_mult(expr: str) -> str:
+    """Fix implied multiplication in plain (non-LaTeX) expressions.
+
+    Applies only the multiplication rules (no \frac, no sizing commands)
+    to rescue expressions like ``2x + 3`` that models send without
+    LaTeX markers.
+    """
+    s = expr.strip()
+    # Exponent: x^2 → x**2
+    s = re.sub(r'([a-zA-Z0-9)])\s*\^\s*\{([^{}]*)\}', r'\1**(\2)', s)
+    s = re.sub(r'([a-zA-Z0-9)])\s*\^\s*([a-zA-Z0-9])', r'\1**\2', s)
+    # Implied multiplication — but NOT for multi-char function names like
+    # sqrt(...). Only apply x( → x*( for single-letter variables.
+    s = re.sub(r'(\d)\s*\(', r'\1*(', s)        # 9( → 9*(
+    s = re.sub(r'\)\s*\(', ')*(', s)             # )( → )*(
+    s = re.sub(r'(\d)([a-zA-Z])', r'\1*\2', s)   # 2x → 2*x
+    # Only single-letter var before ( gets *: x( → x*(  but NOT sqrt(
+    s = re.sub(r'(?<![a-zA-Z])([a-zA-Z])\s*\(', r'\1*(', s)  # x( → x*(
+    # Equation: LHS = RHS → (LHS) - (RHS)
+    if '=' in s and '==' not in s:
+        parts = s.split('=', 1)
+        s = f"({parts[0]}) - ({parts[1]})"
     return s
 
 
@@ -362,7 +391,17 @@ class Intercepter:
         try:
             tree = ast.parse(expr, mode="eval")
         except SyntaxError as exc:
-            raise InterceptError(f"syntax error: {exc.msg}")
+            # Fallback: try implied-multiplication fix for plain expressions
+            # like "2x + 3" that models send without LaTeX markers.
+            fixed = _fix_implied_mult(expr)
+            if fixed != expr:
+                try:
+                    tree = ast.parse(fixed, mode="eval")
+                    expr = fixed
+                except SyntaxError:
+                    raise InterceptError(f"syntax error: {exc.msg}")
+            else:
+                raise InterceptError(f"syntax error: {exc.msg}")
         return self._eval_node(tree.body, depth=0)
 
     def _eval_node(self, node: ast.AST, depth: int) -> Any:
