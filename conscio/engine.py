@@ -265,6 +265,13 @@ class ConsciousnessEngine:
         max_reflection_cycles: int = 3,
         delivery_check: bool = True,
     ):
+        """Initialise the consciousness engine.
+
+        Note: relay/liaison configuration is handled at the MCP Bindings
+        level (``conscio.mcp.server.Bindings``), not here.  Pass
+        ``relay=True`` / ``relay_peers=...`` to ``Bindings``, not to the
+        Engine.
+        """
         # expanduser: a "~/…" string is a path the caller means, not a directory
         # literally named "~" in the working directory.
         self.storage = (Path(storage_path).expanduser() if storage_path
@@ -1321,6 +1328,26 @@ class ConsciousnessEngine:
         }
 
     # --- World Model Interactions ---
+
+    def feed(self, event: dict) -> dict:
+        """Ingest a perception Event from the host (MCP ``conscio.feed``).
+
+        This is the Python-API equivalent of the ``conscio.feed`` MCP tool.
+        It emits the event on the EventBus and runs the perception+reflect
+        cycle, returning the updated advisory.
+
+        Args:
+            event: Event dict with keys ``type``, ``category``, ``data``
+                   (and optional ``id``, ``source``).
+
+        Returns:
+            The updated advisory dict.
+        """
+        evt_type = event.get("type", "host:event")
+        evt_category = event.get("category", "system")
+        evt_data = event.get("data", {})
+        self.event_bus.emit(type=evt_type, category=evt_category, data=evt_data)
+        return self.advisory()
 
     def perceive(self, world_state: str, entities: dict | None = None,
                  relations: list | None = None) -> None:

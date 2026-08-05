@@ -58,6 +58,12 @@ class Event:
 
 # ─── Constants ──────────────────────────────────────────────────────────
 
+# NOTE: The canonical event types are below.  Old plan documents may
+# reference deprecated names (e.g. ``perceive`` → ``perception``,
+# ``act`` → ``act:result``, ``learn`` → ``tool_call``, ``propose`` →
+# ``proposal:audited``, ``ship`` / ``milestone`` → ``system``).
+# Always use ``VALID_TYPES`` as the single source of truth.
+
 VALID_TYPES = {
  "tool_call", "reflection", "trade", "error", "anomaly",
  "decision", "perception", "goal_created", "goal_expired",
