@@ -25,14 +25,61 @@ def test_sets_are_nested():
 
 
 def test_exact_counts(tmp_path):
-    assert len(_names("lite", tmp_path)) == 9
-    assert len(_names("balanced", tmp_path)) == 17
-    assert len(_names("ultra", tmp_path)) == 34
+    assert len(_names("lite", tmp_path)) == 10
+    assert len(_names("balanced", tmp_path)) == 18
+    assert len(_names("ultra", tmp_path)) == 35
 
 
 def test_remember_is_present_in_every_mode(tmp_path):
     for mode in modes.MODES:
         assert "conscio.remember" in _names(mode, tmp_path), f"no memory write in {mode}"
+
+
+def test_mode_tool_exists_in_every_mode(tmp_path):
+    for mode in modes.MODES:
+        assert "conscio.mode" in _names(mode, tmp_path), f"no way out of {mode}"
+
+
+def test_mode_read_reports_current_surface(tmp_path):
+    import json
+    b, engine = _bindings(tmp_path, mode="balanced")
+    try:
+        out = json.loads(b.call_tool("conscio.mode", {})["content"][0]["text"])
+        assert out["mode"] == "balanced"
+        assert out["tools"] == 18
+        assert out["modes"] == list(modes.MODES)
+    finally:
+        engine.close()
+
+
+def test_mode_write_switches_and_persists(tmp_path):
+    import json
+    b, engine = _bindings(tmp_path, mode="ultra")
+    try:
+        out = json.loads(
+            b.call_tool("conscio.mode", {"set": "lite"})["content"][0]["text"])
+        assert out["mode"] == "lite"
+        assert out["tools"] == 10
+        assert len(b.tool_defs()) == 10
+    finally:
+        engine.close()
+    assert modes.read_mode(tmp_path) == "lite"
+
+
+def test_mode_write_rejects_unknown(tmp_path):
+    from conscio.mcp import jsonrpc
+
+    b, engine = _bindings(tmp_path, mode="ultra")
+    try:
+        # InvalidParams, não Exception: um AttributeError no handler passaria
+        # por um raises(Exception) e o erro fantasma iria pro cliente como -32603.
+        with pytest.raises(jsonrpc.InvalidParams):
+            b.call_tool("conscio.mode", {"set": "turbo"})
+        assert b.mode == "ultra"                 # recusa não move a superfície
+        assert b.drain_notifications() == []     # nem avisa o host
+    finally:
+        engine.close()
+    assert modes.read_mode(tmp_path) is None     # nem toca no disco
 
 
 def test_default_mode_is_ultra_so_existing_installs_do_not_shrink():
@@ -79,7 +126,7 @@ def test_lite_does_not_void_an_explicit_flag(tmp_path):
         engine.close()
     names = {d["name"] for d in defs}
     assert "conscio.act" in names, "explicit --enable-act was silently dropped by lite"
-    assert len(names) == 9 + len(schemas.ACT_TOOL_DEFS)
+    assert len(names) == 10 + len(schemas.ACT_TOOL_DEFS)
     act = next(d for d in defs if d["name"] == "conscio.act")
     assert len(act["description"]) <= 120           # formatting still applies
     for prop in act["inputSchema"]["properties"].values():
