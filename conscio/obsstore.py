@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import json
 import sqlite3
 import time
 import zlib
@@ -27,6 +28,34 @@ SCHEMA_VERSION = 2
 # The largest real tool output measured across 13k calls was ~90 KB. 1 MiB keeps
 # every genuine payload whole while refusing pathological input outright.
 MAX_FIELD_BYTES = 1024 * 1024
+
+#: Used only when the space has no readable identity. Kept as a literal so a
+#: store written before identities existed still joins cleanly with new rows.
+DEFAULT_AGENT = "claude-code"
+
+
+def agent_label(storage) -> str:
+    """Who is writing, read from the space's own identity (``instance.json``).
+
+    Lives here rather than in either caller because both the DeepMiner hook and
+    the engine need it: the hook loads this module by absolute path, so one
+    implementation serves both and the vendored copy keeps them in step.
+
+    Every row used to carry the same hardcoded literal, so two agents sharing a
+    machine were indistinguishable in the store. Read-only on purpose — the
+    package owns identity creation; observing must never mint one as a side
+    effect.
+
+    Best-effort by contract: an absent or corrupt identity costs a label, never
+    an observation.
+    """
+    try:
+        ident = json.loads(
+            (Path(storage) / "instance.json").read_text(encoding="utf-8"))
+        label = ident.get("label") or ident.get("instance_id")
+    except (OSError, ValueError, AttributeError):
+        return DEFAULT_AGENT
+    return str(label) if label else DEFAULT_AGENT
 
 # Measured on real tool output: at the typical 2 KB the level is irrelevant
 # (0.03ms at L1 vs 0.04ms at L6); it only diverges at the 1 MiB cap (9ms/32.2%

@@ -38,6 +38,7 @@ from .inner_monologue import InnerMonologue
 from .kg_builder import KGBuilder
 from .meta_cognition import MetaCognition
 from .metabolic import MetabolicContext
+from .obsstore import agent_label as _obs_agent_label
 from .obsstore import connect as _obs_connect
 from .obsstore import put_observation as _obs_put
 from .obsstore import search as _obs_search
@@ -1692,7 +1693,7 @@ class ConsciousnessEngine:
         input_text: str = "",
         output_text: str = "",
         project: str = "",
-        agent: str = "hermes",
+        agent: str = "",
         session_id: str = "",
     ) -> int:
         """Fire-and-forget tool observation. 0 LLM tokens. Never raises.
@@ -1715,7 +1716,10 @@ class ConsciousnessEngine:
                     input_text=input_text,
                     output_text=output_text,
                     project=project,
-                    agent=agent,
+                    # Empty means "whoever this space is" — resolved from
+                    # instance.json by the same helper the capture hook uses,
+                    # so an explicit caller can still name a third party.
+                    agent=agent or _obs_agent_label(self.storage),
                     session_id=sid,
                     ts=naive_utcnow().isoformat(),
                 )
