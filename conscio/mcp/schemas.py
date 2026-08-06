@@ -85,6 +85,17 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "k": {"type": "integer"},
                                     "categories": {"type": "array"}},
                      "required": ["query"]}},
+    {"name": "conscio.remember",
+     "description": "Store a durable fact or settled decision in episodic memory. "
+                    "Survives restarts and is retrievable with conscio.recall.",
+     "inputSchema": {
+         "type": "object",
+         "properties": {
+             "text": {"type": "string", "description": "The fact to remember, in full."},
+             "label": {"type": "string", "description": "Optional short tag for the memory."},
+         },
+         "required": ["text"],
+     }},
     {"name": "conscio.propose_action",
      "description": "Audit an explicit action intent (Skeptic). Never "
                     "executes. Returns verdict PASS/FAIL + reasons.",

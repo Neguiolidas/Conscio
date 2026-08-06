@@ -128,9 +128,9 @@ class Bindings:
         if self.lite:
             # Only expose essential tools for small models
             ESSENTIAL = {
-                "conscio.intercept", "conscio.recall", "conscio.advisory",
-                "conscio.health", "conscio.note", "conscio.feed",
-                "conscio.state", "conscio.events",
+                "conscio.intercept", "conscio.recall", "conscio.remember",
+                "conscio.advisory", "conscio.health", "conscio.note",
+                "conscio.feed", "conscio.state", "conscio.events",
             }
             lite_defs = []
             for d in defs:
@@ -173,6 +173,7 @@ class Bindings:
             "conscio.recall": lambda a: {"snippets": self.engine.recall(
                 self._require(a, "query"), int(a.get("k", 3)),
                 a.get("categories"))},
+            "conscio.remember": self._remember,
             "conscio.observe": lambda a: {"observation_id": self.engine.observe(
                 self._require(a, "tool"), a.get("input", ""),
                 a.get("output", ""), a.get("project", ""),
@@ -633,6 +634,20 @@ class Bindings:
         if key not in args:
             raise j.InvalidParams(f"missing '{key}'")
         return args[key]
+
+    def _remember(self, args: dict) -> dict:
+        """Durable write into the same store conscio.recall reads from.
+
+        Not note/feed: those land in the EventBus, which recall never reads.
+        """
+        text = self._require(args, "text")
+        label = args.get("label") or "memory"
+        source_id = self.engine.content_store.index(
+            label=label,
+            content=text,
+            category="consciousness",
+            session_id=getattr(self.engine, "_obs_session", ""))
+        return {"stored": True, "id": source_id, "label": label}
 
     def _structure(self, args: dict) -> dict:
         """Report the currently loaded workspace structure (consent-gated).
