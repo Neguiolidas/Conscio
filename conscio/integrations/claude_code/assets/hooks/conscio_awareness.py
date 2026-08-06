@@ -8,10 +8,9 @@ import sys
 
 
 def _line() -> str:
-    return ("Conscio is available natively: use the conscio.* MCP tools "
-            "(recall/remember/state/society/relay) and /conscio:* commands. "
-            "Recall relevant memory before non-trivial work; remember settled "
-            "decisions.")
+    return ("Conscio is available: use the conscio.* MCP tools (recall, remember, "
+            "state, handoff) and the /conscio:* commands. Recall before non-trivial "
+            "work; remember settled decisions. /conscio:mode changes the tool surface.")
 
 
 def main() -> None:
