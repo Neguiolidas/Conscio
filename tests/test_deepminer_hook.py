@@ -184,13 +184,87 @@ def test_large_output_is_stored_whole(wired):
     c.close()
 
 
-def test_project_comes_from_cwd(wired):
+def test_project_falls_back_to_cwd_outside_a_repo(wired):
+    """No enclosing repo: the cwd itself is the best scope key available."""
     run_hook("post-tool-use", _payload(cwd="/tmp/alpha"), wired)
     c = _conn(wired)
     got = obsstore.search(c, "on branch main", scope="project",
                           project="/tmp/alpha", full=True)
     assert len(got) == 1
     c.close()
+
+
+def test_project_resolves_to_repo_root_not_cwd(wired, tmp_path):
+    """One repo must be one scope key, whatever subdirectory the tool ran in.
+
+    With project=cwd, a `cd` into a subdirectory minted a new "project" and a
+    scope="project" recall from there saw a fraction of the rows.
+    """
+    repo = (tmp_path / "repo").resolve()
+    (repo / ".git").mkdir(parents=True)
+    sub = repo / "docs" / "deep"
+    sub.mkdir(parents=True)
+
+    run_hook("post-tool-use", _payload(cwd=str(sub)), wired)
+
+    c = _conn(wired)
+    assert obsstore.search(c, "on branch main", scope="project",
+                           project=str(repo), full=True), "not filed under the repo root"
+    assert not obsstore.search(c, "on branch main", scope="project",
+                               project=str(sub), full=True), "still filed under cwd"
+    c.close()
+
+
+def test_project_root_handles_git_as_a_file(wired, tmp_path):
+    """Worktrees and submodules carry a .git *file*, not a directory."""
+    wt = (tmp_path / "worktree").resolve()
+    (wt / "src").mkdir(parents=True)
+    (wt / ".git").write_text("gitdir: /elsewhere/.git/worktrees/wt\n")
+
+    run_hook("post-tool-use", _payload(cwd=str(wt / "src")), wired)
+
+    c = _conn(wired)
+    assert obsstore.search(c, "on branch main", scope="project",
+                           project=str(wt), full=True)
+    c.close()
+
+
+def _agents(cfg):
+    conn = _conn(cfg)
+    try:
+        return [r[0] for r in conn.execute("SELECT agent FROM observations")]
+    finally:
+        conn.close()
+
+
+def test_agent_comes_from_the_space_identity(wired, tmp_path):
+    """Two agents on one machine must be distinguishable in the store.
+
+    Every row used to say the literal "claude-code", so the column carried no
+    information at all.
+    """
+    space = tmp_path / "space"
+    space.mkdir(parents=True, exist_ok=True)
+    (space / "instance.json").write_text(json.dumps(
+        {"instance_id": "abc-123", "label": "hermet-abc123",
+         "created_ts": 1.0, "schema": 1}))
+
+    run_hook("post-tool-use", _payload(), wired)
+
+    assert _agents(wired) == ["hermet-abc123"]
+
+
+def test_agent_falls_back_when_identity_is_unreadable(wired, tmp_path):
+    """Identity is best-effort: a missing instance.json costs no observation."""
+    space = tmp_path / "space"
+    space.mkdir(parents=True, exist_ok=True)
+    (space / "instance.json").write_text("{ not json")
+
+    r = run_hook("post-tool-use", _payload(), wired)
+
+    assert r.returncode == 0
+    got = _agents(wired)
+    assert len(got) == 1 and got[0], "observation lost, or agent left empty"
 
 
 def test_failure_event_is_recorded_and_flagged(wired):

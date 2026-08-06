@@ -73,6 +73,36 @@ def _config_path(argv):
     return _argv_opt(argv, "--config") or str(Path(__file__).with_suffix(".json"))
 
 
+def _project_root(cwd):
+    """Repo root enclosing ``cwd``, or ``cwd`` itself when it is not in a repo.
+
+    ``project`` is the scope key for recall, so it has to be the same string
+    from every subdirectory. Storing the raw cwd split one repository into six
+    "projects" and a scope="project" search from a subdirectory saw a fraction
+    of its own rows.
+
+    Walks up looking for a ``.git`` *entry* rather than a directory: a worktree
+    or submodule carries a ``.git`` file, and each of those is its own project.
+    No subprocess — the hook runs on a bare interpreter and must stay cheap.
+    """
+    try:
+        here = Path(cwd).resolve()
+    except (OSError, ValueError):
+        return str(cwd)
+    for d in (here, *here.parents):
+        try:
+            if (d / ".git").exists():
+                return str(d)
+        except OSError:
+            break                       # unreadable ancestor: stop walking up
+    return str(here)
+
+
+# ``agent_label`` deliberately lives in obsstore, not here: the engine needs the
+# same resolution, and this hook loads obsstore by absolute path, so one
+# implementation serves both and the vendored copy keeps them in step.
+
+
 def main(argv):
     """Dispatch one hook event. Returns 0 unconditionally."""
     event = argv[1] if len(argv) > 1 else ""
@@ -143,8 +173,8 @@ def on_tool(payload, store, storage, failed=False):
             tool=tool,
             input_text=_as_text(payload.get("tool_input")),
             output_text=_as_text(payload.get("tool_response")),
-            project=str(payload.get("cwd") or os.getcwd()),
-            agent="claude-code",
+            project=_project_root(payload.get("cwd") or os.getcwd()),
+            agent=store.agent_label(storage),
             session_id=str(payload.get("session_id") or "unknown"),
             ts=_utc_now(),
         )
@@ -230,8 +260,8 @@ def on_pre_compact(payload, store, storage):
         store.put_observation(
             conn, tool="compact-boundary", input_text="",
             output_text=f"compaction started for session {session}",
-            project=str(payload.get("cwd") or os.getcwd()),
-            agent="claude-code", session_id=session, ts=_utc_now())
+            project=_project_root(payload.get("cwd") or os.getcwd()),
+            agent=store.agent_label(storage), session_id=session, ts=_utc_now())
     finally:
         conn.close()
 
@@ -250,8 +280,8 @@ def on_post_compact(payload, store, storage):
             store.put_observation(
                 conn, tool="compact-summary", input_text="",
                 output_text=summary,
-                project=str(payload.get("cwd") or os.getcwd()),
-                agent="claude-code", session_id=session, ts=_utc_now())
+                project=_project_root(payload.get("cwd") or os.getcwd()),
+                agent=store.agent_label(storage), session_id=session, ts=_utc_now())
         info = store.session_summary(conn, session)
     finally:
         conn.close()

@@ -191,7 +191,7 @@ class Bindings:
             "conscio.observe": lambda a: {"observation_id": self.engine.observe(
                 self._require(a, "tool"), a.get("input", ""),
                 a.get("output", ""), a.get("project", ""),
-                a.get("agent", "hermes"))},
+                a.get("agent", ""))},
             "conscio.recall_observations": self._recall_observations,
             "conscio.propose_action": lambda a: self.engine.propose_action(
                 self._require(a, "intent")),
