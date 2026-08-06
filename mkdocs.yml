@@ -27,12 +27,19 @@ theme:
 exclude_docs: |
   superpowers/
   noosphere/
+  patterns/
   roadmap.md
   blueprint*.md
   *-prompt*.md
   *-analysis*.md
   fable*.md
   RELEASING.md
+  AUDIT-*.md
+  REPORT_*.md
+  Report-*.md
+  Knolayer.md
+  reference/conscio_functions.md
+  reference/claude-code-harness.md
 
 nav:
   - Home: index.md
@@ -48,8 +55,13 @@ nav:
       - Noosphere (society): guides/noosphere.md
       - Observatory (read-only view): guides/observatory.md
       - Liaison (cross-agent review): guides/liaison.md
+  - Workflows:
+      - Continuous learning: guides/workflows/continuous-learning.md
+      - Architecture audit: guides/workflows/architecture-audit.md
+      - Introspection & debugging: guides/workflows/introspection-debugging.md
   - Reference:
       - Public API: reference/public-api.md
+      - Vector backends & migration: MIGRATION.md
   - Claims ledger: CLAIMS.md
   - Bench:
       - v1.0.0: bench/v1.0.0-bench.md

@@ -36,6 +36,8 @@ command:
   daemon provider types are also built from `~/.config/conscio/config.json`
   (`lmstudio`/`ollama`/`openai`/`anthropic`/`gemini`/`openai-compat`). Without any
   adapter, read tools still work and `propose_*` / `act` fail closed.
+- `--mode lite|balanced|ultra` — how many tools to advertise (see
+  [Tool surfaces](#tool-surfaces)).
 - `--enable-act` (off by default) / `--awake` — opt into audited `act` (see
   [Audited act](#audited-act-v201-opt-in)).
 - `--enable-hermes-review --reviewer <id>` (repeatable) — enable review channel.
@@ -47,7 +49,48 @@ command:
 Run `conscio-mcp` directly (the console entry point), not `python -m
 conscio.mcp.server`.
 
-## Tools — BASE (always available)
+## Tool surfaces
+
+Every tool schema the server advertises costs context before the first prompt —
+about 3100 tokens at `ultra`. A small model drowns in 35 tools; a large one is
+crippled by 10. Three nested surfaces size the list to the model:
+
+| Surface | Tools served | Advertised schema |
+|---|---|---|
+| `lite` | 10 | ~570 tokens, descriptions flattened to ≤120 chars |
+| `balanced` | 18 | ~1520 tokens |
+| `ultra` (default) | 35 | ~3100 tokens |
+
+**`lite`** — `advisory`, `events`, `feed`, `health`, `intercept`, `mode`, `note`,
+`recall`, `remember`, `state`.
+**`balanced`** adds — `context_budget`, `council`, `decide`, `handoff`,
+`kg_query`, `recall_observations`, `verify`, `wings_search`.
+**`ultra`** adds the remaining 17 base tools documented below. With `act`, review
+and relay all enabled, the maximum served is 42.
+
+The sets nest, so raising the surface never removes a tool. Three properties
+follow from how the filter is applied:
+
+- **Filtering touches the base set only.** A tool enabled by flag — `act`,
+  review, relay — is never filtered out by the surface.
+- **An unadvertised tool is still callable.** `tools/list` shrinks; `tools/call`
+  does not. A host that knows a tool's name can invoke it in any surface.
+- **`conscio.mode` is present in every surface.** In `lite` it is the only way
+  back out.
+
+Precedence is `--mode` on the CLI, then the persisted choice
+(`<storage>/mcp_mode`), then the default. `conscio.mode` reads the current
+surface and switches it at runtime; the server announces `tools.listChanged` in
+the initialize handshake and emits the notification after a switch. It persists
+*before* switching, so a failed write leaves the served surface intact and emits
+no notification for a switch that did not happen. A guessed argument key raises
+`InvalidParams` rather than returning the current mode — a response that would be
+indistinguishable from a successful switch.
+
+The startup banner reports `surface=` separately from `mode=`, which already
+means act-vs-propose-only.
+
+## Tools — BASE
 
 ### `conscio.feed(event, session_tokens?)`
 
@@ -187,7 +230,7 @@ the server has `--enable-act` on.
 5-axis self-evaluation scorecard (accuracy, completeness, clarity,
 actionability, conciseness). Scores 1–5 per axis with justification.
 
-## Tools — GATES (v3.0, always available)
+## Tools — GATES (v3.0)
 
 ### `conscio.decide(title, context, status, alternatives?, deciders?)`
 
@@ -214,7 +257,7 @@ stale proposals, and disk space. Runs automatically in `engine.close()`.
 Verify that `target` was read before acting. Queries EventBus for
 `investigate:read` events matching the target (substring match).
 
-## Tools — PIPELINES (v3.0, always available)
+## Tools — PIPELINES (v3.0)
 
 ### `conscio.acceptance_criteria(goal?, depth?, risk_domains?)`
 
@@ -241,7 +284,7 @@ phase, and milestone count. Returns `should_compact`, `urgency`, keep/drop lists
 Recursive decision ledger. `action` is `record`, `query`, or `promote`.
 Promotion gates: `paper` → `dry_run` → `live`, gated by coherence marks.
 
-## Tools — DIAGNOSTICS (v3.0, always available)
+## Tools — DIAGNOSTICS (v3.0)
 
 ### `conscio.context_budget(context_tokens?, context_window?, detail?)`
 

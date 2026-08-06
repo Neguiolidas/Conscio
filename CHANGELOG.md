@@ -7,546 +7,456 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [3.9.7] - 2026-08-04 — Vector Backends & Hard Purge
+## [4.0.0] - 2026-08-06 — Tool Surfaces & the Claude Code Plugin
 
-Three vector backends with auto-detect, HNSW as the active production backend,
-one-command CLI migration, and the complete removal of MemPalace/ChromaDB.
+Conscio installs as a Claude Code plugin, and its MCP surface stops being one
+size. Folds in 3.9.8 and 3.9.9, which were never released.
 
-### Vector backends (new)
+### Tool surfaces — lite / balanced / ultra
 
-- **HNSW** (`hnswlib`) — 0.6–3ms/search, 50× faster than numpy. O(log n)
-  graph stored in `hnsw.db` (separate from `vectors.db`). Tuned params:
-  M=32, ef_construction=400, ef_search=max(limit×16, 256). Recall@10 = 99%
-  on 37k real embeddings (384-dim). ~300MB RAM for the graph.
-- **sqlite-vec** (`sqlite-vec`) — 17ms/search, 10× faster than numpy. Native
-  C cosine distance via `vec0` virtual table. Zero extra RAM. Default for
-  mid-tier installs without `hnswlib`.
-- **numpy** (default, zero-dep) — 180ms/search. No extension required.
-  Fallback when neither `hnswlib` nor `sqlite-vec` is installed.
+The server advertised its whole tool list to every host — roughly 3.1k tokens of
+schema before the first prompt, ~10% of a 32k context window. Three nested
+surfaces now:
 
-Auto-detect priority at startup: **HNSW → sqlite-vec → numpy**.
-No env var needed — if `hnsw.db` exists and `hnswlib` is installed, HNSW is
-used. Override with `CONSCIO_VEC_BACKEND=hnsw|sqlite_vec|numpy`.
+| Surface | Tools served | Advertised schema |
+|---|---|---|
+| `lite` | 10 | ~570 tokens — descriptions flattened to ≤120 chars |
+| `balanced` | 18 | ~1520 tokens |
+| `ultra` (default) | 35 | ~3100 tokens |
 
-`VectorBackend.with_engine()` is the factory — detects HNSW by `hnsw.db`,
-sqlite-vec by the `vec_chunks` virtual table, numpy by the `vectors` table.
+They nest, so raising the surface never removes a tool. Filtering applies to the
+base set only — anything enabled by flag (`--enable-act`, liaison, relay) is
+never filtered — and an unadvertised tool stays callable through `tools/call`.
+A small model drowns in 35 tools; a large one is crippled by 10.
 
-### CLI migration tool
+Precedence is `--mode` on the CLI, then the persisted choice, then the default.
+`conscio.mode` reads and switches at runtime and is present in every surface —
+in `lite` it is the only way back out. It persists before switching, so a failed
+write leaves the served surface intact and emits no `listChanged` for a switch
+that did not happen. A guessed argument key raises `InvalidParams` instead of
+returning the current mode, which would be indistinguishable from a successful
+switch. The stderr banner gained `surface=` because `mode=` already meant
+act-vs-propose-only.
 
-```bash
-# numpy → sqlite-vec (default, 10×)
-conscio migrate-vectors --storage ~/.conscio/runtime
+The server announces `tools.listChanged` in the initialize handshake and drains
+a server-initiated notification channel after each response.
 
-# numpy → HNSW (direct, 50×)
-conscio migrate-vectors --storage ~/.conscio/runtime --target hnsw
+### Claude Code plugin
 
-# sqlite-vec → HNSW (preserves original as fallback)
-conscio migrate-vectors --storage ~/.conscio/runtime --target hnsw
-```
+`conscio init` was the only install path. The repository now carries a plugin
+manifest and its own marketplace entry, so a Claude Code user installs Conscio
+without a Python toolchain in the loop.
 
-All paths auto-detect source format, backup before migration, verify search
-rankings, and write results in the correct target format. HNSW writes to a
-separate `hnsw.db` so the original `vectors.db` is never clobbered.
+- Hooks ship with the plugin: `SessionStart` (awareness + DeepMiner),
+  `PostToolUse`, `PostToolUseFailure`, `PreCompact`, `PostCompact`.
+- Commands: `/conscio:mode`, `/conscio:capture`, `/conscio:backup` join the
+  existing set.
+- The MCP server pin is `==`, not `>=`. A floor would let an old server serve a
+  tool list the shipped assets never mention, which reads as a bug in Claude
+  rather than as a stale install.
+- `obsstore.py` is vendored beside the hooks that import it. The hooks run under
+  a bare `python3` with no `conscio` on the path, so the copy has to both match
+  the source byte for byte and import on its own.
+- The DeepMiner hook accepts `--obsstore`/`--storage` and a capture-off switch,
+  so the plugin can point it at plugin-managed data.
 
-### MemPalace / ChromaDB — completely removed
+**Packaging fix:** setuptools' `**/*` skips dotfiles silently, so `plugin.json`
+and `.mcp.json` were dropped from the wheel and the installed plugin was inert.
+The test now builds a real wheel rather than trusting the glob.
 
-- **Deleted** `import_format_mempalace()` from `migration.py` (ChromaDB
-  importer, 81 lines).
-- **Deleted** `tests/test_import_mempalace.py` (15 assertions).
-- **Uninstalled** `chromadb`, `chromadb-client`, `pipx mempalace` from every
-  Python on the production machine.
-- **Removed** all MemPalace/ChromaDB references from docstrings and comments
-  in 9 source files (`dedup.py`, `entity_detector.py`, `hallways.py`, `kg.py`,
-  `miner.py`, `session_lifecycle.py`, `session_rag.py`, `vector_backend.py`,
-  `installer/extras.py`).
-- **Removed** `docs/superpowers/mempalace/` and `mempalace/` directories.
-- Full migration guide: [docs/MIGRATION.md](docs/MIGRATION.md).
+### Intercepter — LaTeX and equation solving
 
-### Bug fixes
+Small models emit LaTeX. Intercepter now converts it before parsing: `\frac`
+(numerator and denominator parenthesised), `\sqrt`, `\cdot`/`\times`/`\div`,
+`\left`/`\right`/`\big`, exponents (`x^2`, `x^{n}`), and implied multiplication
+(`9(2x-3)` → `9*(2*x-3)`). The conversion also runs as a fallback when a plain
+expression fails `ast.parse`, which rescues the `2x+3` and `x^2-4=0` that models
+send without backslashes. `2^10` and `2(3+4)` needed the same treatment: both
+*parse* successfully in Python — as `BitXor` and as a call — so the fallback
+never fired. The converter now runs first.
 
-- **ContentStore DB path** — engine was opening `conscio.db` (0.4MB, 2 chunks)
-  as the ContentStore, ignoring `content_store.db` (595MB, 49687 chunks) where
-  all real content lives. `recall()` always returned 0 snippets. Fixed: engine
-  now passes `content_store.db` as the ContentStore path. EventBus and
-  TokenTracker still use `conscio.db` (correct).
-- **SqliteVecBackend dimension auto-detect** — reopening an existing
-  `vec_chunks` table without passing `dimension=` defaulted to 768 instead of
-  reading the actual dimension from the table schema. Fixed: `_init_db()` now
-  parses `float[N]` from the CREATE VIRTUAL TABLE DDL and adopts the stored
-  dimension.
+The MCP `intercept` tool auto-solves: an expression carrying `=` and no bound
+variables goes to sympy, returning `{result, exact, variable}`. Complex and
+cubic roots are stringified rather than crashing the conversion.
 
-### Production benchmark (37,042 vectors, 384-dim, all-MiniLM-L6-v2)
+### Fixed
 
-| Backend     | Search latency | Recall@10 | Ingest  | Disk  | RAM    | Setup |
-|-------------|---------------|-----------|---------|-------|--------|-------|
-| **HNSW**    | 2.9ms         | 99%       | 28s     | 65MB  | 300MB  | `pip install hnswlib` |
-| sqlite-vec  | 17ms          | 100%      | 12s     | 58MB  | 0      | `pip install sqlite-vec` |
-| numpy       | 180ms         | 100%      | 0       | 74MB  | 0      | zero deps |
+- **`verify()` crashed on `list[str]`** — `'str' object has no attribute 'get'`.
+  Plain strings are now accepted as shorthand.
+- **`host_health` was not importable** from `conscio.agency.tools`; it lived
+  inside a nested function. Extracted to module level, registered as a LOW-risk
+  auto-approval tool, and given `**_kwargs` so a spurious LLM argument is
+  ignored rather than fatal.
+- **LOW-risk auto-policy tools now execute at L1**, which breaks the trust
+  bootstrapping cycle — a fresh daemon could never earn the autonomy it needed
+  to earn autonomy. Measured after the fix: 6/6 cycles, 0 failures, 51
+  executions, and the dream cycle distilled its first skill from them.
+- **Quarantined MAINTENANCE goals expire before `daemon_check` is generated**,
+  so dedup no longer suppresses the check when every goal is quarantined.
+  `ContextMode.COMPACT` raises `max_goals` 3→5 for the same reason.
+- **`conscio --version`** exists.
+- **`Engine.feed()`'s docstring described a cycle it never runs.** It emits on
+  the EventBus and returns `advisory()` — no perceive, no reflect — so the
+  advisory is state as of the *previous* cycle. An embedder trusting the
+  docstring would ingest events that never reach the world model.
+- **`conscio.remember` wrote where `recall` does not read.** It now writes
+  durably to the same store.
+- **`--default-model`** is a last-resort model channel (`--model` >
+  `config.json` > `CONSCIO_MODEL` > `--default-model`), so a plugin install on a
+  machine with no local config boots instead of exiting 1.
+- **`validate_binding` bootstraps a fresh space** instead of advising a CLI the
+  user may not have installed.
+- **The governor reports when the ceiling is not being enforced.** It printed
+  `governor ON (window 160,000)` directly above `Avg context/turn 188,606` and
+  said nothing. Under real enforcement the mean sits below the ceiling by
+  construction, so a mean above it is proof the host is not compacting there.
+  The case hid well: a host that never compacts writes no cache, cache
+  write/turn collapses, and unbounded growth renders as a large saving. `govern
+  on` also now says the ceiling applies from the *next* session.
+- **Two governor calibration errors biased the recommended window.**
+  `WEIGHTS['cw']` was 1.25, the 5-minute TTL rate; Claude Code caches on the
+  1-hour TTL, billed at 2× input — the weight only appears in the compaction
+  term, so 1.25 understated the price of compacting by 60%. And `modelled_cost`
+  measured the workspace as `window - prefix`, but a compaction lands at the
+  landing point, not at the prefix, which inflated the workspace and recommended
+  a window that recompacts almost immediately. The optimum moves from 138,144
+  to 160,000.
+- **obs.db's `project` and `agent` columns carried useless labels.** `project`
+  stored the calling cwd, so one repository became several projects and a
+  `scope='project'` search fired from a subdirectory saw a fraction of its own
+  rows; it now resolves the root by walking up to a `.git` *entry*, so worktrees
+  and submodules are projects of their own. `agent` was the literal
+  `claude-code`, hardcoded in the hook, with a divergent `hermes` default in the
+  engine; it now comes from `instance.json`. Read-only and fail-open: observing
+  never mints identity, and a missing one costs a label, never an observation.
 
-HNSW is 62× faster than numpy, 6× faster than sqlite-vec, with 99% recall.
-sqlite-vec is the zero-RAM fallback. numpy is the zero-dep default.
+### Performance
+
+- **Optional dependencies are probed with `find_spec`, not `import`.** Asking
+  whether `sentence_transformers` was installed dragged torch in for a boolean:
+  ~5s and ~390MB of RSS on every engine construction — MCP startup, every CLI
+  command, every test process. `numpy` had the same shape in `vector_backend`,
+  imported at module scope to set a flag even on the sqlite-vec path. Support is
+  unchanged; the real imports already lived at first use.
+
+  | | Before | After |
+  |---|---|---|
+  | MCP server startup | 7236ms | 446ms |
+  | `ConsciousnessEngine()` | 5051ms | 62ms |
+  | RSS, `import conscio` | 43MB | 29MB |
+
+  This is also why a full pytest run OOMs: 75 test files construct an engine,
+  each paying ~390MB for a probe.
+
+- **No fsync per commit in the memory stores.** SQLite's `synchronous` defaults
+  to FULL and only obsstore and vector_backend ever set it — 2.47ms per EventBus
+  event where NORMAL costs 0.08ms. WAL + NORMAL is the pairing SQLite documents
+  as safe: a process crash loses nothing, only an OS crash or power cut can cost
+  the most recent transactions. That trade is fine for memory, events, the
+  knowledge graph and token accounting. It is not fine for state whose last write
+  is a safety or audit fact, so agency (breaker, trust, ledger, profiles,
+  skills), noosphere and liaison pass `durable=True` and keep FULL — all cold
+  paths. The pragmas now live in one helper instead of nineteen call sites.
+  `busy_timeout` is deliberately untouched: `sqlite3.connect` already supplies
+  one, and writing a uniform value here would have silently shortened the waits
+  callers chose.
 
 ### Tests
 
-3249 passed, 3 skipped, 0 failures. 66 vector-specific tests pass.
+3300 passed, 25 skipped, 0 failures on Python 3.10 — the oldest version the
+release gate covers — one file per process.
+
+---
+
+## [3.9.7] - 2026-08-04 — Vector Backends & Hard Purge
+
+Three vector backends with auto-detect, HNSW as the production backend, a
+one-command CLI migration, and the complete removal of MemPalace/ChromaDB.
+
+### Vector backends
+
+| Backend | Search | Recall@10 | Ingest | Disk | RAM | Setup |
+|---|---|---|---|---|---|---|
+| **HNSW** (`hnswlib`) | 2.9ms | 99% | 28s | 65MB | 300MB | `pip install hnswlib` |
+| **sqlite-vec** | 17ms | 100% | 12s | 58MB | 0 | `pip install sqlite-vec` |
+| **numpy** (default) | 180ms | 100% | 0 | 74MB | 0 | zero deps |
+
+Measured on 37,042 real embeddings, 384-dim, all-MiniLM-L6-v2. HNSW is 62×
+faster than numpy and 6× faster than sqlite-vec. Its O(log n) graph lives in a
+separate `hnsw.db` (M=32, ef_construction=400, ef_search=max(limit×16, 256)).
+
+Auto-detect priority at startup is **HNSW → sqlite-vec → numpy**, with no env
+var needed. `VectorBackend.with_engine()` detects HNSW by `hnsw.db`, sqlite-vec
+by the `vec_chunks` virtual table, numpy by the `vectors` table. Override with
+`CONSCIO_VEC_BACKEND=hnsw|sqlite_vec|numpy`.
+
+### CLI migration
+
+```bash
+conscio migrate-vectors                  # → sqlite-vec (10×, default target)
+conscio migrate-vectors --target hnsw    # → HNSW (50×, direct)
+```
+
+Every path auto-detects the source format, backs up first, verifies search
+rankings, and writes the target. HNSW writes to `hnsw.db`, so the original
+`vectors.db` is never clobbered.
+
+### MemPalace / ChromaDB — removed
+
+`import_format_mempalace()` (81 lines), `tests/test_import_mempalace.py`, all
+references in 9 source files, and the `mempalace/` directories are gone.
+Migration guide: [docs/MIGRATION.md](docs/MIGRATION.md).
+
+### Fixed
+
+- **ContentStore DB path.** The engine opened `conscio.db` as the ContentStore
+  and ignored `content_store.db`, where all real content lives, so `recall()`
+  always returned 0 snippets.
+- **sqlite-vec dimension auto-detect.** Reopening an existing `vec_chunks` table
+  without `dimension=` defaulted to 768; `_init_db()` now parses `float[N]` out
+  of the DDL.
 
 ---
 
 ## [3.9.6] - 2026-08-02 — Deep Audit
 
-A thorough audit of every public module uncovered four bugs that had been broken
-since v3.9. **BUG-48:** actions recorded with `status=executed` never appeared in
-`executed_since` because `ok` stayed `NULL` when it should have defaulted to `1` —
-`distill()` read that feed and was producing **zero skills**. **BUG-40:** skills
-imported via `graft()` with `successes=0, failures=0` had a rate of `0.0` and were
-filtered by `few_shot()` — the agent guarded its DB but never served a single
-imported skill. **BUG-49:** `should_trip()` checked only `consecutive_failures` and
-ignored a manual `trip()` quarantine — the agent kept acting on goals it had
-explicitly barred. **BUG-47:** the `EventBus` was built for a single thread and
-crashed on any concurrent `emit()`.
-
-### Added
-- 10 regression tests (test_audit_bugs.py) verifying BUG-40/47/48/49
+An audit of every public module found four bugs broken since v3.9.
 
 ### Fixed
-- **BUG-48:** `ActionLedger.record(status='executed')` now defaults `ok=True` when
-  the caller signals success and does not pass an explicit ok value
-- **BUG-40:** `SkillLibrary._rate(0/0)` returns `1.0` (fresh import, not failure)
-  so that freshly imported skills pass the `MIN_SERVE_RATE` gate
-- **BUG-49:** `CircuitBreaker.should_trip()` checks `is_quarantined()` before the
-  fail-count threshold, so a manual trip() is never silently ignored
-- **BUG-47:** `EventBus` uses `check_same_thread=False` and a `threading.Lock` so
-  that concurrent emits never crash
+
+- **BUG-48:** `ActionLedger.record(status='executed')` left `ok` NULL, so
+  executed actions never appeared in `executed_since` — and `distill()`, which
+  reads that feed, was producing **zero skills**. `ok` now defaults to `True`
+  when the caller signals success.
+- **BUG-40:** skills imported via `graft()` with `successes=0, failures=0` rated
+  `0.0` and were filtered by `few_shot()` — the agent guarded its skill DB and
+  never served a single imported skill. `_rate(0/0)` now returns `1.0`: a fresh
+  import is not a failure.
+- **BUG-49:** `should_trip()` checked only `consecutive_failures` and ignored a
+  manual `trip()` quarantine, so the agent kept acting on goals it had
+  explicitly barred. It now checks `is_quarantined()` first.
+- **BUG-47:** the `EventBus` was built for a single thread and crashed on any
+  concurrent `emit()`. It now uses `check_same_thread=False` and a lock.
+
+### Added
+
+- 10 regression tests (`test_audit_bugs.py`).
+
+---
 
 ## [3.9.5] - 2026-08-02
 
-A third report from the field, from a daemon that was alive and doing nothing.
-It came back from a restart with the right adapter and the right mode, said so
-in its own log, and then refused every action — while the circuit breaker whose
-quorum had latched the lockdown in the first place had already released every
-goal it held. Two components disagreed about the same fact and nothing in the
-system was responsible for asking. Two smaller readings came out of the same
-advisory call: a brake that belonged to one heartbeat was being reported as
-permanent status, and a storage path written with a `~` became a directory
-named `~`. Going looking for that last one elsewhere found it six more times,
-in every place that reads `HERMES_HOME`.
+A daemon that came back from a restart alive and doing nothing: the right
+adapter, the right mode, and every action refused — while the circuit breaker
+whose quorum latched the lockdown had already released every goal it held.
 
 ### Fixed
 
-- **A global lockdown outlived the condition that caused it (BUG-37).** Repeated
-  failures quarantine a goal; a quorum of quarantines latches `action_lockdown`,
-  and that latch is written to disk so a lockdown survives a restart. But the
-  breaker behind it is deliberately self-healing — `quarantined_count()` ignores
-  rows whose cooldown has lapsed, because "expiry has to hold whether or not
-  anything sweeps the table". Nothing reconciled the two, and `ActPipeline.act()`
-  short-circuits on the persisted flag *before* consulting the breaker, so the
-  release the breaker had already granted was never reachable. In the field this
-  read as a daemon that restarted cleanly ten thousand times and stayed
-  paralysed through every one of them, with `advisory()` reporting a lockdown
-  and the quarantine table holding nothing but expired rows. The latch is now
-  re-derived from the breaker — at `attach_adapter()`, where the breaker first
-  exists and a latch loaded from disk can finally be checked against it, and at
-  `act()`, because a long-lived daemon never re-attaches and its cooldowns lapse
-  mid-process. Safety is not weakened in either direction: the latch is released
-  only by the same component that raises it, only when it says no lockdown is
-  due, and never when there is no breaker to ask. A lockdown still survives a
-  restart for exactly as long as its quorum stands, and a release is emitted as
-  a system event rather than happening quietly.
+- **A global lockdown outlived the condition that caused it (BUG-37).** A quorum
+  of quarantines latches `action_lockdown`, and the latch is persisted so it
+  survives a restart. But the breaker behind it is self-healing —
+  `quarantined_count()` ignores rows whose cooldown has lapsed — and
+  `ActPipeline.act()` short-circuits on the persisted flag *before* consulting
+  the breaker, so the release the breaker had already granted was unreachable.
+  In the field: a daemon that restarted cleanly ten thousand times and stayed
+  paralysed through every one, with an empty quarantine table. The latch is now
+  re-derived from the breaker at `attach_adapter()` and at `act()` (a long-lived
+  daemon never re-attaches). Safety holds in both directions: the latch is
+  released only by the component that raises it, only when it says no lockdown
+  is due, never when there is no breaker to ask, and the release is emitted as
+  an event.
 - **A per-run brake was reported as permanent status.** The aggregate
-  failure-rate brake stops one `run()`; the next starts with a fresh count. But
-  `advisory()` found it by scanning the whole event log, so a brake from a
-  previous heartbeat — or a previous process, or a previous week — was reported
-  as the current reason the loop was stopped. The scan now starts at the most
-  recent `run()`, falling back to the engine's construction. The event log still
-  holds every brake ever raised; only the claim that one of them is *current*
-  was wrong.
-- **`storage_path` took `~` literally.** A `"~/.conscio/live"` string created a
-  directory named `~` in the working directory and stored a mind inside it. It
-  is now expanded, which also means `conscio-daemon --storage '~/…'` works when
-  the shell did not expand it first.
-- **`HERMES_HOME` took `~` literally, in six places.** The session database, the
-  session RAG store, the noosphere layout, the CLI's default storage and both of
-  the observatory's default databases each read the variable straight into a
-  `Path`. The fallback they share is already absolute, so with the variable
-  unset every one of them was correct — the defect only appeared once something
-  exported an unexpanded tilde, at which point all six became paths *relative to
-  the working directory*, the existing files stopped being found, and the layers
-  above created new ones somewhere else without complaining. All six now expand.
-- **Eight more environment variables took `~` literally (BUG-38b).** The same
-  defect was present in every other path read from the environment:
-  ``CONSCIO_SESSION_DB``, ``CONSCIO_HANDOFF_DIR``, ``CONSCIO_BASE``,
-  ``CONSCIO_VAULT_DIR``, ``CONSCIO_WORKSPACE``, ``CLAUDE_DIR``, ``CLAUDE_JSON``
-  and ``CLAUDE_PROJECT_DIR``. The most incriminating was ``CONSCIO_SESSION_DB``,
-  two lines below a site the previous fix had just corrected in the same file.
-  The test harness from BUG-38 was extended to cover all fifteen sites (eight
-  original + seven extension), each tested in isolation so environment overrides
-  do not cross-talk.
-- **MCP tools ``conscio.feed`` and ``conscio.note`` crashed on host events
-  (BUG-39).** The internal Event schema requires ``type``, ``source``,
-  ``category`` and ``payload``, but hosts that predate the schema send ``data``
-  instead of ``payload`` and omit ``source`` and sometimes ``category``. The
-  validator rejected these and the server raised ``InvalidParams``, dropping
-  the MCP connection. ``conscio.health`` was unaffected because it is
-  read-only. ``_normalize_event()`` now maps ``data`` to ``payload``, defaults
-  ``source`` to ``"host"`` and ``category`` to ``type`` before validation, so
-  both canonical and host-aliased events pass through. Canonical events are
-  unchanged.
+  failure-rate brake stops one `run()`, but `advisory()` scanned the whole event
+  log, so a brake from a previous heartbeat — or a previous week — read as the
+  current reason the loop was stopped. The scan now starts at the most recent
+  `run()`.
+- **`storage_path` took `~` literally**, creating a directory named `~` in the
+  working directory and storing a mind inside it.
+- **`HERMES_HOME` took `~` literally, in six places** — the session database,
+  the session RAG store, the noosphere layout, the CLI default and both
+  observatory databases. The shared fallback is absolute, so with the variable
+  unset every one was correct; the defect only appeared once something exported
+  an unexpanded tilde, at which point all six became paths relative to the
+  working directory and the layers above silently created new files elsewhere.
+- **Eight more environment variables took `~` literally (BUG-38b)** —
+  `CONSCIO_SESSION_DB`, `CONSCIO_HANDOFF_DIR`, `CONSCIO_BASE`,
+  `CONSCIO_VAULT_DIR`, `CONSCIO_WORKSPACE`, `CLAUDE_DIR`, `CLAUDE_JSON`,
+  `CLAUDE_PROJECT_DIR`. The worst was two lines below a site the previous fix
+  had just corrected in the same file. All fifteen sites are now tested in
+  isolation.
+- **`conscio.feed` and `conscio.note` crashed on host events (BUG-39).** Hosts
+  that predate the Event schema send `data` instead of `payload` and omit
+  `source`; the validator rejected them and the server dropped the MCP
+  connection. `_normalize_event()` now maps `data`→`payload` and defaults
+  `source`/`category` before validation. Canonical events are unchanged.
 
 ---
 
 ## [3.9.4] - 2026-08-02 — Reachable Daemon
 
-A second field report, from an operator trying to turn Awake on and keep it on.
-Three defects made the daemon look like it was ignoring its operator, and a
-fourth left it asking for work no tool could do. Three more came out of reading
-the governor's own numbers and disbelieving them: the report described the wrong
-database, the capture hook could stop recording without ever saying so, and the
-savings figure compared the baseline against itself. The last five came out of
-validating the first four: the daemon's error messages blamed the model for an
-endpoint that did not resolve, the CLI gave it no key to authenticate with, and
-the auditor refused every tool this project defines because nothing had told it
-they exist. A second validation pass on the same install found the auditor still
-refusing the one goal it had just been taught to serve — it was comparing the
-tool's name against an internal check identifier — and, in the stores behind it,
-four fields the operator read as never populated: three of them were, or should
-have been, and the fourth was honest but growing without limit. A third pass,
-reading the code rather than the install, found ten more — almost every one a
-place where the thing that cleans up was skipped, aborted, or never asked: the
-dream on two paths, the ledger with no dream to prune it, a handoff overwritten
-with nothing, two failure paths that walked away from an open database handle, a
-foreign key that turned a compaction into an exception, a consolidation that cut
-the chain it was shortening, an append two processes could run at once and fork
-the chain between them, a proposal that came back after being answered, an
-approved change nobody applied and no gate could see, and a timezone that made a
-live entity look a decade stale. The same pass left the coherence score alone
-and taught the report to say which of its dimensions had nothing to measure,
-and made the proposal file's write atomic so a save that dies cannot empty it.
-A last reading of the governor's own output found two of its figures missing:
-a breakdown printing one column where the design drew three, because the
-baseline it was meant to compare against had never been frozen, and a saving
-given only as a percentage, with nothing to say what it was a percentage of.
+A field report from an operator trying to turn Awake on and keep it on, plus
+three validation passes that each turned up more than the last. Thirty defects:
+a daemon that ignored its operator, an auditor that refused every tool this
+project defines, a governor whose numbers described the wrong database, and a
+long tail of cleanup paths that were skipped, aborted, or never asked.
 
 ### Added
 
 - **`world_prune` tool.** The maintenance drive raises an auto-executable goal
-  to prune stale entities, but no tool in the registry could prune anything —
-  the work lives in `WorldModel.prune_stale()`, entirely in-process. With
-  nothing that fit, the actor reached for the closest thing it had, `fs_write`,
-  invented sandbox paths that did not exist, failed three times and tripped the
-  breaker. `world_prune` is the action the goal was always asking for. It is
-  MEDIUM, not HIGH, because HIGH never auto-executes (R6) and a HIGH tool would
-  leave the goal exactly as unsatisfiable as it was. It is wired into the live
-  act and promotion registries only: a trial replays another instance's skill,
-  and must not be able to prune this instance's memory.
+  to prune stale entities, but nothing in the registry could prune anything —
+  the work lives in `WorldModel.prune_stale()`, entirely in-process. The actor
+  reached for the closest thing it had, `fs_write`, invented sandbox paths,
+  failed three times and tripped the breaker. MEDIUM, not HIGH: HIGH never
+  auto-executes (R6) and would leave the goal as unsatisfiable as before. Live
+  act and promotion registries only — a trial replays a *peer's* skill and must
+  not prune this instance's memory.
 - **`CoherenceReport.unmeasured`** — the dimensions whose score is a default
-  rather than an observation. Three of the four scorers return their *maximum*
-  on an empty substrate: no prediction log → reality 1.0, no entities →
-  ontological 1.0, no events → temporal 1.0. So a freshly installed mind reports
-  0.85, the same number a well-measured and genuinely coherent one reports, and
-  nothing in the output distinguishes clean from untested. No score changed —
-  they feed thresholds, history and the dream trigger, and moving them would
-  rewrite the meaning of every stored reading. The report now carries the list
-  alongside, and `marker()` renders it:
-  `0.85 unmeasured: epistemic, reality, ontological, temporal`. Evidence is
-  per dimension: five resolved confidence records (pending ones prove nothing),
-  one prediction outcome in the window, one entity, one event. A window observed
-  with zero mode transitions *is* a measurement of stability; an empty window is
-  not.
-- **`/conscio:govern` slash command**, so the ceiling, the baseline and the
-  capture hook's health are reachable without remembering the CLI. It reads
-  status by default and passes an explicit action through; `on`/`off` rewrite
-  settings, so it never runs them as a follow-up to a status check.
+  rather than an observation. Three of the four scorers return their maximum on
+  an empty substrate, so a fresh mind reports 0.85, the same number a
+  well-measured coherent one reports. No score changed; the report carries the
+  list alongside and `marker()` renders it.
+- **`/conscio:govern` slash command** — ceiling, baseline and capture health
+  without remembering the CLI.
 
-### Fixed
+### Fixed — daemon and agency
 
 - **`conscio awake` never reached a running daemon.** It woke the engine it had
-  just opened and stopped there. A daemon holds its own engine in its own
-  process, so the CLI printed `Awake Mode: ON` while the daemon it was meant to
-  wake kept sleeping — indistinguishable, from outside, from awake failing to
-  persist. The operator's only working route was hand-writing
-  `daemon_control.json`. `awake`/`sleep` now write that control file too, which
-  is the channel a `--watch-control` daemon actually reads.
-- **Maintenance goals multiplied every cycle and could not be cancelled.** Two
-  causes. A goal's identity was its description, and the maintenance
-  description embeds a live reading — `23 stale entities: a, b, c` — so one
-  entity going stale renamed the goal, and a renamed goal is a new goal: six
-  reflect cycles over a growing stale set produced six copies of one check.
-  Deduplication also ignored cancelled goals, so cancelling was a no-op the
-  next cycle undid. Goals now dedup on `Goal.dedup_key` — the check being run,
-  for maintenance goals — and a cancellation suppresses its check for
-  `CANCEL_COOLDOWN_HOURS` (24h). The cooldown expires because `goal_update
-  cancel` is a tool the agent can call on itself; an explicit request from an
-  operator is never suppressed by an earlier cancel.
-- **A self-prompt goal could surface an id that was in no store.** `reflect()`
-  resolved the stored goal by description while the store deduped by key, so a
-  shifted target returned the discarded duplicate. It now resolves by the same
-  key, and returns `None` when nothing is tracked rather than naming a phantom.
-- **The capture hook's obsstore path could dangle, and then it recorded nothing
-  forever, in silence.** The sidecar pointed at `obsstore.py` inside the install
-  tree, a path that dies on any pipx upgrade, editable switch or venv rebuild.
-  The hook fails open on purpose — it must never break a tool call — so a dead
-  path does not raise: it exits 0 with no output, and a session with a broken
-  hook looks exactly like a session with no tool calls. The installer now copies
-  `obsstore.py` beside the hook, where nothing that touches the install can
-  invalidate it, and refreshes the copy on every run. `govern status` prints a
-  `Capture hook BROKEN` line naming the repair when the copy is missing, since
-  that check is the only signal that exists.
-- **`govern report` compared the baseline against itself, so a working ceiling
-  read as a loss.** The current figure counted every turn in the session,
-  including the ones taken before `govern on` froze the baseline — turns the
-  baseline itself measured. On a long session that straddles the freeze those
-  old turns dominate the average, and the report showed a small negative saving
-  no matter how well the ceiling was working. Measured on a real 1,643-turn
-  session: −2.0% reported, +41.6% actual. The report now counts only turns taken
-  from the freeze onward and says how many older ones it left out. A session
-  with no turns since the freeze prints why there is nothing to compare, instead
-  of dividing a zero cost by a positive baseline and claiming a 100% saving.
-- **`govern report`'s `Saved` line printed a share with nothing to size it.**
-  The design puts two figures there — what the ceiling took off the bill and
-  what proportion of it that was — and only the percentage shipped. 40% of a
-  rounding error and 40% of a month's spend read identically. The line now
-  carries both, the absolute priced over the turns actually taken since the
-  freeze: what they would have cost at the baseline rate, less what they did
-  cost. It is derived from the same two numbers as the share, so the pair
-  cannot drift apart.
-- **`govern report`'s breakdown lost two of its three columns.** The design
-  draws it as `current | baseline | saved` per channel; it shipped rendering a
-  `current` header over a single column, which reads as a table truncated by a
-  formatting bug. It was not formatting: `govern on` never froze the cache
-  figures, so there was nothing to put in the other two. The snapshot now
-  records `cr_per_request` and `cw_per_request`, and the breakdown prints all
-  three columns. Both sides are per turn, never totals — the current side counts
-  only turns taken since the freeze and the baseline counted whatever preceded
-  it, so a total against a total mostly measures which side had more turns. A
-  baseline frozen before this release has no such fields: those cells print `—`
-  and the report says which command records them. Zero would have been the
-  convenient default and a fabricated 100%.
-- **`govern status` reported obs.db from a space nothing writes to.** It read the
-  CLI's own storage (`~/.hermes/consciousness`), while the Claude Code hook
-  writes to its bound capture space — so a store with 1.3 MB of observations was
-  reported as `0.0 MB`, which reads as "capture is broken" when capture is fine.
-  Status now asks the hook binding where observations land and names the space it
-  is reporting on. An explicit `--storage` still wins: naming a path means that
-  path.
-- **An unreachable endpoint was reported as a decode failure.** When the base
-  URL did not resolve, no tier ever received a reply, so `last_raw` stayed empty
-  and the operator got `all decode tiers failed` with nothing after it — a
-  message that sends you to the schema and the model's output format to explain
-  a DNS failure. The cause was already held in `last_adapter_error` and dropped
-  on the way out. Found while validating the maintenance-goal fix above, where
-  every action failed for this reason and the report read as though `world_prune`
-  had not been registered. The gateway now says `adapter call failed
-  (provider_outage): <error>` when nothing was ever decoded, and appends the
-  adapter error to the decode detail when a reply did arrive before the
-  transport died — neither half explains that cycle alone.
-- **The tier ladder retried failures no lower tier could fix.** A downgrade
-  exists for a model that cannot produce structured output; it cannot help when
-  the host was never reached or the request was rejected outright, and T3 spends
-  a second call to be told the same thing. `should_retry` was consulted inside
-  each tier, where both branches returned `None` identically, so the decision
-  was computed and discarded — a permanent 401 still bought a downgrade. The
-  cascade now stops on connection failures and permanent errors, and continues
-  on everything else. A timeout continues, though it looks like it belongs with
-  the others: the connection was accepted and the request was taken, so the host
-  is reachable and this particular request is a candidate cause. Measured on
+  just opened, so the CLI printed `Awake Mode: ON` while the daemon — which
+  holds its own engine in its own process — kept sleeping. `awake`/`sleep` now
+  write `daemon_control.json`, the channel a `--watch-control` daemon reads.
+- **Maintenance goals multiplied every cycle and could not be cancelled.** A
+  goal's identity was its description, which embeds a live reading (`23 stale
+  entities: …`), so one entity going stale renamed the goal — and a renamed goal
+  is a new goal. Dedup also ignored cancelled goals. Goals now dedup on
+  `Goal.dedup_key`, and a cancellation suppresses its check for 24h.
+- **A self-prompt goal could surface an id in no store** — `reflect()` resolved
+  by description while the store deduped by key.
+- **The auditor refused every tool this project defines.** The Skeptic is ordered
+  never to accept an invented tool and was never told which tools exist, so it
+  judged each name against its pretraining: *"No evidence that world_prune is a
+  valid or existing tool."* Field-measured: 32 actions attempted, 0 executed,
+  with the actor choosing correctly every time. The name is already resolved
+  against the registry *before* the audit runs, so the audit was re-deciding a
+  settled question with less information than the code that settled it. The
+  Skeptic now receives the resolved tool's name and description, marked
+  verified, and judges only what it alone can: whether this action fits this
+  goal. A tool not in the registry never gets there.
+- **The maintenance goal stated a measurement where it owed an instruction.** It
+  read `Maintenance: prune_stale — 23 stale entities: …`, where `prune_stale` is
+  the dedup key's internal identifier and the rest is a reading off the world
+  model — so the goal never asked for anything, and the audit was right to
+  refuse. The identifier stays in the dedup key; the description is now a
+  sentence naming the tool that satisfies it.
+- **The daemon had no way to be given an API key**, so
+  `--adapter openai-compat --base-url <remote>` posted unauthenticated and read
+  the rejection as the model failing to answer. Added `--api-key` and
+  `CONSCIO_API_KEY`, since `ps` shows a command line to every process.
+- **An unreachable endpoint was reported as a decode failure.** With no reply
+  from any tier, the operator got `all decode tiers failed` — a message that
+  sends you to the schema to explain a DNS failure. The cause was already in
+  `last_adapter_error` and dropped on the way out.
+- **The tier ladder retried failures no lower tier could fix.** `should_retry`
+  was consulted inside each tier, where both branches returned `None`
+  identically, so a permanent 401 still bought a downgrade. The cascade now
+  stops on connection failures and permanent errors. A timeout still continues:
+  the host took the request, so this request is a candidate cause — measured on
   NVIDIA NIM, `response_format: json_object` times out where the same prompt
-  without it answers — precisely when T3 is worth trying. HTTP 400 for an
-  unsupported `response_format` is the same case, rescued by sending no schema
-  at all.
-- **Adapter errors did not say which endpoint failed.** `[Errno -5] No address
-  associated with hostname` never names the hostname, and a misconfigured base
-  URL is otherwise indistinguishable from a provider outage. Every failure out
-  of `_post_json` now leads with the URL it was posting to, minus the query
-  string — some providers accept a key there, and these messages reach the
-  ledger and the event bus.
-- **The auditor refused every tool this project defines.** The Skeptic is
-  ordered never to accept an invented tool, and was never told which tools
-  exist — so it judged each name against its pretraining and answered `No
-  evidence that world_prune is a valid or existing tool`. Field-measured on the
-  same install: 32 actions attempted, 0 executed, with the actor choosing the
-  right tool every time. The name is already resolved against the registry
-  before the audit runs — an unknown tool fails deterministically, long before
-  an LLM sees it — so the audit was re-deciding a settled question with less
-  information than the code that settled it. The Skeptic now receives the
-  resolved tool's own name and description, marked as verified, and is left to
-  judge what only it can: whether this action fits this goal. Every path that
-  resolves a spec before auditing passes it — the act pipeline, the host
-  channel and the trial runner, where a peer's replayed skill was being refused
-  for the same reason. Nothing was weakened. A tool that is not in the registry
-  never gets there, and a
-  host-declared vocabulary that does not contain the proposed name hands the
-  auditor no endorsement — which is exactly when it should be suspicious.
-  Skipping the audit for these tools was the other available route; it would
-  have exempted a tool that deletes world-model entities and a tool that
-  cancels goals from the only semantic check they get.
-- **The daemon had no way to be given an API key.** The config path has
-  resolved keys since v2.7.1, including from the Hub vault, but the CLI path
-  never passed one — so `conscio-daemon --adapter openai-compat --base-url
-  <remote>` posted unauthenticated and read the rejection as the model failing
-  to answer. The only working route was `--adapter openai`, which reads
-  `OPENAI_API_KEY` itself whatever the endpoint. There is now `--api-key`, and
-  `CONSCIO_API_KEY` for when a key on the command line is not acceptable — `ps`
-  shows that to every process on the machine. Precedence is the flag, then
-  `CONSCIO_API_KEY`, then whatever the adapter reads on its own: passing an
-  empty key leaves that last fallback intact, so daemons running on
-  `OPENAI_API_KEY` today are unaffected. Ollama stays unkeyed; it speaks no
-  auth.
-- **The maintenance goal stated a measurement where it owed an instruction.**
-  With the tool registered and the auditor told it exists, the audit still
-  refused every attempt at Q1: `the rationale claims the goal is to prune stale
-  entities, but the stated goal does not match`. The goal read `Maintenance:
-  prune_stale — 23 stale entities: a, b, c`. `prune_stale` is the check's
-  internal identifier — it is what `Goal.dedup_key` uses to know one maintenance
-  goal from another — and the rest is a reading off the world model. The actor
-  picked `world_prune` correctly every time; the auditor compared two names,
-  found no match, and was right to, because the goal never asked for anything.
-  38 actions attempted, 0 executed. The identifier now stays where it belongs,
-  in the dedup key, and the description is a sentence that names the tool which
-  satisfies it. `Goal.dedup_key` is unchanged, so goals already in a store still
-  dedup against the new ones. The other maintenance goal built this way — the
-  one a self-prompt raises — had the same shape: it carried the prompt's
-  `target`, an entity name or a dimension label, so it read `Maintenance: botX`
-  and asked for nothing. It now carries the question the self-prompt already
-  formed. That goal is diagnostic and never reaches the actor, so nothing was
-  being refused; it was simply unreadable.
-- **Pruning an entity left its predictions pending forever.** A prediction is
-  settled by `validate_predictions_against()`, which only looks at entities in
-  the perceived set — so once an entity was gone, a prediction naming it could
-  never be settled, held one of the 200 prediction slots for good and reported
-  itself as pending in every summary. Found in the field as 26 predictions
-  against 23 entities. `remove_entity()` now takes the unsettleable ones with
-  it, at the shared removal path so every caller benefits. Already-validated
-  predictions stay: those are history, not a pending claim.
+  without it answers.
+- **Adapter errors did not say which endpoint failed.** Failures out of
+  `_post_json` now lead with the URL, minus the query string — some providers
+  accept a key there, and these messages reach the ledger.
 - **Every autonomous action recorded a cost of zero.** `ActionLedger.record()`
-  has taken `tokens_in`/`tokens_out` since v2.0.1 and no caller ever passed
-  them, so the only per-action cost record the daemon keeps was uniformly 0 —
-  34 of 34 rows in the field. The gateway now totals what one `request_action`
-  spent across every tier and retry the ladder took, because the cost of an
-  action is not the cost of the call that finally decoded, it is all of them.
-  The row carries the actor's cost only: it names one adapter and one model, and
-  under mixed-cortex the audit runs on a different one — that usage belongs to
-  the `TokenLedger`, which is per-model.
-- **Suppressed duplicates were counted nowhere and reported as none.** `emit()`
-  dedups by not inserting, and the code claimed it marked the event instead;
-  reading `0 of 231 events with is_duplicate=1` off a live database therefore
-  looks like dedup never runs. `is_duplicate` is a different mechanism — a
-  soft-delete mark that hides a row from `query()` and feeds `compact()` — and
-  setting it on the surviving row would have hidden the original event.
-  Suppression is now counted on the row that survived, in a new
-  `duplicates_suppressed` column that `stats()` reports separately from the
-  soft-deleted count. Databases created before this version gain the column on
-  open.
-- **A caller-supplied project was recorded as uncertain attribution.**
-  `observe()` is handed the project by its caller and inferred nothing, yet
-  every event it emitted carried `attribution_confidence=0.0` — reading, across
-  a whole database, as a field that is never populated. It now records 1.0 when
-  a project is named. An event that names no project keeps 0.0: that is not a
-  missing value, it is the correct one.
-- **`token_usage` was the one store nothing ever released.** Every `reflect()`
-  appends a row and `TokenTracker.compact()` has existed since v0.2 with no
-  caller — the retention policy was written and never wired, leaving 733,949
-  rows in a field database and driving the WAL churn that made a healthy WAL
-  look like a leak. The dream cycle's Release phase now compacts it on the same
-  window it already used for events, and reports what it removed.
-- **`evolution.reject(proposal)` silently did nothing.** `approve`, `reject`,
-  `mark_applied` and `mark_rolled_back` took an id string and answered `None`
-  for "no such pending proposal". Handed the proposal object a caller already
-  holds — which is what `pending_proposals()` returns — no branch matched, the
-  state change was dropped, and the `None` that came back was indistinguishable
-  from a stale id, so the proposal came back pending in the next instance and
-  the store looked like it was not persisting. All four now accept the proposal
-  or its id, and raise `TypeError` for anything that could never name one rather
-  than borrowing the answer that means "not found".
-- **The lint gate had been red since v3.8.** `vulture` exits non-zero on any
-  finding, and `obsstore.read_observation` — the store's single-row reader,
-  exercised only from tests, which `vulture` does not scan — was one. Every push
-  to `main` since has had a failing `lint` job beside four passing test jobs.
-  Whitelisted, with the reason it exists.
-- **Two paths through `run()` never dreamed, and the ledger had no other
-  pruner.** Wiring `compact()` into the dream fixed retention only for minds
-  that dream. A host with no adapter attached reflects and returns before the
-  dream check, and a locked-down autonomy loop `break`s past it — both keep
-  writing to the stores the dream prunes. `DreamCycle` makes no model call, so
-  gating housekeeping behind an inference backend or an unlocked actor was never
-  the intent: both paths now dream when the recommendation says to. R9 is
-  untouched — an asleep host still does nothing. And because retention should
-  not depend on whether a mind ever dreams, `token_usage` now bounds itself at
-  the writer: a hard cap checked on the first record of each process and once
-  per thousand after that, so the file stays bounded no matter who is asleep.
-- **An enrichment failure erased the previous session's handoff.** When
-  `enrich_with_conscio` raised, `handoff` and `heartbeat` stayed `""` — and the
-  persist step wrote them anyway, replacing the last good handoff with an empty
-  file. That handoff is the only record of the session before it. Empty content
-  is no longer written: it carries no information, so declining to write it
-  cannot lose any.
-- **A failed `dump()` leaked its destination handle.** `Hallways.dump()` and
-  `Deduplicator.dump()` opened the target database, called `backup()`, and
-  closed the target on the line after — so any error in `backup()` skipped the
-  close and left an open SQLite connection, with its journal, behind. Both now
-  close in a `finally`, and take the same lock every other method on that
-  connection takes.
+  has taken `tokens_in`/`tokens_out` since v2.0.1 and no caller passed them. The
+  gateway now totals every tier and retry, because the cost of an action is not
+  the cost of the call that finally decoded.
+- **Pruning an entity left its predictions pending forever** — predictions are
+  settled only against the perceived set, so a prediction naming a removed
+  entity held one of the 200 slots for good.
+
+### Fixed — governor and stores
+
+- **`govern report` compared the baseline against itself.** The current figure
+  counted every turn in the session, including ones the baseline itself
+  measured. Measured on a real 1,643-turn session: −2.0% reported, +41.6%
+  actual. It now counts only turns from the freeze onward.
+- **`govern report`'s `Saved` line printed a share with nothing to size it** —
+  40% of a rounding error and 40% of a month's spend read identically. The
+  absolute is now carried alongside, derived from the same two numbers.
+- **`govern report`'s breakdown lost two of its three columns.** Not formatting:
+  `govern on` never froze the cache figures. The snapshot now records
+  `cr_per_request` and `cw_per_request`; a baseline frozen earlier prints `—`
+  and the report names the command that records them.
+- **`govern status` reported obs.db from a space nothing writes to**, so a store
+  with 1.3 MB of observations read as `0.0 MB`.
+- **The capture hook's obsstore path could dangle, silently.** The sidecar
+  pointed inside the install tree, a path that dies on any pipx upgrade or venv
+  rebuild — and the hook fails open by design, so a dead path exits 0 and a
+  broken session looks exactly like a session with no tool calls. `obsstore.py`
+  is now copied beside the hook, and `govern status` prints `Capture hook
+  BROKEN`.
+- **`token_usage` was the one store nothing ever released.** `TokenTracker.
+  compact()` existed since v0.2 with no caller — 733,949 rows in a field
+  database, driving the WAL churn that made a healthy WAL look like a leak. The
+  dream's Release phase compacts it, and the writer enforces a hard cap so
+  retention does not depend on whether a mind ever dreams.
+- **Two paths through `run()` never dreamed** — a host with no adapter returns
+  before the dream check and a locked-down loop `break`s past it, while both
+  keep writing to the stores the dream prunes. `DreamCycle` makes no model call,
+  so gating housekeeping behind an inference backend was never the intent. R9 is
+  untouched.
+- **Suppressed duplicates were counted nowhere.** `emit()` dedups by not
+  inserting; `is_duplicate` is a soft-delete mark, a different mechanism. Now
+  counted on the surviving row in `duplicates_suppressed`.
+- **A caller-supplied project was recorded as uncertain attribution** —
+  `observe()` is *handed* the project and still emitted
+  `attribution_confidence=0.0`. Now 1.0 when a project is named.
+- **An enrichment failure erased the previous session's handoff.** `handoff` and
+  `heartbeat` stayed `""` and the persist step wrote them anyway, replacing the
+  only record of the session before it. Empty content is no longer written.
+- **A failed `dump()` leaked its destination handle** — `Hallways.dump()` and
+  `Deduplicator.dump()` closed the target on the line *after* `backup()`. Both
+  now close in a `finally`.
 - **A tombstoned source could not be deleted, and one aborted a whole
-  compaction.** `source_tombstones.source_id` is a foreign key onto
-  `sources(id)` and `PRAGMA foreign_keys=ON`, so deleting a source while its
-  tombstone stood raised `IntegrityError` — inside `ContentStore.compact()`,
-  inside the dream's `_crystallize`, and in any direct `delete_source()`. The
-  tombstone is now deleted first in both paths. It cannot outlive its source
-  anyway: `list_tombstones` inner-joins `sources`, so an orphan is invisible.
-- **A failing checkpoint write held its connection open.** Every method on
-  `CheckpointChain` opened a connection, worked, and closed it on the last line.
-  A raise in between hands the connection to the traceback, and the exception →
-  traceback → frame cycle means only the *cyclic* collector frees it —
-  refcounting does not. Measured with the GC disabled: 30 failed appends held 30
-  descriptors. They now open through `contextlib.closing`. Not
-  `with sqlite3.connect(...)`, which commits or rolls back the transaction and
-  leaves the connection open — that idiom would have leaked on *every* call.
-- **Consolidating the checkpoint chain cut it.** `_consolidate` merges the
-  oldest checkpoints into one row and deletes the range — but the first
-  surviving checkpoint kept pointing at a `parent_id` that had just been
-  deleted, so walking back from the latest checkpoint hit an id that resolves to
-  nothing. The survivor is now re-anchored to the merged row, which is exactly
-  the history it lost.
-- **Two processes appending a checkpoint at the same time forked the chain.**
-  An append is a read-modify-write: find the latest row, claim it as parent,
-  insert. That ran unserialized, so two processes could read the same latest row
-  and both claim it — and a chain where two rows share a parent is a chain that
-  silently drops history when you walk back from the tip. Measured with four
-  processes appending 25 checkpoints each: 4 of 5 runs forked, one of them
-  producing three separate roots. The append now opens with `BEGIN IMMEDIATE`,
-  which takes the write lock *before* the parent lookup; late arrivals wait out
-  sqlite's busy timeout instead of racing. Consolidation moved inside that same
-  transaction, so the delete, the merged insert and the re-anchor commit
-  together or not at all.
-- **An answered proposal was proposed again.** `observe_errors` deduplicated
-  against `pending_proposals()`, but approving or rejecting a proposal takes it
-  out of PENDING — so answering one restored it to the set of things worth
-  proposing, and the next observation raised it again. It now dedups against
-  every verdict that still stands. `ROLLED_BACK` is excluded on purpose: the
-  change was undone, so proposing it again is a fresh question.
-- **A save that died emptied the proposal file.** `AutoEvolution._save()` wrote
-  with `Path.write_text`, which truncates before it writes, and `_load()`
-  deliberately degrades an unreadable file to `[]` so a corrupt store cannot
-  crash startup. Together those two reasonable choices mean a write interrupted
-  by a full disk, a crash or a reader arriving mid-truncate does not surface as
-  corruption — it surfaces as a mind with no proposals, which is a valid state.
-  It now writes through `atomic_write_text` (write sibling, `os.replace`), the
-  same guard the rest of the JSON stores already use. This does not make
-  concurrent *writers* safe: two processes still overwrite each other's list
-  wholesale, which is a design change, not a one-line fix.
-- **An approved change nobody applied blocked nothing.** `delivery_check`
-  counted PENDING proposals, and `approve()` moves a proposal out of PENDING —
-  so a crash between `approve()` and `mark_applied()` left it decided, unapplied
-  and invisible to the gate forever. The gate now reports both, separately: the
-  undecided and the decided-but-never-done.
+  compaction.** `source_tombstones.source_id` is a foreign key onto `sources`
+  with `PRAGMA foreign_keys=ON`, so the delete raised `IntegrityError` inside
+  `ContentStore.compact()`. The tombstone is now deleted first.
+- **A failing checkpoint write held its connection open.** The exception →
+  traceback → frame cycle means only the *cyclic* collector frees it; measured
+  with GC disabled, 30 failed appends held 30 descriptors. Now opened through
+  `contextlib.closing` — not `with sqlite3.connect(...)`, which leaves the
+  connection open and would have leaked on *every* call.
+- **Consolidating the checkpoint chain cut it** — the first survivor kept
+  pointing at a deleted `parent_id`. It is re-anchored to the merged row.
+- **Two processes appending a checkpoint at once forked the chain.** An append is
+  an unserialized read-modify-write, so two processes could claim the same
+  parent — and a chain where two rows share a parent silently drops history when
+  you walk back from the tip. Measured with four processes appending 25
+  checkpoints each: 4 of 5 runs forked, one producing three roots. The append now
+  opens with `BEGIN IMMEDIATE`, with consolidation inside the same transaction.
+- **`evolution.reject(proposal)` silently did nothing.** All four verdict methods
+  took an id string and answered `None` for "no such proposal", so handed the
+  object `pending_proposals()` returns, the state change was dropped. They now
+  accept either, and raise `TypeError` rather than borrowing the answer that
+  means "not found".
+- **An answered proposal was proposed again** — `observe_errors` deduplicated
+  against `pending_proposals()` only. It now dedups against every verdict that
+  still stands; `ROLLED_BACK` is excluded on purpose.
+- **A save that died emptied the proposal file.** `Path.write_text` truncates
+  before it writes and `_load()` degrades an unreadable file to `[]`, so an
+  interrupted write surfaced not as corruption but as a mind with no proposals —
+  a valid state. Now written through `atomic_write_text`. Concurrent *writers*
+  are still unsafe; that is a design change, not a one-line fix.
+- **An approved change nobody applied blocked nothing** — `delivery_check`
+  counted PENDING, and `approve()` moves a proposal out of PENDING, so a crash
+  before `mark_applied()` left it invisible to the gate forever. Both are now
+  reported.
 - **A timezone-aware timestamp made a live entity look a decade stale.**
-  `WorldModel` parsed `last_updated` with a bare `datetime.fromisoformat()` and
-  compared it against a naive `now`. An offset-carrying timestamp — what any
-  external source or a `datetime.now(tz).isoformat()` writes — produced an aware
-  datetime, and subtracting a naive one raises `TypeError`, which the pruner
-  treated the same as garbage: unparseable means infinitely old, so the entity
-  was purged. All nine parse sites now go through one helper that converts an
-  offset to local naive time. Genuine garbage still raises, and each caller
-  still answers it its own way.
+  Subtracting a naive `now` raises `TypeError`, which the pruner treated as
+  garbage — and unparseable means infinitely old, so the entity was purged. All
+  nine parse sites now go through one helper.
+- **The lint gate had been red since v3.8.** `vulture` flagged
+  `obsstore.read_observation`, exercised only from tests, which it does not scan.
+  Whitelisted, with its reason.
 
 ---
 

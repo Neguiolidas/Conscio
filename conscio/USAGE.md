@@ -1,10 +1,21 @@
 # Conscio — Usage Manual
 
-Self-awareness framework for AI agents. 100% local Python + SQLite FTS5. Zero external deps runtime (numpy optional for embeddings).
+Self-awareness framework for AI agents. Local-first Python + SQLite FTS5.
+One runtime dependency (`numpy`); everything else is the standard library.
 
-**Version:** 3.7.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
+**Version:** `conscio --version` · **License:** AGPL-3.0-or-later · **Python:** 3.10+
 
 ## Install
+
+In Claude Code, install the plugin — memory, capture hooks and 14 slash
+commands, with no Python toolchain to manage:
+
+```
+/plugin marketplace add Neguiolidas/Conscio
+/plugin install conscio
+```
+
+As a library or CLI:
 
 ```bash
 pip install conscio
@@ -258,7 +269,6 @@ engine.attach_adapter(intercept_enabled=True)
 - `docs/guides/integration.md` — host agent integration patterns
 - `docs/guides/workflows/` — 3 workflow guides (introspection-debugging,
   architecture-audit, continuous-learning)
-- `docs/reference/conscio_functions.md` — every public function documented
 - `docs/reference/public-api.md` — stable public API surface
 - `CHANGELOG.md` — version history
 - Repo: https://github.com/Neguiolidas/Conscio

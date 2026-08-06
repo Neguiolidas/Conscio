@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 print("=== Full Benchmark: Qwen3.5-0.8B ===")
 print()
 
@@ -90,7 +92,7 @@ with open("/tmp/bench_baseline.json", "w") as f:
 
 r1 = subprocess.run(["python3", "-c", baseline_code],
                     capture_output=True, text=True,
-                    cwd="/home/ubuntu/clawd/Repos/Conscio",
+                    cwd=REPO_ROOT,
                     timeout=600)
 print(r1.stdout)
 if r1.stderr:
@@ -108,7 +110,7 @@ with tempfile.TemporaryDirectory() as workdir:
         "--workdir", workdir,
         "--json", "/tmp/bench_conscio.json",
     ], capture_output=True, text=True,
-       cwd="/home/ubuntu/clawd/Repos/Conscio",
+       cwd=REPO_ROOT,
        timeout=600)
     print(r2.stdout)
     if r2.stderr:

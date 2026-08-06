@@ -56,8 +56,25 @@ mempalace/
 # v1.7 distiller reads it as data. Regenerate with `graphify .`.
 graphify-out/
 
-# internal design docs (specs/plans) — never committed
+# internal design docs (specs/plans/brainstorms) — never committed.
+# Five brainstorms predated this rule and were untracked in v4.0; a .gitignore
+# entry does not cover a file git already tracks.
 docs/superpowers/
+
+# Internal working notes: audits, field reports, model studies, generated
+# reference dumps. They stay on disk and out of the repo and the docs site
+# (mkdocs `exclude_docs` keeps a local build from picking them up).
+AUDIT_FINDINGS.md
+docs/AUDIT-*.md
+docs/REPORT_*.md
+docs/Report-*.md
+docs/Knolayer.md
+docs/blueprint*.md
+docs/f3-*.md
+docs/fable*.md
+docs/*-prompt*.md
+docs/patterns/
+docs/reference/conscio_functions.md
 
 # Claude Code harness reference — internal research, local only
 docs/reference/claude-code-harness.md
@@ -66,3 +83,6 @@ docs/reference/claude-code-harness.md
 # backup) into settings.local.json, which is per-machine by definition.
 .claude/settings.local.json*
 .claude/worktrees/
+
+# Local Netlify folder
+.netlify

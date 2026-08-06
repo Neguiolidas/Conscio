@@ -1,10 +1,21 @@
 # Conscio — Usage Manual
 
-Self-awareness framework for AI agents. 100% local Python + SQLite FTS5. Zero external deps runtime (numpy optional for embeddings).
+Self-awareness framework for AI agents. Local-first Python + SQLite FTS5.
+One runtime dependency (`numpy`); everything else is the standard library.
 
-**Version:** 3.3.0 · **License:** AGPL-3.0-or-later · **Python:** 3.10+
+**Version:** see [CHANGELOG](CHANGELOG.md) · **License:** AGPL-3.0-or-later · **Python:** 3.10+
 
 ## Install
+
+In Claude Code, install the plugin — memory, capture hooks and 14 slash
+commands, with no Python toolchain to manage:
+
+```
+/plugin marketplace add Neguiolidas/Conscio
+/plugin install conscio
+```
+
+As a library or CLI:
 
 ```bash
 pip install conscio
@@ -90,7 +101,28 @@ use first that responds → persist to `~/.config/conscio/config.json`. Runtime:
 **Propose-only by default** — Conscio perceives, reflects, recalls, and audits
 proposed actions, but never executes. The host stays sovereign over execution.
 
-### Core tools always available
+### Tool surfaces — `--mode lite|balanced|ultra`
+
+Every advertised tool schema costs the host context before the first prompt
+(~3100 tokens at `ultra`). Three nested surfaces size the list to the model:
+
+| Surface | Tools served | Advertised schema |
+|---|---|---|
+| `lite` | 10 | ~570 tokens, descriptions flattened to ≤120 chars |
+| `balanced` | 18 | ~1520 tokens |
+| `ultra` (default) | 35 | ~3100 tokens |
+
+`lite` — `advisory`, `events`, `feed`, `health`, `intercept`, `mode`, `note`,
+`recall`, `remember`, `state`. `balanced` adds `context_budget`, `council`, `decide`,
+`handoff`, `kg_query`, `recall_observations`, `verify`, `wings_search`.
+
+Precedence is `--mode` > the persisted choice (`<storage>/mcp_mode`) > default.
+`conscio.mode` switches at runtime and is present in every surface — in `lite` it
+is the only way back out. Filtering applies to the base set only, so a
+flag-enabled tool (act, review, relay) is never removed, and an unadvertised tool
+is still callable by name through `tools/call`.
+
+### Core tools (in every surface unless noted)
 
 - `conscio.feed(event, session_tokens?)` — perceive + reflect, returns advisory
 - `conscio.note(event)` — log raw event (no reflect)
@@ -164,11 +196,16 @@ result = eng.compress_observations()       # {"handoff": ..., "count": N, "sessi
 eng.close()
 ```
 
-Capture is **lossy by design**: `observe()` stores at most 1024 chars of
-`input` and `output` each, so a 40KB tool result becomes a fixed-cost row.
-`count` is everything the session did; the handoff itself carries the most
-recent observations that fit its char budget — a handoff exists to resume
+Since **v3.9** capture is full-fidelity, not clipped: `observe()` stores each
+field whole up to `MAX_FIELD_BYTES` (1 MiB), against the 1024 chars the v1 schema
+kept. Rows migrated from v1 stay clipped — the detail they lost was never
+written. `count` is everything the session did; the handoff itself carries the
+most recent observations that fit its char budget — a handoff exists to resume
 work, so the newest calls win.
+
+> Because capture is complete, anything a tool reads or writes — including
+> secrets — can land in `obs.db`. It is a second copy of what the host already
+> keeps in its transcripts, with a 30-day retention window.
 
 As MCP tools (any agent can call them — required arg in **bold**):
 
@@ -499,7 +536,6 @@ Conscio operation.
 - `docs/guides/quickstart.md` — Python API quickstart
 - `docs/guides/install.md` — installation details
 - `docs/guides/integration.md` — host agent integration patterns
-- `docs/reference/conscio_functions.md` — every public function documented
 - `docs/reference/public-api.md` — stable public API surface
 - `CHANGELOG.md` — version history
 - Repo: https://github.com/Neguiolidas/Conscio
