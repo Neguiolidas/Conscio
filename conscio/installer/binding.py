@@ -14,13 +14,19 @@ def validate_binding(storage, *, log: logging.Logger | None = None) -> bool:
     if not storage:
         return True                       # default storage; nothing to validate
     try:
-        d = Path(storage)
+        d = Path(storage).expanduser()
     except TypeError:
         return True                       # unusable arg; don't block startup
-    if not d.exists():
-        log.warning("storage binding %s does not exist — run "
-                    "`conscio init --repair` to (re)create this space.", d)
-        return False
+    if not d.exists():                    # fresh plugin install: bootstrap it
+        try:
+            from ..noosphere.identity import load_or_create
+            d.mkdir(parents=True, exist_ok=True)
+            load_or_create(d)
+        except Exception as exc:          # advisory contract: never raise
+            log.warning("storage binding %s does not exist and could not be "
+                        "created (%s) — run `conscio init --repair`.", d, exc)
+            return False
+        return True
     if not (d / "instance.json").exists():
         log.warning("storage binding %s has no instance.json (blank/space "
                     "drift) — run `conscio init --repair`.", d)
