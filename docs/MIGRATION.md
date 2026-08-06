@@ -337,4 +337,4 @@ The MCP process caches code in memory — it needs a restart to pick up changes.
 
 ---
 
-*Generated: 2026-08-04 · Conscio v3.9.7*
+*Vector backends landed in Conscio v3.9.7. This guide applies to v3.9.7 and later.*

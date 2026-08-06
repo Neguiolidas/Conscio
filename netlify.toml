@@ -1,0 +1,9 @@
+[build]
+  command = "cd site/conscio-website && npm install && npm run build"
+  publish = "site/conscio-website/dist"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  force = false

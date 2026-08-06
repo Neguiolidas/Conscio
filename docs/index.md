@@ -44,11 +44,15 @@ project's `.claude/settings.local.json` — refusing any window below the floor
 your own transcripts show, because a window under the landing point compacts,
 lands above its own ceiling, and compacts again. Every measurement comes from
 the host's own `message.usage` records rather than from token counting of ours.
-**v3.9.4** repairs what live installs turned up, and teaches the reports to
-name what they could not measure rather than let a default pass for an
-observation. **v3.9.5** answers a daemon that came back from a restart alive
-and doing nothing: a safety latch is now released by the same component that
-raises it, once the condition it was latched on is gone — see the
+**v3.9.7** replaces ChromaDB with three native vector backends — HNSW,
+sqlite-vec and numpy — auto-detected at startup, with a one-command
+[migration](MIGRATION.md).
+
+**v4.0** makes Conscio installable as a Claude Code plugin and sizes the MCP
+surface to the model: `lite` (10 tools), `balanced` (18) or `ultra` (35),
+switchable at runtime. A tool list is context the host pays for before the first
+prompt — a small model drowns in 35 tools, a large one is crippled by 10. See the
+[MCP guide](guides/mcp.md#tool-surfaces) and the
 [changelog](https://github.com/Neguiolidas/Conscio/blob/main/CHANGELOG.md).
 
 ## Install
@@ -58,6 +62,14 @@ pip install conscio
 ```
 
 Zero-dependency core (only `numpy` + the Python standard library).
+
+In Claude Code, install it as a plugin instead — memory, capture hooks and 14
+slash commands, with no Python toolchain to manage:
+
+```
+/plugin marketplace add Neguiolidas/Conscio
+/plugin install conscio
+```
 
 ## 30-second taste
 
@@ -83,7 +95,8 @@ conscio plugins
 - [Install](guides/install.md) · [Quickstart](guides/quickstart.md)
 - [Architecture](guides/architecture.md) — the layered design
 - [Plugins & extension points](guides/plugins.md) — adapters, sensors, tools
-- [MCP server (embodiment)](guides/mcp.md) — embed Conscio in any MCP host (v2.0)
+- [MCP server (embodiment)](guides/mcp.md) — embed Conscio in any MCP host, and
+  size its [tool surface](guides/mcp.md#tool-surfaces) to the model
 - [Safety rules](guides/safety-rules.md) — the non-negotiables
 - [Public API](reference/public-api.md) — the stable surface
 - [Claims ledger](CLAIMS.md) — what Conscio can and cannot prove about itself

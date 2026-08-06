@@ -1,5 +1,23 @@
 # Install
 
+## As a Claude Code plugin
+
+The shortest path for Claude Code users — memory, capture hooks and 14
+`/conscio:*` slash commands, with no Python toolchain to manage:
+
+```
+/plugin marketplace add Neguiolidas/Conscio
+/plugin install conscio
+```
+
+The plugin pins its MCP server to an exact version (`conscio==4.0.0`) and starts
+it on the `balanced` tool surface. A version floor would let an old server serve
+a tool list the shipped commands never mention, which reads as a bug in Claude
+rather than as a stale install.
+
+Everything below is for using Conscio as a library, a CLI, or from a host other
+than Claude Code.
+
 ## From PyPI
 
 ```bash
@@ -30,9 +48,10 @@ It:
   `env CONSCIO_VAULT_DIR=<space>/keys`), **backs up** the prior file
   (`.bak.<timestamp>`) and **reads it back** to confirm — it never fails silently;
 - offers extras (**Graphify** structural cognition) and can start **Awake**;
-- for `--host claude-code`, materializes a native bundle into `~/.claude/`: ten
-  `/conscio:*` slash commands, a `conscio` skill, and a defensive SessionStart
-  awareness hook.
+- for `--host claude-code`, materializes a native bundle into `~/.claude/`: the
+  `/conscio:*` slash commands, a `conscio` skill, and the capture and awareness
+  hooks. Installing the plugin instead is the maintained path — it carries the
+  same assets and keeps them versioned with the server.
 
 For a host whose MCP config path the wizard does not know (e.g. Antigravity),
 give the path when asked or paste the printed JSON snippet into the host's MCP
@@ -81,6 +100,16 @@ pip install "conscio[docs]"   # mkdocs-material — to build this site
 ```
 
 These never enter the runtime import graph.
+
+Two optional runtime packages speed up semantic recall, and are auto-detected at
+startup rather than configured (see [Migration](../MIGRATION.md)):
+
+```bash
+pip install hnswlib      # 2.9ms/search, 62× faster than numpy
+pip install sqlite-vec   # 17ms/search, no extra RAM
+```
+
+Without either, Conscio falls back to the zero-dependency numpy backend.
 
 ## From source
 

@@ -14,11 +14,11 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v3.9.7` "Vector Backends & Hard Purge":** three native vector
-backends with auto-detect — **HNSW** (hnswlib, 0.6–3ms/search, 50× faster than numpy),
-**sqlite-vec** (17ms, 10×), and **numpy** (zero-dep default). One-command CLI migration
-(`conscio migrate-vectors --target hnsw`). Full migration guide:
-[docs/MIGRATION.md](docs/MIGRATION.md). (See also [v3.9.6 "Deep Audit"](CHANGELOG.md#396---2026-08-02))
+**Latest release — `v4.0.0` "Tool Surfaces & the Claude Code Plugin":** Conscio
+installs as a Claude Code plugin, and its MCP surface stops being one size —
+`lite` (10 tools) / `balanced` (18) / `ultra` (35), switchable at runtime with
+`conscio.mode`. Plus LaTeX and equation solving in the Intercepter, and a startup
+that got 16× faster.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
@@ -26,12 +26,21 @@ backends with auto-detect — **HNSW** (hnswlib, 0.6–3ms/search, 50× faster t
 
 ## Install
 
+**As a Claude Code plugin** — memory, capture hooks and 14 slash commands, with no
+Python toolchain to manage:
+
+```
+/plugin marketplace add Neguiolidas/Conscio
+/plugin install conscio
+```
+
+**As a library or CLI:**
+
 ```bash
 pip install conscio          # from PyPI
 conscio init                 # wizard: bind this host to its own space
 
 pip install -e ".[dev]"      # from source, with the dev toolchain
-pip install "conscio[docs]"  # to build the docs site (mkdocs-material)
 ```
 
 Requires Python ≥ 3.10. The core depends only on `numpy` (`sqlite3` is stdlib) and is
@@ -55,28 +64,9 @@ with ConsciousnessEngine(model_name="glm-5.2") as engine:
     engine.world.add_entity("server", "system", state="healthy")
     hits = engine.recall("latency incidents")     # cross-session memory (FTS5 + optional RAG/vector)
 
-    # Self-evaluation — 5-axis rubric, deterministic, no LLM
-    report = engine.evaluate()
-    print(report.overall, report.self_check)
-
-    # Gate tools
+    report = engine.evaluate()                    # 5-axis self-evaluation, no LLM
     adr = engine.decide(title="Use SQLite for session storage", status="proposed")
-    result = engine.council("Should we enable autonomous mode?")
-    gate = engine.loop_gate(task="nightly audit", frequency="daily",
-                            verifiable=True, budget_ok=True, has_tools=True)
-    check = engine.delivery_check()
-    evidence = engine.investigate(target="server latency")
-```
-
-Arithmetic a model would otherwise guess at is evaluated, not generated — see
-[Intercepter](#intercepter):
-
-```python
-from conscio.agency.intercepter import Intercepter
-
-itc = Intercepter()
-itc.process("[INTERCEPT: solve_linear(2, 3, 1, 7)]").text
-# '[INTERCEPT: solve_linear(2, 3, 1, 7)] -> [RESULT: 4.0]'
+    verdict = engine.council("Should we enable autonomous mode?")
 ```
 
 ```bash
@@ -96,19 +86,21 @@ non-negotiable (see [Safety rules](#safety-rules-non-negotiable)).
 
 ---
 
-## When to use Conscio (MCP trigger rules)
+## When to use Conscio
 
 Conscio is a cognitive refinement layer, not a fact database. Calling it on every
 message wastes tokens and adds latency.
 
 **Call Conscio when the cost of being wrong is high:**
 
-- Security audit → `feed` + `cognitive_cycle`
-- Architectural decision → `decide` or `council`
-- Debugging → `investigate`
-- Multi-step delivery → `loop_gate` + `delivery_check`
-- Self-review of output → `evaluate` (5-axis rubric)
-- High-risk irreversible action → `council`
+| Situation | Tool |
+|---|---|
+| Security audit | `feed` + `cognitive_cycle` |
+| Architectural decision | `decide` or `council` |
+| Debugging | `investigate` |
+| Multi-step delivery | `loop_gate` + `delivery_check` |
+| Self-review of output | `evaluate` |
+| High-risk irreversible action | `council` |
 
 **Do NOT call Conscio for** factual lookup, casual conversation, simple mechanical
 tasks, one-shot tool calls, or anything with no decision or judgment involved.
@@ -116,73 +108,49 @@ tasks, one-shot tool calls, or anything with no decision or judgment involved.
 **Decision rule:** cost of reversal. Cheap to undo → skip Conscio. Expensive to undo
 → Conscio pays for itself.
 
-See [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules) for the full table.
+Full trigger table: [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules).
 
 ---
 
 ## What Conscio does
 
 - **Knows itself** — detects its model and context window (offline & deterministic by
-  default; opt-in auto-detection), and adapts its footprint.
+  default) and adapts its injection footprint.
 - **Reflects continuously** — a passive inner-monologue loop that observes, assesses
-  confidence, and summarizes (`engine.reflect` — advisory, never acts). Reflection
-  depth adapts via ReflectionGate.
-- **Generates its own goals** — driven by curiosity, maintenance, and evolution.
-- **Acts under audit** — an opt-in agency layer (`engine.act`) that proposes,
-  audits, risk-gates, and only then executes — with a human gate for anything risky.
-- **Learns procedures** — successful audited plans become reusable skills (procedural
-  memory), fed back to the actor as few-shot exemplars.
+  confidence, and summarizes (`engine.reflect` — advisory, never acts), at a depth
+  ReflectionGate adapts.
+- **Generates its own goals**, driven by curiosity, maintenance, and evolution.
+- **Acts under audit** — an opt-in agency layer (`engine.act`) that proposes, audits,
+  risk-gates, and only then executes, with a human gate for anything risky.
+- **Learns procedures** — successful audited plans become reusable skills, fed back to
+  the actor as few-shot exemplars.
 - **Judges its own quality** — confidence calibration, blind-spot detection, and
-  coherence/dissonance metrics that name the dimensions they could not measure
-  rather than scoring them silently; formal self-evaluation (`evaluate`).
-- **Gates its own decisions** — ADRs (`decide`), multi-voice council
-  (`council`), autonomous-loop gate (`loop_gate`), pre-close delivery check
-  (`delivery_check`), and read-before-act verification (`investigate`).
-- **Pipelines its own work** — intent-driven acceptance criteria, post-
-  implementation verification, loop-pattern selection, strategic compaction
-  advisory, and a recursive decision ledger with promotion gates.
-- **Diagnoses its own context** — context-budget audit, eval harness with
-  pass@k reliability metrics, and rule distillation from skills/events/decisions.
-- **Stores & retrieves knowledge** — FTS5 BM25 dual-index with RRF merging; optional
-  semantic recall; KnowledgeGraph with entities, triples, and timeline.
-- **Semantic chunking + vector search** — `ContentStore` splits by heading
-  (markdown), `---` boundary (yaml), or paragraph (everything else); auto-detect
-  embedding pipeline via sentence_transformers + `VectorBackend` fused into
-  `recall()` via `HybridRetriever` (RRF, lexical + dense). Three backends with
-  auto-detect: **HNSW** (hnswlib, 0.6–3ms, 50× faster), **sqlite-vec** (17ms, 10×),
-  **numpy** (zero-dep default). Override with `CONSCIO_VECTORS=0` to disable.
-  `conscio ingest <path>` bulk-indexes a directory. Migrate with
-  `conscio migrate-vectors --target hnsw` (see [Migration guide](docs/MIGRATION.md)).
-- **Organizes memory in wings and rooms** — Hallways hierarchy: wing → room →
-  drawer, with auto-created defaults and FK enforcement; WingManager integrates
-  Hallways + ContentStore for filtered search.
-- **Ingests files and conversations** — Miner: .md/.txt/.jsonl ingestion with
-  paragraph splitting, conversation JSONL parsing, directory walking with skip dirs.
-- **Detects entities** — EntityDetector: regex Unicode (PT accents), detects
-  persons, domains, versions; stores in KnowledgeGraph.
-- **Embeds natively** — EmbeddingProvider with 3-tier fallback: Ollama →
-  OpenAI-compatible → sentence_transformers all-MiniLM-L6-v2 (384-dim, in-process,
-  no daemon). Optional 768-dim via `CONSCIO_EMBED_MODEL=nomic-embed-text-v1.5`.
-- **Remembers what its tools saw** — every tool call the host makes is captured
-  into a separate `obs.db` and searchable later at zero LLM tokens, so a
-  compaction stops costing you the work that preceded it.
-- **Governs its own context cost** — measures the stable prefix and where
-  compactions actually land, derives the cost-optimal window, and reports
-  current-vs-baseline priced per turn from the host's own usage records.
-- **Exports & imports** — tar.gz archive with ContentStore + KG + Hallways +
-  metadata.json.
-- **Judges output quality** — an optional 6th evaluation axis, `output_quality`
-  (LLM-as-judge with heuristic fallback). The overall score averages over the
-  axes actually active, so enabling it never silently reweights the other five.
+  coherence metrics that *name the dimensions they could not measure* rather than
+  scoring them silently.
+- **Governs its own decisions** — ADRs, a four-voice council, an autonomous-loop gate,
+  a pre-close delivery check, and read-before-act verification.
+- **Stores & retrieves knowledge** — FTS5 BM25 dual-index with RRF merging, optional
+  semantic recall, and a KnowledgeGraph with entities, triples and timeline.
+- **Searches semantically** — `ContentStore` chunks by heading/boundary/paragraph and
+  `HybridRetriever` fuses lexical and dense results into `recall()`. Three vector
+  backends with auto-detect (see [below](#vector-backends)). `conscio ingest <path>`
+  bulk-indexes a directory.
+- **Organizes memory in wings and rooms** — a wing → room → drawer hierarchy with FK
+  enforcement and filtered search.
+- **Embeds natively** — a 3-tier fallback: Ollama → OpenAI-compatible →
+  sentence-transformers all-MiniLM-L6-v2 (384-dim, in-process, no daemon).
+- **Remembers what its tools saw** — every tool call the host makes is captured into a
+  separate `obs.db` and searchable later at zero LLM tokens, so a compaction stops
+  costing you the work that preceded it.
+- **Governs its own context cost** — measures the stable prefix and where compactions
+  actually land, derives the cost-optimal window, and reports current-vs-baseline
+  priced per turn from the host's own usage records.
 - **Consolidates while idle** — a dream cycle that releases, prunes, reconciles,
-  crystallizes, and distills.
-- **Persists across sessions** — heartbeat/handoff continuity with on-demand injection.
-- **Knows its codebase structurally** — optional, consent-gated ingestion of a
-  Graphify graph, distilled to a compact signal injected budget-aware. Data, never
-  code (R10).
-- **Computes instead of guessing** — Intercepter evaluates `[INTERCEPT: ...]`
-  expressions a model emits with a restricted AST walker, and feeds the real
-  answer back to it.
+  crystallizes, and distills — and persists across sessions via heartbeat/handoff.
+- **Knows its codebase structurally** — optional, consent-gated ingestion of a Graphify
+  graph, distilled to a compact signal. Data, never code (R10).
+- **Computes instead of guessing** — the Intercepter evaluates `[INTERCEPT: ...]`
+  expressions with a restricted AST walker and feeds the real answer back.
 - **Plugs into any host** — a stdlib-only MCP stdio server (`conscio-mcp`) feeds any
   CLI/IDE/agent its cognition and audited proposals live.
 
@@ -203,18 +171,17 @@ See [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules) for the full tab
 9. **Autonomous operation requires Awake Mode (R9)** — the self-initiated heartbeat
    only acts when the persisted `awake` flag is on; **default OFF**. Asleep, it
    perceives and `reflect`s only. A human's direct `engine.act` is not gated by R9.
-10. **Imported cognition is data, never code (R10)** — a code graph, a shared
-    skill, or anything else that arrives from outside is parsed, never evaluated,
-    and re-audited locally. No `eval`/`exec`/`pickle`, no runtime dependency on
-    the tool that produced it, and a code-looking label is returned verbatim.
+10. **Imported cognition is data, never code (R10)** — a code graph, a shared skill, or
+    anything else arriving from outside is parsed, never evaluated, and re-audited
+    locally. No `eval`/`exec`/`pickle`, and a code-looking label is returned verbatim.
 
 ---
 
 ## Context-aware modes
 
-Conscio detects the model's context window and adapts how much "consciousness state"
-it injects. The mode governs **injection budget only** — never whether the framework
-runs (it runs from 8k context up).
+Conscio detects the model's context window and adapts how much state it injects. The
+mode governs **injection budget only** — never whether the framework runs (it runs from
+8k context up).
 
 | Mode | Context window | Injection budget | What's injected |
 |---|---|---|---|
@@ -232,12 +199,12 @@ runs (it runs from 8k context up).
 from conscio.agency import OllamaAdapter
 
 engine.attach_adapter(OllamaAdapter(model="qwen3.5:0.8b"))  # or a frontier API
-report = engine.act()                # downstream of reflect; proposes only (L1)
+report = engine.act()                 # downstream of reflect; proposes only (L1)
 if report.status.value == "proposed":
     engine.approve(report.ledger_id)  # the human gate executes it
 
-engine.probe()                       # lazy, empirical capability measurement
-engine.run(budget=...)               # L3 heartbeat — asleep (default) it only reflects
+engine.probe()                        # lazy, empirical capability measurement
+engine.run(budget=...)                # L3 heartbeat — asleep (default) it only reflects
 ```
 
 Autonomy is **earned and measured**, never assumed: `ProbeSuite` measures the attached
@@ -245,110 +212,35 @@ model, `TrustMatrix` grants L1/L2/L3 from real calibration and ledger history, a
 `CircuitBreaker` quarantines misbehaving goals. HIGH-risk actions are *always* queued
 for a human (R6).
 
-### Gate tools
+### Gates, pipelines and diagnostics
 
-Five advisory tools for decision governance — all deterministic, EventBus-backed, no
-LLM calls:
+Thirteen deterministic, EventBus-backed tools — no LLM calls:
 
-```python
-# Architecture Decision Records
-adr = engine.decide(title="Use SQLite for session storage", status="proposed")
-# {"adr_id": "ADR-20260802145940-48a11e", "title": "...", "status": "proposed", ...}
+| Group | Tools |
+|---|---|
+| **Gates** | `decide` (ADRs) · `council` (Architect + Skeptic + Pragmatist + Critic) · `loop_gate` · `delivery_check` · `investigate` |
+| **Pipelines** | `acceptance_criteria` · `verify` · `continuous_loop` · `strategic_compact` · `ledger` (paper → dry_run → live) |
+| **Diagnostics** | `context_budget` · `eval_harness` (pass@k) · `rules_distill` |
 
-# Multi-voice council (Architect + Skeptic + Pragmatist + Critic)
-result = engine.council("Should we enable autonomous mode?")
-# {"question": "...", "recommendation": "proceed", "voices": [...], "votes_summary": {...}}
-
-# Autonomous loop gate — every condition must pass, and an unstated one is a veto
-gate = engine.loop_gate(task="nightly audit", frequency="daily",
-                        verifiable=True, budget_ok=True, has_tools=True)
-# {"approved": True, "conditions": {...}, "vetoed_conditions": []}
-
-# Pre-close delivery check (auto-runs on engine.close())
-check = engine.delivery_check()
-# {"pass": True, "blockers": [], "rationalization_hits": 0, "stale_proposals": 0, ...}
-
-# Read-before-act evidence verification
-evidence = engine.investigate(target="server latency")
-# {"satisfied": False, "missing": ["investigate:read: server latency"], ...}
-```
-
-`loop_gate` fails closed: leave `frequency` empty and it vetoes on that alone.
-Same for `investigate` — `satisfied` is False until the EventBus actually holds a
-read of that target, so "no evidence" never reads as "verified".
-
-### Pipeline tools
-
-Five tools for structured workflows — acceptance criteria, verification, loop
-patterns, compaction advisory, and recursive decision ledger:
-
-```python
-# Intent-driven acceptance criteria with auto risk detection
-criteria = engine.acceptance_criteria(goal="Deploy to production", depth="full")
-# {"goal": "...", "risk_level": "low", "risk_domains": [], "acceptance_count": 6, "criteria": [...]}
-
-# Post-implementation verification against the criteria last raised
-verified = engine.verify(criteria_source="acceptance")
-# {"pass": False, "verified": [], "failed": [{"id": "AC-001", "reason": "no evidence found"}, ...]}
-
-# Loop pattern selection (sequential / continuous_pr / rfc_dag / infinite)
-loop = engine.continuous_loop(pattern="continuous_pr")
-
-# Strategic compaction advisory
-compact = engine.strategic_compact(context_tokens=8000, context_window=128000)
-
-# Recursive decision ledger with promotion gates (paper → dry_run → live)
-entry = engine.ledger(action="record", rollout_id="RL-1",
-                      candidates=[{"id": "A", "description": "A"}],
-                      marks={"A": "accept"})
-promoted = engine.ledger(action="promote", rollout_id="RL-1")
-```
-
-### Diagnostic tools
-
-Three tools for context auditing, evaluation, and rule extraction:
-
-```python
-# Context budget audit — token pressure, metabolic tiers, recommendations
-budget = engine.context_budget(context_tokens=8000, context_window=128000)
-# {"token_pressure": ..., "headroom_pct": ..., "metabolic_tiers": [...], "recommendations": [...]}
-
-# Eval harness with pass@k reliability metrics
-defined = engine.eval_harness(action="define", eval_type="capability",
-                              task="memory recall", criteria=["recalls the goal"])
-engine.eval_harness(action="run", eval_id=defined["eval_id"], results=[True, True, False])
-report = engine.eval_harness(action="report")
-
-# Rule distillation — scan for recurring patterns, then commit one as a rule
-rules = engine.rules_distill(action="scan", source_types=["skills", "events"])
-distilled = engine.rules_distill(action="distill", rule_text="Always verify before acting")
-```
+They fail closed. Leave `loop_gate`'s `frequency` empty and it vetoes on that alone;
+`investigate` reports `satisfied: False` until the EventBus actually holds a read of
+that target, so "no evidence" never reads as "verified". Signatures and return shapes:
+[USAGE.md](USAGE.md).
 
 ### Self-evaluation
 
-Formal 5-axis rubric — accuracy, completeness, clarity, actionability, conciseness
-(a 6th, `output_quality`, joins them when an output is passed). Pure read-only,
-deterministic, no LLM:
-
-```python
-report = engine.evaluate()
-report.overall        # 4.2 — mean of the axes actually active
-report.axes           # (AxisScore(axis="accuracy", score=4, evidence=..., improvement=...), ...)
-report.self_check     # "User might ask for follow-up on weaker axes"
-report.improvements   # ("Raise confidence by adding verification steps for claims.", ...)
-```
-
-The scores are read off the engine's real state, so a fresh instance scores
-lower than a working one and the improvements name what is actually missing —
-they are measurements, not a fixed rubric printout.
+`engine.evaluate()` returns a formal 5-axis rubric — accuracy, completeness, clarity,
+actionability, conciseness (a 6th, `output_quality`, joins them when an output is
+passed). Read-only, deterministic, no LLM. Scores are read off the engine's real state,
+so a fresh instance scores lower than a working one and the improvements name what is
+actually missing — measurements, not a fixed rubric printout.
 
 ### Tool observations & context economy
 
-Every tool call a session makes is recorded in its own SQLite store (`obs.db`,
-separate from `conscio.db`), searchable later at **0 LLM tokens** — so a smaller
-context window stops meaning lost work. On Claude Code the installer wires this
-up automatically; the capture never alters tool output and never blocks a
-session.
+Every tool call a session makes is recorded in its own SQLite store (`obs.db`, separate
+from `conscio.db`), searchable later at **0 LLM tokens** — so a smaller context window
+stops meaning lost work. On Claude Code the plugin wires this up automatically; the
+capture never alters tool output and never blocks a session.
 
 ```python
 engine.observe(tool="Bash", input_text="ls", output_text="README.md", session_id="s1")
@@ -356,9 +248,8 @@ hits = engine.recall_observations("README", session_id="s1")  # FTS5 snippet win
 handoff = engine.compress_observations(session_id="s1")       # session → handoff
 ```
 
-Recall is session-scoped by default, so a session only ever mines its own trail
-unless you widen `scope`. Under the Claude Code hook the session id is supplied
-for you.
+Recall is session-scoped by default, so a session only ever mines its own trail unless
+you widen `scope`.
 
 ```bash
 conscio govern status    # ceiling, obs.db size, capture health, baseline
@@ -368,16 +259,39 @@ conscio govern report    # current vs baseline, from the host's own usage record
 conscio govern off       # restore what you had before
 ```
 
-`govern report` prices both sides per turn rather than as totals — a total
-against a total mostly measures which side ran longer. Where the baseline froze
-no figure to compare against, the cell prints `—` instead of a zero that would
-render as a 100% saving.
+`govern report` prices both sides **per turn** rather than as totals — a total against a
+total mostly measures which side ran longer — and prints `—` where the baseline froze no
+figure to compare against, rather than a zero that would render as a 100% saving.
 
-> Capture is complete, not truncated: a tool's whole input and output are stored
-> (up to 1 MiB per field), so anything a tool reads or writes — including
-> secrets — can land in `obs.db`. It is a second copy of what the host already
-> keeps in its session transcripts, with a 30-day retention window. Treat it as
-> one more place to scrub, and lower `max_age_days` if that matters to you.
+> Capture is complete, not truncated: a tool's whole input and output are stored (up to
+> 1 MiB per field), so anything a tool reads or writes — including secrets — can land in
+> `obs.db`. It is a second copy of what the host already keeps in its session
+> transcripts, with a 30-day retention window. Treat it as one more place to scrub, and
+> lower `max_age_days` if that matters to you.
+
+### Embodiment — the MCP server
+
+`conscio-mcp` is a hand-rolled, **stdlib-only** MCP stdio server (newline-delimited
+JSON-RPC 2.0), so any MCP host can plug into a Conscio instance and consume its
+cognition live. Zero new dependency; nothing opens a socket.
+
+The tool surface is sized to the model. Three nested surfaces, so raising one never
+removes a tool:
+
+| Surface | Tools served | Advertised schema |
+|---|---|---|
+| `lite` | 10 | ~570 tokens — descriptions flattened to ≤120 chars |
+| `balanced` | 18 | ~1520 tokens |
+| `ultra` (default) | 35 | ~3100 tokens |
+
+Precedence is `--mode` on the CLI, then the persisted choice, then the default.
+`conscio.mode` switches at runtime and is present in every surface — in `lite` it is the
+only way back out. An unadvertised tool stays callable through `tools/call`, and tools
+enabled by flag (act, review, relay) are never filtered — 42 with every flag on.
+
+The base surface is **propose-only** (perceive / reflect / recall / audit); opt-in
+`--enable-act` adds host-executed, ledgered, gated `act` — Conscio signs and audits the
+intent, the host pulls the trigger. See [the MCP guide](docs/guides/mcp.md).
 
 ### Live mode — daemon, sensors & Awake Mode
 
@@ -389,50 +303,30 @@ from conscio import ConsciousnessEngine, HostSensor
 from conscio.daemon import Daemon
 
 engine = ConsciousnessEngine("glm-5.1", storage_path="~/.conscio/live")
-engine.wake()                                             # opt in to autonomy (persisted)
+engine.wake()                                              # opt in to autonomy (persisted)
 Daemon(engine, sensors=[HostSensor()], interval=30).run()  # perceive → reflect → act
 ```
 
-`storage_path` accepts `str` or `Path` and expands `~`.
-
-`conscio-daemon --sensors host --interval 30` runs it standalone (add `--awake` to
-enable autonomy); `conscio awake` reaches an already-running daemon rather than
-waking a second engine of its own. Reference sensors `HostSensor` / `AgentSensor` ship as
-`conscio.sensors` entry points; write your own `SensorAdapter`.
-
-### Structural cognition
-
-Conscio can give the model **structural awareness of the codebase it works in**,
-distilled from a Graphify-format `graph.json` — consumed as **data, never code** (R10:
-no `networkx`, no Graphify runtime dependency). Consent is per-workspace and defaults
-OFF; it tracks drift + staleness vs the repo `HEAD` (read purely from `.git`, no
-subprocess). See [the integration guide](docs/guides/integration.md#structural-cognition).
-
-### Embodiment — MCP server
-
-`conscio-mcp` is a hand-rolled, **stdlib-only** MCP stdio server (newline-delimited
-JSON-RPC 2.0) so any MCP host can plug into a Conscio instance and consume its
-cognition live. Zero new dependency; nothing opens a socket. The base surface is
-**propose-only** (perceive / reflect / recall / audit); opt-in `--enable-act` adds
-host-executed, ledgered, gated `act` — Conscio signs and audits the intent, the host
-pulls the trigger. 13 additional MCP tools for gate, pipeline, and diagnostic
-operations. See [the MCP guide](docs/guides/mcp.md).
+`conscio-daemon --sensors host --interval 30` runs it standalone (add `--awake`);
+`conscio awake` reaches an already-running daemon rather than waking a second engine of
+its own. Reference sensors `HostSensor` / `AgentSensor` ship as `conscio.sensors` entry
+points; write your own `SensorAdapter`.
 
 ### Society — shared minds
 
 Same-host instances can **share locally-proven skills as data** through a host-shared
-`noosphere.db` (publish → static-revalidated quarantine → sandboxed trial →
-promotion), **audit each other's** action records, and exchange messages over the
-Liaison mailbox (`hermes_review` cross-agent approvals + free-form relay). Engine-free,
-read-only on the live `conscio.db`, no inherited trust, no network.
+`noosphere.db` (publish → static-revalidated quarantine → sandboxed trial → promotion),
+**audit each other's** action records, and exchange messages over the Liaison mailbox.
+Engine-free, read-only on the live `conscio.db`, no inherited trust, no network.
 
 ### Intercepter
 
 A model asked for `0.15 * 8000` will happily invent a number. Intercepter takes the
-`[INTERCEPT: ...]` expressions it emits and *evaluates* them — a restricted AST
-walker over arithmetic, comparisons, a fixed set of math functions (`sqrt`, `floor`,
-`log`, the trig family, `solve_linear`) and bound variables. No `eval`, no `exec`,
-no attribute access, no imports; expressions are length- and depth-capped.
+`[INTERCEPT: ...]` expressions it emits and *evaluates* them — a restricted AST walker
+over arithmetic, comparisons, a fixed set of math functions and bound variables. No
+`eval`, no `exec`, no attribute access, no imports; expressions are length- and
+depth-capped. LaTeX is converted before parsing, and an equation with no bound variables
+is solved rather than evaluated.
 
 ```python
 from conscio.agency.intercepter import Intercepter
@@ -444,9 +338,8 @@ itc.process("[INTERCEPT: rate * 8000]").text
 ```
 
 `attach_adapter(..., intercept_enabled=True)` wires it into the act pipeline as an
-`InterceptionLoop` around the inference adapter: the model emits a tag, gets the real
-answer back, and may revise — up to 3 iterations, each one an EventBus record.
-Origin: the Think-Vetor DSL concept (CromIA), reimplemented from scratch.
+`InterceptionLoop`: the model emits a tag, gets the real answer back, and may revise —
+up to 3 iterations, each one an EventBus record.
 
 ---
 
@@ -457,26 +350,24 @@ Origin: the Think-Vetor DSL concept (CromIA), reimplemented from scratch.
                                                               │
   ConsciousnessEngine  (orchestrator · lifecycle · injection) │
    ├─ Witness        InnerMonologue · WorldModel · MetaCognition · GoalGenerator
-   ├─ Substrate      ContentStore (FTS5 BM25 + RRF) · VectorBackend (HNSW/sqlite-vec/numpy auto-detect) · HybridRetriever · EventBus (41 event types) · FilterPipeline
+   ├─ Substrate      ContentStore (FTS5 BM25 + RRF) · VectorBackend (HNSW/sqlite-vec/numpy) ·
+   │                 HybridRetriever · EventBus · FilterPipeline
    ├─ Continuity     SessionLifecycle (6-step handoff) · SessionRAG (optional)
    ├─ Metabolism     MetabolicContext · DreamCycle (release→prune→…→distill)
    ├─ Coherence      CoherenceEngine · semantic reconciliation · unmeasured dimensions named
    ├─ Structural     StructuralDistiller (graph → ranked signal; data, not code)
-   ├─ Evaluation     evaluate — 5/6-axis rubric (accuracy·completeness·clarity·
-   │                 actionability·conciseness·output_quality)
+   ├─ Evaluation     evaluate — 5/6-axis rubric
    ├─ Gates          decide · council · loop_gate · delivery_check · investigate
    ├─ Pipelines      acceptance_criteria · verify · continuous_loop ·
    │                 strategic_compact · ledger
    ├─ Diagnostics    context_budget · eval_harness · rules_distill
-   ├─ Harness        PromptZones (stable+volatile) · CheckpointChain ·
-   │                 TokenAccount+CPM · FailureGovernor (6-type) ·
-   │                 adaptive max_retries · skeptic skip (safe tools)
+   ├─ Harness        PromptZones · CheckpointChain · TokenAccount+CPM ·
+   │                 FailureGovernor · adaptive max_retries · skeptic skip
    ├─ Adaptive       prompt_complexity (full/compact/minimal) ·
    │                 auto-detect (--model auto) · FallbackAdapter
-   ├─ Memory         KnowledgeGraph · Hallways · WingManager · VectorBackend (3 backends) ·
-   │                 Deduplicator · EntityDetector · EmbeddingProvider ·
-   │                 Miner · Migration (export/import tar.gz + vector migrate CLI)
-   ├─ Observations   obs.db (FTS5, separate from conscio.db) · capture hooks ·
+   ├─ Memory         KnowledgeGraph · Hallways · WingManager · Deduplicator ·
+   │                 EntityDetector · EmbeddingProvider · Miner · Migration
+   ├─ Observations   obs.db (FTS5, separate) · capture hooks ·
    │                 recall_observations · compress_observations
    ├─ Governor       prefix/landing measurement → cost-optimal window · baseline
    │                 + report, priced per turn from the host's usage records
@@ -497,64 +388,30 @@ built with `mkdocs build --strict`).
 
 Conscio is **model-agnostic** — it runs on any backend (local Ollama / llama.cpp /
 LM Studio, any OpenAI-compatible endpoint, or a frontier API). The only thing it needs
-from a model is its **context window**: that single number selects the injection mode
-(see [Context-aware modes](#context-aware-modes)) and nothing else is hardcoded to a
-particular model.
-
-A known model resolves to its window offline and deterministically; an unknown one is
-inferred from its name or taken from an explicit override. Register any model — or pin
-a window — in one line:
+from a model is its **context window**: that single number selects the injection mode,
+and nothing else is hardcoded to a particular model. A known model resolves offline and
+deterministically; an unknown one is inferred from its name or pinned explicitly:
 
 ```python
 from conscio import ModelRegistry
 ModelRegistry.register("my-model", context_window=200_000)
 ```
 
----
+**Adaptive prompt complexity.** `ProbeSuite` measures each model's `json_fidelity`,
+`schema_depth` and `instruction_depth` (5 empirical probes, cached in SQLite), and
+`prompt_complexity` picks a prompt tier from the profile:
 
-## Model-agnostic by design
+| Tier | Persona | State | Memories | Few-shot | When |
+|---|---|---|---|---|---|
+| `full` | complete | ✓ | ✓ | ✓ | json_fidelity ≥ 0.8 + instruction_depth ≥ 2 |
+| `compact` | 1-line | ✓ | ✗ | ✗ | instruction_depth ≥ 2 + schema_depth ≥ 2 |
+| `minimal` | none | ✓ | ✗ | ✗ | otherwise (tiny models) |
 
-Conscio adapts to any model — from 0.8B local to frontier API — using two
-mechanisms:
-
-### Adaptive prompt complexity
-
-The `ProbeSuite` measures each model's `json_fidelity`, `schema_depth`, and
-`instruction_depth` (5 empirical probes, cached in SQLite). Based on the
-profile, `prompt_complexity` selects one of three prompt tiers:
-
-| Tier | Persona | Tools | State | Memories | Few-shot | When |
-|------|---------|-------|-------|----------|----------|------|
-| `full` | complete | ✓ | ✓ | ✓ | ✓ | json_fidelity ≥ 0.8 + instruction_depth ≥ 2 |
-| `compact` | 1-line | ✓ | ✓ | ✗ | ✗ | instruction_depth ≥ 2 + schema_depth ≥ 2 |
-| `minimal` | none | ✓ | ✓ | ✗ | ✗ | otherwise (tiny models) |
-
-The bench loop tries `full` first and falls back to `compact` if args
-validation fails — so models with identical profiles but opposite
-preferences (Qwen 0.8B wants full, LFM 1.2B wants compact) both hit 100%.
-
-### Auto-detect + fallback chain
-
-`--model auto` makes the MCP JSON **fixed forever** — no manual model
-swapping when you change what's loaded in LM Studio:
-
-```json
-{
-  "mcpServers": {
-    "conscio": {
-      "command": "conscio-mcp",
-      "args": ["--model", "auto", "--base-url", "http://localhost:1234/v1"]
-    }
-  }
-}
-```
-
-On boot, Conscio `GET /v1/models`, filters out embedding models, tests each
-chat model with a minimal prompt, and uses the first that responds. The
-winner is persisted to `~/.config/conscio/config.json` so the next boot
-starts instantly. At runtime, `FallbackAdapter` switches to the next model
-in the chain if the current one fails (PERMANENT error, timeout, bad
-response).
+**Auto-detect + fallback chain.** `--model auto` makes the MCP config fixed forever — on
+boot Conscio calls `GET /v1/models`, filters out embedding models, tests each chat model
+with a minimal prompt, and uses the first that responds. The winner is persisted, so the
+next boot starts instantly. At runtime `FallbackAdapter` switches to the next model in
+the chain on a permanent error, timeout or bad response.
 
 ### Benchmark (local LM Studio, 5 cycles)
 
@@ -563,53 +420,35 @@ response).
 | Qwen 0.8B | 1.0 | T2 | **100%** | 5357 | 19.0s | 100% |
 | LFM 1.2B | 1.0 | T2 | **100%** | 4950 | 23.6s | 100% |
 
-Both small models hit 100% JSON validity through Conscio (raw: 60% and 80%).
-Token cost 6–10× (no prompt caching on local LM Studio); with provider
-caching (Anthropic/OpenAI), the stable zone caches at ~0.1×, reducing
-effective cost to ~2–3×.
+Both small models hit 100% JSON validity through Conscio (raw: 60% and 80%). Token cost
+is 6–10× without prompt caching; with provider caching the stable zone caches at ~0.1×,
+bringing the effective cost to ~2–3×.
 
 ---
 
-## Vector backends & migration
+## Vector backends
 
-Three backends, auto-detected at startup — no config needed:
+Three backends, auto-detected at startup — no config needed. Priority is
+**HNSW → sqlite-vec → numpy**; override with `CONSCIO_VEC_BACKEND`.
 
-| Backend | Search | Recall@10 | Setup | When to use |
-|---------|--------|-----------|-------|-------------|
-| **HNSW** (hnswlib) | 2.9ms | 99% | `pip install hnswlib` | Production, >1k vectors |
-| **sqlite-vec** | 17ms | 100% | `pip install sqlite-vec` | Mid-tier, no extra RAM |
-| **numpy** (default) | 180ms | 100% | zero deps | Fresh installs, <1k vectors |
+Measured on 37,042 real embeddings, 384-dim, all-MiniLM-L6-v2:
 
-Auto-detect priority: **HNSW → sqlite-vec → numpy**. Override with
-`CONSCIO_VEC_BACKEND=hnsw|sqlite_vec|numpy`.
+| Backend | Search | Recall@10 | Ingest | Disk | RAM | Setup |
+|---|---|---|---|---|---|---|
+| **HNSW** | 2.9ms | 99% | 28s | 65MB | 300MB | `pip install hnswlib` |
+| **sqlite-vec** | 17ms | 100% | 12s | 58MB | 0 | `pip install sqlite-vec` |
+| **numpy** (default) | 180ms | 100% | 0 | 74MB | 0 | zero deps |
 
-### Migrate
+HNSW is 62× faster than numpy and 6× faster than sqlite-vec.
 
 ```bash
-# numpy → sqlite-vec (10×, default target)
-conscio migrate-vectors
-
-# numpy → HNSW (50×, direct — skips sqlite-vec)
-conscio migrate-vectors --target hnsw
-
-# sqlite-vec → HNSW (preserves original as fallback)
-conscio migrate-vectors --target hnsw
+conscio migrate-vectors                  # → sqlite-vec (10×, default target)
+conscio migrate-vectors --target hnsw    # → HNSW (50×, direct)
 ```
 
-All paths auto-detect source format, backup before migration, verify search
-rankings, and write the target. HNSW writes to a separate `hnsw.db` so the
-original `vectors.db` is never clobbered.
-
-### Production benchmark (37,042 vectors, 384-dim, all-MiniLM-L6-v2)
-
-| Backend     | Search  | Recall@10 | Ingest | Disk  | RAM    |
-|-------------|---------|-----------|--------|-------|--------|
-| **HNSW**    | 2.9ms   | 99%       | 28s    | 65MB  | 300MB  |
-| sqlite-vec  | 17ms    | 100%      | 12s    | 58MB  | 0      |
-| numpy       | 180ms   | 100%      | 0      | 74MB  | 0      |
-
-HNSW is 62× faster than numpy, 6× faster than sqlite-vec. Full guide:
-[docs/MIGRATION.md](docs/MIGRATION.md).
+Every path auto-detects the source format, backs up first, verifies search rankings, and
+writes the target. HNSW writes to a separate `hnsw.db`, so the original `vectors.db` is
+never clobbered. Full guide: [docs/MIGRATION.md](docs/MIGRATION.md).
 
 ---
 
@@ -621,12 +460,9 @@ conscio-bench --adapter ollama:qwen3.5:0.8b --cycles 20
 conscio-bench --adapter mock --skills 20              # skill-acquisition curve
 ```
 
-Also runnable from a source checkout as `python3 -m conscio.bench`. Backends:
-`mock`, `ollama:<model>`, `llamacpp[:<name>]`, `lmstudio:<model>[@<base_url>]`,
-`openai:<model>[@<base_url>]`.
-
-Reports probe profile, decode tier, per-tier syntactic validity, Skeptic catch-rate,
-latency p50, and calibration. Baselines in `docs/bench/`.
+Backends: `mock`, `ollama:<model>`, `llamacpp[:<name>]`, `lmstudio:<model>[@<base_url>]`,
+`openai:<model>[@<base_url>]`. Reports probe profile, decode tier, per-tier syntactic
+validity, Skeptic catch-rate, latency p50, and calibration. Baselines in `docs/bench/`.
 
 ---
 
@@ -650,22 +486,19 @@ Runnable examples: `examples/custom_adapter.py`, `examples/host_guardian.py`,
 ## Testing & data
 
 ```bash
-# House rule: one file per pytest process (low-RAM machines OOM on the full run; CI matches)
+# House rule: one file per pytest process (the full run OOMs on small machines; CI matches)
 for f in tests/test_*.py; do pytest "$f" -q; done
 pytest tests/test_agency_act.py -v    # a specific module
 ```
 
-SQLite in WAL mode. The engine's storage defaults to `~/.hermes/consciousness/`,
-where `conscio.db` holds EventBus + ActionLedger + skills, `content_store.db`
-holds the ContentStore (FTS5 + chunks, separate from the EventBus DB), and
-`obs.db` holds tool observations in a store of its own. Vector backends write
-to `vectors.db` (sqlite-vec/numpy) and `hnsw.db` (HNSW, separate file). Pass `storage_path=` (or
-`--storage`) to move it; the CLI and daemon additionally honour `$HERMES_HOME`,
-which the library default does not read. Cross-instance state — the knowledge
-graph, hallways, vectors, dedup, handoffs, the act sandbox — lives under
-`~/.conscio/`. **Always** call `engine.close()` or use the `with` statement so WAL
-checkpoints flush. Session continuity writes a compact heartbeat (`<1.5KB`,
-auto-injected next session) plus a richer handoff and dated archives.
+SQLite in WAL mode. The engine's storage defaults to `~/.hermes/consciousness/`, where
+`conscio.db` holds EventBus + ActionLedger + skills, `content_store.db` holds the
+ContentStore, and `obs.db` holds tool observations in a store of its own. Vector backends
+write to `vectors.db` (sqlite-vec/numpy) and `hnsw.db`. Pass `storage_path=` (or
+`--storage`) to move it; the CLI and daemon additionally honour `$HERMES_HOME`, which the
+library default does not read. Cross-instance state — the knowledge graph, hallways,
+vectors, dedup, handoffs, the act sandbox — lives under `~/.conscio/`. **Always** call
+`engine.close()` or use the `with` statement so WAL checkpoints flush.
 
 ---
 
