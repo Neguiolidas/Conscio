@@ -308,6 +308,11 @@ class Bindings:
         fails the session keeps serving the surface the host already has, and
         no listChanged is emitted for a switch that did not happen.
         """
+        unknown = set(args) - {"set"}
+        if unknown:
+            raise j.InvalidParams(
+                f"unknown argument(s) {sorted(unknown)}; the only parameter is "
+                f"'set' (one of {list(modes.MODES)}); omit it to read the mode")
         requested = args.get("set")
         if requested is not None:
             if requested not in modes.MODES:

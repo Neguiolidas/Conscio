@@ -158,3 +158,33 @@ def test_cli_beats_default_when_nothing_persisted(tmp_path):
 
 def test_default_when_neither(tmp_path):
     assert modes.resolve_mode(tmp_path, None) == "ultra"
+
+
+def test_mode_rejects_guessed_argument_name(tmp_path):
+    """Uma chave errada levanta; não passa por leitura silenciosa.
+
+    Achado no smoke real da v4.0: `{"mode": "lite"}` devolvia o modo ATUAL, e a
+    resposta é indistinguível de uma troca bem-sucedida — o modelo "trocou" pra
+    lite e seguiu com 35 tools. Mesma armadilha do `--since` do GitSensor: um
+    argumento recusado tem que doer, não parecer sucesso.
+    """
+    from conscio.mcp import jsonrpc
+
+    b, engine = _bindings(tmp_path, mode="ultra")
+    try:
+        with pytest.raises(jsonrpc.InvalidParams) as exc:
+            b.call_tool("conscio.mode", {"mode": "lite"})
+        assert "unknown argument" in str(exc.value)
+        assert b.mode == "ultra"                 # não moveu a superfície
+        assert b.drain_notifications() == []     # nem avisou o host
+        assert b._mode_toggler({})["mode"] == "ultra"   # leitura ainda funciona
+    finally:
+        engine.close()
+    assert modes.read_mode(tmp_path) is None     # nem tocou no disco
+
+
+def test_mode_schema_is_closed():
+    """O host também precisa conseguir recusar antes da chamada."""
+    schema = schemas.MODE_TOOL_DEF["inputSchema"]
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["set"]["enum"] == list(modes.MODES)
