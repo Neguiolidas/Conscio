@@ -1,4 +1,7 @@
 """Tests for engine.recall() cross-session memory + reflect integration."""
+import importlib.util
+import sys
+
 import pytest
 
 from conscio.content_layer import _RAG_DISABLED
@@ -188,5 +191,52 @@ class TestVectorsAutoDetect:
             assert e.vector_backend is not None
             assert e.embedding_pipeline is not None
             assert e.content_store.vector_backend is e.vector_backend
+        finally:
+            e.close()
+
+    def test_autodetect_does_not_import_sentence_transformers(
+        self, tmp_path, monkeypatch
+    ):
+        """Auto-detect probes for the dependency without importing it.
+
+        Importing sentence_transformers pulls torch in with it: ~5s and ~390MB
+        of RSS, paid by every engine construction — MCP startup, every CLI
+        command, every test process. The probe only needs a boolean, and the
+        real import already lives at first embed in ``embedding.py``.
+
+        Asserting on sys.modules is the only way to catch a regression here: a
+        reintroduced eager import is invisible to every behavioural assertion,
+        because the outcome it produces is identical.
+
+        Evicting the module first is what makes this hermetic — earlier tests
+        in this file embed for real and legitimately leave sentence_transformers
+        (and torch) loaded. Only the re-import during construction is this
+        test's business, so torch, which nothing here can evict safely, is
+        deliberately not asserted on: it would pass or fail on test order.
+        """
+        monkeypatch.delenv("CONSCIO_VECTORS", raising=False)
+        monkeypatch.delitem(sys.modules, "sentence_transformers", raising=False)
+        e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
+        try:
+            assert "sentence_transformers" not in sys.modules
+        finally:
+            e.close()
+
+    def test_autodetect_enables_vectors_when_dependency_is_installed(
+        self, tmp_path, monkeypatch
+    ):
+        """The cheap probe must reach the same verdict as the import it replaced.
+
+        Guards the other half of the trade: skipping the import is only correct
+        if auto-detect still enables vectors. Skipped when the dependency is
+        absent, since then there is no verdict to check.
+        """
+        if importlib.util.find_spec("sentence_transformers") is None:
+            pytest.skip("sentence_transformers not installed")
+        monkeypatch.delenv("CONSCIO_VECTORS", raising=False)
+        e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
+        try:
+            assert e.vector_backend is not None
+            assert e.embedding_pipeline is not None
         finally:
             e.close()
