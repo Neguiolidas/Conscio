@@ -20,7 +20,15 @@ from stat import S_ISREG
 TRANSCRIPT_GLOB = "*/*.jsonl"
 
 # Relative price of each billed channel, in uncached-input-token equivalents.
-WEIGHTS = {"in": 1.0, "cw": 1.25, "cr": 0.1, "out": 5.0}
+# Relative to one input token. Output is 5x input ($25 vs $5 per MTok on Opus 5)
+# and a cache read is a tenth. The cache-write figure is the one that is easy to
+# get wrong: 1.25x is the 5-minute TTL, but Claude Code caches at the 1-hour TTL,
+# billed at 2x. Reconciled against real usage on 2026-08-06 — 48.4k in / 655.8k
+# out / 124.4M read / 4.0M write comes to $118.34 at 2x and under-reports by $15
+# at 1.25x. The weight only appears in the compaction term, so carrying 1.25 here
+# understated the price of compacting by 60% and biased the recommendation toward
+# windows that thrash.
+WEIGHTS = {"in": 1.0, "cw": 2.0, "cr": 0.1, "out": 5.0}
 
 
 def projects_dir() -> Path:
@@ -325,7 +333,8 @@ def compaction_floor(root: str | Path, sessions: int = 10) -> int:
 
 
 def modelled_cost(window: int, *, prefix: int, requests: int,
-                  growth: float, out_per_request: float) -> float:
+                  growth: float, out_per_request: float,
+                  landed: int | None = None) -> float:
     """Total modelled cost of a session at ``window``, in equivalent units.
 
     Two terms that pull against each other, which is why the answer is a curve
@@ -337,7 +346,8 @@ def modelled_cost(window: int, *, prefix: int, requests: int,
                     rebuild the cache it invalidated plus the summary it writes.
 
     Valid only at or above ``hard_floor``. The compaction term assumes each
-    compaction reclaims ``window - prefix``; under the landing floor it reclaims
+    compaction reclaims ``window - landed`` (``window - prefix`` when no landing
+    measurement is supplied); under the landing floor it reclaims
     nothing and fires again, so the figure this returns there is not merely
     optimistic but wrong on its own premise. Callers must refuse those windows
     rather than print what this says about them.
@@ -346,10 +356,17 @@ def modelled_cost(window: int, *, prefix: int, requests: int,
     60,000 and the curve is flat from 40,000 to 80,000. Below 40,000 it climbs
     steeply. Once this host's landing floor is applied, 160,000 wins.
     """
-    room = window - prefix
+    # A compaction lands at the summariser's landing point, not at the bare
+    # prefix, so the working room is what is left above *that*. Passing prefix
+    # here overstated the room by the whole gap between the two (63k vs 126k on
+    # the measured host), understated how often compaction fires, and made the
+    # curve recommend a window that re-compacts almost immediately. `landed` is
+    # optional so a caller with no measurement keeps the old, optimistic shape.
+    floor_after = landed if landed is not None else prefix
+    room = window - floor_after
     if room <= 0:
         return float("inf")
-    avg_context = (prefix + window) / 2
+    avg_context = (floor_after + window) / 2
     turns = requests * (avg_context * WEIGHTS["cr"]
                         + out_per_request * WEIGHTS["out"])
     compactions = (growth * requests) / room
@@ -396,9 +413,12 @@ def recommend_window(prefix: int, *, requests: int = 0, growth: float = 0.0,
         return hard
     if requests <= 0 or growth <= 0:
         return usable[0]
+    # ``floor`` is the landing point, which is exactly the post-compaction floor
+    # the cost model needs. Not passing it made the curve price every candidate
+    # against an imaginary amount of working room.
     return min(usable, key=lambda w: modelled_cost(
         w, prefix=prefix, requests=requests, growth=growth,
-        out_per_request=out_per_request))
+        out_per_request=out_per_request, landed=floor or None))
 
 
 def write_baseline(space_dir: str | Path, snapshot: dict) -> Path:
