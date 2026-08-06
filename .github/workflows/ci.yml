@@ -5,6 +5,11 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main]
+  # Same reason Release carries one: push is a webhook event, and webhooks are
+  # throttled first during an Actions incident. Two v4.0 commits landed on main
+  # with no CI run at all, and there was no way to ask for one — a rerun repeats
+  # an old commit, not the current head. Dispatch goes through the API instead.
+  workflow_dispatch:
 
 jobs:
   test:
