@@ -1,6 +1,6 @@
 # Claude Opus 5 — Observed Patterns
 
-Extracted from v3.9.5 bugfix session (commits 0af32ea, BUG-37 and BUG-38).
+Extracted from v3.9.5–v4.0 sessions (spec review, audit, plan iteration).
 These are behavioral patterns observed in Claude's approach to code quality,
 debugging, and release management. For adoption by other agents working on
 the same codebase.
@@ -99,19 +99,18 @@ to the operator.
 ## 7. Commit Messages as Documentation
 
 ```
-fix(v3.9.5): BUG-38b — expanduser() em 8 variáveis de ambiente restantes
+fix(v3.9.5): BUG-38b — expanduser() on 8 remaining env vars
 
-O mesmo defeito do BUG-38 (~ não expandido em HERMES_HOME) existia em 8 outras
-variáveis de ambiente. Cada site foi corrigido com .expanduser() na leitura
-do Path.
+The same defect from BUG-38 (~ not expanded in HERMES_HOME) existed in 8 other
+env vars. Each site was fixed with .expanduser() on the Path() call.
 
-Sites corrigidos:
+Fixed sites:
 - session_lifecycle.py:40 (CONSCIO_SESSION_DB)
 - session_lifecycle.py:49 (CONSCIO_HANDOFF_DIR)
 ...
 
-Testes: 35 novos (8 original × 3 modos + 8 extensão isolados + 3 especiais)
-Prova vermelha: confirmada — sem fix, ~ literal no path
+Tests: 35 new (8 originals × 3 modes + 8 isolated extensions + 3 special)
+Red proof: confirmed — without fix, ~ literal in path
 ```
 
 **Structure:**
@@ -144,7 +143,7 @@ acting.
 
 ## 9. Preserve Backwards Compatibility
 
-When fixing a schema mismatch (BUG-39), don't change the schema — add a
+When fixing a schema mismatch, don't change the schema — add a
 normalization layer at the boundary:
 
 ```
@@ -167,3 +166,69 @@ Neither side breaks.
 
 **Principle:** If you can point to the line that made the decision, it's
 explicit. If you have to infer it, it's a bug waiting to happen.
+
+---
+
+## 11. Cross-Validate the Reviewer, Not Just the Author
+
+During the v4.0 spec review, the author claimed `society` was a phantom tool
+not in `BASE_TOOL_DEFS`. This was confirmed by grepping the codebase. But the
+reviewer went further and **ran the regex from the plan against the real file
+tree** — finding that `conscio.remember` and `conscio.timeutil` would also
+trigger the phantom-tool scan as false positives. Two distinct categories:
+
+- `conscio.society` → true phantom
+- `conscio.remember` → soon-to-be-valid (Task 2 creates the tool)
+- `conscio.timeutil` → module reference, not tool
+
+**Principle:** When a spec or plan claims category separation, reproduce the
+scan that proves it. Words like "only" and "all" in a spec are hypotheses —
+the entity that runs numerically the exact regex against the real file tree
+is the one that knows their truth-value.
+
+---
+
+## 12. Trace Back to the Real State, Not the Assumed One
+
+The plan built `resolve_mode` and `LITE_TOOLS`. When adjusting the set, the
+original reasoning cited "not breaking existing `--lite` users." But this was
+a phantom risk — `lite` was released in v3.9.9 and v3.9.7 was the last real
+release, so **no human** has ever used that mode. The plan was updated to
+state that, that the set is entirely free of retro-compatibility obligations.
+
+**Principle:** Defects are pre-existing. Features that were never shipped
+are pre-existing too — you cannot break a user who never existed. Verify the
+last real release before claiming retro-compatibility.
+
+---
+
+## 13. Closed-Set Fail-Closed Over Open-Set Fail-Open
+
+The plan battles the `conscio.<name>` ambiguity (tools vs modules) with
+`MODULE_REFS = {"conscio.timeutil"}`— an explicit hardcoded allowlist for
+module references. The open-source reflex would be `importlib_utils.find_spec`;
+any module name that existed would pass the scan. By being manual, the
+reference forces a human to decide the namespace, which is exactly the anti-
+stop property of the vendored obsstore copy task.
+
+**Principle:** When a false negative in a safety scan costs a bad deploy,
+choose fail-closed (rejected until a human reviews the metadata is a module,
+not a tool).
+
+---
+
+## 14. Phantom Risk Over Erroneous Reasoning Preserves Correct Decision Even If Justification Was Wrong
+
+The spec defends `category="consciousness"` for `remember` by saying it maps
+to `ContentLayer.PROCESSING`— the highest priority in recall desempate. This
+reasoning is unfalsifiable by construction: `layer_of()` has a fallback
+To `PROCESSING`, so any unknown category would get the same priority as the
+correct one. The correct defense is different: use `.recall(categories=["consciousness"])`
+to prove the literal string was stored and filterable — not to prove priority.
+
+On review, the conclusion (consciousness is correct) survives even though
+the rationale (priority) was wrong. The fix (one extra assert in Task 2's
+round-trip test, filtering by category after restart) validates the
+correct reason.
+
+**Principle:** If the selection is solid, fix the justification, not the constraint — and add the test that proves the actual value property, not the one the original author believed.
