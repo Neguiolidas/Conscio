@@ -3,6 +3,18 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Manual re-trigger. A tag push is a webhook event, and webhooks are the first
+  # thing GitHub throttles during an Actions incident — v4.0.0's tag landed and
+  # produced no run at all, which is indistinguishable from a run that has not
+  # started yet. workflow_dispatch goes through the API instead, so it still
+  # works when push triggers are being dropped, and it re-runs a release without
+  # deleting and recreating the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish (e.g. v4.0.0)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,7 +28,13 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
+      # On a tag push github.ref is the tag and `inputs.tag` is empty. On a
+      # dispatch github.ref is the branch the run was started from, which would
+      # silently build that branch's version instead of the tag's — so the tag
+      # input wins whenever it is present.
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
@@ -42,6 +60,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -50,6 +70,23 @@ jobs:
           python -m pip install --upgrade pip build twine
           python -m build
           twine check dist/*
+
+      # A tag push cannot disagree with itself, but a dispatch can be given any
+      # tag, and PyPI uploads are permanent. Refuse before publish rather than
+      # discover the mismatch in the release history.
+      - name: Tag and package version must agree
+        run: |
+          set -euo pipefail
+          ref="${{ inputs.tag || github.ref_name }}"
+          tag_version="${ref#v}"
+          pkg_version="$(python -c 'import re,pathlib;
+          print(re.search(r"__version__ = \"([^\"]+)\"",
+                pathlib.Path("conscio/__init__.py").read_text()).group(1))')"
+          echo "tag=$tag_version  package=$pkg_version"
+          [ "$tag_version" = "$pkg_version" ] || {
+            echo "::error::tag $ref does not match __version__ $pkg_version"; exit 1; }
+          ls dist/ | grep -q "conscio-${pkg_version}-py3-none-any.whl" || {
+            echo "::error::no wheel for $pkg_version in dist/"; exit 1; }
       - uses: actions/upload-artifact@v7
         with:
           name: dist
