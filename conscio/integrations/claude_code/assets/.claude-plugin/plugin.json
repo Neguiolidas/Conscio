@@ -1,0 +1,8 @@
+{
+  "name": "conscio",
+  "version": "4.0.0",
+  "description": "Persistent memory, reflection and an agent society for Claude Code.",
+  "author": {"name": "Neguiolidas"},
+  "homepage": "https://github.com/Neguiolidas/Conscio",
+  "license": "AGPL-3.0-or-later"
+}

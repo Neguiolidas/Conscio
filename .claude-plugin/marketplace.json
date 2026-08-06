@@ -1,0 +1,11 @@
+{
+  "name": "conscio",
+  "owner": {"name": "Neguiolidas", "url": "https://github.com/Neguiolidas"},
+  "plugins": [
+    {
+      "name": "conscio",
+      "source": "./conscio/integrations/claude_code/assets",
+      "description": "Persistent memory, reflection and an agent society for Claude Code."
+    }
+  ]
+}
