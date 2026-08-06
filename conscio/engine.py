@@ -68,7 +68,7 @@ from .structural_drift import (
 )
 from .timeutil import naive_utc_from_epoch, naive_utcnow
 from .token_tracker import TokenTracker
-from .vector_backend import VectorBackend
+from .vector_backend import VectorBackend, module_installed
 from .voice_preset import resolve_voice_preset
 from .world_extract import extract_entities, extract_relations
 from .world_model import WorldModel
@@ -1631,40 +1631,45 @@ class ConsciousnessEngine:
         Configure VectorBackend + EmbeddingPipeline based on CONSCIO_VECTORS env var:
         - "0" → force disable (FTS5-only even if dep available)
         - "1"/"true"/"yes"/"on" → force enable (construct VectorBackend regardless)
-        - absent → auto-detect: try import sentence_transformers, enable if available
+        - absent → auto-detect: enable when sentence_transformers is installed
 
         Vector backend engine is selected by CONSCIO_VEC_BACKEND env var:
         - "sqlite_vec" → SqliteVecBackend (C-native cosine, 10x faster search)
         - "hnsw" → HNSWBackend (O(log n) approximate, requires hnswlib)
         - unset/"numpy" → VectorBackend (original numpy O(n) scan)
+
+        Auto-detect only asks whether the dependency exists, so it asks the
+        cheap way: importing sentence_transformers drags torch along, costing
+        ~5s and ~390MB of RSS on every construction, to compute a boolean. The
+        model itself is still imported at first embed (``embedding.py``), where
+        the cost buys something. A dependency that is present but broken now
+        surfaces there instead of here, and degrades the same way: the embedder
+        chain catches it and retrieval falls back to FTS5.
         """
         env = os.getenv("CONSCIO_VECTORS", "").strip().lower()
         if env in ("0", "false", "no", "off"):
             logger.info("CONSCIO_VECTORS=%s — vectors disabled by env", env)
             return
         if env in ("1", "true", "yes", "on"):
-            self.vector_backend = VectorBackend.with_engine(
-                db_path=self.storage / "vectors.db", dimension=384
-            )
-            self.embedding_pipeline = EmbeddingPipeline(
-                vector_backend=self.vector_backend, dimension=384
-            )
+            self._enable_vectors()
             logger.info("CONSCIO_VECTORS=%s — vectors force-enabled (backend=%s)",
                         env, type(self.vector_backend).__name__)
             return
-        # Auto-detect: try import sentence_transformers
-        try:
-            import sentence_transformers  # noqa: F401
-            self.vector_backend = VectorBackend.with_engine(
-                db_path=self.storage / "vectors.db", dimension=384
-            )
-            self.embedding_pipeline = EmbeddingPipeline(
-                vector_backend=self.vector_backend, dimension=384
-            )
-            logger.info("Vectors auto-enabled (sentence_transformers available, backend=%s)",
-                        type(self.vector_backend).__name__)
-        except Exception:
+        if not module_installed("sentence_transformers"):
             logger.info("sentence_transformers not available — FTS5 only")
+            return
+        self._enable_vectors()
+        logger.info("Vectors auto-enabled (sentence_transformers available, backend=%s)",
+                    type(self.vector_backend).__name__)
+
+    def _enable_vectors(self) -> None:
+        """Build the vector backend and the pipeline that feeds it."""
+        self.vector_backend = VectorBackend.with_engine(
+            db_path=self.storage / "vectors.db", dimension=384
+        )
+        self.embedding_pipeline = EmbeddingPipeline(
+            vector_backend=self.vector_backend, dimension=384
+        )
 
     # --- Lifecycle / Resource Cleanup ---
 

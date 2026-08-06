@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import array
 import heapq
+import importlib.util
 import logging
 import math
 import os
@@ -36,15 +37,52 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# Optional numpy for fast cosine
-try:
-    import numpy as np
-    _HAS_NUMPY = True
-except ImportError:
-    np = None  # type: ignore[assignment]
-    _HAS_NUMPY = False
-
 logger = logging.getLogger(__name__)
+
+
+def module_installed(name: str) -> bool:
+    """Is ``name`` importable, without paying to import it?
+
+    ``find_spec`` locates a module without executing it, which is the whole
+    point: probing sentence_transformers by importing it costs ~5s and ~390MB
+    of RSS to answer a question worth microseconds. Callers that need the
+    module itself import it where they use it.
+
+    Every failure mode collapses to False on purpose. ``find_spec`` raises
+    rather than returning None when a parent package is missing, and a
+    third-party meta-path finder may raise anything at all; all of it means
+    the same thing to a caller asking whether the module is usable.
+    """
+    try:
+        return importlib.util.find_spec(name) is not None
+    except Exception:
+        return False
+
+
+# Optional numpy for fast cosine, resolved on first use rather than at import.
+# `import conscio` reaches this module through content_store, so an eager numpy
+# costs ~80ms on every CLI invocation and every hook run — including the
+# sqlite-vec path, which never touches it. `_numpy()` binds this global, so the
+# call sites below keep reading a plain `np`.
+np: Any = None
+_numpy_resolved = False
+
+
+def _numpy() -> Any:
+    """Return the numpy module, or None when it is not installed.
+
+    Caches into the module global ``np``, so the import is attempted at most
+    once per process and guarded call sites can go on reading ``np`` directly.
+    """
+    global np, _numpy_resolved
+    if not _numpy_resolved:
+        _numpy_resolved = True
+        try:
+            import numpy
+            np = numpy
+        except ImportError:
+            np = None
+    return np
 
 # Rows pulled (and scored) per vectorized pass. Bounds peak memory to
 # ~batch * dimension * 4 bytes (4096 * 768 * 4 ≈ 12MB) regardless of index size,
@@ -63,7 +101,7 @@ def _check_no_nan(vec: Sequence[float]) -> None:
     implementation called list.index() to build the error message, which is
     O(n) *per element* on the error path and, for NaN, relies on identity.)
     """
-    if np is not None:
+    if _numpy() is not None:
         try:
             arr = np.asarray(vec, dtype=np.float64)
         except (TypeError, ValueError) as e:
@@ -279,7 +317,7 @@ class VectorBackend:
         return arr.tolist()
 
     def _cosine(self, a: list[float], b: list[float]) -> float:
-        if np is not None:
+        if _numpy() is not None:
             ar = np.frombuffer(array.array("f", a).tobytes(), dtype=np.float32)
             br = np.frombuffer(array.array("f", b).tobytes(), dtype=np.float32)
             na = np.linalg.norm(ar)
@@ -343,7 +381,7 @@ class VectorBackend:
         expected_bytes = self.dimension * 4
         qnorm_arr = None
         qnorm = 0.0
-        if np is not None:
+        if _numpy() is not None:
             qnorm_arr = np.asarray(query, dtype=np.float32)
             qnorm = float(np.linalg.norm(qnorm_arr))
             if qnorm == 0.0:
@@ -376,7 +414,7 @@ class VectorBackend:
 
                 # qnorm_arr is set iff numpy is available; testing both keeps
                 # the narrowing explicit for type checkers.
-                if np is not None and qnorm_arr is not None:
+                if _numpy() is not None and qnorm_arr is not None:
                     mat = np.frombuffer(b"".join(blobs), dtype=np.float32).reshape(
                         len(ids), self.dimension
                     )
@@ -685,6 +723,12 @@ class HNSWBackend:
             raise ImportError(
                 "HNSWBackend requires hnswlib: pip install hnswlib"
             )
+        # hnswlib takes contiguous float32 arrays and nothing else, so this
+        # backend uses `np` unguarded throughout. Bind it here, once, where the
+        # dependency check already lives — hnswlib cannot be installed without
+        # numpy, so this resolves rather than fails.
+        if _numpy() is None:  # pragma: no cover — unreachable via hnswlib
+            raise ImportError("HNSWBackend requires numpy")
         self.db_path = Path(db_path) if db_path else Path.home() / ".conscio" / "runtime" / "hnsw.db"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.dimension = dimension

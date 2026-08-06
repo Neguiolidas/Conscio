@@ -48,10 +48,17 @@ def test_auto_detect_no_dep(monkeypatch, tmp_path):
 
 def test_auto_detect_with_dep(monkeypatch, tmp_path):
     """With sentence_transformers available (mocked), vectors auto-enable."""
+    import importlib.machinery
     import sys
 
-    # Create a fake module that exists
+    # Create a fake module that exists. It needs a real __spec__ because that
+    # is what marks a module as importable: auto-detect probes with find_spec
+    # rather than importing, since importing sentence_transformers drags torch
+    # along. A bare MagicMock has no __spec__ and reads as "not installed".
     fake_module = mock.MagicMock()
+    fake_module.__spec__ = importlib.machinery.ModuleSpec(
+        "sentence_transformers", None
+    )
     monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
 
     # Also mock the actual model loading so it doesn't hit network
