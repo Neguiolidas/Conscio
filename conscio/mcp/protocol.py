@@ -90,5 +90,6 @@ class Dispatcher:
                    else SUPPORTED_PROTOCOLS[-1])
         return {"protocolVersion": version,
                 "serverInfo": {"name": "conscio", "version": self.b.version()},
-                "capabilities": {"tools": {}, "resources": {}},
+                "capabilities": {"tools": {"listChanged": True},
+                                 "resources": {}},
                 "conscio": self.b.conscio_meta()}
