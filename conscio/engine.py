@@ -1330,18 +1330,31 @@ class ConsciousnessEngine:
     # --- World Model Interactions ---
 
     def feed(self, event: dict) -> dict:
-        """Ingest a perception Event from the host (MCP ``conscio.feed``).
+        """Emit a host Event on the EventBus and return the current advisory.
 
-        This is the Python-API equivalent of the ``conscio.feed`` MCP tool.
-        It emits the event on the EventBus and runs the perception+reflect
-        cycle, returning the updated advisory.
+        This is a thin Python-API convenience for embedders, **not** the
+        ``conscio.feed`` MCP tool. The MCP path (``Bindings._feed``) also
+        normalizes and validates the event envelope, dedups it by ``event_id``
+        against the seen-store, charges the metabolic tier with
+        ``session_tokens``, and runs ``perceive()``/``reflect()``. This method
+        does none of that: it emits and reads the advisory back, so the
+        returned advisory reflects state as of the *previous* cycle. Call
+        ``perceive()``/``reflect()`` yourself, or go through the MCP tool, if
+        you need the full cycle.
 
         Args:
             event: Event dict with keys ``type``, ``category``, ``data``
-                   (and optional ``id``, ``source``).
+                   (``id`` and ``source`` are accepted by the MCP tool but
+                   ignored here). Missing keys default to
+                   ``host:event``/``system``/``{}``.
 
         Returns:
-            The updated advisory dict.
+            The current advisory dict.
+
+        Raises:
+            ValueError: propagated from ``EventBus.emit`` when ``type`` or
+                ``category`` is outside the known vocabulary. Embedders get
+                this raw, not the MCP ``InvalidParams``.
         """
         evt_type = event.get("type", "host:event")
         evt_category = event.get("category", "system")
