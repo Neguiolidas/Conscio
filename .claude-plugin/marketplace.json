@@ -1,6 +1,7 @@
 {
   "name": "conscio",
   "owner": {"name": "Neguiolidas", "url": "https://github.com/Neguiolidas"},
+  "description": "Conscio: persistent memory, reflection and an agent society for Claude Code.",
   "plugins": [
     {
       "name": "conscio",
