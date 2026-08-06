@@ -24,6 +24,7 @@ from .schemas import (
     ACT_TOOL_DEFS,
     BASE_TOOL_DEFS,
     LIAISON_TOOL_DEFS,
+    MODE_TOOL_DEF,
     RELAY_TOOL_DEFS,
     RESOURCE_DEFS,
     derive_event_id,
@@ -160,6 +161,7 @@ class Bindings:
         if allowed is not None:
             defs = [d for d in defs if d["name"] in allowed]
         defs += flagged                      # flag digitada nunca é filtrada
+        defs.append(MODE_TOOL_DEF)           # a saída de volta existe em todo modo
 
         # 2. formatação: em lite, tudo que sai é achatado
         if self.mode == "lite":
@@ -296,7 +298,28 @@ class Bindings:
             tools["conscio.relay_inbox"] = self._relay_inbox
             tools["conscio.relay_read"] = self._relay_read
             tools["conscio.relay_broadcast"] = self._relay_broadcast
+        tools["conscio.mode"] = self._mode_toggler   # existe em todo modo
         return tools
+
+    def _mode_toggler(self, args: dict) -> dict:
+        """Read the tool surface, or switch it and tell the host to re-list.
+
+        The write is persisted before ``self.mode`` moves: if the disk write
+        fails the session keeps serving the surface the host already has, and
+        no listChanged is emitted for a switch that did not happen.
+        """
+        requested = args.get("set")
+        if requested is not None:
+            if requested not in modes.MODES:
+                raise j.InvalidParams(
+                    f"unknown mode {requested!r}; expected one of {modes.MODES}")
+            if requested != self.mode:
+                modes.write_mode(self.engine.storage, requested)
+                self.mode = requested
+                self.enqueue_notification("notifications/tools/list_changed")
+        return {"mode": self.mode,
+                "tools": len(self.tool_defs()),
+                "modes": list(modes.MODES)}
 
     def _int_arg(self, args: dict, key: str,
                  default: int | None = None) -> int:

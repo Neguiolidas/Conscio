@@ -344,6 +344,22 @@ BASE_TOOL_DEFS: list[dict] = [
                      "required": ["query"]}},
 ]
 
+# v4.0: fora de BASE_TOOL_DEFS de propósito — acrescentada depois do filtro de
+# modo, para existir nos três modos (em lite é a única saída de volta).
+MODE_TOOL_DEF: dict = {
+    "name": "conscio.mode",
+    "description": "Read or set the tool surface: lite (10 tools), balanced (18) "
+                   "or ultra (all 35). The choice persists across restarts.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "set": {"type": "string",
+                    "description": "New mode: lite, balanced or ultra. Omit to read."},
+        },
+        "required": [],
+    },
+}
+
 RESOURCE_DEFS: list[dict] = [
     {"uri": "conscio://advisory", "name": "advisory",
      "description": "Current cognitive advisory", "mimeType": "application/json"},
