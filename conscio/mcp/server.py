@@ -81,6 +81,7 @@ class Bindings:
         self.auto_review = auto_review        # v2.6.2: --auto-review
         self.last_auto_apply_ts = 0.0         # v2.6.3 #2: throttle clock
         self.mode = mode                      # v4.0: lite / balanced / ultra
+        self._pending_notifications: list[dict] = []
 
         # v3.7: ModeRouter — chunkifica output conforme prompt_complexity
         import tempfile as _tempfile
@@ -88,6 +89,19 @@ class Bindings:
         from .mode_router import ModeRouter
         storage = getattr(engine, "storage", Path(_tempfile.gettempdir()))
         self._router = ModeRouter(storage)
+
+    # ── server-initiated frames ──
+    def enqueue_notification(self, method: str,
+                             params: dict | None = None) -> None:
+        """Queue a server-initiated frame. Written after the current response."""
+        frame: dict = {"jsonrpc": "2.0", "method": method}
+        if params is not None:
+            frame["params"] = params
+        self._pending_notifications.append(frame)
+
+    def drain_notifications(self) -> list[dict]:
+        queued, self._pending_notifications = self._pending_notifications, []
+        return queued
 
     # ── discovery ──
     def version(self) -> str:
@@ -936,6 +950,8 @@ def serve(bindings: Bindings, instream, outstream, *,
         response = dispatcher.handle(msg)
         if response is not None:
             _write(outstream, response)
+        for note in bindings.drain_notifications():
+            _write(outstream, note)
 
 
 def _write(outstream, obj: dict) -> None:

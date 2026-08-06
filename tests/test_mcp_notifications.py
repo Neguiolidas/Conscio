@@ -1,4 +1,7 @@
 """Handshake capability + the tools/list_changed notification channel."""
+import io
+import json
+
 from conscio.engine import ConsciousnessEngine
 from conscio.mcp.protocol import Dispatcher
 from conscio.mcp.seen import SeenStore
@@ -20,3 +23,32 @@ def test_initialize_announces_list_changed(tmp_path):
     finally:
         engine.close()
     assert res["result"]["capabilities"]["tools"]["listChanged"] is True
+
+
+def test_queued_notification_is_written_after_the_response(tmp_path):
+    from conscio.mcp import server
+
+    b, engine = _bindings(tmp_path)
+    outstream = io.StringIO()
+    try:
+        b.enqueue_notification("notifications/tools/list_changed")
+        server.serve(b, io.StringIO(json.dumps(INIT) + "\n"), outstream)
+    finally:
+        engine.close()
+
+    frames = [json.loads(line)
+              for line in outstream.getvalue().splitlines() if line.strip()]
+    assert len(frames) == 2, frames
+    assert frames[0].get("id") == 0                      # the response first
+    assert frames[1] == {"jsonrpc": "2.0",
+                         "method": "notifications/tools/list_changed"}
+
+
+def test_drain_empties_the_queue(tmp_path):
+    b, engine = _bindings(tmp_path)
+    try:
+        b.enqueue_notification("notifications/tools/list_changed")
+        assert len(b.drain_notifications()) == 1
+        assert b.drain_notifications() == []
+    finally:
+        engine.close()
