@@ -492,6 +492,22 @@ def render_report(session: str, now: dict, baseline: dict | None,
                   "  Nothing to compare yet; take a turn and run this again."]
         return "\n".join(lines)
     lines.append(f"  {'Avg context/turn':<22}{now['avg_context']:>12,}")
+    if window and now["avg_context"] > window:
+        # Under enforcement context oscillates between the post-compaction
+        # floor and the ceiling, so the mean sits below the ceiling by
+        # construction. A mean above it is not a close call — it is proof the
+        # host is not compacting at this window.
+        #
+        # Worth stating loudly because the breakdown below flatters exactly
+        # this failure: a host that never compacts writes no cache, so cache
+        # write/turn collapses and renders as a large saving. Unbounded growth
+        # and genuine thrift produce the same shape there; only the ceiling
+        # tells them apart.
+        lines.append(f"  Ceiling {window:,} is NOT in effect — average context "
+                     "is above it.")
+        lines.append("  A ceiling written mid-session applies from the next "
+                     "one. Any saving below")
+        lines.append("  is measured against turns that were never capped.")
     lines.append(f"  {'Cost (equiv. units)':<22}{now['units']:>12,.0f}")
     lines.append(f"  {'Per request':<22}{per:>12,.0f}")
     if now["cold"]:

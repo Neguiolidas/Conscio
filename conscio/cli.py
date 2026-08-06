@@ -726,6 +726,12 @@ def _cmd_govern(action: str, window: int | None, storage: str,
         print(f"Ceiling set to {chosen:,} tokens (prefix {prefix:,}).")
         if backup:
             print(f"  Settings backed up to {backup}")
+        # The host reads this setting when a session starts, so the session
+        # running this command keeps the window it booted with. Saying so here
+        # is the difference between waiting one restart and concluding the
+        # ceiling is broken after watching context sail past it.
+        print("  Applies from your next session — this one keeps its "
+              "current window.")
         print("  Baseline frozen. Revert with `conscio govern off`.")
         return 0
 
