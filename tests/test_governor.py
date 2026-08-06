@@ -229,6 +229,53 @@ def test_report_shows_the_saving_against_the_baseline():
     assert "output" not in out.lower(), "spec 6.1: no output row"
 
 
+def test_report_flags_a_ceiling_that_is_not_being_enforced():
+    """An average above the ceiling is proof the ceiling is not applying.
+
+    Under enforcement context oscillates between the post-compaction floor and
+    the ceiling, so the mean necessarily sits below the ceiling. A mean above
+    it cannot happen while the host is compacting, and the report has both
+    numbers already — it printed "governor ON (window 160,000)" directly above
+    "Avg context/turn 188,606" without noticing the contradiction.
+
+    The case is easy to miss precisely because it flatters the breakdown: a
+    host that never compacts writes no cache, so cache write/turn collapses and
+    reads as a large saving. Growth and thrift look alike in that row; only the
+    window tells them apart.
+    """
+    now = governor.summarise([{"in": 2, "cw": 100, "cr": 188_000, "out": 500}] * 10)
+    base = {"avg_context": 168_835, "units_per_request": 30_217.0,
+            "cr_per_request": 164_163.0, "cw_per_request": 4_446.0,
+            "prefix": 63_532, "requests": 14_162, "taken_at": "2026-08-01T00:00:00"}
+    out = governor.render_report("abc123", now, base, 160_000)
+    assert "not in effect" in out.lower()
+    assert "160,000" in out
+
+
+def test_report_stays_quiet_when_the_ceiling_is_holding():
+    """The warning must not fire on the ordinary case it is meant to contrast.
+
+    Same shape as above but with the average below the ceiling, which is what
+    an enforced ceiling produces.
+    """
+    now = governor.summarise([{"in": 2, "cw": 4_000, "cr": 120_000, "out": 500}] * 10)
+    base = {"avg_context": 168_835, "units_per_request": 30_217.0,
+            "cr_per_request": 164_163.0, "cw_per_request": 4_446.0,
+            "prefix": 63_532, "requests": 14_162, "taken_at": "2026-08-01T00:00:00"}
+    out = governor.render_report("abc123", now, base, 160_000)
+    assert "not in effect" not in out.lower()
+
+
+def test_report_does_not_flag_enforcement_when_no_ceiling_is_set():
+    """With the governor off there is no ceiling to be unenforced."""
+    now = governor.summarise([{"in": 2, "cw": 100, "cr": 188_000, "out": 500}] * 10)
+    base = {"avg_context": 168_835, "units_per_request": 30_217.0,
+            "cr_per_request": 164_163.0, "cw_per_request": 4_446.0,
+            "prefix": 63_532, "requests": 14_162, "taken_at": "2026-08-01T00:00:00"}
+    out = governor.render_report("abc123", now, base, None)
+    assert "not in effect" not in out.lower()
+
+
 def test_report_without_a_baseline_refuses_to_invent_a_comparison():
     now = governor.summarise([{"in": 2, "cw": 1_000, "cr": 40_000, "out": 500}])
     out = governor.render_report("abc123", now, None, 120_000)
