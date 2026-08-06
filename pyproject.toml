@@ -44,6 +44,7 @@ dev = [
   "bandit>=1.7",
   "vulture>=2.1",
   "pyyaml>=6.0",
+  "build>=1.0",  # tests/test_packaging_assets.py builds a real wheel
 ]
 docs = [
  "mkdocs-material>=9.5",
@@ -71,8 +72,19 @@ include = ["conscio*"]
 [tool.setuptools.dynamic]
 version = {attr = "conscio.__version__"}
 
+# `**/*` does not match dotfiles or dot-directories, and setuptools says nothing
+# when it skips them: without the two explicit entries below the wheel builds
+# clean and the plugin is simply inert, having lost plugin.json and .mcp.json.
 [tool.setuptools.package-data]
-conscio = ["py.typed", "hub/static/*", "observatory/static/*", "integrations/claude_code/assets/**/*", "USAGE.md"]
+conscio = [
+  "py.typed",
+  "hub/static/*",
+  "observatory/static/*",
+  "integrations/claude_code/assets/**/*",
+  "integrations/claude_code/assets/.mcp.json",
+  "integrations/claude_code/assets/.claude-plugin/*",
+  "USAGE.md",
+]
 
 # The asset glob is recursive and reads the working tree, so a developer who
 # has ever run the hook ships their own __pycache__ — v3.9.2 carried a 3.14
