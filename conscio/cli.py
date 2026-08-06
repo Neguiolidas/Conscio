@@ -677,7 +677,7 @@ def _cmd_govern(action: str, window: int | None, storage: str,
                     continue
                 cost = governor.modelled_cost(
                     w, prefix=prefix, requests=agg["requests"], growth=growth,
-                    out_per_request=out_rate)
+                    out_per_request=out_rate, landed=landed or None)
                 mark = "  <- recommended" if w == best else ""
                 print(f"  {w:>9,}  {cost:>14,.0f}{mark}")
         else:

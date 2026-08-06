@@ -85,7 +85,7 @@ def test_measure_prefix_on_an_empty_dir_is_zero_not_a_crash(tmp_path):
 
 def test_cost_units_weights_each_channel_by_its_price():
     row = {"in": 100, "cw": 100, "cr": 100, "out": 100}
-    assert governor.cost_units(row) == 100 + 125 + 10 + 500
+    assert governor.cost_units(row) == 100 + 200 + 10 + 500
 
 
 def test_summarise_reports_averages_and_isolates_cold_requests():
@@ -144,7 +144,11 @@ def test_recommend_window_never_returns_one_below_the_compaction_floor():
     got = governor.recommend_window(45_101, requests=881, growth=1_368.0,
                                     out_per_request=1_177.0, floor=82_019)
     assert got >= int(82_019 * governor.FLOOR_MARGIN)
-    assert got == 120_000, "the measured optimum above this host's floor"
+    # Was 120,000 while the cost model priced room as `window - prefix`. With the
+    # landing point as the post-compaction floor, 120k leaves ~38k of room and
+    # re-compacts often enough to lose to 160k (21.1M vs 22.3M units); 240k costs
+    # more again (23.2M), so the curve is still U-shaped, just centred higher.
+    assert got == 160_000, "the measured optimum above this host's floor"
 
 
 def test_recommend_window_falls_back_when_there_is_no_usage_data():
@@ -262,13 +266,13 @@ class TestTheSavedLine:
         return next(ln for ln in out.splitlines() if "Saved" in ln)
 
     def test_the_line_carries_the_absolute_and_the_share(self):
-        # 10 turns at 7,752 units each, against a baseline rate of 41,883.
-        assert self._line().split() == ["Saved", "341,310", "81.5%"]
+        # 10 turns at 8,502 units each, against a baseline rate of 41,883.
+        assert self._line().split() == ["Saved", "333,810", "79.7%"]
 
     def test_the_absolute_is_priced_over_the_turns_actually_taken(self):
         """Not over the baseline's own 800 turns — those are not turns this
         ceiling could have changed."""
-        assert self._line(turns=5).split()[1] == "170,655"
+        assert self._line(turns=5).split()[1] == "166,905"
 
     def test_the_two_figures_cannot_disagree(self):
         """One statement twice. If they are computed apart they drift apart."""
@@ -951,3 +955,45 @@ def test_status_works_with_no_bundle_installed(tmp_path, monkeypatch, capsys):
     assert _cli()._cmd_govern("status", None, "", False) == 0
     out = capsys.readouterr().out
     assert "obs.db" in out and "BROKEN" not in out
+
+
+# ── calibração contra fatura real (2026-08-06) ──────────────────────────────
+
+def test_cache_write_weight_matches_the_one_hour_ttl_rate():
+    """Claude Code cacheia no TTL de 1h, cobrado a 2x o input — não 1.25x.
+
+    Conferido contra uso real: 48,4k in / 655,8k out / 124,4M read / 4,0M write
+    fecha em $118,34 só a 2x; a 1,25x subestima em $15. O peso entra no termo de
+    compactação, então 1,25 subestimava o custo de compactar em 60% e enviesava
+    a recomendação para janelas pequenas demais.
+    """
+    assert governor.WEIGHTS["cw"] == 2.0
+    assert governor.WEIGHTS["out"] / governor.WEIGHTS["in"] == 5.0   # $25 / $5
+    assert governor.WEIGHTS["cr"] == 0.1                             # cache read
+
+
+def test_modelled_cost_uses_the_landing_floor_not_the_prefix():
+    """Uma compactação aterrissa em ``landed``, não em ``prefix``.
+
+    O espaço de trabalho é o que sobra acima do ponto de aterrissagem. Usar o
+    prefixo inflava esse espaço pela diferença inteira entre os dois (63k contra
+    126k no host medido) e subestimava a frequência de compactação.
+    """
+    kw = {"prefix": 63_532, "requests": 14_071, "growth": 132.6,
+          "out_per_request": 935.0}
+    real = governor.modelled_cost(160_000, landed=125_586, **kw)
+    otimista = governor.modelled_cost(160_000, **kw)      # cai de volta no prefixo
+    assert real > otimista, "o piso real tem que custar mais que o otimista"
+
+
+def test_measured_host_prefers_160k_over_the_thrashing_floor():
+    """Regressão: com o piso certo o modelo para de recomendar 138k.
+
+    138.144 passa do ``hard_floor``, mas deixa só 12,5k acima do ponto de
+    aterrissagem — recompacta quase imediatamente. Antes da correção o modelo
+    dizia que era 6,5% melhor que 160k.
+    """
+    kw = {"prefix": 63_532, "requests": 14_071, "growth": 132.6,
+          "out_per_request": 935.0, "landed": 125_586}
+    assert (governor.modelled_cost(160_000, **kw)
+            < governor.modelled_cost(138_144, **kw))
