@@ -4,7 +4,8 @@ import conscio.integrations.claude_code as cc
 
 ASSETS = pathlib.Path(cc.__file__).parent / "assets"
 EXPECTED = {"recall", "remember", "state", "society", "relay", "reflect",
-            "propose", "handoff", "awake", "sleep", "govern"}
+            "propose", "handoff", "awake", "sleep", "govern",
+            "mode", "capture", "backup"}
 
 
 def test_every_command_asset_is_accounted_for():
