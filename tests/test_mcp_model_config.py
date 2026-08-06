@@ -39,3 +39,32 @@ def test_raises_when_nothing_specified(monkeypatch):
     monkeypatch.setattr(ac, "load_config", dict)
     with pytest.raises(ValueError):
         srv._resolve_model(Namespace(model=None))
+
+
+# v4.0 --default-model: last-resort channel so a plugin install on a machine
+# with no config.json and no $CONSCIO_MODEL still boots instead of exiting 1.
+# Precedence: --model > config.json > CONSCIO_MODEL > --default-model.
+
+
+def test_default_model_used_when_nothing_else_set(monkeypatch):
+    monkeypatch.setattr(ac, "load_config", dict)
+    args = Namespace(model=None, default_model="fallback-model")
+    assert srv._resolve_model(args) == "fallback-model"
+
+
+def test_env_beats_default_model(monkeypatch):
+    monkeypatch.setenv("CONSCIO_MODEL", "env-model")
+    monkeypatch.setattr(ac, "load_config", dict)
+    args = Namespace(model=None, default_model="fallback-model")
+    assert srv._resolve_model(args) == "env-model"
+
+
+def test_config_beats_default_model(monkeypatch):
+    monkeypatch.setattr(ac, "load_config", lambda: {"model": "config-model"})
+    args = Namespace(model=None, default_model="fallback-model")
+    assert srv._resolve_model(args) == "config-model"
+
+
+def test_parser_exposes_default_model():
+    parsed = srv._arg_parser().parse_args([])
+    assert parsed.default_model is None
