@@ -8,6 +8,7 @@ import hashlib
 import json
 
 from conscio.agency.contracts import validate
+from conscio.mcp.modes import MODES
 from conscio.perception import PerceptionFrame
 
 EVENT_SCHEMA: dict[str, dict] = {
@@ -354,9 +355,13 @@ MODE_TOOL_DEF: dict = {
         "type": "object",
         "properties": {
             "set": {"type": "string",
+                    "enum": list(MODES),
                     "description": "New mode: lite, balanced or ultra. Omit to read."},
         },
         "required": [],
+        # Fail closed: a guessed key (e.g. {"mode": "lite"}) must not read as a
+        # no-op that looks exactly like a successful read.
+        "additionalProperties": False,
     },
 }
 
