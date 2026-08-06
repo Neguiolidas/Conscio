@@ -21,12 +21,18 @@ def _run(tmp_path, **kw):
 
 
 def test_materialize_copies_commands_skill_hook(tmp_path):
+    # Count comes from the shipped assets, not a literal: adding a command
+    # should not require editing this test, but losing one must still fail it.
+    src = Path(materialize.__file__).parent / "assets" / "commands"
+    expected = len(list(src.glob("*.md")))
+    assert expected >= 14, "assets/commands lost files"
+
     summ = _run(tmp_path)
     cdir = tmp_path / "claude"
-    assert len(list((cdir / "commands" / "conscio").glob("*.md"))) == 11
+    assert len(list((cdir / "commands" / "conscio").glob("*.md"))) == expected
     assert (cdir / "skills" / "conscio" / "SKILL.md").is_file()
     assert (cdir / "hooks" / "conscio_awareness.py").is_file()
-    assert summ["commands"] == 11 and summ["skill"] and summ["hook"]
+    assert summ["commands"] == expected and summ["skill"] and summ["hook"]
 
 
 def test_materialize_registers_mcp_with_storage_and_vault(tmp_path):
