@@ -15,11 +15,12 @@ HOOK = (Path(__file__).parent.parent / "conscio" / "integrations" /
         "claude_code" / "assets" / "hooks" / "conscio_deepminer.py")
 
 
-def run_hook(event, payload, cfg_path=None, timeout=30):
+def run_hook(event, payload, cfg_path=None, timeout=30, extra_argv=()):
     """Invoke the hook exactly as Claude Code does: argv event, JSON on stdin."""
     argv = [sys.executable, str(HOOK), event]
-    if cfg_path:
+    if cfg_path is not None:
         argv += ["--config", str(cfg_path)]
+    argv += list(extra_argv)
     return subprocess.run(argv, input=json.dumps(payload), capture_output=True,
                           text=True, timeout=timeout)
 
@@ -90,6 +91,48 @@ def test_unreadable_obsstore_path_never_fails(tmp_path):
     r = run_hook("post-tool-use", {"session_id": "S", "tool_name": "Bash"}, cfg)
     assert r.returncode == 0
     assert r.stdout == ""
+
+
+def test_argv_paths_work_without_any_sidecar(tmp_path):
+    """A plugin cannot write the sidecar at install time; hooks.json passes argv."""
+    storage = tmp_path / "space"
+
+    proc = run_hook("post-tool-use", _payload(), cfg_path=tmp_path / "nope.json",
+                    extra_argv=["--obsstore", str(Path(obsstore.__file__)),
+                                "--storage", str(storage)])
+
+    assert proc.returncode == 0
+    assert (storage / "obs.db").exists(), "argv paths were ignored: nothing captured"
+
+
+def test_argv_beats_sidecar(tmp_path):
+    """Both paths: the sidecar's obsstore is broken and its space must stay unused."""
+    sidecar_space = tmp_path / "sidecar-space"
+    argv_space = tmp_path / "argv-space"
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(json.dumps({"obsstore": "/nonexistent/obsstore.py",
+                               "storage": str(sidecar_space)}))
+
+    proc = run_hook("post-tool-use", _payload(), cfg_path=cfg,
+                    extra_argv=["--obsstore", str(Path(obsstore.__file__)),
+                                "--storage", str(argv_space)])
+
+    assert proc.returncode == 0
+    assert (argv_space / "obs.db").exists(), "sidecar won over argv"
+    assert not sidecar_space.exists(), "sidecar storage won over argv"
+
+
+def test_capture_off_file_silences_the_hook(tmp_path):
+    storage = tmp_path / "space"
+    storage.mkdir()
+    (storage / "capture-off").write_text("")
+
+    proc = run_hook("post-tool-use", _payload(), cfg_path=tmp_path / "nope.json",
+                    extra_argv=["--obsstore", str(Path(obsstore.__file__)),
+                                "--storage", str(storage)])
+
+    assert proc.returncode == 0
+    assert not (storage / "obs.db").exists(), "capture-off did not stop the write"
 
 
 def test_no_argv_event_at_all_never_fails(wired):
