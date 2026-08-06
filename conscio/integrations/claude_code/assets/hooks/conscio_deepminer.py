@@ -60,12 +60,17 @@ def _read_stdin():
     return data if isinstance(data, dict) else {}
 
 
-def _config_path(argv):
-    if "--config" in argv:
-        i = argv.index("--config")
+def _argv_opt(argv, flag):
+    """Value of ``--flag <value>`` in argv, or None. argv beats the sidecar."""
+    if flag in argv:
+        i = argv.index(flag)
         if i + 1 < len(argv):
             return argv[i + 1]
-    return str(Path(__file__).with_suffix(".json"))
+    return None
+
+
+def _config_path(argv):
+    return _argv_opt(argv, "--config") or str(Path(__file__).with_suffix(".json"))
 
 
 def main(argv):
@@ -76,9 +81,11 @@ def main(argv):
         return 0
     try:
         cfg = load_config(_config_path(argv))
-        store = cfg.get("obsstore")
-        storage = cfg.get("storage")
+        store = _argv_opt(argv, "--obsstore") or cfg.get("obsstore")
+        storage = _argv_opt(argv, "--storage") or cfg.get("storage")
         if not store or not storage:
+            return 0
+        if (Path(storage) / "capture-off").exists():  # muted for this space
             return 0
         handler(_read_stdin(), load_obsstore(store), Path(storage))
     except Exception:
