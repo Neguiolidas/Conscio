@@ -525,10 +525,12 @@ class Bindings:
         if auto_solve:
             try:
                 import sympy
-                from sympy import symbols, Eq, solve as sym_solve, sympify
+                from sympy import Eq
+                from sympy import solve as sym_solve
                 from sympy.parsing.sympy_parser import (
-                    parse_expr, standard_transformations,
                     implicit_multiplication_application,
+                    parse_expr,
+                    standard_transformations,
                 )
                 transformations = standard_transformations + (
                     implicit_multiplication_application,
@@ -562,7 +564,7 @@ class Bindings:
                                      f"Provide values via 'variables' or use a single variable.",
                             "expression": expr}
 
-                var = list(free)[0]
+                var = next(iter(free))  # exactly one: len 0 and >1 returned above
                 eq = Eq(lhs, rhs)
                 solutions = sym_solve(eq, var)
                 if not solutions:
@@ -589,7 +591,7 @@ class Bindings:
                             "equation": str(eq), "variable": str(var),
                             "result": [_sol_to_float(s) for s in solutions],
                             "exact": [str(s) for s in solutions]}
-            except Exception as exc:
+            except Exception:
                 # Fall through to normal evaluation
                 pass
 
@@ -975,11 +977,14 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="lite mode: strip verbose descriptions from tool "
                              "schemas to reduce token usage for small models "
                              "(Qwen 0.8B, etc.). Saves ~80%% of schema tokens.")
+    parser.add_argument("--default-model", default=None, metavar="NAME",
+                        help="model name used ONLY when --model, config.json and "
+                             "$CONSCIO_MODEL are all empty (last resort)")
     return parser
 
 
 def _resolve_model(args) -> str:
-    """Resolve the model name: --model > config.json 'model' > CONSCIO_MODEL.
+    """Resolve the model name: --model > config.json 'model' > CONSCIO_MODEL > --default-model.
 
     v3.1: --model auto triggers auto-detection from the LM Studio /v1/models
     endpoint. Tests each model with a minimal prompt and returns the first
@@ -989,7 +994,9 @@ def _resolve_model(args) -> str:
     Mirrors the daemon's precedence so a host that registers ``conscio-mcp``
     with only ``--storage`` (e.g. the Claude Code bundle) still picks up the
     ``model`` from ~/.config/conscio/config.json instead of failing to start.
-    Raises ``ValueError`` when none of the three channels supplies a model.
+    Raises ``ValueError`` when none of the four channels supplies a model —
+    ``--default-model`` is the last resort, consulted only after the other
+    three have failed, so a plugin install with no local config still boots.
     """
     from conscio.adapter_config import load_config
     from conscio.models import resolve_model_name
@@ -1004,8 +1011,14 @@ def _resolve_model(args) -> str:
             return detected
         # fall through to normal resolution if auto-detect failed
 
-    return resolve_model_name(cli_arg=args.model if args.model != "auto" else None,
-                              config_model=load_config().get("model"))
+    try:
+        return resolve_model_name(cli_arg=args.model if args.model != "auto" else None,
+                                  config_model=load_config().get("model"))
+    except ValueError:
+        fallback = getattr(args, "default_model", None)   # last-resort channel
+        if not fallback:
+            raise
+        return fallback
 
 
 def _auto_detect_model(base_url: str | None) -> tuple[str | None, list[str]]:
