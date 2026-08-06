@@ -18,6 +18,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..sqlite_tuning import tune
 from .adapter import AdapterError, InferenceAdapter
 from .gateway import parse_kv, repair_json
 
@@ -172,7 +173,7 @@ class ProbeSuite:
     def __init__(self, adapter: InferenceAdapter, db_path: Path | str):
         self.adapter = adapter
         self._conn = sqlite3.connect(str(db_path))
-        self._conn.execute("PRAGMA journal_mode=WAL")
+        tune(self._conn, durable=True)
         self._conn.executescript(_SCHEMA)
 
     def get(self, *, force: bool = False) -> ModelProfile:

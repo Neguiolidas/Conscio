@@ -16,6 +16,8 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .sqlite_tuning import tune
+
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -37,8 +39,7 @@ class Hallways:
     def _conn_get(self) -> sqlite3.Connection:
         if self._conn is None:
             self._conn = sqlite3.connect(str(self.db_path), timeout=10, check_same_thread=False)
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA foreign_keys=ON")
+            tune(self._conn, foreign_keys=True)
             self._conn.row_factory = sqlite3.Row
         return self._conn
 

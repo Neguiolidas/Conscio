@@ -10,6 +10,8 @@ import sqlite3
 import time
 from pathlib import Path
 
+from ..sqlite_tuning import tune
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS actions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +44,7 @@ class ActionLedger:
     def __init__(self, db_path: Path | str):
         self._conn = sqlite3.connect(str(db_path))
         self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
+        tune(self._conn, durable=True)
         self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.executescript(_SCHEMA)
         try:                                   # F1 databases lack the column

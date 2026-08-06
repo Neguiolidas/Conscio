@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ..sqlite_tuning import tune
 from ..timeutil import naive_utc_from_epoch
 from .ledger import ActionLedger
 
@@ -55,7 +56,7 @@ class CircuitBreaker:
         self._conn: sqlite3.Connection | None = None
         if db_path is not None:
             self._conn = sqlite3.connect(str(db_path))
-            self._conn.execute("PRAGMA journal_mode=WAL")
+            tune(self._conn, durable=True)
             self._conn.executescript(_SCHEMA)
 
     # ── detection ──

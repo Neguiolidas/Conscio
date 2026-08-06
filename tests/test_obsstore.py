@@ -369,7 +369,7 @@ def test_a_contended_wal_conversion_is_retried_not_surrendered():
     """
     busy = sqlite3.OperationalError("database is locked")
     c = _ScriptedConn([busy, busy, busy, "wal"])
-    assert obsstore._enable_wal(c, 5_000) == "wal"
+    assert obsstore.enable_wal(c, 5_000) == "wal"
     assert c.calls == 4
 
 
@@ -377,7 +377,7 @@ def test_an_already_wal_store_converts_without_sleeping():
     """The per-tool-call open must cost exactly one pragma, as it did before."""
     c = _ScriptedConn(["wal"])
     t0 = time.monotonic()
-    assert obsstore._enable_wal(c, 5_000) == "wal"
+    assert obsstore.enable_wal(c, 5_000) == "wal"
     assert c.calls == 1
     assert time.monotonic() - t0 < 0.05
 
@@ -387,11 +387,11 @@ def test_an_unwinnable_conversion_degrades_instead_of_raising():
     a correctness one, and refusing to open would lose every observation."""
     c = _ScriptedConn([sqlite3.OperationalError("database is locked")])
     t0 = time.monotonic()
-    assert obsstore._enable_wal(c, 60) == "unknown"
+    assert obsstore.enable_wal(c, 60) == "unknown"
     assert 0.05 < time.monotonic() - t0 < 2.0
     # A silent refusal (no exception, mode unchanged) is bounded the same way.
     c2 = _ScriptedConn(["delete"])
-    assert obsstore._enable_wal(c2, 60) == "delete"
+    assert obsstore.enable_wal(c2, 60) == "delete"
     assert c2.calls > 1
 
 
