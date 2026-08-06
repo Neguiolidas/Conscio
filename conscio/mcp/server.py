@@ -18,6 +18,7 @@ from conscio.workspace import WorkspaceContext
 from ..agency import review_apply
 from ..liaison import mailbox, relay, review
 from . import jsonrpc as j
+from . import modes
 from .protocol import SUPPORTED_PROTOCOLS, Dispatcher
 from .schemas import (
     ACT_TOOL_DEFS,
@@ -30,6 +31,21 @@ from .schemas import (
     validate_event,
 )
 from .seen import SeenStore
+
+
+def _flatten(d: dict) -> dict:
+    """One-sentence description, bare-typed properties. For small models."""
+    desc = d.get("description", "")     # `.get`: o corpo v3.9.9 tolerava a ausência
+    first = desc.split(".")[0] + "." if "." in desc else desc
+    schema = d.get("inputSchema", {})
+    props = {k: {"type": v.get("type", "string")}
+             for k, v in schema.get("properties", {}).items()}
+    return {"name": d["name"],
+            "description": first[:120],
+            "inputSchema": {"type": "object",
+                            "properties": props,
+                            "required": schema.get("required", [])}}
+
 
 # v2.6.3 #2: floor between auto-review SQL polls so --auto-review does not open a
 # liaison SELECT on every single tool call in a chatty session. host_act.approve
@@ -48,7 +64,7 @@ class Bindings:
                  relay: bool = False,
                  relay_peers: tuple[str, ...] = (),
                  auto_review: bool = False,
-                 lite: bool = False) -> None:
+                 mode: str = modes.DEFAULT_MODE) -> None:
         self.engine = engine
         self.seen = seen
         self.adapter_name = adapter_name
@@ -64,7 +80,7 @@ class Bindings:
         self.relay_peers = tuple(relay_peers)
         self.auto_review = auto_review        # v2.6.2: --auto-review
         self.last_auto_apply_ts = 0.0         # v2.6.3 #2: throttle clock
-        self.lite = lite                      # v3.9.9: --lite (minimal schemas)
+        self.mode = mode                      # v4.0: lite / balanced / ultra
 
         # v3.7: ModeRouter — chunkifica output conforme prompt_complexity
         import tempfile as _tempfile
@@ -113,45 +129,27 @@ class Bindings:
 
     def tool_defs(self) -> list[dict]:
         defs = list(BASE_TOOL_DEFS)
+        flagged: list[dict] = []             # ligados explicitamente pelo operador
         if self._act_enabled():
-            defs += list(ACT_TOOL_DEFS)
+            flagged += list(ACT_TOOL_DEFS)
         if self.hermes_review:
             for d in LIAISON_TOOL_DEFS:
                 if d["name"] == "conscio.poll_reviews" and not self._act_enabled():
                     continue                 # proposer tool needs act too
-                defs.append(d)
+                flagged.append(d)
         if self.relay:
-            defs += list(RELAY_TOOL_DEFS)
-        
-        # v3.9.9: lite mode — strip inputSchema, keep name + short description
-        # Saves ~80% of schema bytes for small models (Qwen 0.8B, etc.)
-        if self.lite:
-            # Only expose essential tools for small models
-            ESSENTIAL = {
-                "conscio.intercept", "conscio.recall", "conscio.remember",
-                "conscio.advisory", "conscio.health", "conscio.note",
-                "conscio.feed", "conscio.state", "conscio.events",
-            }
-            lite_defs = []
-            for d in defs:
-                if d["name"] not in ESSENTIAL:
-                    continue
-                desc = d.get("description", "")
-                first = desc.split(".")[0] + "." if "." in desc else desc
-                lite_d = {"name": d["name"], "description": first[:120]}
-                if "inputSchema" in d:
-                    schema = d["inputSchema"]
-                    props = {}
-                    if "properties" in schema:
-                        for k, v in schema["properties"].items():
-                            props[k] = {"type": v.get("type", "string")}
-                    lite_d["inputSchema"] = {
-                        "type": "object",
-                        "properties": props,
-                        "required": schema.get("required", []),
-                    }
-                lite_defs.append(lite_d)
-            return lite_defs
+            flagged += list(RELAY_TOOL_DEFS)
+
+        # 1. seleção: o modo filtra só a superfície BASE
+        allowed = {"lite": modes.LITE_TOOLS,
+                   "balanced": modes.BALANCED_TOOLS}.get(self.mode)
+        if allowed is not None:
+            defs = [d for d in defs if d["name"] in allowed]
+        defs += flagged                      # flag digitada nunca é filtrada
+
+        # 2. formatação: em lite, tudo que sai é achatado
+        if self.mode == "lite":
+            defs = [_flatten(d) for d in defs]
         return defs
 
     def resource_defs(self) -> list[dict]:
@@ -992,6 +990,9 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="lite mode: strip verbose descriptions from tool "
                              "schemas to reduce token usage for small models "
                              "(Qwen 0.8B, etc.). Saves ~80%% of schema tokens.")
+    parser.add_argument("--mode", choices=modes.MODES, default=None,
+                        help="tool surface: lite (9), balanced (17) or ultra (all). "
+                             "A mode persisted in the space wins over this flag.")
     parser.add_argument("--default-model", default=None, metavar="NAME",
                         help="model name used ONLY when --model, config.json and "
                              "$CONSCIO_MODEL are all empty (last resort)")
@@ -1233,6 +1234,7 @@ def main(argv: list[str] | None = None) -> int:
         self_instance_id = load_or_create(engine.storage).instance_id
         liaison_db = (Path(args.liaison_db) if args.liaison_db
                       else mailbox.default_db())
+    tool_mode = modes.resolve_mode(engine.storage, "lite" if args.lite else args.mode)
     bindings = Bindings(engine, seen, adapter_name=adapter_name,
                         workspace_id=workspace.id, act_flag=args.enable_act,
                         hermes_review=args.enable_hermes_review,
@@ -1242,7 +1244,7 @@ def main(argv: list[str] | None = None) -> int:
                         relay=args.enable_relay,
                         relay_peers=tuple(args.relay_peer),
                         auto_review=args.auto_review,
-                        lite=args.lite)
+                        mode=tool_mode)
     mode = "act" if args.enable_act else "propose-only"
     if args.enable_hermes_review:
         if args.reviewer:
@@ -1258,6 +1260,7 @@ def main(argv: list[str] | None = None) -> int:
         mode += "+auto-review"
     print(f"conscio-mcp {__version__} ready "
           f"(workspace={workspace.id}, mode={mode}, "
+          f"surface={tool_mode}, "        # v4.0: qual superfície venceu a precedência
           f"structure={structure_status})", file=sys.stderr)
     try:
         serve(bindings, sys.stdin, sys.stdout, max_bytes=args.max_frame_bytes)
