@@ -87,6 +87,9 @@ ConsciousnessEngine.health_check
 ConsciousnessEngine.token_summary
 # v3.8 DeepMiner — agnostic tool-observation API (MCP tools + external agents)
 ConsciousnessEngine.observe
+# v4.0 BUG-08 — embedder push surface; the MCP server uses Bindings._feed,
+# so nothing in-tree calls this. Contract pinned by tests/test_engine_advisory.py.
+ConsciousnessEngine.feed
 ConsciousnessEngine.recall_observations
 ConsciousnessEngine.compress_observations
 ConsciousnessEngine.set_session

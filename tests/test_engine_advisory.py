@@ -139,3 +139,47 @@ class TestAdvisoryNeverRaises:
         (engine.storage / "structural_drift.json").write_text("{ not json")
         engine.load_structure(_GRAPH, workspace_id="wsA", root=engine.storage.parent)
         _assert_advisory_contract(engine)
+
+
+class TestFeed:
+    """v4.0 BUG-08: engine.feed() — the embedder's push surface.
+
+    Deliberately *thinner* than the ``conscio.feed`` MCP tool: no envelope
+    normalization, no dedup by event_id, no metabolic charge, and no
+    perceive/reflect cycle. These tests pin that divergence so it stays a
+    documented choice instead of decaying into a silent one.
+    """
+
+    def test_emits_event_on_the_bus(self, engine):
+        engine.feed({"type": "host:event", "category": "system",
+                     "data": {"k": "v"}})
+        hits = engine.event_bus.query(type="host:event")
+        assert len(hits) == 1
+        assert hits[0].data["k"] == "v"
+
+    def test_returns_advisory_contract(self, engine):
+        adv = engine.feed({"type": "host:event", "category": "system",
+                           "data": {"probe": "advisory"}})
+        assert isinstance(adv, dict)
+        assert set(adv) >= _EXPECTED_KEYS, _EXPECTED_KEYS - set(adv)
+
+    def test_absent_keys_are_defaulted(self, engine):
+        engine.feed({})
+        hits = engine.event_bus.query(type="host:event")
+        assert len(hits) == 1
+        assert hits[0].category == "system"
+
+    def test_unknown_type_raises_valueerror_not_invalidparams(self, engine):
+        # The EventBus vocabulary still guards the door, but embedders get a
+        # raw ValueError — the MCP InvalidParams shaping lives in Bindings.
+        with pytest.raises(ValueError):
+            engine.feed({"type": "host:not-a-real-type", "data": {}})
+
+    def test_does_not_run_the_perception_cycle(self, engine):
+        # The docstring promises no cycle: the world model must stay untouched.
+        # If this ever fails, feed() grew a cycle — revise the docstring on
+        # purpose, do not just delete the assertion.
+        before = engine.content_layer.world_model.entity_count()
+        engine.feed({"type": "host:event", "category": "system",
+                     "data": {"world_state": "Alice deployed the server"}})
+        assert engine.content_layer.world_model.entity_count() == before
