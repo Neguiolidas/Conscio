@@ -91,7 +91,7 @@ _DDL = (
 )
 
 
-def _enable_wal(conn: sqlite3.Connection, timeout_ms: int) -> str:
+def enable_wal(conn: sqlite3.Connection, timeout_ms: int) -> str:
     """Put ``conn`` into WAL, retrying a contended conversion. Returns the mode.
 
     Converting a rollback-journal file to WAL needs an EXCLUSIVE lock, and SQLite
@@ -156,7 +156,7 @@ def connect(
     # busy_timeout first: it is connection-local, needs no lock, and every
     # statement below is a potential waiter.
     conn.execute(f"PRAGMA busy_timeout={int(busy_timeout_ms)}")
-    _enable_wal(conn, int(busy_timeout_ms))
+    enable_wal(conn, int(busy_timeout_ms))
     conn.execute("PRAGMA synchronous=NORMAL")
     if conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION:
         return conn

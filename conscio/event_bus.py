@@ -21,6 +21,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from .constants import DEFAULT_DB_PATH
+from .sqlite_tuning import tune
 from .timeutil import naive_utcnow
 
 # ─── Data Classes ───────────────────────────────────────────────────────
@@ -134,8 +135,7 @@ class EventBus:
         self._lock = threading.Lock()
         self.db = sqlite3.connect(str(self.db_path),
                                    check_same_thread=False)
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA foreign_keys=ON")
+        tune(self.db, foreign_keys=True)
         self.db.row_factory = sqlite3.Row
 
         self._init_schema()

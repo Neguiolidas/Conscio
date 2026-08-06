@@ -23,6 +23,7 @@ from pathlib import Path
 
 from .constants import DEFAULT_DB_PATH
 from .embedding_pipeline import EmbeddingPipeline
+from .sqlite_tuning import tune
 from .timeutil import naive_utcnow
 from .vector_backend import HNSWBackend, SqliteVecBackend, VectorBackend
 
@@ -121,8 +122,7 @@ class ContentStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.db = sqlite3.connect(str(self.db_path))
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA foreign_keys=ON")
+        tune(self.db, foreign_keys=True)
         self.db.row_factory = sqlite3.Row
 
         self._init_schema()
@@ -958,8 +958,7 @@ class ContentStore:
         self.db.close()
         shutil.copy2(str(self.db_path), str(backup_path))
         self.db = sqlite3.connect(str(self.db_path))
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA foreign_keys=ON")
+        tune(self.db, foreign_keys=True)
         self.db.row_factory = sqlite3.Row
 
         size_before = self.db_path.stat().st_size
@@ -972,7 +971,7 @@ class ContentStore:
 
             tri_conn = sqlite3.connect(str(trigram_db_path))
             tri_conn.row_factory = sqlite3.Row
-            tri_conn.execute("PRAGMA journal_mode=WAL")
+            tune(tri_conn)
             tri_conn.execute("""
                 CREATE VIRTUAL TABLE chunks_trigram USING fts5(
                     title,
@@ -1056,8 +1055,7 @@ class ContentStore:
             if trigram_db_path.exists():
                 trigram_db_path.unlink()
             self.db = sqlite3.connect(str(self.db_path))
-            self.db.execute("PRAGMA journal_mode=WAL")
-            self.db.execute("PRAGMA foreign_keys=ON")
+            tune(self.db, foreign_keys=True)
             self.db.row_factory = sqlite3.Row
             raise
 

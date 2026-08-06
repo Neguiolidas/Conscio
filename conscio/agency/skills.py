@@ -20,6 +20,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ..sqlite_tuning import tune
+
 MAX_PLAN_STEPS = 5       # longer plans are not useful exemplars for 4B
 MIN_SERVE_RATE = 0.5     # never teach a plan that fails half the time
 SIMILARITY_FLOOR = 0.2   # Jaccard threshold for lexical goal match
@@ -71,7 +73,7 @@ class SkillLibrary:
     def __init__(self, db_path: Path | str):
         self._conn = sqlite3.connect(str(db_path))
         self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
+        tune(self._conn, durable=True)
         self._conn.executescript(_SCHEMA)
         # single-slot attribution: skills served for the cycle in flight
         self._served: list[int] | None = None

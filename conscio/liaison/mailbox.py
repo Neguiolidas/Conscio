@@ -13,6 +13,8 @@ import sqlite3
 import time
 from pathlib import Path
 
+from ..sqlite_tuning import tune
+
 BUSY_TIMEOUT_MS = 5000
 
 _SCHEMA = """
@@ -39,7 +41,7 @@ def _connect(db: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db))
     conn.row_factory = sqlite3.Row
     conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
-    conn.execute("PRAGMA journal_mode=WAL")
+    tune(conn, durable=True)
     conn.executescript(_SCHEMA)
     return conn
 

@@ -15,6 +15,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from ..sqlite_tuning import tune
+
 PROBATION_EPOCH = 25      # reflect() cycles between probation probes
 WARMUP_MIN_ROWS = 10      # below this many ledger rows the floor of 1 applies
 RETRY_CEILING = 4
@@ -40,7 +42,7 @@ class TrustMatrix:
         self.reflect_count_fn = reflect_count_fn or (lambda: 0)
         self.trips_since_fn = trips_since_fn
         self._conn = sqlite3.connect(str(db_path))
-        self._conn.execute("PRAGMA journal_mode=WAL")
+        tune(self._conn, durable=True)
         self._conn.executescript(_SCHEMA)
 
     # ── core formula (blueprint §6) ──

@@ -32,6 +32,8 @@ from typing import Optional
 
 import numpy as np
 
+from .sqlite_tuning import tune
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -323,7 +325,7 @@ class SessionVectorStore:
     def _init_db(self):
         """Create tables if they don't exist."""
         conn = sqlite3.connect(str(self.db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
+        tune(conn)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS chunks (
                 id TEXT PRIMARY KEY,
@@ -404,7 +406,7 @@ class SessionVectorStore:
     def upsert_batch(self, chunks: list[Chunk]):
         """Batch insert chunks."""
         conn = sqlite3.connect(str(self.db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
+        tune(conn)
         for chunk in chunks:
             emb_blob = self._emb_blob(chunk.embedding)
             conn.execute("""
@@ -439,7 +441,7 @@ class SessionVectorStore:
             return []
 
         conn = sqlite3.connect(str(self.db_path))
-        conn.execute("PRAGMA journal_mode=WAL")
+        tune(conn)
 
         where_clauses = ["embedding IS NOT NULL"]
         params: list = []

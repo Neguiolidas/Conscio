@@ -19,6 +19,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from .constants import DEFAULT_DB_PATH
+from .sqlite_tuning import tune
 from .timeutil import naive_utcnow
 
 # ─── Constants ──────────────────────────────────────────────────────────
@@ -59,8 +60,7 @@ class TokenTracker:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.db = sqlite3.connect(str(self.db_path))
-        self.db.execute("PRAGMA journal_mode=WAL")
-        self.db.execute("PRAGMA foreign_keys=ON")
+        tune(self.db, foreign_keys=True)
         self.db.row_factory = sqlite3.Row
 
         self.max_rows = TOKEN_LOG_MAX
