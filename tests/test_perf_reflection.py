@@ -52,7 +52,12 @@ def big_engine(tmp_path):
     # one-time import of torch+transformers costs ~9s and blows this 3s budget. That
     # measures the environment, not a regression in Conscio. Pin the probe off so the
     # guard measures only our own work.
-    e.content_layer._hybrid_retriever.embedding_pipeline.embedding_provider._force_no_network = True
+    # The pipeline is None whenever no vector backend is configured (CONSCIO_VECTORS=0,
+    # or auto-detect finding no deps) — which is precisely CI's minimal install. No
+    # pipeline means no provider means no probe, so there is nothing to pin.
+    pipeline = e.content_layer._hybrid_retriever.embedding_pipeline
+    if pipeline is not None:
+        pipeline.embedding_provider._force_no_network = True
     _seed(e)
     yield e
     e.close()
