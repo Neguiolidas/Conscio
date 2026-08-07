@@ -44,6 +44,15 @@ def _seed(engine, n_events=10_000, n_entities=1_000):
 def big_engine(tmp_path):
     e = ConsciousnessEngine(model_name="glm-5.1", storage_path=tmp_path)
     e.content_layer._session_rag = _RAG_DISABLED  # pin RAG off → reflect()'s recall stays hermetic
+    # The _session_rag pin above does NOT cover recall()'s other leg:
+    # content_layer.recall() → HybridRetriever.vector_only_search() → EmbeddingProvider.
+    # That provider probes Ollama, then LM Studio, then imports sentence_transformers.
+    # sentence-transformers is not a declared dependency, so CI never has it and the
+    # probe fails fast — but on a dev machine that happens to have it installed, the
+    # one-time import of torch+transformers costs ~9s and blows this 3s budget. That
+    # measures the environment, not a regression in Conscio. Pin the probe off so the
+    # guard measures only our own work.
+    e.content_layer._hybrid_retriever.embedding_pipeline.embedding_provider._force_no_network = True
     _seed(e)
     yield e
     e.close()

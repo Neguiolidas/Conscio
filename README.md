@@ -14,11 +14,12 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v4.0.0` "Tool Surfaces & the Claude Code Plugin":** Conscio
+**Latest release — `v4.0.1` "Tool Surfaces & the Claude Code Plugin":** Conscio
 installs as a Claude Code plugin, and its MCP surface stops being one size —
 `lite` (10 tools) / `balanced` (18) / `ultra` (35), switchable at runtime with
 `conscio.mode`. Plus LaTeX and equation solving in the Intercepter, and a startup
-that got 16× faster.
+that got 16× faster. `4.0.1` fixes plugin capture, which recorded nothing on
+4.0.0.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 

@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.0.1] - 2026-08-07 — The plugin records again
+
+### Fixed
+
+Installing the plugin captured nothing. Every hook exited 0 and reported
+success while writing no observation at all.
+
+`--obsstore` names the Python module the hook loads by absolute path — the
+vendored `conscio_obsstore.py` — not the database it writes to. The database is
+always `<storage>/obs.db`. The shipped `hooks.json` passed
+`${CLAUDE_PLUGIN_DATA}/obs.db` instead, so `load_obsstore()` raised
+`ImportError` on a file that does not exist. The hook fails open by design, so
+the exception was swallowed and the process exited 0 — the host saw a healthy
+hook, and only the missing `obs.db` gave it away.
+
+All five events pointed at the same wrong path, so capture was inert on every
+fresh plugin install. Fixed to `${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py`.
+Users on 4.0.0 need no migration: the space is created on first write.
+
+### Tests
+
+Every existing check on `hooks.json` was a substring assertion over the file
+text — `"${CLAUDE_PLUGIN_ROOT}" in text` is satisfied by a manifest that points
+the flag at a database, which is exactly how a broken manifest stayed green.
+Two tests replace that: one asserts `--obsstore` ends in `.py`, and one expands
+the placeholders and *runs* the shipped command, failing unless a row lands in
+`<storage>/obs.db`. Both go red on the 4.0.0 manifest.
+
+---
+
 ## [4.0.0] - 2026-08-06 — Tool Surfaces & the Claude Code Plugin
 
 Conscio installs as a Claude Code plugin, and its MCP surface stops being one
