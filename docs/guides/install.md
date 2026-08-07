@@ -31,11 +31,11 @@ Requires Python ≥ 3.10.
 
 ## `conscio init` — bind a host (v2.11.0 "Reach")
 
-One global install serves many agentic hosts (Claude Code, Antigravity, any MCP
-host) on one machine. Run the interactive wizard once **per host**:
+One global install serves many agentic hosts (Claude Code, Verdent, Antigravity,
+any MCP host) on one machine. Run the interactive wizard once **per host**:
 
 ```bash
-conscio init --host claude-code     # or: --host antigravity | --host other
+conscio init --host claude-code     # or: verdent | antigravity | other
 ```
 
 It:
@@ -52,6 +52,12 @@ It:
   `/conscio:*` slash commands, a `conscio` skill, and the capture and awareness
   hooks. Installing the plugin instead is the maintained path — it carries the
   same assets and keeps them versioned with the server.
+
+`--host verdent` writes `~/.verdent/mcp.json` (press Enter to take it, or give a
+project-level `<project>/.verdent/mcp.json` instead). Verdent has no plugin
+installer: a server *is* its entry in that file, so this is the whole install.
+See [MCP server](mcp.md#host-specific-placement) for the reconnect step an
+**upgrade** needs — editing the file does not restart a server already running.
 
 For a host whose MCP config path the wizard does not know (e.g. Antigravity),
 give the path when asked or paste the printed JSON snippet into the host's MCP

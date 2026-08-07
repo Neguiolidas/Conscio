@@ -47,6 +47,18 @@ dropped in a future major.
 
 ### Added
 
+`conscio init --host verdent` binds Verdent directly, writing
+`~/.verdent/mcp.json` with the same backup-and-read-back the other hosts get.
+Verdent was reachable before only through `--host other`, which asks for a path
+and knows none — the one host with no plugin installer at all, where the MCP
+entry *is* the installation, was the one the wizard could not finish.
+
+The install and MCP guides now also carry the upgrade step Verdent needs: a host
+that hot-reloads its config still keeps the running server, and its old code,
+alive for an entry whose name did not change. The entry has to be removed and
+put back for the new build to be launched — otherwise an upgrade looks like it
+did nothing.
+
 Tagging now publishes a GitHub Release. Four tags existed and the Releases page
 was empty, so anyone watching this repository for releases heard nothing about
 v4.0.0 or v4.0.1, and the built wheels were reachable only through PyPI.

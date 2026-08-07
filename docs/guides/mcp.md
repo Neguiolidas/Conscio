@@ -84,6 +84,15 @@ shell:
   `PATH`. Run the check from outside a Conscio checkout — from inside, the source
   tree shadows the installed package and the command reports the version you were
   hoping for rather than the one being served.
+- **Editing the file does not restart a running server.** A host that hot-reloads
+  the config still keeps the old process — and the old code in its memory — alive
+  for an entry whose name did not change, so an upgrade appears to do nothing.
+  Delete the `conscio` entry, let the host reconnect without it, then put it back:
+  that is what kills the old process. This is true of every future upgrade, not
+  just the one that introduced it.
+
+`conscio init --host verdent` writes this file for you (it backs the old one up
+and reads it back to confirm), but the reconnect above is still yours to do.
 
 ## Tool surfaces
 
