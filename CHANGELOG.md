@@ -71,6 +71,24 @@ is worse than announcing nothing.
 
 ### Fixed
 
+The MCP entry written by `conscio init` named the launcher `conscio-mcp` and
+left the host to find it. A host started from a desktop icon never sourced the
+virtualenv that `pip install conscio` wrote into, so the name resolves to
+nothing and the server dies at exec — the single most common binding failure,
+and the one that looks like the server is broken rather than unfound.
+
+The entry now carries an absolute path whenever one can be proven: beside the
+running interpreter first, since that is *this* install and the venv is exactly
+the case a `PATH` lookup gets wrong, then the `PATH` of whoever ran the wizard,
+which covers `pip install --user`. A relative hit is discarded — the host
+resolves it against its own working directory, which is worse than the bare
+name. The bare name is still the last resort, never worse than what every
+earlier version emitted unconditionally.
+
+The path is captured at write time, so a moved or rebuilt virtualenv leaves a
+stale one; `conscio init --repair` re-resolves it, as it does every other field
+of the entry.
+
 A `--storage` directory that already existed but was empty was reported as
 `blank/space drift` with an order to run `conscio init --repair` — on every
 startup, forever — and was never initialised, so the space ran with no identity.

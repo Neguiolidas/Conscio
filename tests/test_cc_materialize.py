@@ -39,7 +39,7 @@ def test_materialize_registers_mcp_with_storage_and_vault(tmp_path):
     _run(tmp_path)
     data = json.loads((tmp_path / "claude.json").read_text())
     entry = data["mcpServers"]["conscio"]
-    assert entry["command"] == "conscio-mcp"
+    assert Path(entry["command"]).name == "conscio-mcp"   # may be absolutised
     assert str(spaces.space_dir("host-a")) in entry["args"]
     assert entry["env"]["CONSCIO_VAULT_DIR"] == str(spaces.vault_dir("host-a"))
 
