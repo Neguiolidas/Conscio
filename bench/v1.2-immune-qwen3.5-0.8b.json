@@ -1,0 +1,29 @@
+{
+  "adapter": "LMStudioAdapter",
+  "model": "qwen3.5-0.8b",
+  "profile": {
+    "model_name": "qwen3.5-0.8b",
+    "has_json_mode": true,
+    "supports_gbnf": false,
+    "json_fidelity": 1.0,
+    "schema_depth": 2,
+    "kv_ok": true,
+    "instruction_depth": 2,
+    "valid": true,
+    "probed_at": 1781414580.2441194
+  },
+  "tier": "T2",
+  "skeptic_mode": "open",
+  "cycles": 20,
+  "syntactic_validity": 1.0,
+  "tiers_used": {
+    "T2": 20
+  },
+  "deterministic_catch_rate": 1.0,
+  "semantic_catch_rate": 1.0,
+  "catch_rate_total": 1.0,
+  "latency_p50_ms": 25842,
+  "calibration": 0.5,
+  "llm_calls": 40,
+  "tokens": 17203
+}
