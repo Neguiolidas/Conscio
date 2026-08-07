@@ -144,7 +144,7 @@ class TestAdvisoryNeverRaises:
 class TestFeed:
     """v4.0 BUG-08: engine.feed() — the embedder's push surface.
 
-    Deliberately *thinner* than the ``conscio.feed`` MCP tool: no envelope
+    Deliberately *thinner* than the ``conscio_feed`` MCP tool: no envelope
     normalization, no dedup by event_id, no metabolic charge, and no
     perceive/reflect cycle. These tests pin that divergence so it stays a
     documented choice instead of decaying into a silent one.

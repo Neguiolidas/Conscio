@@ -51,7 +51,7 @@ def test_switching_mode_emits_list_changed(tmp_path):
     outstream = io.StringIO()
     try:
         call = {"jsonrpc": "2.0", "id": 7, "method": "tools/call",
-                "params": {"name": "conscio.mode", "arguments": {"set": "lite"}}}
+                "params": {"name": "conscio_mode", "arguments": {"set": "lite"}}}
         # INIT primeiro: o Dispatcher nasce com initialized=False e recusa
         # tools/call antes do handshake.
         raw = json.dumps(INIT) + "\n" + json.dumps(call) + "\n"
@@ -68,7 +68,7 @@ def test_switching_mode_emits_list_changed(tmp_path):
 def test_setting_the_same_mode_emits_nothing(tmp_path):
     b, engine = _bindings(tmp_path, mode="lite")
     try:
-        b.call_tool("conscio.mode", {"set": "lite"})
+        b.call_tool("conscio_mode", {"set": "lite"})
         assert b.drain_notifications() == []
     finally:
         engine.close()

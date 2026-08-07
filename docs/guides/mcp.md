@@ -75,11 +75,11 @@ follow from how the filter is applied:
   review, relay — is never filtered out by the surface.
 - **An unadvertised tool is still callable.** `tools/list` shrinks; `tools/call`
   does not. A host that knows a tool's name can invoke it in any surface.
-- **`conscio.mode` is present in every surface.** In `lite` it is the only way
+- **`conscio_mode` is present in every surface.** In `lite` it is the only way
   back out.
 
 Precedence is `--mode` on the CLI, then the persisted choice
-(`<storage>/mcp_mode`), then the default. `conscio.mode` reads the current
+(`<storage>/mcp_mode`), then the default. `conscio_mode` reads the current
 surface and switches it at runtime; the server announces `tools.listChanged` in
 the initialize handshake and emits the notification after a switch. It persists
 *before* switching, so a failed write leaves the served surface intact and emits
@@ -92,7 +92,7 @@ means act-vs-propose-only.
 
 ## Tools — BASE
 
-### `conscio.feed(event, session_tokens?)`
+### `conscio_feed(event, session_tokens?)`
 
 Ingest a perception Event → `perceive` + `reflect` → returns the updated advisory.
 Idempotent on `event.id`. Optional `session_tokens` (int) drives the metabolic
@@ -110,7 +110,7 @@ tier (VITAL / ACTIVE / FATIGUE / CRITICAL) based on real host context usage.
 }
 ```
 
-### `conscio.note(event)`
+### `conscio_note(event)`
 
 Record a raw Event to the event log (**no reflect**). Idempotent on `event.id`.
 Use for fire-and-forget logging — `feed` is the heavier "perceive + reflect" path.
@@ -126,12 +126,12 @@ Use for fire-and-forget logging — `feed` is the heavier "perceive + reflect" p
 }
 ```
 
-### `conscio.advisory()` (pure read)
+### `conscio_advisory()` (pure read)
 
 Current cognitive state. No args. Returns mode, metabolic tier, active goals,
 recent reflections.
 
-### `conscio.recall(query, k?, categories?)` (pure read)
+### `conscio_recall(query, k?, categories?)` (pure read)
 
 Retrieve relevant past context (FTS5 BM25 + RAG fusion).
 
@@ -139,7 +139,7 @@ Retrieve relevant past context (FTS5 BM25 + RAG fusion).
 {"query": "debug cron Hermes", "k": 5, "categories": ["consciousness", "session"]}
 ```
 
-### `conscio.observe(tool, input?, output?, project?, agent?)`
+### `conscio_observe(tool, input?, output?, project?, agent?)`
 
 Record a raw tool call into the isolated `obs.db` (v3.8 DeepMiner).
 Fire-and-forget: never raises, never blocks, costs **0 LLM tokens**. Returns
@@ -156,10 +156,10 @@ records every tool call already.
 {"tool": "edit_file", "input": "fix auth bug", "output": "done", "project": "/proj"}
 ```
 
-### `conscio.recall_observations(query, k?, full?)` (pure read)
+### `conscio_recall_observations(query, k?, full?)` (pure read)
 
 FTS5 full-text search over recorded observations — distinct from
-`conscio.recall`, which searches the content store. `input`/`output` carry the
+`conscio_recall`, which searches the content store. `input`/`output` carry the
 **snippet window** around the hit (elided with `…`), not the whole stored row:
 measured on real transcripts, ~110 tokens per recall instead of ~350. Pass
 `full: true` when the entire observation is the answer.
@@ -168,7 +168,7 @@ measured on real transcripts, ~110 tokens per recall instead of ~350. Pass
 {"query": "authentication", "k": 5, "full": false}
 ```
 
-### `conscio.propose_action(intent)`
+### `conscio_propose_action(intent)`
 
 Audit an explicit action intent with the Skeptic. **Never executes.**
 Returns `{verdict: "PASS"|"FAIL", reasons, risk_flags, confidence, proposal}`.
@@ -177,7 +177,7 @@ Returns `{verdict: "PASS"|"FAIL", reasons, risk_flags, confidence, proposal}`.
 {"intent": {"action": "delete", "target": "/tmp/old.log", "reason": "cleanup"}}
 ```
 
-### `conscio.propose_plan(goal, tools)`
+### `conscio_propose_plan(goal, tools)`
 
 Actor generates ONE action toward `goal`, constrained to the declared `tools`
 vocabulary. **Never executes; not free-form; not multi-step.**
@@ -189,11 +189,11 @@ vocabulary. **Never executes; not free-form; not multi-step.**
 }
 ```
 
-### `conscio.state()` (pure read)
+### `conscio_state()` (pure read)
 
 ConsciousnessState snapshot. No args.
 
-### `conscio.events(type?, category?, since?, limit?)` (pure read)
+### `conscio_events(type?, category?, since?, limit?)` (pure read)
 
 Recent events. All args optional.
 
@@ -201,16 +201,16 @@ Recent events. All args optional.
 {"type": "error", "category": "trading", "limit": 20}
 ```
 
-### `conscio.handoff()` (pure read)
+### `conscio_handoff()` (pure read)
 
 Latest session handoff (markdown). No args.
 
-### `conscio.structure()` (pure read)
+### `conscio_structure()` (pure read)
 
 Workspace structural graph (consent-gated; data, never code). Returns
 `loaded=false` if not consented or not loaded.
 
-### `conscio.structural_lookup(key)` (pure read)
+### `conscio_structural_lookup(key)` (pure read)
 
 Resolve a structural node / hyperedge / community id from the loaded graph to
 its detail. `null` on miss.
@@ -219,84 +219,84 @@ its detail. `null` on miss.
 {"key": "node:src/lib/auth.py"}
 ```
 
-### `conscio.cognitive_cycle()` (v2.8)
+### `conscio_cognitive_cycle()` (v2.8)
 
 Run one explicit cognitive pass: reflect → synthesize → propose/act → learn →
 self-improve. Returns a report of each stage. The `act` stage only runs when
 the server has `--enable-act` on.
 
-### `conscio.evaluate(task_description, output)` (v2.15)
+### `conscio_evaluate(task_description, output)` (v2.15)
 
 5-axis self-evaluation scorecard (accuracy, completeness, clarity,
 actionability, conciseness). Scores 1–5 per axis with justification.
 
 ## Tools — GATES (v3.0)
 
-### `conscio.decide(title, context, status, alternatives?, deciders?)`
+### `conscio_decide(title, context, status, alternatives?, deciders?)`
 
 Create an Architecture Decision Record. `status` is one of `proposed`,
 `accepted`, `deprecated`, `superseded`. Returns ADR dict with unique ID.
 
-### `conscio.council(question, context?)`
+### `conscio_council(question, context?)`
 
 Convene a 3-voice deterministic council (Arquiteto, Cético, Pragmatista).
 Optional LLM Critic if Awake Mode is active. Returns votes + majority verdict.
 
-### `conscio.loop_gate(verifiable?, budget_ok?, has_tools?)`
+### `conscio_loop_gate(verifiable?, budget_ok?, has_tools?)`
 
 Gate an autonomous loop. Checks three conditions, returns `approved` bool
 plus vetoed conditions list. Emits `gate:vetoed` when denied.
 
-### `conscio.delivery_check()`
+### `conscio_delivery_check()`
 
 Pre-close delivery check. Scans for blockers, rationalization patterns,
 stale proposals, and disk space. Runs automatically in `engine.close()`.
 
-### `conscio.investigate(target, action_type?)`
+### `conscio_investigate(target, action_type?)`
 
 Verify that `target` was read before acting. Queries EventBus for
 `investigate:read` events matching the target (substring match).
 
 ## Tools — PIPELINES (v3.0)
 
-### `conscio.acceptance_criteria(goal?, depth?, risk_domains?)`
+### `conscio_acceptance_criteria(goal?, depth?, risk_domains?)`
 
 Generate intent-driven acceptance criteria. Auto-detects risk domains
 (security/data/integration/compliance) and depth (quick/full).
 
-### `conscio.verify(criteria?, criteria_source?)`
+### `conscio_verify(criteria?, criteria_source?)`
 
 Verify acceptance criteria against `verify:evidence` events in EventBus.
 Use `criteria_source="acceptance"` to load from the last acceptance event.
 
-### `conscio.continuous_loop(task?, pattern?, frequency?, …)`
+### `conscio_continuous_loop(task?, pattern?, frequency?, …)`
 
 Select and gate an autonomous loop pattern: `sequential`, `continuous_pr`,
 `rfc_dag`, `infinite`. Word-boundary keyword matching. Includes loop_gate.
 
-### `conscio.strategic_compact(phase?, context_tokens?, context_window?)`
+### `conscio_strategic_compact(phase?, context_tokens?, context_window?)`
 
 Advise on strategic context compaction. Checks token pressure, workflow
 phase, and milestone count. Returns `should_compact`, `urgency`, keep/drop lists.
 
-### `conscio.ledger(action, rollout_id?, candidates?, …)`
+### `conscio_ledger(action, rollout_id?, candidates?, …)`
 
 Recursive decision ledger. `action` is `record`, `query`, or `promote`.
 Promotion gates: `paper` → `dry_run` → `live`, gated by coherence marks.
 
 ## Tools — DIAGNOSTICS (v3.0)
 
-### `conscio.context_budget(context_tokens?, context_window?, detail?)`
+### `conscio_context_budget(context_tokens?, context_window?, detail?)`
 
 Audit context window consumption. Returns token pressure, per-source
 breakdown, metabolic tier sizes, and optimization recommendations.
 
-### `conscio.eval_harness(action, eval_id?, eval_type?, task?, criteria?, results?, k_values?)`
+### `conscio_eval_harness(action, eval_id?, eval_type?, task?, criteria?, results?, k_values?)`
 
 Formal evaluation framework. `define` creates an eval, `run` records results
 and computes pass@k metrics, `report` aggregates across all evals.
 
-### `conscio.rules_distill(action, source_types?, min_occurrences?, rule_text?, rule_id?)`
+### `conscio_rules_distill(action, source_types?, min_occurrences?, rule_text?, rule_id?)`
 
 Extract cross-cutting principles. `scan` finds repeated patterns in
 skills/events/decisions, `distill` creates a rule, `list` shows all rules.
@@ -305,11 +305,11 @@ skills/events/decisions, `distill` creates a rule, `list` shows all rules.
 
 Available only with `--enable-act` (and engine Awake):
 
-- `conscio.act(intent, idempotency_key?)` — execute a pre-audited action
-- `conscio.report_result(ledger_id, result)` — feedback the outcome
-- `conscio.pending()` — list actions awaiting approval
-- `conscio.approve(ledger_id)` — approve a pending action
-- `conscio.reject(ledger_id, reason)` — reject a pending action
+- `conscio_act(intent, idempotency_key?)` — execute a pre-audited action
+- `conscio_report_result(ledger_id, result)` — feedback the outcome
+- `conscio_pending()` — list actions awaiting approval
+- `conscio_approve(ledger_id)` — approve a pending action
+- `conscio_reject(ledger_id, reason)` — reject a pending action
 
 See [Audited act (v2.0.1)](#audited-act-v201-opt-in) for the full flow.
 
@@ -317,19 +317,19 @@ See [Audited act (v2.0.1)](#audited-act-v201-opt-in) for the full flow.
 
 Cross-agent `hermes_review` channel. Requires `--reviewer <id>` allowlist.
 
-- `conscio.reviews(limit?)` — inbox of pending review requests
-- `conscio.review_approve(request_id, verdict)` — issue verdict PASS + comments
-- `conscio.review_reject(request_id, verdict)` — issue verdict FAIL + comments
-- `conscio.poll_reviews()` — long-poll inbox for new requests
+- `conscio_reviews(limit?)` — inbox of pending review requests
+- `conscio_review_approve(request_id, verdict)` — issue verdict PASS + comments
+- `conscio_review_reject(request_id, verdict)` — issue verdict FAIL + comments
+- `conscio_poll_reviews()` — long-poll inbox for new requests
 
 ## Tools — RELAY (opt-in `--enable-relay`)
 
 General cross-agent messaging. Requires `--relay-peer <id>` allowlist.
 
-- `conscio.relay_send(to, type, payload)` — send free-form message
-- `conscio.relay_inbox(limit?)` — read inbox
-- `conscio.relay_read(ids)` — mark messages read
-- `conscio.relay_broadcast(type, payload)` — fan-out to all peers
+- `conscio_relay_send(to, type, payload)` — send free-form message
+- `conscio_relay_inbox(limit?)` — read inbox
+- `conscio_relay_read(ids)` — mark messages read
+- `conscio_relay_broadcast(type, payload)` — fan-out to all peers
 
 Reserved-type isolation: `review_request` / `review_verdict` never sent or
 surfaced by relay. Payload cap: 64KB. Retention: 7 days after read.
@@ -396,9 +396,9 @@ with a `[project-name]` prefix in the summary for grepability.
 
 ## The propose-only loop
 
-1. Host sends perception via `conscio.feed`.
+1. Host sends perception via `conscio_feed`.
 2. Conscio reflects; the host reads `conscio://advisory`.
-3. Host asks `conscio.propose_action` (or `propose_plan`) about an intent.
+3. Host asks `conscio_propose_action` (or `propose_plan`) about an intent.
 4. Conscio runs the Skeptic and returns a `PASS`/`FAIL` verdict with reasons.
 5. **The host** decides and executes.
 6. Host feeds the result back as a new Event.
@@ -409,8 +409,8 @@ Conscio signs and audits the intent; the host pulls the trigger.
 
 Off by default. Launch with `conscio-mcp --enable-act` and the engine **Awake**
 (`--awake`, or a persisted awake state). Only then do five more tools appear:
-`conscio.act`, `conscio.report_result`, `conscio.pending`, `conscio.approve`,
-`conscio.reject`.
+`conscio_act`, `conscio_report_result`, `conscio_pending`, `conscio_approve`,
+`conscio_reject`.
 
 **The host owns the tools.** Declare a manifest in the `initialize` params — each
 entry has a `name`, `params` (the same arg schema the Skeptic validates), a base
@@ -426,16 +426,16 @@ entry has a `name`, `params` (the same arg schema the Skeptic validates), a base
 
 **The flow** (Conscio points the weapon and audits it; the host pulls the trigger):
 
-1. Host calls `conscio.act(intent)` with a concrete `{tool, args, rationale,
+1. Host calls `conscio_act(intent)` with a concrete `{tool, args, rationale,
    expected_outcome}` (optionally an `idempotency_key`). Conscio runs the Skeptic.
 2. Skeptic FAIL → `{status: "rejected"}`. PASS + `low`/`medium` + `auto` →
    `{status: "executable", packet, ledger_id}` (claimed). PASS + `high` /
    `require_approval` / `hermes_review` → `{status: "pending_approval"}`. Engine
    asleep or breaker lockdown → `{status: "gated"}`.
-3. For a pending action, a human/Hermes calls `conscio.approve(ledger_id)`
-   (→ an executable packet) or `conscio.reject(ledger_id, reason)`.
+3. For a pending action, a human/Hermes calls `conscio_approve(ledger_id)`
+   (→ an executable packet) or `conscio_reject(ledger_id, reason)`.
 4. **The host executes the packet** — Conscio never does.
-5. Host calls `conscio.report_result(ledger_id, result)`; Conscio closes the
+5. Host calls `conscio_report_result(ledger_id, result)`; Conscio closes the
    ledger entry, emits an `act:result` event, and feeds the breaker/trust. A
    duplicate report returns `already_reported`.
 
@@ -446,7 +446,7 @@ uses. `act` is **never** local dispatch: Conscio audits, the host executes.
 
 1. **Invalid `type` / `category`** raises `ValueError` before any DB write. Check
    the valid sets above.
-2. **`conscio.note` does NOT run `reflect`** — use `conscio.feed` if you want the
+2. **`conscio_note` does NOT run `reflect`** — use `conscio_feed` if you want the
    engine to react. `note` is fire-and-forget.
 3. **`event.id`** when present is the **only** idempotency key. A retry with the
    same id returns the prior result (no inflation).
@@ -462,6 +462,6 @@ uses. `act` is **never** local dispatch: Conscio audits, the host executes.
 9. **Adapter required for any `propose_*` / `act`** — without `--adapter` these
    fail closed with a clear error. Read tools (`advisory`, `state`, `events`,
    `recall`, `handoff`, `structure`, `structural_lookup`) work without adapter.
-10. **`conscio.cognitive_cycle` is explicit** — the daemon's autonomous loop runs
+10. **`conscio_cognitive_cycle` is explicit** — the daemon's autonomous loop runs
     the same stages, but calling this tool runs **one** pass and returns a report.
     It is not a long-running background loop.

@@ -334,7 +334,7 @@ def test_session_start_injects_an_index_of_the_previous_session(wired):
     assert "PREV" in r.stdout
     assert "2 tool calls" in r.stdout                  # not a stray digit
     assert "Bash x1" in r.stdout and "Read x1" in r.stdout
-    assert "conscio.recall_observations" in r.stdout   # tells the agent how to get it
+    assert "conscio_recall_observations" in r.stdout   # tells the agent how to get it
 
 
 def test_session_start_injects_an_index_never_the_content(wired):
@@ -454,7 +454,7 @@ def test_pre_compact_steers_the_summariser_in_the_form_the_host_reads(wired):
     assert r.stdout.strip(), "empty output is filtered out before the join"
     with pytest.raises(json.JSONDecodeError):
         json.loads(r.stdout)
-    assert "conscio.recall_observations" in r.stdout
+    assert "conscio_recall_observations" in r.stdout
 
 
 def test_pre_compact_fires_on_the_automatic_trigger_too(wired):
@@ -534,7 +534,7 @@ def test_an_unusable_store_does_not_cost_the_steer(tmp_path):
                                "storage": str(blocker)}))
     r = run_hook("pre-compact", {"session_id": "C1", "trigger": "auto"}, cfg)
     assert r.returncode == 0
-    assert "conscio.recall_observations" in r.stdout, \
+    assert "conscio_recall_observations" in r.stdout, \
         "a store failure swallowed the summariser instructions"
 
 

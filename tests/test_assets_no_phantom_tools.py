@@ -51,7 +51,7 @@ def test_stack_dependent_commands_explain_instead_of_failing():
         assert "pipx install conscio" in text, f"{name}.md does not say how to fix it"
 
     relay = (ASSETS / "commands" / "relay.md").read_text("utf-8")
-    assert "conscio.relay_send" in relay
+    assert "conscio_relay_send" in relay
     assert "pipx install conscio" in relay
 
 

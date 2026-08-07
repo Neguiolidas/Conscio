@@ -5,11 +5,11 @@ property of the *pairing* between host and server, so it lives next to the space
 (``<storage>/mcp_mode``) and outlives the process that set it.
 
 The sets are nested — lite ⊂ balanced ⊂ ultra — so raising the mode never
-removes a tool the caller was already using. ``conscio.remember`` is in all
+removes a tool the caller was already using. ``conscio_remember`` is in all
 three: a mode without a memory write is not a Conscio.
 
 Mind the off-by-one when reading the frozensets below: they hold 9 and 17, but
-they are the *pre-filter* subsets. ``conscio.mode`` is appended after the mode
+they are the *pre-filter* subsets. ``conscio_mode`` is appended after the mode
 filter (see ``MODE_TOOL_DEF``), so every mode serves one tool more than its set
 — 10 / 18 / 35 is what a host actually lists. Ultra has no set at all; it is the
 absence of a filter over the 34 entries of ``BASE_TOOL_DEFS``.
@@ -25,26 +25,26 @@ MODES = ("lite", "balanced", "ultra")
 DEFAULT_MODE = "ultra"
 
 LITE_TOOLS = frozenset({
-    "conscio.intercept",
-    "conscio.recall",
-    "conscio.remember",
-    "conscio.advisory",
-    "conscio.health",
-    "conscio.note",
-    "conscio.feed",
-    "conscio.state",
-    "conscio.events",
+    "conscio_intercept",
+    "conscio_recall",
+    "conscio_remember",
+    "conscio_advisory",
+    "conscio_health",
+    "conscio_note",
+    "conscio_feed",
+    "conscio_state",
+    "conscio_events",
 })
 
 BALANCED_TOOLS = LITE_TOOLS | frozenset({
-    "conscio.recall_observations",
-    "conscio.kg_query",
-    "conscio.wings_search",
-    "conscio.handoff",
-    "conscio.decide",
-    "conscio.council",
-    "conscio.verify",
-    "conscio.context_budget",
+    "conscio_recall_observations",
+    "conscio_kg_query",
+    "conscio_wings_search",
+    "conscio_handoff",
+    "conscio_decide",
+    "conscio_council",
+    "conscio_verify",
+    "conscio_context_budget",
 })
 
 _FILENAME = "mcp_mode"

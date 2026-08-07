@@ -216,11 +216,11 @@ def test_mcp_roundtrip_ids_increment(eng):
     ids = []
     for k in range(3):
         res = b.call_tool(
-            "conscio.observe", {"tool": "grep", "input": f"n{k}", "output": "o"}
+            "conscio_observe", {"tool": "grep", "input": f"n{k}", "output": "o"}
         )
         ids.append(json.loads(res["content"][0]["text"])["observation_id"])
     assert ids == sorted(set(ids)) and len(set(ids)) == 3  # strictly increasing, unique
-    res = b.call_tool("conscio.recall_observations", {"query": "n1"})
+    res = b.call_tool("conscio_recall_observations", {"query": "n1"})
     assert json.loads(res["content"][0]["text"])["observations"]
 
 
@@ -228,7 +228,7 @@ def test_mcp_recall_empty_query_safe(eng):
     import json
 
     b = _bindings(eng)
-    b.call_tool("conscio.observe", {"tool": "grep", "input": "x", "output": "y"})
-    res = b.call_tool("conscio.recall_observations", {"query": ""})
+    b.call_tool("conscio_observe", {"tool": "grep", "input": "x", "output": "y"})
+    res = b.call_tool("conscio_recall_observations", {"query": ""})
     payload = json.loads(res["content"][0]["text"])
     assert isinstance(payload["observations"], list)  # empty or not, never a crash

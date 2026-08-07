@@ -95,7 +95,7 @@ def test_full_loop_perceive_then_auto_apply(tmp_path):
     # 4. SERVER side: a plain tool call (NOT poll_reviews) auto-applies it.
     eng = _Engine(chan)
     b = _bindings(eng, db)
-    b.call_tool("conscio.advisory", {})
+    b.call_tool("conscio_advisory", {})
 
     # 5. the act is approved by the host_act gate, the verdict is consumed.
     assert led.get(rid)["status"] == "executing"
@@ -119,6 +119,6 @@ def test_non_peer_verdict_does_not_apply(tmp_path):
                  payload=review.build_verdict(fp=fp, decision="approve",
                                               reason=""))
     b = _bindings(_Engine(chan), db)
-    b.call_tool("conscio.advisory", {})
+    b.call_tool("conscio_advisory", {})
     assert led.get(rid)["status"] == "proposed"       # untouched
     led.close()

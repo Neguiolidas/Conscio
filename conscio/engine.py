@@ -1334,7 +1334,7 @@ class ConsciousnessEngine:
         """Emit a host Event on the EventBus and return the current advisory.
 
         This is a thin Python-API convenience for embedders, **not** the
-        ``conscio.feed`` MCP tool. The MCP path (``Bindings._feed``) also
+        ``conscio_feed`` MCP tool. The MCP path (``Bindings._feed``) also
         normalizes and validates the event envelope, dedups it by ``event_id``
         against the seen-store, charges the metabolic tier with
         ``session_tokens``, and runs ``perceive()``/``reflect()``. This method

@@ -12,7 +12,7 @@ class FakeBindings:
                 "adapter": None, "supported_protocols": SUPPORTED_PROTOCOLS}
 
     def tool_defs(self):
-        return [{"name": "conscio.advisory", "description": "x",
+        return [{"name": "conscio_advisory", "description": "x",
                  "inputSchema": {"type": "object"}}]
 
     def resource_defs(self):
@@ -20,7 +20,7 @@ class FakeBindings:
                  "description": "x", "mimeType": "application/json"}]
 
     def call_tool(self, name, args):
-        if name == "conscio.advisory":
+        if name == "conscio_advisory":
             return {"content": [{"type": "text", "text": "{}"}]}
         raise j.MethodNotFound(f"no tool {name}")
 
@@ -59,14 +59,14 @@ def test_tools_list_after_init():
     d = _d()
     _init(d)
     res = d.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-    assert res["result"]["tools"][0]["name"] == "conscio.advisory"
+    assert res["result"]["tools"][0]["name"] == "conscio_advisory"
 
 
 def test_tools_call_routes():
     d = _d()
     _init(d)
     res = d.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-                    "params": {"name": "conscio.advisory", "arguments": {}}})
+                    "params": {"name": "conscio_advisory", "arguments": {}}})
     assert res["result"]["content"][0]["type"] == "text"
 
 
@@ -81,7 +81,7 @@ def test_unavailable_tool_is_method_not_found():
     d = _d()
     _init(d)
     res = d.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call",
-                    "params": {"name": "conscio.act", "arguments": {}}})
+                    "params": {"name": "conscio_act", "arguments": {}}})
     assert res["error"]["code"] == j.METHOD_NOT_FOUND
 
 

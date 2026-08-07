@@ -81,13 +81,13 @@ def test_try_break_act_tool_absent(tmp_path):
         out = _run(b, [json.dumps(INIT) + "\n",
                        json.dumps({"jsonrpc": "2.0", "id": 1,
                                    "method": "tools/call",
-                                   "params": {"name": "conscio.act",
+                                   "params": {"name": "conscio_act",
                                               "arguments": {}}}) + "\n"])
         assert out[1]["error"]["code"] == j.METHOD_NOT_FOUND
         list_out = _run(b, [json.dumps(INIT) + "\n",
                             json.dumps({"jsonrpc": "2.0", "id": 2,
                                         "method": "tools/list"}) + "\n"])
-        assert "conscio.act" not in {t["name"]
+        assert "conscio_act" not in {t["name"]
                                      for t in list_out[1]["result"]["tools"]}
     finally:
         seen.close()
@@ -100,7 +100,7 @@ def test_try_break_propose_without_adapter_fails_closed(tmp_path):
         out = _run(b, [json.dumps(INIT) + "\n",
                        json.dumps({"jsonrpc": "2.0", "id": 1,
                                    "method": "tools/call",
-                                   "params": {"name": "conscio.propose_action",
+                                   "params": {"name": "conscio_propose_action",
                                               "arguments": {"intent": {
                                                   "tool": "t", "args": {},
                                                   "rationale": "r",
@@ -118,7 +118,7 @@ def test_try_break_dup_event_no_world_inflation(tmp_path):
         ev = {"id": "same", "type": "perception", "source": "h",
               "category": "h", "payload": {"x": 1}}
         call = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                           "params": {"name": "conscio.note",
+                           "params": {"name": "conscio_note",
                                       "arguments": {"event": ev}}}) + "\n"
         _run(b, [json.dumps(INIT) + "\n", call, call])
         assert seen.conn.execute("SELECT COUNT(*) FROM mcp_seen").fetchone()[0] == 1
@@ -182,11 +182,11 @@ def _call(d, name, args, _id=1):
 def test_act_executable_then_report(tmp_path):
     d, _b, e, s = _wired(tmp_path)
     try:
-        out = _call(d, "conscio.act", {"intent": {
+        out = _call(d, "conscio_act", {"intent": {
             "tool": "deploy", "args": {"env": "prod"},
             "rationale": "r", "expected_outcome": "o"}})
         assert out["status"] == "executable"
-        rep = _call(d, "conscio.report_result",
+        rep = _call(d, "conscio_report_result",
                     {"ledger_id": out["ledger_id"], "result": {"ok": True}})
         assert rep["status"] == "executed"
     finally:
@@ -199,8 +199,8 @@ def test_act_idempotency_key_returns_prior(tmp_path):
     try:
         intent = {"tool": "deploy", "args": {"env": "prod"}, "rationale": "r",
                   "expected_outcome": "o", "idempotency_key": "k1"}
-        a = _call(d, "conscio.act", {"intent": intent})
-        bb = _call(d, "conscio.act", {"intent": intent})
+        a = _call(d, "conscio_act", {"intent": intent})
+        bb = _call(d, "conscio_act", {"intent": intent})
         assert a == bb                              # exact prior, same ledger_id
     finally:
         s.close()
@@ -216,7 +216,7 @@ def test_act_absent_when_disabled_is_method_not_found(tmp_path):
         d.handle({"jsonrpc": "2.0", "id": 0, "method": "initialize",
                   "params": {}})
         res = d.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                        "params": {"name": "conscio.act", "arguments": {}}})
+                        "params": {"name": "conscio_act", "arguments": {}}})
         assert res["error"]["code"] == j.METHOD_NOT_FOUND
     finally:
         seen.close()
@@ -230,9 +230,9 @@ def test_act_tools_reject_bad_typed_args(tmp_path):
             return d.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                              "params": {"name": name, "arguments": args}}
                             )["error"]["code"]
-        assert _err("conscio.approve", {"ledger_id": "abc"}) == j.INVALID_PARAMS
-        assert _err("conscio.pending", {"limit": "abc"}) == j.INVALID_PARAMS
-        assert _err("conscio.report_result",
+        assert _err("conscio_approve", {"ledger_id": "abc"}) == j.INVALID_PARAMS
+        assert _err("conscio_pending", {"limit": "abc"}) == j.INVALID_PARAMS
+        assert _err("conscio_report_result",
                     {"ledger_id": 1, "result": "nope"}) == j.INVALID_PARAMS
     finally:
         s.close()
@@ -248,7 +248,7 @@ def test_fuzz_act_never_crashes(tmp_path):
                             "idempotency_key": "x" * 5000}}]
         for bad in bads:
             res = d.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                            "params": {"name": "conscio.act", "arguments": bad}})
+                            "params": {"name": "conscio_act", "arguments": bad}})
             assert ("result" in res
                     or res["error"]["code"] in (j.INVALID_PARAMS,
                                                 j.INTERNAL_ERROR))
@@ -264,16 +264,16 @@ def test_act_high_risk_pending_approve_report(tmp_path):
                             "params": {"env": {"type": "str", "required": True}},
                             "risk": "high", "approval_policy": "require_approval"}])
         e.host_act.skeptic = _PassSkeptic()
-        out = _call(d, "conscio.act", {"intent": {
+        out = _call(d, "conscio_act", {"intent": {
             "tool": "deploy", "args": {"env": "prod"},
             "rationale": "r", "expected_outcome": "o"}})
         assert out["status"] == "pending_approval"
         lid = out["ledger_id"]
-        pend = _call(d, "conscio.pending", {})
+        pend = _call(d, "conscio_pending", {})
         assert any(r["id"] == lid for r in pend)
-        appr = _call(d, "conscio.approve", {"ledger_id": lid})
+        appr = _call(d, "conscio_approve", {"ledger_id": lid})
         assert appr["status"] == "executable"
-        rep = _call(d, "conscio.report_result",
+        rep = _call(d, "conscio_report_result",
                     {"ledger_id": lid, "result": {"ok": True}})
         assert rep["status"] == "executed"
     finally:

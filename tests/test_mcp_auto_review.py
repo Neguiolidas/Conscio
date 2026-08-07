@@ -86,7 +86,7 @@ def test_armed_runs_apply():
 def test_call_tool_triggers_apply():
     ha = _HA()
     b = _bind(awake=True, host_act=ha, reviewers=("r",), auto_review=True)
-    b.call_tool("conscio.advisory", {})       # any tool; advisory needs no host
+    b.call_tool("conscio_advisory", {})       # any tool; advisory needs no host
     assert ha.calls == 1
 
 

@@ -115,20 +115,20 @@ from conscio.mcp import serve, main      # stdio serve loop + CLI entry point
 ```
 
 `conscio-mcp` speaks newline-delimited JSON-RPC 2.0 over stdio (stdlib only,
-nothing opens a socket). Propose-only tools: `conscio.feed`/`conscio.note`
-(idempotent on `event.id`), `conscio.advisory`, `conscio.recall`,
-`conscio.propose_action`, `conscio.propose_plan`.
+nothing opens a socket). Propose-only tools: `conscio_feed`/`conscio_note`
+(idempotent on `event.id`), `conscio_advisory`, `conscio_recall`,
+`conscio_propose_action`, `conscio_propose_plan`.
 
-**v2.15:** `conscio.evaluate` (5-axis self-evaluation scorecard).
+**v2.15:** `conscio_evaluate` (5-axis self-evaluation scorecard).
 
-**v3.0 — Gate tools:** `conscio.decide`, `conscio.council`, `conscio.loop_gate`,
-`conscio.delivery_check`, `conscio.investigate`.
+**v3.0 — Gate tools:** `conscio_decide`, `conscio_council`, `conscio_loop_gate`,
+`conscio_delivery_check`, `conscio_investigate`.
 
-**v3.0 — Pipeline tools:** `conscio.acceptance_criteria`, `conscio.verify`,
-`conscio.continuous_loop`, `conscio.strategic_compact`, `conscio.ledger`.
+**v3.0 — Pipeline tools:** `conscio_acceptance_criteria`, `conscio_verify`,
+`conscio_continuous_loop`, `conscio_strategic_compact`, `conscio_ledger`.
 
-**v3.0 — Diagnostic tools:** `conscio.context_budget`, `conscio.eval_harness`,
-`conscio.rules_distill`.
+**v3.0 — Diagnostic tools:** `conscio_context_budget`, `conscio_eval_harness`,
+`conscio_rules_distill`.
 
 Resources: `conscio://advisory`, `conscio://state`, `conscio://events`,
 `conscio://handoff`. See [MCP server](../guides/mcp.md).

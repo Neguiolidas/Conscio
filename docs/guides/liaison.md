@@ -13,9 +13,9 @@ Any instance launched with `--enable-hermes-review` can act as **both**:
 
 - **Proposer** (also needs `--enable-act`): proposes a `hermes_review` act; Conscio
   auto-publishes a directed `review_request` to each `--reviewer`. Later it calls
-  `conscio.poll_reviews` to apply inbound verdicts.
-- **Reviewer**: calls `conscio.reviews` to see requests directed at it, then
-  `conscio.review_approve` / `conscio.review_reject`.
+  `conscio_poll_reviews` to apply inbound verdicts.
+- **Reviewer**: calls `conscio_reviews` to see requests directed at it, then
+  `conscio_review_approve` / `conscio_review_reject`.
 
 ## Launch
 
@@ -31,12 +31,12 @@ Find an instance_id in `<storage>/instance.json` (`instance_id`).
 
 ## The loop
 
-1. The proposer calls `conscio.act` with a tool whose `approval_policy` is
+1. The proposer calls `conscio_act` with a tool whose `approval_policy` is
    `hermes_review`. Conscio parks it and publishes a `review_request` to each reviewer.
-2. The reviewer calls `conscio.reviews` → `[{fp, from_instance, tool, args, goal, verdict, ts}]`.
-3. The reviewer calls `conscio.review_approve {fp}` or `conscio.review_reject {fp, reason}`.
-4. The proposer calls `conscio.poll_reviews` → applied `[{ledger_id, decision, status, packet}]`.
-   An approved packet is executed by the host and reported via `conscio.report_result`.
+2. The reviewer calls `conscio_reviews` → `[{fp, from_instance, tool, args, goal, verdict, ts}]`.
+3. The reviewer calls `conscio_review_approve {fp}` or `conscio_review_reject {fp, reason}`.
+4. The proposer calls `conscio_poll_reviews` → applied `[{ledger_id, decision, status, packet}]`.
+   An approved packet is executed by the host and reported via `conscio_report_result`.
 
 ## Trust model
 
@@ -69,15 +69,15 @@ conscio-mcp --enable-relay --relay-peer <hermes_instance_id>
 
 Three tools (registered only with `--enable-relay`):
 
-- `conscio.relay_send {to, type, payload}` → `{ok, id}` — send a directed message
+- `conscio_relay_send {to, type, payload}` → `{ok, id}` — send a directed message
   to a trusted peer. `to` must be in the `--relay-peer` allowlist; `type` is
   free-form but the two review types (`review_request`/`review_verdict`) are
   reserved; `payload` is a JSON object capped at 64 KB.
-- `conscio.relay_inbox {limit?}` → `{messages: [{id, from_instance, type, payload, ts}]}`
+- `conscio_relay_inbox {limit?}` → `{messages: [{id, from_instance, type, payload, ts}]}`
   — peek unread messages from trusted peers. Review-channel rows are excluded;
   rows from non-peers (or oversized) are skipped.
-- `conscio.relay_read {ids}` → `{ok, marked}` — mark messages consumed.
-- `conscio.relay_broadcast {type, payload}` → `{ok, sent: [{to, id}], errors: [{to, reason}]}`
+- `conscio_relay_read {ids}` → `{ok, marked}` — mark messages consumed.
+- `conscio_relay_broadcast {type, payload}` → `{ok, sent: [{to, id}], errors: [{to, reason}]}`
   (v2.8.2) — fan a message out to **every** `--relay-peer`. Same contract as
   `relay_send` applied per peer (reserved types / oversized payloads rejected);
   best-effort — a failing peer lands in `errors`, never aborting the rest. A
@@ -97,7 +97,7 @@ Properties:
 - **Dumb pipe.** Relay never touches the engine or any act; de-duplication and
   what-to-do-with-a-message are the host agent's responsibility (there is no `fp`).
 
-Poll-based. One→many fan-out is `conscio.relay_broadcast` (v2.8.2, above); live
+Poll-based. One→many fan-out is `conscio_relay_broadcast` (v2.8.2, above); live
 server→client push is deferred to a later rung if a need appears.
 
 ## Dynamic / Awake (v2.6.2)
@@ -122,7 +122,7 @@ conscio-mcp --enable-act --enable-hermes-review --reviewer <id> \
 ```
 
 Inbound verdicts from allowlisted reviewers are applied to local pending acts
-on the next tool call — no explicit `conscio.poll_reviews`. The local
+on the next tool call — no explicit `conscio_poll_reviews`. The local
 `host_act` gate stays the authority. `--auto-review` is off by default and
 inert without act + hermes-review. The poll is throttled to at most once per
 5 s (v2.6.3), so a chatty session does not open a liaison `SELECT` per request.

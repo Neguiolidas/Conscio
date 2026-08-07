@@ -32,8 +32,8 @@ def test_initialize_then_tools_list_is_propose_only(tmp_path):
     try:
         out = _run(b, [INIT, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}])
         names = {t["name"] for t in out[1]["result"]["tools"]}
-        assert "conscio.feed" in names and "conscio.propose_action" in names
-        assert "conscio.act" not in names and "conscio.register_tool" not in names
+        assert "conscio_feed" in names and "conscio_propose_action" in names
+        assert "conscio_act" not in names and "conscio.register_tool" not in names
         assert out[0]["result"]["conscio"]["act_enabled"] is False
     finally:
         seen.close()
@@ -46,7 +46,7 @@ def test_feed_ingests_and_returns_advisory(tmp_path):
         ev = {"id": "e1", "type": "perception", "source": "host",
               "category": "host", "payload": {"cpu": 0.4}}
         out = _run(b, [INIT, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                              "params": {"name": "conscio.feed",
+                              "params": {"name": "conscio_feed",
                                          "arguments": {"event": ev}}}])
         body = json.loads(out[1]["result"]["content"][0]["text"])
         assert body["event_id"] == "e1" and "advisory" in body
@@ -61,7 +61,7 @@ def test_feed_duplicate_returns_identical_prior_result(tmp_path):
         ev = {"id": "dup", "type": "perception", "source": "h",
               "category": "h", "payload": {"x": 1}}
         call = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                "params": {"name": "conscio.feed", "arguments": {"event": ev}}}
+                "params": {"name": "conscio_feed", "arguments": {"event": ev}}}
         out = _run(b, [INIT, call, call])
         first = json.loads(out[1]["result"]["content"][0]["text"])
         second = json.loads(out[2]["result"]["content"][0]["text"])
@@ -77,7 +77,7 @@ def test_note_maps_host_type_to_valid_category(tmp_path):
         ev = {"id": "n1", "type": "user_msg", "source": "alice",
               "category": "user", "payload": {"text": "hi"}}
         _run(b, [INIT, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                        "params": {"name": "conscio.note",
+                        "params": {"name": "conscio_note",
                                    "arguments": {"event": ev}}}])
         rows = eng.event_bus.query(type="host:event", limit=5)
         assert rows and rows[0].data["host_type"] == "user_msg"
@@ -119,7 +119,7 @@ def test_propose_action_over_mcp(tmp_path):
         intent = {"tool": "read_file", "args": {"path": "x"},
                   "rationale": "inspect", "expected_outcome": "contents"}
         out = _run(b, [INIT, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                              "params": {"name": "conscio.propose_action",
+                              "params": {"name": "conscio_propose_action",
                                          "arguments": {"intent": intent}}}])
         assert json.loads(out[1]["result"]["content"][0]["text"])["verdict"] == "PASS"
     finally:
@@ -132,7 +132,7 @@ def test_invalid_event_is_invalid_params(tmp_path):
     b, eng, seen = _bindings(tmp_path)
     try:
         out = _run(b, [INIT, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                              "params": {"name": "conscio.feed",
+                              "params": {"name": "conscio_feed",
                                          "arguments": {"event": {"type": "x"}}}}])
         assert out[1]["error"]["code"] == jj.INVALID_PARAMS
     finally:
@@ -159,7 +159,7 @@ def test_act_tools_absent_without_flag(tmp_path):
     b, eng, seen = _act_bind(tmp_path, act_flag=False)
     try:
         names = {t["name"] for t in b.tool_defs()}
-        assert "conscio.act" not in names
+        assert "conscio_act" not in names
         assert b.conscio_meta()["act_enabled"] is False
     finally:
         seen.close()
@@ -171,8 +171,8 @@ def test_act_tools_present_after_enable(tmp_path):
     try:
         b.on_initialize({"conscio": {"tools": _MS}})
         names = {t["name"] for t in b.tool_defs()}
-        assert {"conscio.act", "conscio.report_result", "conscio.pending",
-                "conscio.approve", "conscio.reject"} <= names
+        assert {"conscio_act", "conscio_report_result", "conscio_pending",
+                "conscio_approve", "conscio_reject"} <= names
         meta = b.conscio_meta()
         assert meta["act_enabled"] is True and meta["host_tools_count"] == 1
         assert meta["adapter_ready"] is True and meta["manifest_hash"]
@@ -185,9 +185,38 @@ def test_invalid_manifest_keeps_act_disabled(tmp_path):
     b, eng, seen = _act_bind(tmp_path, act_flag=True)
     try:
         b.on_initialize({"conscio": {"tools": [{"risk": "boom"}]}})
-        assert "conscio.act" not in {t["name"] for t in b.tool_defs()}
+        assert "conscio_act" not in {t["name"] for t in b.tool_defs()}
         meta = b.conscio_meta()
         assert meta["act_enabled"] is False and meta["act_error"]
     finally:
         seen.close()
+        eng.close()
+
+
+def test_legacy_dotted_tool_name_still_dispatches(tmp_path):
+    """v4.1 renamed the surface; a caller scripted against the old spelling must
+    not break.
+
+    The rename is invisible to a model (hosts sanitize the name they show it),
+    but not to anything that hardcoded ``conscio.recall`` — a shell script, a
+    peer agent, another host's config. Those get an alias, and only on the way
+    in: nothing advertises a dotted name any more.
+    """
+    import pytest
+
+    from conscio.mcp import jsonrpc
+
+    b, eng, _ = _bindings(tmp_path)
+    try:
+        old = json.loads(b.call_tool("conscio.advisory", {})["content"][0]["text"])
+        new = json.loads(b.call_tool("conscio_advisory", {})["content"][0]["text"])
+        assert old.keys() == new.keys(), "alias reached a different handler"
+
+        # o alias traduz, não adivinha: um nome inexistente ainda dói
+        with pytest.raises(jsonrpc.MethodNotFound):
+            b.call_tool("conscio.no_such_tool", {})
+
+        assert not [d for d in b.tool_defs() if "." in d["name"]], \
+            "a dotted name is being advertised again"
+    finally:
         eng.close()

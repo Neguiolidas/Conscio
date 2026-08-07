@@ -1,11 +1,11 @@
 # Introspection Debugging Workflow
 
 **Origin:** ECC `agent-introspection-debugging` skill
-**Conscio mapping:** `conscio.note` + `conscio.feed` + `conscio.cognitive_cycle`
+**Conscio mapping:** `conscio_note` + `conscio_feed` + `conscio_cognitive_cycle`
 **Type:** Workflow (sequence of existing MCP tools — no new tools needed)
 
-> **v3.0 enrichment:** `conscio.investigate` verifies the target was read before
-> attempting a fix; `conscio.loop_gate` gates the recovery loop; `conscio.eval_harness`
+> **v3.0 enrichment:** `conscio_investigate` verifies the target was read before
+> attempting a fix; `conscio_loop_gate` gates the recovery loop; `conscio_eval_harness`
 > measures debugging reliability with pass@k.
 
 ## When to use
@@ -18,7 +18,7 @@ When you're stuck in a loop, getting wrong results, or the agent's behavior does
 
 **Goal:** Record what went wrong before context is lost.
 
-Call `conscio.note` with the failure:
+Call `conscio_note` with the failure:
 
 ```json
 {
@@ -39,7 +39,7 @@ Call `conscio.note` with the failure:
 
 **Goal:** Identify the single most likely cause. Not 5 hypotheses — ONE.
 
-Call `conscio.feed` with the failure event + current world state:
+Call `conscio_feed` with the failure event + current world state:
 
 ```json
 {
@@ -59,7 +59,7 @@ Feed triggers reflect automatically. The reflection output will contain:
 
 **Diagnosis heuristics** (priority order):
 1. Did I state the objective correctly? → Restate and retry
-2. Does the world match my model? → Verify world state via `conscio.recall`
+2. Does the world match my model? → Verify world state via `conscio_recall`
 3. Am I trying to do too much? → Shrink scope to one variable
 4. Can I discriminate with one check? → Add a single assertion
 5. Only then → Change approach
@@ -73,7 +73,7 @@ Feed triggers reflect automatically. The reflection output will contain:
 
 **Goal:** Fix exactly one thing. Verify it works. Don't touch anything else.
 
-Call `conscio.cognitive_cycle` with the recovery plan:
+Call `conscio_cognitive_cycle` with the recovery plan:
 
 ```json
 {
@@ -95,7 +95,7 @@ The cognitive cycle will:
 
 **Goal:** Record what you learned so you don't repeat the failure.
 
-Call `conscio.note` with the resolution:
+Call `conscio_note` with the resolution:
 
 ```json
 {
@@ -111,7 +111,7 @@ Call `conscio.note` with the resolution:
 }
 ```
 
-**After the loop:** Check `conscio.evaluate(task_description="debugging session")` to see if the overall session quality is acceptable.
+**After the loop:** Check `conscio_evaluate(task_description="debugging session")` to see if the overall session quality is acceptable.
 
 ## Quick reference
 
@@ -123,8 +123,8 @@ stuck → note(failure) → feed(diagnosis) → cognitive_cycle(recovery) → no
 
 | Tool | Phase | Purpose |
 |------|-------|---------|
-| `conscio.note` | 1, 4 | Capture failure, record resolution |
-| `conscio.feed` | 2 | Perceive + reflect on failure (auto-triggers reflection) |
-| `conscio.recall` | 2 | Retrieve past similar failures |
-| `conscio.cognitive_cycle` | 3 | Full perceive→reflect→synthesize→propose→learn cycle |
-| `conscio.evaluate` | After | Score the debugging session quality |
+| `conscio_note` | 1, 4 | Capture failure, record resolution |
+| `conscio_feed` | 2 | Perceive + reflect on failure (auto-triggers reflection) |
+| `conscio_recall` | 2 | Retrieve past similar failures |
+| `conscio_cognitive_cycle` | 3 | Full perceive→reflect→synthesize→propose→learn cycle |
+| `conscio_evaluate` | After | Score the debugging session quality |

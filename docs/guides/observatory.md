@@ -19,7 +19,7 @@ conscio-observatory --storage DIR [--host 127.0.0.1] [--port 8788] [--token TOK]
   `goals.json` / `state_summary.json` parsed from the storage dir. Because it
   reads *persisted* state, it works even on a **cold** instance with no engine
   running.
-- **MCP state tools** — `conscio.state`, `conscio.events`, `conscio.handoff` are
+- **MCP state tools** — `conscio_state`, `conscio_events`, `conscio_handoff` are
   always available on the MCP server (propose-only grade, independent of
   `--enable-act`). They re-surface the existing `conscio://` resources as
   `tools/call` entries for hosts that speak tools, not resources.

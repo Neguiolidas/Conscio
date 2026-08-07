@@ -33,9 +33,9 @@ def test_structure_tools_registered(tmp_path):
     b, eng, seen = _bindings(tmp_path)
     try:
         names = set(b._tools())
-        assert {"conscio.structure", "conscio.structural_lookup"} <= names
+        assert {"conscio_structure", "conscio_structural_lookup"} <= names
         defs = {d["name"] for d in b.tool_defs()}
-        assert {"conscio.structure", "conscio.structural_lookup"} <= defs
+        assert {"conscio_structure", "conscio_structural_lookup"} <= defs
     finally:
         seen.close()
         eng.close()
@@ -44,7 +44,7 @@ def test_structure_tools_registered(tmp_path):
 def test_structure_reports_not_loaded_by_default(tmp_path):
     b, eng, seen = _bindings(tmp_path)
     try:
-        assert b._tools()["conscio.structure"]({}) == {"loaded": False}
+        assert b._tools()["conscio_structure"]({}) == {"loaded": False}
     finally:
         seen.close()
         eng.close()
@@ -54,7 +54,7 @@ def test_structure_reports_loaded_signal(tmp_path):
     b, eng, seen = _bindings(tmp_path)
     try:
         eng.load_structure(str(FIXTURE), workspace_id="ws", root=tmp_path)
-        rep = b._tools()["conscio.structure"]({})
+        rep = b._tools()["conscio_structure"]({})
         assert rep["loaded"] is True
         assert rep["node_count"] > 0
         assert "digest" in rep and isinstance(rep["digest"], str)
@@ -70,7 +70,7 @@ def test_structural_lookup_resolves_a_node(tmp_path):
         sig = eng.structural_signal()
         # community ids are always resolvable; pick the top one
         cid = str(sig.communities[0].community_id)
-        res = b._tools()["conscio.structural_lookup"]({"key": cid})["result"]
+        res = b._tools()["conscio_structural_lookup"]({"key": cid})["result"]
         assert res is not None and res["kind"] == "community"
     finally:
         seen.close()

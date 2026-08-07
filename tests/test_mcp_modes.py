@@ -59,24 +59,24 @@ def test_served_surface_is_the_set_plus_the_mode_tool(tmp_path):
     """
     for mode, allowed in (("lite", modes.LITE_TOOLS),
                           ("balanced", modes.BALANCED_TOOLS)):
-        assert _names(mode, tmp_path) == set(allowed) | {"conscio.mode"}
+        assert _names(mode, tmp_path) == set(allowed) | {"conscio_mode"}
 
 
 def test_remember_is_present_in_every_mode(tmp_path):
     for mode in modes.MODES:
-        assert "conscio.remember" in _names(mode, tmp_path), f"no memory write in {mode}"
+        assert "conscio_remember" in _names(mode, tmp_path), f"no memory write in {mode}"
 
 
 def test_mode_tool_exists_in_every_mode(tmp_path):
     for mode in modes.MODES:
-        assert "conscio.mode" in _names(mode, tmp_path), f"no way out of {mode}"
+        assert "conscio_mode" in _names(mode, tmp_path), f"no way out of {mode}"
 
 
 def test_mode_read_reports_current_surface(tmp_path):
     import json
     b, engine = _bindings(tmp_path, mode="balanced")
     try:
-        out = json.loads(b.call_tool("conscio.mode", {})["content"][0]["text"])
+        out = json.loads(b.call_tool("conscio_mode", {})["content"][0]["text"])
         assert out["mode"] == "balanced"
         assert out["tools"] == 18
         assert out["modes"] == list(modes.MODES)
@@ -89,7 +89,7 @@ def test_mode_write_switches_and_persists(tmp_path):
     b, engine = _bindings(tmp_path, mode="ultra")
     try:
         out = json.loads(
-            b.call_tool("conscio.mode", {"set": "lite"})["content"][0]["text"])
+            b.call_tool("conscio_mode", {"set": "lite"})["content"][0]["text"])
         assert out["mode"] == "lite"
         assert out["tools"] == 10
         assert len(b.tool_defs()) == 10
@@ -106,7 +106,7 @@ def test_mode_write_rejects_unknown(tmp_path):
         # InvalidParams, não Exception: um AttributeError no handler passaria
         # por um raises(Exception) e o erro fantasma iria pro cliente como -32603.
         with pytest.raises(jsonrpc.InvalidParams):
-            b.call_tool("conscio.mode", {"set": "turbo"})
+            b.call_tool("conscio_mode", {"set": "turbo"})
         assert b.mode == "ultra"                 # recusa não move a superfície
         assert b.drain_notifications() == []     # nem avisa o host
     finally:
@@ -138,7 +138,7 @@ def test_lite_does_not_void_an_explicit_flag(tmp_path):
     """A flag typed on the command line survives the mode filter (but gets flattened).
 
     Regressão da v3.9.9: `--enable-act --lite` expunha 8 ferramentas e engolia o
-    `conscio.act` sem erro. Verificado no baseline antes de escrever este teste.
+    `conscio_act` sem erro. Verificado no baseline antes de escrever este teste.
     `act_flag=True` sozinho não basta — `_act_enabled()` também exige `host_act`,
     então o manifesto precisa ser ligado de verdade, senão o teste passa por
     motivo errado (as ACT tools nunca teriam entrado).
@@ -157,9 +157,9 @@ def test_lite_does_not_void_an_explicit_flag(tmp_path):
     finally:
         engine.close()
     names = {d["name"] for d in defs}
-    assert "conscio.act" in names, "explicit --enable-act was silently dropped by lite"
+    assert "conscio_act" in names, "explicit --enable-act was silently dropped by lite"
     assert len(names) == 10 + len(schemas.ACT_TOOL_DEFS)
-    act = next(d for d in defs if d["name"] == "conscio.act")
+    act = next(d for d in defs if d["name"] == "conscio_act")
     assert len(act["description"]) <= 120           # formatting still applies
     for prop in act["inputSchema"]["properties"].values():
         assert set(prop) == {"type"}, prop
@@ -205,7 +205,7 @@ def test_mode_rejects_guessed_argument_name(tmp_path):
     b, engine = _bindings(tmp_path, mode="ultra")
     try:
         with pytest.raises(jsonrpc.InvalidParams) as exc:
-            b.call_tool("conscio.mode", {"mode": "lite"})
+            b.call_tool("conscio_mode", {"mode": "lite"})
         assert "unknown argument" in str(exc.value)
         assert b.mode == "ultra"                 # não moveu a superfície
         assert b.drain_notifications() == []     # nem avisou o host

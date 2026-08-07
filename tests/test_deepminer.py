@@ -168,7 +168,7 @@ def _bindings(eng):
 
 def test_mcp_observe_records(eng):
     b = _bindings(eng)
-    res = b.call_tool("conscio.observe",
+    res = b.call_tool("conscio_observe",
                       {"tool": "grep", "input": "foo", "output": "bar"})
     payload = json.loads(res["content"][0]["text"])
     assert isinstance(payload["observation_id"], int)
@@ -178,9 +178,9 @@ def test_mcp_observe_records(eng):
 
 def test_mcp_recall_observations_finds(eng):
     b = _bindings(eng)
-    b.call_tool("conscio.observe",
+    b.call_tool("conscio_observe",
                 {"tool": "grep", "input": "needle", "output": "hay"})
-    res = b.call_tool("conscio.recall_observations", {"query": "needle"})
+    res = b.call_tool("conscio_recall_observations", {"query": "needle"})
     payload = json.loads(res["content"][0]["text"])
     assert payload["observations"]
     assert "needle" in json.dumps(payload["observations"])
@@ -189,16 +189,16 @@ def test_mcp_recall_observations_finds(eng):
 def test_mcp_recall_observations_can_widen_scope(eng):
     b = _bindings(eng)
     eng.set_session("MCP-A")
-    b.call_tool("conscio.observe",
+    b.call_tool("conscio_observe",
                 {"tool": "grep", "input": "SCOPEMARK", "output": "o",
                  "project": "proj-x"})
     eng.set_session("MCP-B")
     assert not json.loads(b.call_tool(
-        "conscio.recall_observations", {"query": "SCOPEMARK"}
+        "conscio_recall_observations", {"query": "SCOPEMARK"}
     )["content"][0]["text"])["observations"]
     for widen in ({"scope": "all"}, {"scope": "project", "project": "proj-x"}):
         got = json.loads(b.call_tool(
-            "conscio.recall_observations", {"query": "SCOPEMARK", **widen}
+            "conscio_recall_observations", {"query": "SCOPEMARK", **widen}
         )["content"][0]["text"])["observations"]
         assert len(got) == 1, widen
 
@@ -207,14 +207,14 @@ def test_mcp_recall_observations_rejects_a_bad_scope(eng):
     """An agent that guesses a scope gets a reason back, not 'internal error'."""
     b = _bindings(eng)
     with pytest.raises(j.InvalidParams):
-        b.call_tool("conscio.recall_observations",
+        b.call_tool("conscio_recall_observations",
                     {"query": "x", "scope": "global"})
 
 
 def test_mcp_observe_requires_tool(eng):
     b = _bindings(eng)
     with pytest.raises(j.InvalidParams):
-        b.call_tool("conscio.observe", {"input": "no tool key"})
+        b.call_tool("conscio_observe", {"input": "no tool key"})
 
 
 def test_mcp_unknown_tool_raises(eng):
@@ -227,7 +227,7 @@ def test_schemas_expose_observe_tools():
     from conscio.mcp.schemas import BASE_TOOL_DEFS
 
     names = {t["name"] for t in BASE_TOOL_DEFS}
-    assert {"conscio.observe", "conscio.recall_observations"} <= names
+    assert {"conscio_observe", "conscio_recall_observations"} <= names
 
 
 def test_compress_observations_builds_handoff(eng):
