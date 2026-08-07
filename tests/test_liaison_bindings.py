@@ -26,7 +26,7 @@ def test_liaison_tools_absent_without_flag(tmp_path):
     try:
         names = {t["name"] for t in b.tool_defs()}
         assert not any(n.startswith("conscio.review") for n in names)
-        assert "conscio.reviews" not in names and "conscio.poll_reviews" not in names
+        assert "conscio_reviews" not in names and "conscio_poll_reviews" not in names
     finally:
         seen.close()
         eng.close()
@@ -37,9 +37,9 @@ def test_reviewer_tools_present_without_act(tmp_path):
                          act_flag=False)
     try:
         names = {t["name"] for t in b.tool_defs()}
-        assert {"conscio.reviews", "conscio.review_approve",
-                "conscio.review_reject"} <= names
-        assert "conscio.poll_reviews" not in names      # needs --enable-act
+        assert {"conscio_reviews", "conscio_review_approve",
+                "conscio_review_reject"} <= names
+        assert "conscio_poll_reviews" not in names      # needs --enable-act
         meta = b.conscio_meta()
         assert meta["hermes_review_enabled"] is True
     finally:
@@ -354,8 +354,8 @@ def test_relay_tools_present_with_flag(tmp_path):
                          relay=True, relay_peers=("B",))
     try:
         names = {t["name"] for t in b.tool_defs()}
-        assert {"conscio.relay_send", "conscio.relay_inbox",
-                "conscio.relay_read"} <= names
+        assert {"conscio_relay_send", "conscio_relay_inbox",
+                "conscio_relay_read"} <= names
         meta = b.conscio_meta()
         assert meta["relay_enabled"] is True
         assert meta["relay_peers_count"] == 1
@@ -501,7 +501,7 @@ def test_relay_broadcast_tool_present_with_flag(tmp_path):
                          relay=True, relay_peers=("B", "C"))
     try:
         names = {t["name"] for t in b.tool_defs()}
-        assert "conscio.relay_broadcast" in names
+        assert "conscio_relay_broadcast" in names
     finally:
         seen.close()
         eng.close()
@@ -512,7 +512,7 @@ def test_relay_broadcast_absent_without_flag(tmp_path):
                          relay=False)
     try:
         names = {t["name"] for t in b.tool_defs()}
-        assert "conscio.relay_broadcast" not in names
+        assert "conscio_relay_broadcast" not in names
     finally:
         seen.close()
         eng.close()

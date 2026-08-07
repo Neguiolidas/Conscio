@@ -121,7 +121,7 @@ class ModeRouter:
         Reads the shape ``EvaluationReport.to_dict()`` actually produces: the axes
         live under ``axes`` and ``overall`` is a float. Reading ``axis_scores``
         and calling ``.get`` on that float made every minimal/compact caller of
-        conscio.evaluate fail with a bare "internal error".
+        conscio_evaluate fail with a bare "internal error".
         """
         axes = evaluate_result.get("axes") or []
         mode = "deterministic"

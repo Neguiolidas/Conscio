@@ -3,7 +3,7 @@ description: Turn Conscio's observation capture on or off for this space.
 argument-hint: on|off
 ---
 
-The DeepMiner hook records every tool call verbatim so `conscio.recall_observations`
+The DeepMiner hook records every tool call verbatim so `conscio_recall_observations`
 can reach them after compaction. Capture is on by default and is switched by the
 presence of a single file in the space.
 

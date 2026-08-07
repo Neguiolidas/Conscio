@@ -3,7 +3,7 @@
     "conscio": {
       "command": "uvx",
       "args": [
-        "--from", "conscio==4.0.2", "conscio-mcp",
+        "--from", "conscio==4.1.0", "conscio-mcp",
         "--mode", "balanced",
         "--storage", "${CLAUDE_PLUGIN_DATA}/space",
         "--default-model", "claude-opus-5"

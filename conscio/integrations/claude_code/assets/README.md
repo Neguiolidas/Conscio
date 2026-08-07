@@ -20,7 +20,7 @@ sees always match the assets this plugin shipped.
 
 The tool surface is sized on purpose: a small model drowns in 35 tools, and a
 large one is wasted on 10. Switch at any time with `/conscio:mode`, or ask for
-`conscio.mode` directly.
+`conscio_mode` directly.
 
 | Mode | Tools | For |
 |------|-------|-----|

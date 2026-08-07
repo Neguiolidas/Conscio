@@ -1,13 +1,13 @@
-"""Test for conscio.health MCP tool (v3.1.1)."""
+"""Test for conscio_health MCP tool (v3.1.1)."""
 from conscio.mcp.schemas import BASE_TOOL_DEFS
 
 
 def test_health_in_schemas():
-    """conscio.health must be present in BASE_TOOL_DEFS with correct shape."""
+    """conscio_health must be present in BASE_TOOL_DEFS with correct shape."""
     names = [t["name"] for t in BASE_TOOL_DEFS]
-    assert "conscio.health" in names, "conscio.health missing from schemas"
+    assert "conscio_health" in names, "conscio_health missing from schemas"
 
-    health = next(t for t in BASE_TOOL_DEFS if t["name"] == "conscio.health")
+    health = next(t for t in BASE_TOOL_DEFS if t["name"] == "conscio_health")
     assert "description" in health
     assert "health" in health["description"].lower()
     assert "read-only" in health["description"].lower()

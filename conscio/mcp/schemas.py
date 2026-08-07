@@ -67,28 +67,28 @@ _FEED_INPUT = {"type": "object",
                "required": ["event"]}
 
 BASE_TOOL_DEFS: list[dict] = [
-    {"name": "conscio.feed",
+    {"name": "conscio_feed",
      "description": "Ingest a perception Event; runs perceive+reflect; returns "
                     "the updated advisory. Idempotent on event.id. Pass "
                     "session_tokens to drive the metabolic tier.",
      "inputSchema": _FEED_INPUT},
-    {"name": "conscio.note",
+    {"name": "conscio_note",
      "description": "Record a raw Event to the event log (no reflect). "
                     "Idempotent on event.id.",
      "inputSchema": _EVENT_INPUT},
-    {"name": "conscio.advisory",
+    {"name": "conscio_advisory",
      "description": "Current cognitive state (pure read).",
      "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "conscio.recall",
+    {"name": "conscio_recall",
      "description": "Retrieve relevant past context (FTS5 + RAG).",
      "inputSchema": {"type": "object",
                      "properties": {"query": {"type": "string"},
                                     "k": {"type": "integer"},
                                     "categories": {"type": "array"}},
                      "required": ["query"]}},
-    {"name": "conscio.remember",
+    {"name": "conscio_remember",
      "description": "Store a durable fact or settled decision in episodic memory. "
-                    "Survives restarts and is retrievable with conscio.recall.",
+                    "Survives restarts and is retrievable with conscio_recall.",
      "inputSchema": {
          "type": "object",
          "properties": {
@@ -97,13 +97,13 @@ BASE_TOOL_DEFS: list[dict] = [
          },
          "required": ["text"],
      }},
-    {"name": "conscio.propose_action",
+    {"name": "conscio_propose_action",
      "description": "Audit an explicit action intent (Skeptic). Never "
                     "executes. Returns verdict PASS/FAIL + reasons.",
      "inputSchema": {"type": "object",
                      "properties": {"intent": {"type": "object"}},
                      "required": ["intent"]}},
-    {"name": "conscio.propose_plan",
+    {"name": "conscio_propose_plan",
      "description": "Generate ONE audited action from a goal (Actor), "
                     "constrained to the declared tool vocabulary. Never "
                     "executes; not multi-step; not free-form.",
@@ -111,32 +111,32 @@ BASE_TOOL_DEFS: list[dict] = [
                      "properties": {"goal": {"type": "string"},
                                     "tools": {"type": "array"}},
                      "required": ["goal", "tools"]}},
-    {"name": "conscio.state",
+    {"name": "conscio_state",
      "description": "ConsciousnessState snapshot (pure read).",
      "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "conscio.events",
+    {"name": "conscio_events",
      "description": "Recent events (pure read; type/category/since/limit).",
      "inputSchema": {"type": "object",
                      "properties": {"type": {"type": "string"},
                                     "category": {"type": "string"},
                                     "since": {"type": "string"},
                                     "limit": {"type": "integer"}}}},
-    {"name": "conscio.handoff",
+    {"name": "conscio_handoff",
      "description": "Latest session handoff (pure read, markdown).",
      "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "conscio.structure",
+    {"name": "conscio_structure",
      "description": "Report the workspace structural graph loaded into "
                     "awareness (consent-gated; data, never code). Returns the "
                     "distilled digest + counts, or loaded=false when none is "
                     "consented/loaded.",
      "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "conscio.structural_lookup",
+    {"name": "conscio_structural_lookup",
      "description": "Resolve a structural node / hyperedge / community id from "
                     "the loaded graph to its detail; null on miss.",
      "inputSchema": {"type": "object",
                      "properties": {"key": {"type": "string"}},
                      "required": ["key"]}},
-    {"name": "conscio.cognitive_cycle",
+    {"name": "conscio_cognitive_cycle",
      "description": "Run one explicit cognitive pass (reflect -> synthesize -> "
                     "propose/act -> learn -> self-improve) and return a report "
                     "of each stage. The act stage runs only when the server has "
@@ -145,7 +145,7 @@ BASE_TOOL_DEFS: list[dict] = [
      "inputSchema": {"type": "object",
                      "properties": {"world_state": {"type": "string"},
                                     "session_tokens": {"type": "integer"}}}},
-    {"name": "conscio.evaluate",
+    {"name": "conscio_evaluate",
      "description": "5-axis self-evaluation scorecard (accuracy, completeness, "
                     "clarity, actionability, conciseness). Scores 1-5 with "
                     "concrete evidence. Pure read-only — no state mutation.",
@@ -156,7 +156,7 @@ BASE_TOOL_DEFS: list[dict] = [
                                                "description": "optional output text being evaluated "
                                                               "(used for conciseness and clarity heuristics)"}}}},
     # ── v3.0 Gate tools ──────────────────────────────────────────────
-    {"name": "conscio.decide",
+    {"name": "conscio_decide",
      "description": "Create or update an Architecture Decision Record (ADR). "
                     "Creating: pass title + context. Updating: pass adr_id + status.",
      "inputSchema": {"type": "object",
@@ -167,7 +167,7 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "status": {"type": "string",
                                                "description": "proposed|accepted|deprecated|superseded"},
                                     "deciders": {"type": "array", "items": {"type": "string"}}}}},
-    {"name": "conscio.council",
+    {"name": "conscio_council",
      "description": "Convene a 4-voice council (architect, skeptic, pragmatist, critic) "
                     "for decision analysis. Returns votes and recommendation.",
      "inputSchema": {"type": "object",
@@ -175,7 +175,7 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "context": {"type": "string"},
                                     "options": {"type": "array", "items": {"type": "string"}}},
                      "required": ["question"]}},
-    {"name": "conscio.loop_gate",
+    {"name": "conscio_loop_gate",
      "description": "Vet an autonomous loop against 4 conditions: frequency, "
                     "verifiable, budget_ok, has_tools. Returns approved/vetoed.",
      "inputSchema": {"type": "object",
@@ -184,11 +184,11 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "verifiable": {"type": "boolean", "default": True},
                                     "budget_ok": {"type": "boolean", "default": True},
                                     "has_tools": {"type": "boolean", "default": True}}}},
-    {"name": "conscio.delivery_check",
+    {"name": "conscio_delivery_check",
      "description": "Pre-close quality gate: rationalization patterns, stale proposals, "
                     "disk space. Also runs automatically on engine.close().",
      "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "conscio.investigate",
+    {"name": "conscio_investigate",
      "description": "Verify that a target was read before acting. Checks EventBus "
                     "for investigate:read events mentioning the target.",
      "inputSchema": {"type": "object",
@@ -196,13 +196,13 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "action_type": {"type": "string"}},
                      "required": ["target"]}},
     # ── v3.2 Memory tools ───────────────────────────────────────────
-    {"name": "conscio.kg_query",
+    {"name": "conscio_kg_query",
      "description": "Query the Knowledge Graph for entity info, relationships, and timeline.",
      "inputSchema": {"type": "object",
                      "properties": {"name": {"type": "string",
                                               "description": "Entity name to query"}},
                      "required": ["name"]}},
-    {"name": "conscio.wings_search",
+    {"name": "conscio_wings_search",
      "description": "Search content in wing/room hierarchy. Optionally filter by wing.",
      "inputSchema": {"type": "object",
                      "properties": {"query": {"type": "string"},
@@ -211,14 +211,14 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "limit": {"type": "integer",
                                               "description": "Max results (default 5)"}},
                      "required": ["query"]}},
-    {"name": "conscio.export",
+    {"name": "conscio_export",
      "description": "Export Conscio memory (KG, Hallways, ContentStore) to tar.gz archive.",
      "inputSchema": {"type": "object",
                      "properties": {"path": {"type": "string",
                                               "description": "Output tar.gz path"}},
                      "required": ["path"]}},
     # ── v3.0 Pipeline tools ───────────────────────────────────────────
-    {"name": "conscio.acceptance_criteria",
+    {"name": "conscio_acceptance_criteria",
      "description": "Generate acceptance criteria for a goal. Auto-detects risk "
                     "domains and depth (quick/full). Emits pipeline:acceptance event.",
      "inputSchema": {"type": "object",
@@ -227,13 +227,13 @@ BASE_TOOL_DEFS: list[dict] = [
                                                "description": "quick|full|auto"},
                                     "risk_domains": {"type": "array",
                                                       "items": {"type": "string"}}}}},
-    {"name": "conscio.verify",
+    {"name": "conscio_verify",
      "description": "Verify acceptance criteria against evidence events. "
                     "Use criteria_source='acceptance' to load from last acceptance event.",
      "inputSchema": {"type": "object",
                      "properties": {"criteria": {"type": "array"},
                                     "criteria_source": {"type": "string"}}}},
-    {"name": "conscio.continuous_loop",
+    {"name": "conscio_continuous_loop",
      "description": "Select and gate an autonomous loop pattern (sequential, "
                     "continuous_pr, rfc_dag, infinite). Checks loop_gate conditions.",
      "inputSchema": {"type": "object",
@@ -243,14 +243,14 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "verifiable": {"type": "boolean", "default": True},
                                     "budget_ok": {"type": "boolean", "default": True},
                                     "has_tools": {"type": "boolean", "default": True}}}},
-    {"name": "conscio.strategic_compact",
+    {"name": "conscio_strategic_compact",
      "description": "Advise on strategic context compaction timing. "
                     "Checks token pressure and workflow phase.",
      "inputSchema": {"type": "object",
                      "properties": {"phase": {"type": "string"},
                                     "context_tokens": {"type": "integer"},
                                     "context_window": {"type": "integer"}}}},
-    {"name": "conscio.ledger",
+    {"name": "conscio_ledger",
      "description": "Record, query, or promote entries in the recursive decision "
                     "ledger with coherence marks and promotion gates.",
      "inputSchema": {"type": "object",
@@ -264,7 +264,7 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "prior_winner": {"type": "string"},
                                     "coherence_mark": {"type": "object"}}}},
     # ── v3.0 Diagnostic tools ────────────────────────────────────────
-    {"name": "conscio.context_budget",
+    {"name": "conscio_context_budget",
      "description": "Audit context window consumption. Shows token pressure, "
                     "source breakdown, and optimization recommendations.",
      "inputSchema": {"type": "object",
@@ -272,7 +272,7 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "context_window": {"type": "integer"},
                                     "detail": {"type": "string",
                                                "description": "summary|full"}}}},
-    {"name": "conscio.eval_harness",
+    {"name": "conscio_eval_harness",
      "description": "Formal evaluation framework with pass@k metrics. "
                     "Define evals, record results, get reliability reports.",
      "inputSchema": {"type": "object",
@@ -284,7 +284,7 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "criteria": {"type": "array", "items": {"type": "string"}},
                                     "results": {"type": "array", "items": {"type": "boolean"}},
                                     "k_values": {"type": "array", "items": {"type": "integer"}}}}},
-    {"name": "conscio.rules_distill",
+    {"name": "conscio_rules_distill",
      "description": "Extract cross-cutting principles from skills and events. "
                     "Scan for patterns, distill into rules, list existing rules.",
      "inputSchema": {"type": "object",
@@ -294,13 +294,13 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "min_occurrences": {"type": "integer"},
                                     "rule_text": {"type": "string"},
                                     "rule_id": {"type": "string"}}}},
-    {"name": "conscio.health",
+    {"name": "conscio_health",
      "description": "Quick health check — are all Conscio modules operational? "
                     "Returns mode, model, pending proposals, active goals, and "
                     "stale entity count. Pure read-only.",
      "inputSchema": {"type": "object",
                      "properties": {}}},
-    {"name": "conscio.intercept",
+    {"name": "conscio_intercept",
      "description": "Evaluate math expression or solve equation. "
                     "Accepts Python, LaTeX (\\frac, \\sqrt, x^2, implied mult), "
                     "or mixed. Auto-solves equations with '='. "
@@ -320,7 +320,7 @@ BASE_TOOL_DEFS: list[dict] = [
                                            "Default: auto."},
                      },
                      "required": ["expression"]}},
-    {"name": "conscio.observe",
+    {"name": "conscio_observe",
      "description": "Record a tool observation (fire-and-forget, 0 LLM tokens).",
      "inputSchema": {"type": "object",
                      "properties": {"tool": {"type": "string"},
@@ -329,7 +329,7 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "project": {"type": "string"},
                                     "agent": {"type": "string"}},
                      "required": ["tool"]}},
-    {"name": "conscio.recall_observations",
+    {"name": "conscio_recall_observations",
      "description": "FTS5 full-text search over recorded tool observations. "
                     "Returns a snippet window around each hit; pass full=true "
                     "for the whole stored observation. Searches the current "
@@ -348,7 +348,7 @@ BASE_TOOL_DEFS: list[dict] = [
 # v4.0: fora de BASE_TOOL_DEFS de propósito — acrescentada depois do filtro de
 # modo, para existir nos três modos (em lite é a única saída de volta).
 MODE_TOOL_DEF: dict = {
-    "name": "conscio.mode",
+    "name": "conscio_mode",
     "description": "Read or set the tool surface: lite (10 tools), balanced (18) "
                    "or ultra (all 35). The choice persists across restarts.",
     "inputSchema": {
@@ -387,26 +387,26 @@ _LEDGER_INPUT = {"type": "object",
                  "required": ["ledger_id"]}
 
 ACT_TOOL_DEFS: list[dict] = [
-    {"name": "conscio.act",
+    {"name": "conscio_act",
      "description": "Audit a concrete action intent; if act is enabled + awake, "
                     "ledger it and return an executable packet or a pending "
                     "approval. The HOST executes; Conscio never does.",
      "inputSchema": _INTENT_INPUT},
-    {"name": "conscio.report_result",
+    {"name": "conscio_report_result",
      "description": "Report a host execution outcome to close the ledger entry "
                     "and emit act:result.",
      "inputSchema": {"type": "object",
                      "properties": {"ledger_id": {"type": "integer"},
                                     "result": {"type": "object"}},
                      "required": ["ledger_id", "result"]}},
-    {"name": "conscio.pending",
+    {"name": "conscio_pending",
      "description": "List proposals awaiting approval (R6 queue).",
      "inputSchema": {"type": "object",
                      "properties": {"limit": {"type": "integer"}}}},
-    {"name": "conscio.approve",
+    {"name": "conscio_approve",
      "description": "Approve a pending proposal; returns an executable packet.",
      "inputSchema": _LEDGER_INPUT},
-    {"name": "conscio.reject",
+    {"name": "conscio_reject",
      "description": "Reject a pending proposal.",
      "inputSchema": {"type": "object",
                      "properties": {"ledger_id": {"type": "integer"},
@@ -426,17 +426,17 @@ _FP_OPT_REASON = {"type": "object",
 _LIMIT_ONLY = {"type": "object", "properties": {"limit": {"type": "integer"}}}
 
 LIAISON_TOOL_DEFS: list[dict] = [
-    {"name": "conscio.reviews",
+    {"name": "conscio_reviews",
      "description": "List inbound cross-agent review requests directed here "
                     "(reviewer role; deduped per fp).",
      "inputSchema": _LIMIT_ONLY},
-    {"name": "conscio.review_approve",
+    {"name": "conscio_review_approve",
      "description": "Send an approve verdict for a review request by fp.",
      "inputSchema": _FP_OPT_REASON},
-    {"name": "conscio.review_reject",
+    {"name": "conscio_review_reject",
      "description": "Send a reject verdict for a review request by fp.",
      "inputSchema": _REVIEW_REJECT_INPUT},
-    {"name": "conscio.poll_reviews",
+    {"name": "conscio_poll_reviews",
      "description": "Apply inbound verdicts from allowlisted reviewers to local "
                     "pending acts (proposer role); returns applied packets.",
      "inputSchema": _LIMIT_ONLY},
@@ -457,17 +457,17 @@ _RELAY_BROADCAST_INPUT = {"type": "object",
                           "required": ["type", "payload"]}
 
 RELAY_TOOL_DEFS: list[dict] = [
-    {"name": "conscio.relay_send",
+    {"name": "conscio_relay_send",
      "description": "Send a directed free-form message to a trusted relay peer.",
      "inputSchema": _RELAY_SEND_INPUT},
-    {"name": "conscio.relay_inbox",
+    {"name": "conscio_relay_inbox",
      "description": "Peek unread relay messages from trusted peers (review "
                     "types excluded).",
      "inputSchema": _LIMIT_ONLY},
-    {"name": "conscio.relay_read",
+    {"name": "conscio_relay_read",
      "description": "Mark relay messages consumed by id.",
      "inputSchema": _IDS_INPUT},
-    {"name": "conscio.relay_broadcast",
+    {"name": "conscio_relay_broadcast",
      "description": "Send a free-form message to ALL trusted relay peers "
                     "(fan-out; review types excluded).",
      "inputSchema": _RELAY_BROADCAST_INPUT},

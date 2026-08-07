@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [4.0.2] - 2026-08-07 — Every tag gets a release page
+## [4.1.0] - 2026-08-07 — A name every host accepts
+
+### Changed
+
+Every MCP tool is now `conscio_recall` instead of `conscio.recall` — all 48
+names across the base, act, relay and liaison surfaces, plus the resource and
+prompt identifiers that referenced them.
+
+A dot is legal in an MCP tool name. It is not legal in the function-name rule
+that Anthropic and OpenAI share (`^[a-zA-Z0-9_-]{1,64}$`), and hosts that route
+MCP tools straight into a model's function slot apply that rule to what the
+server advertised. Verdent does: it connected, listed the server as healthy, and
+disabled all 48 tools. The failure is silent from the server's side — nothing is
+rejected, nothing is logged, the tools simply never appear to the model. Claude
+Code accepts the dot, which is why four major versions shipped without anyone
+noticing that the naming was host-specific.
+
+Users have nothing to do. The rename is invisible on both ends: a model never
+saw the old names in this release, and a caller that still sends the dotted
+spelling is normalised at dispatch and answered as before. Stored history is
+unaffected — persisted events key on `event_id`, never on the tool name.
+
+The compatibility alias is not a permanent contract. It exists so that a client
+pinned to an older `.mcp.json` keeps working through the upgrade, and it will be
+dropped in a future major.
 
 ### Added
 
@@ -23,9 +47,9 @@ is worse than announcing nothing.
 
 ### Fixed
 
-The tool-surface docstring claimed 34 tools and 9 while `conscio.mode`'s own
+The tool-surface docstring claimed 34 tools and 9 while `conscio_mode`'s own
 description claimed 10 / 18 / 35. The description was right: the frozensets are
-*pre-filter* subsets holding 9 and 17 names, and `conscio.mode` is appended after
+*pre-filter* subsets holding 9 and 17 names, and `conscio_mode` is appended after
 the mode filter, so every mode serves exactly one tool more than its set. Ultra
 has no set at all — it is the absence of a filter over the 34 entries of
 `BASE_TOOL_DEFS`.
@@ -38,7 +62,7 @@ docstring was the last one in the repository still disagreeing with the code.
 
 Two tests now parse the integers out of the tool description and compare them
 against `len()` of the surface each mode actually serves, and pin that surface's
-identity as the set plus `conscio.mode` rather than only its size. Both go red on
+identity as the set plus `conscio_mode` rather than only its size. Both go red on
 the tempting mutation — "correcting" the description down to 9 to match the
 frozenset.
 

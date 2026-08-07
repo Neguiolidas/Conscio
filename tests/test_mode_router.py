@@ -203,7 +203,7 @@ def _report_dict(tmp_storage):
 
 @pytest.mark.parametrize("complexity", ["minimal", "compact", "full"])
 def test_format_evaluate_accepts_the_real_report_shape(tmp_storage, complexity):
-    """conscio.evaluate returned -32603 for every minimal/compact caller.
+    """conscio_evaluate returned -32603 for every minimal/compact caller.
 
     to_dict() gives ``overall`` as a float and the axes under ``axes``;
     format_evaluate read ``axis_scores`` and called ``.get`` on the float.

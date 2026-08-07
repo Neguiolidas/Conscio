@@ -48,6 +48,19 @@ def _flatten(d: dict) -> dict:
                             "required": schema.get("required", [])}}
 
 
+def _legacy_name(name: str) -> str:
+    """The pre-v4.1 dotted spelling of a tool, mapped to the current one.
+
+    v4.1 renamed every tool ``conscio.x`` → ``conscio_x``: a dot is legal in
+    MCP, but hosts that reuse the Anthropic/OpenAI function-name rule
+    (``^[A-Za-z0-9_-]{1,128}$``) reject it — Verdent loads the server and then
+    disables all 48 tools. ``tools/list`` only ever advertises the new spelling;
+    this exists so a caller scripted against the old one keeps dispatching
+    instead of getting MethodNotFound on a rename it never saw.
+    """
+    return name.replace(".", "_", 1) if name.startswith("conscio.") else name
+
+
 # v2.6.3 #2: floor between auto-review SQL polls so --auto-review does not open a
 # liaison SELECT on every single tool call in a chatty session. host_act.approve
 # remains the authority; this only paces the opportunistic poll.
@@ -149,7 +162,7 @@ class Bindings:
             flagged += list(ACT_TOOL_DEFS)
         if self.hermes_review:
             for d in LIAISON_TOOL_DEFS:
-                if d["name"] == "conscio.poll_reviews" and not self._act_enabled():
+                if d["name"] == "conscio_poll_reviews" and not self._act_enabled():
                     continue                 # proposer tool needs act too
                 flagged.append(d)
         if self.relay:
@@ -174,82 +187,83 @@ class Bindings:
     # ── tool dispatch ──
     def call_tool(self, name: str, args: dict) -> dict:
         self._maybe_auto_apply()             # v2.6.2: opportunistic on dispatch
-        fn = self._tools().get(name)
+        tools = self._tools()
+        fn = tools.get(name) or tools.get(_legacy_name(name))
         if fn is None:
             raise j.MethodNotFound(f"tool '{name}' not available")
         return {"content": [{"type": "text", "text": json.dumps(fn(args))}]}
 
     def _tools(self):
         tools = {
-            "conscio.feed": self._feed,
-            "conscio.note": self._note,
-            "conscio.advisory": lambda a: self.engine.advisory(),
-            "conscio.recall": lambda a: {"snippets": self.engine.recall(
+            "conscio_feed": self._feed,
+            "conscio_note": self._note,
+            "conscio_advisory": lambda a: self.engine.advisory(),
+            "conscio_recall": lambda a: {"snippets": self.engine.recall(
                 self._require(a, "query"), int(a.get("k", 3)),
                 a.get("categories"))},
-            "conscio.remember": self._remember,
-            "conscio.observe": lambda a: {"observation_id": self.engine.observe(
+            "conscio_remember": self._remember,
+            "conscio_observe": lambda a: {"observation_id": self.engine.observe(
                 self._require(a, "tool"), a.get("input", ""),
                 a.get("output", ""), a.get("project", ""),
                 a.get("agent", ""))},
-            "conscio.recall_observations": self._recall_observations,
-            "conscio.propose_action": lambda a: self.engine.propose_action(
+            "conscio_recall_observations": self._recall_observations,
+            "conscio_propose_action": lambda a: self.engine.propose_action(
                 self._require(a, "intent")),
-            "conscio.propose_plan": lambda a: self.engine.propose_plan(
+            "conscio_propose_plan": lambda a: self.engine.propose_plan(
                 self._require(a, "goal"), a.get("tools")),
-            "conscio.state": lambda a: self._state_payload(),
-            "conscio.events": lambda a: self._events_payload(a),
-            "conscio.handoff": lambda a: self._handoff_payload(),
-            "conscio.structure": self._structure,
-            "conscio.structural_lookup": self._structural_lookup,
-            "conscio.cognitive_cycle": self._cognitive_cycle,
-            "conscio.evaluate": lambda a: self._router.format_evaluate(
+            "conscio_state": lambda a: self._state_payload(),
+            "conscio_events": lambda a: self._events_payload(a),
+            "conscio_handoff": lambda a: self._handoff_payload(),
+            "conscio_structure": self._structure,
+            "conscio_structural_lookup": self._structural_lookup,
+            "conscio_cognitive_cycle": self._cognitive_cycle,
+            "conscio_evaluate": lambda a: self._router.format_evaluate(
                 self.engine.evaluate(
                     a.get("task_description", ""), a.get("output")).to_dict()),
             # ── v3.0 Gate tools ──
-            "conscio.decide": lambda a: self.engine.decide(
+            "conscio_decide": lambda a: self.engine.decide(
                 title=a.get("title", ""), context=a.get("context", ""),
                 alternatives=a.get("alternatives"), adr_id=a.get("adr_id"),
                 status=a.get("status", "proposed"), deciders=a.get("deciders")),
-            "conscio.council": lambda a: self._router.format_council(
+            "conscio_council": lambda a: self._router.format_council(
                             self.engine.council(
                                 question=a.get("question", ""), context=a.get("context", ""),
                                 options=a.get("options"))),
-            "conscio.loop_gate": lambda a: self.engine.loop_gate(
+            "conscio_loop_gate": lambda a: self.engine.loop_gate(
                 task=a.get("task", ""), frequency=a.get("frequency", ""),
                 verifiable=a.get("verifiable", True),
                 budget_ok=a.get("budget_ok", True),
                 has_tools=a.get("has_tools", True)),
-            "conscio.delivery_check": lambda a: self.engine.delivery_check(),
-            "conscio.investigate": lambda a: self.engine.investigate(
+            "conscio_delivery_check": lambda a: self.engine.delivery_check(),
+            "conscio_investigate": lambda a: self.engine.investigate(
                 target=a.get("target", ""), action_type=a.get("action_type", "")),
             # ── v3.0 Pipeline tools ──
-            "conscio.acceptance_criteria": lambda a: self.engine.acceptance_criteria(
+            "conscio_acceptance_criteria": lambda a: self.engine.acceptance_criteria(
                 goal=a.get("goal", ""), depth=a.get("depth", ""),
                 risk_domains=a.get("risk_domains")),
-            "conscio.verify": lambda a: self.engine.verify(
+            "conscio_verify": lambda a: self.engine.verify(
                 criteria=a.get("criteria"), criteria_source=a.get("criteria_source", "")),
-            "conscio.continuous_loop": lambda a: self.engine.continuous_loop(
+            "conscio_continuous_loop": lambda a: self.engine.continuous_loop(
                 task=a.get("task", ""), pattern=a.get("pattern", ""),
                 frequency=a.get("frequency", ""),
                 verifiable=a.get("verifiable", True),
                 budget_ok=a.get("budget_ok", True),
                 has_tools=a.get("has_tools", True)),
-            "conscio.strategic_compact": lambda a: self.engine.strategic_compact(
+            "conscio_strategic_compact": lambda a: self.engine.strategic_compact(
                 phase=a.get("phase", ""), context_tokens=a.get("context_tokens", 0),
                 context_window=a.get("context_window", 0)),
-            "conscio.ledger": lambda a: self.engine.ledger(
+            "conscio_ledger": lambda a: self.engine.ledger(
                 action=a.get("action", "record"), rollout_id=a.get("rollout_id"),
                 candidates=a.get("candidates"), fresh_info=a.get("fresh_info", ""),
                 search_space_size=a.get("search_space_size", 0),
                 marks=a.get("marks"), prior_winner=a.get("prior_winner", ""),
                 coherence_mark=a.get("coherence_mark")),
             # ── v3.0 Diagnostic tools ──
-            "conscio.context_budget": lambda a: self.engine.context_budget(
+            "conscio_context_budget": lambda a: self.engine.context_budget(
                 context_tokens=a.get("context_tokens", 0),
                 context_window=a.get("context_window", 0),
                 detail=a.get("detail", "summary")),
-            "conscio.eval_harness": lambda a: self.engine.eval_harness(
+            "conscio_eval_harness": lambda a: self.engine.eval_harness(
                 action=a.get("action", "define"),
                 eval_id=a.get("eval_id"),
                 eval_type=a.get("eval_type", "capability"),
@@ -257,18 +271,18 @@ class Bindings:
                 criteria=a.get("criteria"),
                 results=a.get("results"),
                 k_values=a.get("k_values")),
-            "conscio.rules_distill": lambda a: self.engine.rules_distill(
+            "conscio_rules_distill": lambda a: self.engine.rules_distill(
                 action=a.get("action", "scan"),
                 source_types=a.get("source_types"),
                 min_occurrences=a.get("min_occurrences", 2),
                 rule_text=a.get("rule_text", ""),
                 rule_id=a.get("rule_id")),
-            "conscio.health": lambda a: self.engine.health_check(),
-            "conscio.intercept": self._intercept,
+            "conscio_health": lambda a: self.engine.health_check(),
+            "conscio_intercept": self._intercept,
             # ── v3.2 Memory tools ──
-            "conscio.kg_query": lambda a: self._kg_query(a),
-            "conscio.wings_search": lambda a: self._wings_search(a),
-            "conscio.export": lambda a: self._export(a),
+            "conscio_kg_query": lambda a: self._kg_query(a),
+            "conscio_wings_search": lambda a: self._wings_search(a),
+            "conscio_export": lambda a: self._export(a),
             # ── v3.3.1 Auto-index + KG builder ──
             "conscio.enable_auto_index": lambda a: self.engine.enable_auto_index(
                 run_kg_builder=a.get("run_kg_builder", True)),
@@ -278,27 +292,27 @@ class Bindings:
             ha = self.engine.host_act
             assert ha is not None  # guarded by _act_enabled()
             tools.update({
-                "conscio.act": self._act,
-                "conscio.report_result": self._report_result,
-                "conscio.pending": lambda a, _ha=ha: _ha.pending(
+                "conscio_act": self._act,
+                "conscio_report_result": self._report_result,
+                "conscio_pending": lambda a, _ha=ha: _ha.pending(
                     self._int_arg(a, "limit", 20)),
-                "conscio.approve": lambda a, _ha=ha: _ha.approve(
+                "conscio_approve": lambda a, _ha=ha: _ha.approve(
                     self._int_arg(a, "ledger_id")),
-                "conscio.reject": lambda a, _ha=ha: _ha.reject(
+                "conscio_reject": lambda a, _ha=ha: _ha.reject(
                     self._int_arg(a, "ledger_id"), str(a.get("reason", ""))),
             })
         if self.hermes_review:
-            tools["conscio.reviews"] = self._reviews
-            tools["conscio.review_approve"] = self._review_approve
-            tools["conscio.review_reject"] = self._review_reject
+            tools["conscio_reviews"] = self._reviews
+            tools["conscio_review_approve"] = self._review_approve
+            tools["conscio_review_reject"] = self._review_reject
             if self._act_enabled():
-                tools["conscio.poll_reviews"] = self._poll_reviews
+                tools["conscio_poll_reviews"] = self._poll_reviews
         if self.relay:
-            tools["conscio.relay_send"] = self._relay_send
-            tools["conscio.relay_inbox"] = self._relay_inbox
-            tools["conscio.relay_read"] = self._relay_read
-            tools["conscio.relay_broadcast"] = self._relay_broadcast
-        tools["conscio.mode"] = self._mode_toggler   # existe em todo modo
+            tools["conscio_relay_send"] = self._relay_send
+            tools["conscio_relay_inbox"] = self._relay_inbox
+            tools["conscio_relay_read"] = self._relay_read
+            tools["conscio_relay_broadcast"] = self._relay_broadcast
+        tools["conscio_mode"] = self._mode_toggler   # existe em todo modo
         return tools
 
     def _mode_toggler(self, args: dict) -> dict:
@@ -676,7 +690,7 @@ class Bindings:
         return args[key]
 
     def _remember(self, args: dict) -> dict:
-        """Durable write into the same store conscio.recall reads from.
+        """Durable write into the same store conscio_recall reads from.
 
         Not note/feed: those land in the EventBus, which recall never reads.
         """

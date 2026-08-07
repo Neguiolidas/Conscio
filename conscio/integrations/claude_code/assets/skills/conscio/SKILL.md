@@ -17,17 +17,17 @@ state, and structural knowledge of the project. Two faces:
   the moment calls for it — don't wait to be told.
 
 ## When to act automatically
-- **Start of a non-trivial task** → `conscio.recall` the topic before planning.
-- **A decision/fact is settled** → `conscio.remember` it (durable only).
-- **Unsure of project direction** → `conscio.state` for goals/coherence.
-- **Making an architecture decision** → `conscio.decide` to create an ADR.
-- **Need multi-perspective analysis** → `conscio.council` for 4-voice review.
-- **Verifying work is done** → `conscio.verify` against acceptance criteria.
-- **Context getting long** → `conscio.context_budget` for pressure analysis.
-- **Handing the session over** → `conscio.handoff` for a successor's briefing.
-- **Looking for how the code fits together** → `conscio.kg_query`.
+- **Start of a non-trivial task** → `conscio_recall` the topic before planning.
+- **A decision/fact is settled** → `conscio_remember` it (durable only).
+- **Unsure of project direction** → `conscio_state` for goals/coherence.
+- **Making an architecture decision** → `conscio_decide` to create an ADR.
+- **Need multi-perspective analysis** → `conscio_council` for 4-voice review.
+- **Verifying work is done** → `conscio_verify` against acceptance criteria.
+- **Context getting long** → `conscio_context_budget` for pressure analysis.
+- **Handing the session over** → `conscio_handoff` for a successor's briefing.
+- **Looking for how the code fits together** → `conscio_kg_query`.
 - **Looking for something said earlier this session** →
-  `conscio.recall_observations`.
+  `conscio_recall_observations`.
 
 ## Tool surface
 The list above is the default (`balanced`) surface. `/conscio:mode lite` cuts it

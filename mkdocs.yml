@@ -24,6 +24,8 @@ theme:
         name: Light mode
 
 # Keep internal / forward-looking material out of the public site.
+# Keep in step with the internal-notes block in .gitignore: git ignoring a file
+# does not stop mkdocs from publishing it, because the build reads the disk.
 exclude_docs: |
   superpowers/
   noosphere/
@@ -33,6 +35,14 @@ exclude_docs: |
   *-prompt*.md
   *-analysis*.md
   fable*.md
+  AUDIT-*.md
+  REPORT_*.md
+  Report-*.md
+  Knolayer.md
+  f3-*.md
+  verdent-*.md
+  reference/conscio_functions.md
+  reference/claude-code-harness.md
   RELEASING.md
   AUDIT-*.md
   REPORT_*.md

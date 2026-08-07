@@ -35,14 +35,47 @@ def test_derive_event_id_deterministic_when_absent():
 
 def test_base_tool_defs_have_name_and_input_schema():
     names = {d["name"] for d in s.BASE_TOOL_DEFS}
-    assert {"conscio.feed", "conscio.note", "conscio.advisory",
-            "conscio.recall", "conscio.propose_action",
-            "conscio.propose_plan"} <= names
-    assert "conscio.act" not in names          # deferred to v2.0.1
+    assert {"conscio_feed", "conscio_note", "conscio_advisory",
+            "conscio_recall", "conscio_propose_action",
+            "conscio_propose_plan"} <= names
+    assert "conscio_act" not in names          # deferred to v2.0.1
     for d in s.BASE_TOOL_DEFS:
         assert "inputSchema" in d
 
 
+def _every_tool_def():
+    """Every tool def the module exports, discovered rather than listed.
+
+    Discovery, not a hand-written list: a future ``FOO_TOOL_DEFS`` is covered
+    the day it is added, which is exactly when a bad name would slip in.
+    """
+    out = []
+    for attr in dir(s):
+        if not attr.endswith(("TOOL_DEF", "TOOL_DEFS")):
+            continue
+        val = getattr(s, attr)
+        out += [val] if isinstance(val, dict) else list(val)
+    return out
+
+
+def test_no_tool_name_breaks_the_host_name_rule():
+    """A dot is legal in MCP and still gets the whole surface disabled.
+
+    v4.1: Verdent applies the Anthropic/OpenAI function-name rule to MCP tools
+    and dropped all 48 of ours because they were ``conscio.x``. The protocol
+    does not forbid it, so nothing here failed — the host just served zero
+    tools. This pins the intersection of what the spec allows and what hosts
+    actually accept.
+    """
+    import re
+
+    defs = _every_tool_def()
+    assert len(defs) >= 48, f"discovery found only {len(defs)} defs; it broke"
+    rule = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+    bad = [d["name"] for d in defs if not rule.match(d["name"])]
+    assert not bad, f"tool names rejected by strict hosts: {bad}"
+
+
 def test_propose_plan_requires_goal_and_tools():
-    pp = next(d for d in s.BASE_TOOL_DEFS if d["name"] == "conscio.propose_plan")
+    pp = next(d for d in s.BASE_TOOL_DEFS if d["name"] == "conscio_propose_plan")
     assert set(pp["inputSchema"]["required"]) == {"goal", "tools"}

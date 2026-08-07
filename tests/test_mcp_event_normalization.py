@@ -1,5 +1,5 @@
 # tests/test_mcp_event_normalization.py
-"""BUG-39: conscio.feed/conscio.note crash when the host sends ``data`` instead
+"""BUG-39: conscio_feed/conscio_note crash when the host sends ``data`` instead
 of ``payload`` and omits ``source``.
 
 The internal Event schema (schemas.py EVENT_SCHEMA) requires ``type``,
@@ -153,7 +153,7 @@ class TestFeedWithHermesFormat:
         try:
             ev = {"id": "hermes-001", "type": "system",
                   "data": {"event": "test", "version": "3.9.5"}}
-            out = _run(b, [INIT, _call("conscio.feed", {"event": ev})])
+            out = _run(b, [INIT, _call("conscio_feed", {"event": ev})])
             body = json.loads(out[1]["result"]["content"][0]["text"])
             assert body["event_id"] == "hermes-001"
             assert "advisory" in body
@@ -167,7 +167,7 @@ class TestFeedWithHermesFormat:
             ev = {"id": "hermes-002", "type": "milestone",
                   "category": "milestone",
                   "data": {"event": "shipped"}}
-            out = _run(b, [INIT, _call("conscio.feed", {"event": ev})])
+            out = _run(b, [INIT, _call("conscio_feed", {"event": ev})])
             body = json.loads(out[1]["result"]["content"][0]["text"])
             assert body["event_id"] == "hermes-002"
         finally:
@@ -179,7 +179,7 @@ class TestFeedWithHermesFormat:
         try:
             ev = {"id": "canon-001", "type": "perception", "source": "host",
                   "category": "system", "payload": {"cpu": 0.4}}
-            out = _run(b, [INIT, _call("conscio.feed", {"event": ev})])
+            out = _run(b, [INIT, _call("conscio_feed", {"event": ev})])
             body = json.loads(out[1]["result"]["content"][0]["text"])
             assert body["event_id"] == "canon-001"
             assert "advisory" in body
@@ -197,7 +197,7 @@ class TestNoteWithHermesFormat:
         try:
             ev = {"id": "note-001", "type": "system",
                   "data": {"event": "recorded"}}
-            out = _run(b, [INIT, _call("conscio.note", {"event": ev})])
+            out = _run(b, [INIT, _call("conscio_note", {"event": ev})])
             body = json.loads(out[1]["result"]["content"][0]["text"])
             assert body["event_id"] == "note-001"
             assert body["noted"] is True
@@ -214,7 +214,7 @@ class TestNoteWithHermesFormat:
         try:
             ev = {"id": "note-002", "type": "user_msg", "source": "alice",
                   "category": "user", "payload": {"text": "hi"}}
-            out = _run(b, [INIT, _call("conscio.note", {"event": ev})])
+            out = _run(b, [INIT, _call("conscio_note", {"event": ev})])
             body = json.loads(out[1]["result"]["content"][0]["text"])
             assert body["event_id"] == "note-002"
             assert body["noted"] is True
@@ -230,7 +230,7 @@ class TestNoteWithHermesFormat:
         try:
             ev = {"id": "note-003", "type": "system", "source": "hermes",
                   "category": "system", "data": {"event": "test"}}
-            out = _run(b, [INIT, _call("conscio.note", {"event": ev})])
+            out = _run(b, [INIT, _call("conscio_note", {"event": ev})])
             body = json.loads(out[1]["result"]["content"][0]["text"])
             assert body["noted"] is True
             rows = eng.event_bus.query(type="host:event", limit=5)
@@ -250,7 +250,7 @@ class TestEdgeCases:
         try:
             # Missing type entirely — cannot be normalised.
             ev = {"id": "bad", "data": {"x": 1}}
-            out = _run(b, [INIT, _call("conscio.feed", {"event": ev})])
+            out = _run(b, [INIT, _call("conscio_feed", {"event": ev})])
             # Should be an error, not a crash.
             assert "error" in out[1]
         finally:
@@ -260,7 +260,7 @@ class TestEdgeCases:
     def test_feed_with_non_dict_event_rejects(self, tmp_path):
         b, eng, seen = _bindings(tmp_path)
         try:
-            out = _run(b, [INIT, _call("conscio.feed", {"event": "not a dict"})])
+            out = _run(b, [INIT, _call("conscio_feed", {"event": "not a dict"})])
             assert "error" in out[1]
         finally:
             seen.close()
@@ -273,7 +273,7 @@ class TestEdgeCases:
         try:
             ev = {"id": "pri-001", "type": "system", "category": "system",
                   "data": {"event": "test"}, "priority": 3}
-            out = _run(b, [INIT, _call("conscio.feed", {"event": ev})])
+            out = _run(b, [INIT, _call("conscio_feed", {"event": ev})])
             body = json.loads(out[1]["result"]["content"][0]["text"])
             assert body["event_id"] == "pri-001"
         finally:

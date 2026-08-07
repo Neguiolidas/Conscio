@@ -14,13 +14,14 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v4.0.2` "Tool Surfaces & the Claude Code Plugin":** Conscio
-installs as a Claude Code plugin, and its MCP surface stops being one size —
-`lite` (10 tools) / `balanced` (18) / `ultra` (35), switchable at runtime with
-`conscio.mode`. Plus LaTeX and equation solving in the Intercepter, and a startup
-that got 16× faster. `4.0.1` fixed plugin capture, which recorded nothing on
-4.0.0; `4.0.2` gives every tag a GitHub Release page carrying its notes and
-wheels.
+**Latest release — `v4.1.0` "A name every host accepts":** every tool is now
+`conscio_recall`, not `conscio.recall`. A dot is legal in MCP, but hosts that
+reuse the Anthropic/OpenAI function-name rule reject it — one connects, then
+silently disables all 48 tools. The old spelling still dispatches, and no model
+ever saw it. Tags now also publish a GitHub Release carrying their notes and
+wheels. `4.0.x` made Conscio installable as a Claude Code plugin and gave its
+MCP surface three sizes — `lite` (10 tools) / `balanced` (18) / `ultra` (35),
+switchable at runtime with `conscio_mode`.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
@@ -287,7 +288,7 @@ removes a tool:
 | `ultra` (default) | 35 | ~3100 tokens |
 
 Precedence is `--mode` on the CLI, then the persisted choice, then the default.
-`conscio.mode` switches at runtime and is present in every surface — in `lite` it is the
+`conscio_mode` switches at runtime and is present in every surface — in `lite` it is the
 only way back out. An unadvertised tool stays callable through `tools/call`, and tools
 enabled by flag (act, review, relay) are never filtered — 42 with every flag on.
 

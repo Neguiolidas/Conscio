@@ -98,9 +98,9 @@ def test_mcp_exposes_cognitive_cycle(tmp_path):
     seen = SeenStore(tmp_path / "seen.db")
     b = Bindings(eng, seen, adapter_name=None, workspace_id="ws")
     try:
-        assert "conscio.cognitive_cycle" in b._tools()
-        assert "conscio.cognitive_cycle" in {d["name"] for d in b.tool_defs()}
-        rep = b._tools()["conscio.cognitive_cycle"]({"world_state": "ok",
+        assert "conscio_cognitive_cycle" in b._tools()
+        assert "conscio_cognitive_cycle" in {d["name"] for d in b.tool_defs()}
+        rep = b._tools()["conscio_cognitive_cycle"]({"world_state": "ok",
                                                      "session_tokens": 120_000})
         assert STAGES <= set(rep)
         assert rep["action"] is None            # propose-only server -> no act

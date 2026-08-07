@@ -68,37 +68,37 @@ proposed actions, but never executes. The host stays sovereign over execution.
 
 ### Core tools always available
 
-- `conscio.feed(event, session_tokens?)` — perceive + reflect, returns advisory
-- `conscio.note(event)` — log raw event (no reflect)
-- `conscio.advisory()` — current cognitive state (read-only)
-- `conscio.recall(query, k?, categories?)` — retrieve past context (FTS5 + RAG)
-- `conscio.state()` — ConsciousnessState snapshot
-- `conscio.events(type?, category?, since?, limit?)` — recent events
-- `conscio.handoff()` — latest session handoff
-- `conscio.structure()` — workspace structural graph (consent-gated)
-- `conscio.structural_lookup(key)` — resolve graph node
-- `conscio.cognitive_cycle()` — one explicit reflect→synthesize→propose→learn pass
-- `conscio.evaluate(task_description?, output?)` — 5-axis self-evaluation scorecard (v2.15)
-- `conscio.intercept(expression, variables?)` — safe AST expression evaluator (v3.7)
+- `conscio_feed(event, session_tokens?)` — perceive + reflect, returns advisory
+- `conscio_note(event)` — log raw event (no reflect)
+- `conscio_advisory()` — current cognitive state (read-only)
+- `conscio_recall(query, k?, categories?)` — retrieve past context (FTS5 + RAG)
+- `conscio_state()` — ConsciousnessState snapshot
+- `conscio_events(type?, category?, since?, limit?)` — recent events
+- `conscio_handoff()` — latest session handoff
+- `conscio_structure()` — workspace structural graph (consent-gated)
+- `conscio_structural_lookup(key)` — resolve graph node
+- `conscio_cognitive_cycle()` — one explicit reflect→synthesize→propose→learn pass
+- `conscio_evaluate(task_description?, output?)` — 5-axis self-evaluation scorecard (v2.15)
+- `conscio_intercept(expression, variables?)` — safe AST expression evaluator (v3.7)
 
 ### Propose / Act (act is opt-in via `--enable-act`)
 
-- `conscio.propose_action(intent)` — audit an intent with the Skeptic (never executes)
-- `conscio.propose_plan(goal, tools)` — generate ONE audited action toward goal
-- `conscio.act(intent)` — return executable packet (host pulls trigger)
-- `conscio.report_result(ledger_id, result)` — feedback the outcome
-- `conscio.pending()` — pending actions awaiting approval
-- `conscio.approve(ledger_id)` / `conscio.reject(ledger_id, reason)`
+- `conscio_propose_action(intent)` — audit an intent with the Skeptic (never executes)
+- `conscio_propose_plan(goal, tools)` — generate ONE audited action toward goal
+- `conscio_act(intent)` — return executable packet (host pulls trigger)
+- `conscio_report_result(ledger_id, result)` — feedback the outcome
+- `conscio_pending()` — pending actions awaiting approval
+- `conscio_approve(ledger_id)` / `conscio_reject(ledger_id, reason)`
 
 ### Review (opt-in `--enable-hermes-review --reviewer <id>`)
 
-Cross-agent review channel: `conscio.reviews`, `conscio.review_approve`,
-`conscio.review_reject`, `conscio.poll_reviews`.
+Cross-agent review channel: `conscio_reviews`, `conscio_review_approve`,
+`conscio_review_reject`, `conscio_poll_reviews`.
 
 ### Relay (opt-in `--enable-relay --relay-peer <id>`)
 
-Cross-agent messaging: `conscio.relay_send`, `conscio.relay_inbox`,
-`conscio.relay_read`, `conscio.relay_broadcast`. Reserved-type isolation from
+Cross-agent messaging: `conscio_relay_send`, `conscio_relay_inbox`,
+`conscio_relay_read`, `conscio_relay_broadcast`. Reserved-type isolation from
 review channel. Payload cap 64KB, retention 7 days after read.
 
 ### Resources (read-only URIs)
@@ -247,7 +247,7 @@ engine.attach_adapter(intercept_enabled=True)
 
 1. **Engine must be closed** — always use `with` or `try/finally close()`. WAL
    grows without checkpoint otherwise.
-2. **`conscio.note` doesn't reflect** — `feed` does. `note` is fire-and-forget.
+2. **`conscio_note` doesn't reflect** — `feed` does. `note` is fire-and-forget.
 3. **`type` / `category` must be valid** — `ValueError` otherwise. See lists above.
 4. **ContentStore first arg is `label`, not `source`** — common mistake.
 5. **EventBus.emit() returns int (event_id), not Event** — use `query()` to

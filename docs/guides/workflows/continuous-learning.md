@@ -1,11 +1,11 @@
 # Continuous Learning Workflow
 
 **Origin:** ECC `continuous-learning-v2` skill
-**Conscio mapping:** `conscio.feed` + `conscio.note` + `conscio.recall`
+**Conscio mapping:** `conscio_feed` + `conscio_note` + `conscio_recall`
 **Type:** Workflow (capture → generalize → persist → reuse)
 
-> **v3.0 enrichment:** `conscio.acceptance_criteria` defines what "learned" means;
-> `conscio.verify` confirms the pattern applies; `conscio.rules_distill` automates
+> **v3.0 enrichment:** `conscio_acceptance_criteria` defines what "learned" means;
+> `conscio_verify` confirms the pattern applies; `conscio_rules_distill` automates
 > the generalize step.
 
 ## When to use
@@ -26,7 +26,7 @@ While working, you notice something non-obvious:
 
 ### Step 2: Capture
 
-Call `conscio.note` with the discovery:
+Call `conscio_note` with the discovery:
 
 ```json
 {
@@ -49,7 +49,7 @@ Call `conscio.note` with the discovery:
 
 ### Step 3: Generalize
 
-Call `conscio.feed` to trigger reflection on the discovery:
+Call `conscio_feed` to trigger reflection on the discovery:
 
 ```json
 {
@@ -69,9 +69,9 @@ The reflection will:
 
 ### Step 4: Persist and Reuse
 
-**Persist:** The `conscio.note` call already stored it in the EventBus. For long-term storage, the ContentStore captures it via the structural pipeline.
+**Persist:** The `conscio_note` call already stored it in the EventBus. For long-term storage, the ContentStore captures it via the structural pipeline.
 
-**Reuse:** Next time you encounter a similar situation, call `conscio.recall`:
+**Reuse:** Next time you encounter a similar situation, call `conscio_recall`:
 
 ```json
 {
@@ -89,7 +89,7 @@ Continuous learning composes with the other two Conscio workflows:
 
 - **After Introspection Debugging:** The Phase 4 report IS a learning — feed it through this workflow to persist the debug insight.
 - **After Architecture Audit:** Each finding IS a learning — capture them before they're forgotten.
-- **After `conscio.evaluate()`:** If the scorecard reveals a weakness, capture the improvement as a learning.
+- **After `conscio_evaluate()`:** If the scorecard reveals a weakness, capture the improvement as a learning.
 
 ## Quick reference
 
@@ -101,7 +101,7 @@ discover → note(pattern+evidence) → feed(reflect) → recall(future reuse)
 
 | Tool | Step | Purpose |
 |------|------|---------|
-| `conscio.note` | 2 | Capture the pattern with evidence |
-| `conscio.feed` | 3 | Reflect and connect to existing knowledge |
-| `conscio.recall` | 4 | Retrieve when needed again |
-| `conscio.evaluate` | After | Score the learning session quality |
+| `conscio_note` | 2 | Capture the pattern with evidence |
+| `conscio_feed` | 3 | Reflect and connect to existing knowledge |
+| `conscio_recall` | 4 | Retrieve when needed again |
+| `conscio_evaluate` | After | Score the learning session quality |

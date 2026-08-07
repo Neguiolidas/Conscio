@@ -201,7 +201,7 @@ def render_index(summary):
         f"Conscio DeepMiner: {summary['total']} tool calls recorded in the "
         f"previous session ({summary['session_id']}), {summary['first_ts']} to "
         f"{summary['last_ts']}. Tools: {tools}. "
-        f"Search them with conscio.recall_observations "
+        f"Search them with conscio_recall_observations "
         f'(scope="all" to reach past sessions).'
     )[:MAX_INJECT_CHARS]
 
@@ -232,7 +232,7 @@ COMPACT_INSTRUCTIONS = (
     "failing test or unresolved error with its exact message. Drop: tool output "
     "that has been superseded, and narration. Every tool call in this session is "
     "recorded verbatim in Conscio and can be recovered with "
-    "conscio.recall_observations, so summarise freely rather than hoarding detail."
+    "conscio_recall_observations, so summarise freely rather than hoarding detail."
 )
 
 
@@ -292,7 +292,7 @@ def on_post_compact(payload, store, storage):
     sys.stdout.write(
         f"Conscio: {info['total']} tool calls from this session are stored "
         f"verbatim and survived compaction. Recover any of them with "
-        f"conscio.recall_observations before assuming detail was lost.\n")
+        f"conscio_recall_observations before assuming detail was lost.\n")
 
 
 _HANDLERS = {
