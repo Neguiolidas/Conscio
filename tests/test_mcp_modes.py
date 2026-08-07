@@ -30,6 +30,38 @@ def test_exact_counts(tmp_path):
     assert len(_names("ultra", tmp_path)) == 35
 
 
+def test_description_counts_match_the_served_surface(tmp_path):
+    """The counts in the description are served to every host, so they are
+    load-bearing prose — and nothing was measuring them.
+
+    ``test_exact_counts`` pins the surface, but it cannot catch this drift: add
+    a tool, update that test to 36, and the description still advertises 35 to
+    every caller with the suite green.
+    """
+    import re
+
+    description = schemas.MODE_TOOL_DEF["description"]
+    for mode in modes.MODES:
+        # matches both "lite (10 tools)" and "ultra (all 35)"
+        stated = re.search(rf"{mode}\s*\((?:all\s+)?(\d+)", description)
+        assert stated, f"description states no tool count for {mode}: {description!r}"
+        served = len(_names(mode, tmp_path))
+        assert int(stated.group(1)) == served, (
+            f"description claims {stated.group(1)} tools for {mode}, "
+            f"but the surface serves {served}")
+
+
+def test_served_surface_is_the_set_plus_the_mode_tool(tmp_path):
+    """The filtered modes serve their set and *exactly* one extra: the way out.
+
+    This is the +1 that makes the sets read as 9/17 while hosts see 10/18. It is
+    an invariant, not an accident: nothing else may slip past the mode filter.
+    """
+    for mode, allowed in (("lite", modes.LITE_TOOLS),
+                          ("balanced", modes.BALANCED_TOOLS)):
+        assert _names(mode, tmp_path) == set(allowed) | {"conscio.mode"}
+
+
 def test_remember_is_present_in_every_mode(tmp_path):
     for mode in modes.MODES:
         assert "conscio.remember" in _names(mode, tmp_path), f"no memory write in {mode}"
