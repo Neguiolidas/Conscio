@@ -10,7 +10,7 @@ The shortest path for Claude Code users — memory, capture hooks and 14
 /plugin install conscio
 ```
 
-The plugin pins its MCP server to an exact version (`conscio==4.0.0`) and starts
+The plugin pins its MCP server to an exact version (`conscio==4.0.1`) and starts
 it on the `balanced` tool surface. A version floor would let an old server serve
 a tool list the shipped commands never mention, which reads as a bug in Claude
 rather than as a stale install.
