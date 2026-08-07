@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.0.2] - 2026-08-07 — Every tag gets a release page
+
+### Added
+
+Tagging now publishes a GitHub Release. Four tags existed and the Releases page
+was empty, so anyone watching this repository for releases heard nothing about
+v4.0.0 or v4.0.1, and the built wheels were reachable only through PyPI.
+
+The notes are the CHANGELOG section for that exact version, and a missing or
+empty section fails the job loudly — a release page published with silently
+empty notes is precisely the outcome the job exists to prevent. It runs only
+after the PyPI publish succeeds, because announcing a version that never shipped
+is worse than announcing nothing.
+
+### Fixed
+
+The tool-surface docstring claimed 34 tools and 9 while `conscio.mode`'s own
+description claimed 10 / 18 / 35. The description was right: the frozensets are
+*pre-filter* subsets holding 9 and 17 names, and `conscio.mode` is appended after
+the mode filter, so every mode serves exactly one tool more than its set. Ultra
+has no set at all — it is the absence of a filter over the 34 entries of
+`BASE_TOOL_DEFS`.
+
+Nothing a host is served changed. Every other statement of these counts already
+said 35 and 10, including the README, the guides and the 4.0.0 entry below; this
+docstring was the last one in the repository still disagreeing with the code.
+
+### Tests
+
+Two tests now parse the integers out of the tool description and compare them
+against `len()` of the surface each mode actually serves, and pin that surface's
+identity as the set plus `conscio.mode` rather than only its size. Both go red on
+the tempting mutation — "correcting" the description down to 9 to match the
+frozenset.
+
+---
+
 ## [4.0.1] - 2026-08-07 — The plugin records again
 
 ### Fixed
