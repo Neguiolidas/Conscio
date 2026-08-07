@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -22,10 +23,35 @@ _FLAG_ARG = {"act": "--enable-act", "awake": "--awake",
 # --repair, but NEVER re-emitted (mcp_server_entry only knows _FLAG_ARG)
 _LEGACY_ARG_FLAG = {"--initiate": "initiate"}
 MAX_BACKUPS = 30
+MCP_SCRIPT = "conscio-mcp"
 
 
 class HostConfigError(RuntimeError):
     pass
+
+
+def mcp_command() -> str:
+    """The ``conscio-mcp`` to launch, absolute whenever we can prove one.
+
+    A host is usually started from a GUI that never sourced the user's venv,
+    so a bare name in the config resolves to nothing at launch — the single
+    most common binding failure. Look beside the running interpreter first:
+    that is *this* install, and the venv is exactly the case a PATH lookup
+    gets wrong. Then the PATH of whoever ran the wizard, which covers
+    ``pip install --user`` (~/.local/bin is not beside the interpreter).
+    A relative hit is discarded: the host resolves it against its own cwd,
+    which is worse than the bare name. The bare name remains the last
+    resort, never worse than what earlier versions always emitted.
+
+    The answer is captured at write time, so a moved or rebuilt venv leaves
+    a stale path — ``conscio init --repair`` re-resolves it.
+    """
+    beside = Path(sys.executable).parent if sys.executable else None
+    for found in (shutil.which(MCP_SCRIPT, path=str(beside)) if beside else None,
+                  shutil.which(MCP_SCRIPT)):
+        if found and Path(found).is_absolute():
+            return found
+    return MCP_SCRIPT
 
 
 def mcp_server_entry(slug: str, *, flags: dict, model: str | None) -> dict:
@@ -35,7 +61,7 @@ def mcp_server_entry(slug: str, *, flags: dict, model: str | None) -> dict:
     for key, on in flags.items():
         if on and key in _FLAG_ARG:
             args.append(_FLAG_ARG[key])
-    return {"command": "conscio-mcp", "args": args,
+    return {"command": mcp_command(), "args": args,
             "env": {"CONSCIO_VAULT_DIR": str(spaces.vault_dir(slug))}}
 
 

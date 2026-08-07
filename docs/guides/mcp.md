@@ -63,8 +63,12 @@ shell:
 
 - **`command` must resolve.** A host does not necessarily inherit your `PATH`, so
   if `conscio-mcp` lives in a virtualenv, give the absolute path to the binary
-  (`<venv>/bin/conscio-mcp`) rather than the bare name. The same applies to
-  `--storage`: pass an absolute directory.
+  (`<venv>/bin/conscio-mcp`) rather than the bare name. `conscio init` writes
+  that absolute path for you when it can find one; only a hand-written entry
+  still needs the substitution. The same applies to `--storage`: pass an
+  absolute directory. A path recorded by the wizard points at the virtualenv
+  that was current when it ran — rebuild or move that venv and `conscio init
+  --repair` re-resolves it.
 - **Conscio must be ≥ 4.1 on a host that validates tool names.** Verdent requires
   `^[A-Za-z0-9_-]{1,128}$` and rejects the pre-4.1 `conscio.recall` spelling. It
   still connects and still reports success — it just serves zero tools, and only

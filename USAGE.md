@@ -52,6 +52,11 @@ with ConsciousnessEngine(model_name="glm-5.2") as engine:
 
 Point any MCP host (Claude Code, IDE, agent) at `conscio-mcp`:
 
+> A host launched from a desktop icon does not inherit your shell's `PATH`, so a
+> bare `"conscio-mcp"` can fail to launch even though it works in the terminal.
+> `conscio init` writes the absolute path for you; if you write the JSON by hand
+> and Conscio lives in a virtualenv, use `<venv>/bin/conscio-mcp`.
+
 ### v3.1 — Auto-detect (recommended for LM Studio)
 
 The MCP JSON stays **fixed forever** — Conscio auto-detects what's loaded in

@@ -46,7 +46,10 @@ It:
   (`~/.hermes/{noosphere,liaison}.db`);
 - emits the host's MCP launch config (`conscio-mcp --storage <space>` plus
   `env CONSCIO_VAULT_DIR=<space>/keys`), **backs up** the prior file
-  (`.bak.<timestamp>`) and **reads it back** to confirm — it never fails silently;
+  (`.bak.<timestamp>`) and **reads it back** to confirm — it never fails
+  silently. The launcher is written as an **absolute path** whenever one can be
+  proven, because a host started from a desktop icon does not inherit the
+  virtualenv on your `PATH`; `--repair` re-resolves it after the venv moves;
 - offers extras (**Graphify** structural cognition) and can start **Awake**;
 - for `--host claude-code`, materializes a native bundle into `~/.claude/`: the
   `/conscio:*` slash commands, a `conscio` skill, and the capture and awareness
