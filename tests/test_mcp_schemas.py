@@ -62,10 +62,13 @@ def test_no_tool_name_breaks_the_host_name_rule():
     """A dot is legal in MCP and still gets the whole surface disabled.
 
     v4.1: Verdent applies the Anthropic/OpenAI function-name rule to MCP tools
-    and dropped all 48 of ours because they were ``conscio.x``. The protocol
-    does not forbid it, so nothing here failed — the host just served zero
+    and dropped every one of ours because they were ``conscio.x`` — its log read
+    ``loaded_tools: 0, unloaded_tools: 18``, the whole ``balanced`` surface. The
+    protocol does not forbid the dot (``Tool.name`` is an unconstrained string in
+    every schema revision), so nothing here failed — the host just served zero
     tools. This pins the intersection of what the spec allows and what hosts
-    actually accept.
+    actually accept, over all 48 names rather than the 18 that happened to be
+    served when it was caught.
     """
     import re
 

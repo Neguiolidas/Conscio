@@ -11,16 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-Every MCP tool is now `conscio_recall` instead of `conscio.recall` — all 48
+Every MCP tool is now `conscio_recall` instead of `conscio.recall` — all 47
 names across the base, act, relay and liaison surfaces, plus the resource and
 prompt identifiers that referenced them.
 
-A dot is legal in an MCP tool name. It is not legal in the function-name rule
-that Anthropic and OpenAI share (`^[a-zA-Z0-9_-]{1,64}$`), and hosts that route
-MCP tools straight into a model's function slot apply that rule to what the
-server advertised. Verdent does: it connected, listed the server as healthy, and
-disabled all 48 tools. The failure is silent from the server's side — nothing is
-rejected, nothing is logged, the tools simply never appear to the model. Claude
+A dot is legal in an MCP tool name — `Tool.name` is an unconstrained string in
+every schema revision of the protocol, `2024-11-05` through `2025-06-18`. It is
+not legal in the function-name rule that Anthropic and OpenAI share
+(`^[a-zA-Z0-9_-]{1,64}$`), and a host that routes MCP tools straight into a
+model's function slot applies its own variant of that rule to whatever the server
+advertised. Verdent applies one — ASCII letters, digits, underscore and hyphen,
+1–128 characters — and reports a dotted name as violating *the MCP specification*,
+which in fact asks for nothing here.
+
+The result is a server that looks healthy and serves nothing:
+
+```
+conscio: { status: 'success', summary: { loaded_tools: 0, unloaded_tools: 18 } }
+```
+
+Eighteen was the entire `balanced` surface — every tool the host had been served,
+dropped one at a time. The server is never told: the handshake succeeds, the tool
+list is accepted, and the rejection is recorded only in the host's own log. Claude
 Code accepts the dot, which is why four major versions shipped without anyone
 noticing that the naming was host-specific.
 
@@ -47,6 +59,24 @@ is worse than announcing nothing.
 
 ### Fixed
 
+A `--storage` directory that already existed but was empty was reported as
+`blank/space drift` with an order to run `conscio init --repair` — on every
+startup, forever — and was never initialised, so the space ran with no identity.
+
+An absent directory was already bootstrapped silently; only the empty one drew
+the warning. They are the same situation — nobody has made a space here yet —
+and the empty variant is the one hosted environments produce: a mounted volume,
+a path created by the host, a `mkdir -p` before the server is ever configured.
+It is the first thing a new user on such a host sees, and it points at a repair
+that repairs nothing.
+
+Drift now means what the word says: contents but no `instance.json`, which is a
+space that lost its identity or a `--storage` typo landing on an unrelated
+directory. Those still warn and are still refused adoption. An empty directory
+is bootstrapped like an absent one and its identity is written — `obsstore`
+reads `instance.json` to know who authored an observation, so a space that never
+got one records provenance it cannot attribute.
+
 The tool-surface docstring claimed 34 tools and 9 while `conscio_mode`'s own
 description claimed 10 / 18 / 35. The description was right: the frozensets are
 *pre-filter* subsets holding 9 and 17 names, and `conscio_mode` is appended after
@@ -65,6 +95,12 @@ against `len()` of the surface each mode actually serves, and pin that surface's
 identity as the set plus `conscio_mode` rather than only its size. Both go red on
 the tempting mutation — "correcting" the description down to 9 to match the
 frozenset.
+
+The binding test that covered the empty directory asserted the defect: it built
+an empty path and required the call to fail. It is now two tests that separate
+the cases the old one conflated — an empty directory must come back healthy,
+write `instance.json` and log nothing, while a directory holding a `conscio.db`
+and no identity must still warn and must be left untouched.
 
 ---
 

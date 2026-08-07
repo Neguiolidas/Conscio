@@ -53,8 +53,9 @@ def _legacy_name(name: str) -> str:
 
     v4.1 renamed every tool ``conscio.x`` → ``conscio_x``: a dot is legal in
     MCP, but hosts that reuse the Anthropic/OpenAI function-name rule
-    (``^[A-Za-z0-9_-]{1,128}$``) reject it — Verdent loads the server and then
-    disables all 48 tools. ``tools/list`` only ever advertises the new spelling;
+    (``^[A-Za-z0-9_-]{1,128}$``) reject it — Verdent loads the server, reports
+    it healthy, and disables every tool it was served (18 of 18 in ``balanced``).
+    ``tools/list`` only ever advertises the new spelling;
     this exists so a caller scripted against the old one keeps dispatching
     instead of getting MethodNotFound on a rename it never saw.
     """

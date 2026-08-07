@@ -16,10 +16,10 @@ measurement, not assertion.
 
 **Latest release — `v4.1.0` "A name every host accepts":** every tool is now
 `conscio_recall`, not `conscio.recall`. A dot is legal in MCP, but hosts that
-reuse the Anthropic/OpenAI function-name rule reject it — one connects, then
-silently disables all 48 tools. The old spelling still dispatches, and no model
-ever saw it. Tags now also publish a GitHub Release carrying their notes and
-wheels. `4.0.x` made Conscio installable as a Claude Code plugin and gave its
+reuse the Anthropic/OpenAI function-name rule reject it — one connects, reports
+success, and silently disables every tool it was served. The old spelling still
+dispatches, and no model ever saw it. Tags now also publish a GitHub Release
+carrying their notes and wheels. `4.0.x` made Conscio installable as a Claude Code plugin and gave its
 MCP surface three sizes — `lite` (10 tools) / `balanced` (18) / `ultra` (35),
 switchable at runtime with `conscio_mode`.
 

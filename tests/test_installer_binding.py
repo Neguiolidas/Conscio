@@ -26,11 +26,30 @@ def test_tilde_storage_is_expanded_not_created_literally(tmp_path, monkeypatch):
     assert not (Path.cwd() / "~").exists()
 
 
-def test_dir_without_identity_warns(tmp_path, caplog):
-    (tmp_path / "space").mkdir()
+def test_empty_dir_is_bootstrapped_not_called_drift(tmp_path, caplog):
+    """Container mounts and `mkdir -p` hand us an existing empty directory.
+    That is a fresh space, not drift: bootstrap it and stay quiet, otherwise
+    every startup nags and the space never gets an identity."""
+    sp = tmp_path / "space"
+    sp.mkdir()
     with caplog.at_level(logging.WARNING):
-        ok = binding.validate_binding(tmp_path / "space")
+        ok = binding.validate_binding(sp)
+    assert ok is True
+    assert (sp / "instance.json").exists()
+    assert caplog.text == ""
+
+
+def test_populated_dir_without_identity_warns(tmp_path, caplog):
+    """Real drift: contents but no identity, or a --storage typo landing on an
+    unrelated directory. Must still warn and must not adopt the directory."""
+    sp = tmp_path / "space"
+    sp.mkdir()
+    (sp / "conscio.db").write_text("not empty")
+    with caplog.at_level(logging.WARNING):
+        ok = binding.validate_binding(sp)
     assert ok is False
+    assert "drift" in caplog.text
+    assert not (sp / "instance.json").exists()
 
 
 def test_healthy_binding_ok(tmp_path):

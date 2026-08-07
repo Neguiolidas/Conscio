@@ -75,7 +75,7 @@ docs/fable*.md
 docs/*-prompt*.md
 docs/patterns/
 docs/reference/conscio_functions.md
-docs/verdent-*.md
+docs/verdent-*
 
 # Claude Code harness reference — internal research, local only
 docs/reference/claude-code-harness.md
