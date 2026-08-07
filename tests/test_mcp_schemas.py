@@ -67,8 +67,8 @@ def test_no_tool_name_breaks_the_host_name_rule():
     protocol does not forbid the dot (``Tool.name`` is an unconstrained string in
     every schema revision), so nothing here failed — the host just served zero
     tools. This pins the intersection of what the spec allows and what hosts
-    actually accept, over all 48 names rather than the 18 that happened to be
-    served when it was caught.
+    actually accept, over every name the server can serve rather than the 18
+    that happened to be served when it was caught.
     """
     import re
 
