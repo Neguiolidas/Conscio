@@ -51,6 +51,22 @@ def test_generic_host_writes_space_and_prints_snippet(tmp_path):
     assert any("mcpServers" in o for o in io.out)        # snippet printed
 
 
+def test_verdent_host_writes_its_own_config(tmp_path, monkeypatch):
+    # `--host verdent` must be an accepted slug AND know its config path:
+    # closed stdin takes the default, and the tilde has to expand — a bare
+    # Path("~/...") would silently create a literal "~" directory in the cwd
+    import json
+
+    import conscio.installer.cli as icli
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.chdir(tmp_path)
+    assert icli.main(["--host", "verdent"]) == 0
+    cfg = tmp_path / "home" / ".verdent" / "mcp.json"
+    entry = json.loads(cfg.read_text())["mcpServers"]["conscio"]
+    assert "--storage" in entry["args"]
+    assert not (tmp_path / "~").exists()
+
+
 def test_claude_code_host_materializes(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
     monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))

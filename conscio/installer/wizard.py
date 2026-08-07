@@ -21,6 +21,11 @@ _FLAG_HELP = {
 # --initiate; conscio-mcp rejects it)
 _CONSENT_KEYS = ("act", "hermes", "relay", "initiate")
 
+# hosts that are plain MCP config files at a known path: pressing Enter writes
+# the entry there instead of printing a snippet to paste by hand. A host absent
+# from this map still gets asked (blank = print the snippet).
+_HOST_MCP_CONFIG = {"verdent": "~/.verdent/mcp.json"}
+
 
 class PromptIO(Protocol):
     def ask(self, prompt: str, default: str = "") -> str: ...
@@ -29,11 +34,15 @@ class PromptIO(Protocol):
 
 
 def _write_generic(io: PromptIO, slug: str, flags: dict, model, ts: str,
-                   *, repair: bool = False) -> None:
-    path = io.ask("Antigravity/MCP config path (blank = print snippet)",
-                  default="")
+                   *, repair: bool = False, host: str = "other") -> None:
+    known = _HOST_MCP_CONFIG.get(host, "")
+    prompt = ("MCP config path" if known
+              else "Antigravity/MCP config path (blank = print snippet)")
+    path = io.ask(prompt, default=known)
     if path:
-        p = Path(path)
+        # expanduser: the known defaults are written with a tilde, and a user
+        # types one too — Path("~/...") would create a literal "~" directory
+        p = Path(path).expanduser()
         # repair: never strip flags/model already granted in the target config
         use = {**flags, **hostcfg.existing_flags(p)} if repair else flags
         if repair:
@@ -43,7 +52,7 @@ def _write_generic(io: PromptIO, slug: str, flags: dict, model, ts: str,
             mutate=lambda o: hostcfg.upsert_conscio_entry(
                 o, slug, flags=use, model=model),
             verify=lambda o: "conscio" in o.get("mcpServers", {}), ts=ts)
-        io.echo(f"wrote conscio MCP entry to {path}")
+        io.echo(f"wrote conscio MCP entry to {p}")
     else:
         io.echo(hostcfg.generic_snippet(slug, flags=flags, model=model))
 
@@ -102,5 +111,5 @@ def run_with(io: PromptIO, *, host: str, repair: bool, model: str | None,
         from ..integrations.claude_code.materialize import materialize
         materialize(slug, flags=flags, model=model, ts=ts, io=io)
     else:
-        _write_generic(io, slug, flags, model, ts, repair=repair)
+        _write_generic(io, slug, flags, model, ts, repair=repair, host=host)
     return 0
