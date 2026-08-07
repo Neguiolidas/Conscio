@@ -138,3 +138,75 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
+
+  # The Release page is the user-facing announcement, so it comes after publish:
+  # announcing a version that never reached PyPI is worse than announcing nothing.
+  github_release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write          # create/edit the Release and upload its assets
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      # Notes are the CHANGELOG section for this exact version. A missing or
+      # empty section means the heading format drifted, and a release page
+      # published with silently empty notes is precisely the failure this job
+      # exists to prevent — so fail loudly rather than announce nothing.
+      - name: Extract release notes from CHANGELOG
+        run: |
+          set -euo pipefail
+          ref="${{ inputs.tag || github.ref_name }}"
+          python3 - "$ref" <<'PY'
+          import pathlib, re, sys
+
+          ref = sys.argv[1]
+          version = ref[1:] if ref.startswith("v") else ref
+          lines = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+
+          start = next((i for i, ln in enumerate(lines)
+                        if ln.startswith(f"## [{version}]")), None)
+          if start is None:
+              sys.exit(f"::error::CHANGELOG.md has no '## [{version}]' section")
+          end = next((i for i in range(start + 1, len(lines))
+                      if lines[i].startswith("## [")), len(lines))
+
+          body = "\n".join(lines[start + 1:end]).strip()
+          if not body:
+              sys.exit(f"::error::CHANGELOG section for {version} is empty")
+
+          # "## [4.0.1] - 2026-08-07 — The plugin records again" → the title tail.
+          m = re.match(r"## \[[^\]]+\][^—]*—\s*(.+)", lines[start])
+          title = f"{ref} — {m.group(1).strip()}" if m else ref
+
+          pathlib.Path("release-notes.md").write_text(body + "\n", encoding="utf-8")
+          pathlib.Path("release-title.txt").write_text(title, encoding="utf-8")
+          print(f"title: {title}\n{len(body.splitlines())} lines of notes")
+          PY
+
+      # A re-trigger must converge, not fail at the last step: `gh release create`
+      # errors when the release already exists, and this workflow deliberately
+      # supports re-running a release via workflow_dispatch. Both titles and notes
+      # are read from files rather than interpolated into the command, so CHANGELOG
+      # prose can never be spliced into the shell.
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ref="${{ inputs.tag || github.ref_name }}"
+          title="$(cat release-title.txt)"
+          if gh release view "$ref" >/dev/null 2>&1; then
+            gh release edit "$ref" --title "$title" --notes-file release-notes.md
+            gh release upload "$ref" dist/* --clobber
+            echo "updated existing release $ref"
+          else
+            gh release create "$ref" dist/* --title "$title" --notes-file release-notes.md
+            echo "created release $ref"
+          fi
