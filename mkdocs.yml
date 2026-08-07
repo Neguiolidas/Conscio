@@ -40,7 +40,7 @@ exclude_docs: |
   Report-*.md
   Knolayer.md
   f3-*.md
-  verdent-*.md
+  verdent-*
   reference/conscio_functions.md
   reference/claude-code-harness.md
   RELEASING.md

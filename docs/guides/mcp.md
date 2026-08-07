@@ -49,6 +49,42 @@ command:
 Run `conscio-mcp` directly (the console entry point), not `python -m
 conscio.mcp.server`.
 
+### Host-specific placement
+
+The block above is the whole configuration; only the file it goes in changes.
+
+| Host | File | Notes |
+|---|---|---|
+| Claude Code | `.mcp.json` in the project, or the plugin's bundled one | Installing the plugin writes it for you. |
+| Verdent | `~/.verdent/mcp.json` (global, hot-reloaded) or `<project>/.verdent/mcp.json` | The project file wins where both define `conscio`. |
+
+Two things bite on any host that launches the server itself rather than through a
+shell:
+
+- **`command` must resolve.** A host does not necessarily inherit your `PATH`, so
+  if `conscio-mcp` lives in a virtualenv, give the absolute path to the binary
+  (`<venv>/bin/conscio-mcp`) rather than the bare name. The same applies to
+  `--storage`: pass an absolute directory.
+- **Conscio must be ≥ 4.1 on a host that validates tool names.** Verdent requires
+  `^[A-Za-z0-9_-]{1,128}$` and rejects the pre-4.1 `conscio.recall` spelling. It
+  still connects and still reports success — it just serves zero tools, and only
+  its own log says why. If tools are missing there, check the version before
+  anything else — and check *the one the host launches*:
+
+  ```bash
+  PY=$(head -1 "$(command -v conscio-mcp)" | sed 's|^#!||')   # the shebang's interpreter
+  (cd /tmp && "$PY" -c "import conscio; print(conscio.__version__)")
+  ```
+
+  The console script pins an interpreter in its shebang, and that interpreter has
+  its own `site-packages`. An editable checkout under one Python and an older
+  wheel under another coexist happily, in which case `import conscio` in your
+  shell reports 4.1 while the server the host actually starts is still 4.0 and
+  still serving dots. Upgrade the interpreter in the shebang, not the one on your
+  `PATH`. Run the check from outside a Conscio checkout — from inside, the source
+  tree shadows the installed package and the command reports the version you were
+  hoping for rather than the one being served.
+
 ## Tool surfaces
 
 Every tool schema the server advertises costs context before the first prompt —
