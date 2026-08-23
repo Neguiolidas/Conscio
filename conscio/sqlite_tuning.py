@@ -26,6 +26,7 @@ cannot cycle.
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 from .obsstore import enable_wal
 
@@ -33,6 +34,14 @@ from .obsstore import enable_wal
 # explicitly disabled waiting (timeout=0). Converting is a one-off on first
 # open, so a bounded wait here does not touch the steady-state path.
 _WAL_RETRY_MS = 5000
+
+# WAL size (bytes) past which tune() checkpoint-truncates the log. A bloated
+# WAL (e.g. >50MB of absorbed content left 1.1GB uncommitted in the field)
+# makes every later FTS5/lexical read page-scan the WAL + main DB at ~100%
+# CPU. Checkpointing is cheap when small (SQLite no-ops) and reclaims disk
+# + read speed when large, so tune() — the one pragma every store shares —
+# runs it on open once the log exceeds this.
+_WAL_CHECKPOINT_THRESHOLD = 100 * 1024 * 1024  # 100 MB
 
 
 def tune(
@@ -47,3 +56,31 @@ def tune(
     conn.execute(f"PRAGMA synchronous={'FULL' if durable else 'NORMAL'}")
     if foreign_keys:
         conn.execute("PRAGMA foreign_keys=ON")
+    _checkpoint_oversized_wal(conn)
+
+
+def _checkpoint_oversized_wal(conn: sqlite3.Connection) -> None:
+    """Checkpoint-truncate the WAL if it has grown past the threshold."""
+    try:
+        mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+    except sqlite3.OperationalError:
+        return
+    if mode != "wal":
+        return
+    try:
+        db_path = Path(conn.execute("PRAGMA database_list").fetchone()[2])
+        size = db_path.stat().st_size
+    except (sqlite3.OperationalError, OSError, TypeError):
+        size = 0
+    if size < _WAL_CHECKPOINT_THRESHOLD:
+        return
+    # Oversized: checkpoint-and-truncate so later reads do not page-scan the
+    # log. A contended EXCLUSIVE lock falls back to a passive checkpoint
+    # (still coalesces frames) rather than blocking the opener.
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except sqlite3.OperationalError:
+        try:
+            conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+        except sqlite3.OperationalError:
+            pass

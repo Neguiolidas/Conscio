@@ -1,4 +1,5 @@
 """Tests for the shared SQLite connection tuning helper."""
+import os
 import sqlite3
 
 import pytest
@@ -109,3 +110,40 @@ def test_tune_converts_an_existing_rollback_journal_database(tmp_path):
         assert c.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
     finally:
         c.close()
+
+
+def test_tune_checkpoints_an_oversized_wal(tmp_path):
+    """A WAL that has grown past the threshold must be checkpointed on tune().
+
+    Field report (conscio 4.1.0): absorbing >50MB of content left a 1.1GB
+    uncommitted WAL; every FTS5 recall then page-scanned the WAL+main DB at
+    90-100% CPU for days (the I/O loop). tune() is the one pragma point every
+    store shares — it must checkpoint (and truncate) a WAL that has grown
+    past the threshold so a later read does not scan a bloated log.
+    """
+    from conscio.sqlite_tuning import _WAL_CHECKPOINT_THRESHOLD, tune
+    buffered = str(tmp_path / "buffered.db")
+    b = sqlite3.connect(buffered)
+    b.execute("PRAGMA journal_mode=WAL")
+    b.execute("CREATE TABLE t(a, b, c)")
+    for i in range(20000):
+        b.execute("INSERT INTO t VALUES (?,?,?)", (i, "val" * 64, i * 2))
+    b.commit()
+    wal = buffered + "-wal"
+
+    # Keep `b` open so SQLite does not auto-checkpoint/remove the WAL on the
+    # last close; a fresh tuned reader must be the one that reclaims it.
+    original = _WAL_CHECKPOINT_THRESHOLD
+    try:
+        import conscio.sqlite_tuning as st
+        st._WAL_CHECKPOINT_THRESHOLD = 0   # every WAL is "oversized"
+        before = os.path.getsize(wal)
+        reader = sqlite3.connect(buffered)
+        tune(reader)
+        reader.execute("SELECT count(*) FROM t").fetchone()
+        reader.close()
+        after = os.path.getsize(wal) if os.path.exists(wal) else 0
+        assert after < max(before, 1), f"WAL not truncated: {before} -> {after}"
+    finally:
+        st._WAL_CHECKPOINT_THRESHOLD = original
+    b.close()
