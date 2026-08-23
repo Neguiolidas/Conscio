@@ -18,6 +18,7 @@ import hashlib
 import logging
 import re
 import sqlite3
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -131,6 +132,42 @@ class ContentStore:
         # preserves exact FTS5-only behavior for every existing caller.
         self.vector_backend = vector_backend
         self.embeddings = embeddings
+
+        # Short-TTL query cache. The daemon repeats the same recall query
+        # dozens of times per minute; without this each one page-scans the
+        # FTS index + WAL (and with an oversized WAL that is 90-100% CPU).
+        # A 30s TTL collapses the repeats while still letting fresh content
+        # surface on the next cadence. Keyed by (query, limit, filter fields).
+        self._search_cache: dict[tuple, tuple[float, list]] = {}
+        self._search_cache_ttl_s = 30.0
+
+    # ─── Query cache helpers ──────────────────────────────────────
+
+    def _cache_key(self, query: str, limit: int, category: str | None,
+                   content_type: str | None, since: str | None,
+                   include_stale: bool, use_trigram: bool) -> tuple:
+        return (query.strip().lower(), limit, category, content_type,
+                since, include_stale, use_trigram)
+
+    def _cache_get(self, key: tuple):
+        hit = self._search_cache.get(key)
+        if hit is None:
+            return None
+        ts, value = hit
+        if time.time() - ts > self._search_cache_ttl_s:
+            self._search_cache.pop(key, None)
+            return None
+        return value
+
+    def _cache_put(self, key: tuple, value: list) -> None:
+        # Bound the cache; simple cap avoids unbounded growth over a long run.
+        if len(self._search_cache) >= 256:
+            self._search_cache.clear()
+        self._search_cache[key] = (time.time(), value)
+
+    def _cache_invalidate(self) -> None:
+        """Drop cached results after index/delete/clear so reads reflect writes."""
+        self._search_cache.clear()
 
     # ─── Schema ──────────────────────────────────────────────────────
 
@@ -286,6 +323,7 @@ class ContentStore:
                 if chunk_rowid is not None:
                     pending.append((f"chunk:{chunk_rowid}", chunk))
             self.db.commit()
+            self._cache_invalidate()            # new content must surface
             self._maybe_embed_batch(pending, category)
             return IndexResult(source_id, "category_added", len(chunks))
 
@@ -319,6 +357,7 @@ class ContentStore:
             (len(chunks), source_id),
         )
         self.db.commit()
+        self._cache_invalidate()                # new content must surface
 
         # Embedding runs AFTER the FTS5 commit, in one batch: FTS5 is the
         # primary, always-on path and must not be held open (nor rolled back)
@@ -697,6 +736,15 @@ class ContentStore:
         if not use_trigram and self._query_needs_trigram(query):
             use_trigram = True
 
+        # Short-TTL cache: the daemon repeats identical recall queries
+        # dozens of times per minute; a hit skips both FTS scans entirely.
+        cache_key = self._cache_key(
+            query, limit, category, content_type, since, include_stale,
+            use_trigram)
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return cached
+
         # Build WHERE clause for filters
         filter_clause = ""
         filter_params: list = []
@@ -720,7 +768,9 @@ class ContentStore:
 
         if not use_trigram:
             # Porter-only: wrap in RRF with empty trigram for consistent shape
-            return self._rrf_merge(porter_results, [])[:limit]
+            result = self._rrf_merge(porter_results, [])[:limit]
+            self._cache_put(cache_key, result)
+            return result
 
         # Trigram search (BM25) — from separate DB or fallback to main DB
         trigram_results = self._fts_search_trigram(
@@ -729,8 +779,9 @@ class ContentStore:
 
         # Merge via RRF
         merged = self._rrf_merge(porter_results, trigram_results)
-
-        return merged[:limit]
+        result = merged[:limit]
+        self._cache_put(cache_key, result)
+        return result
 
     _TRIGGER_PATTERN_RE = re.compile(
         r"[./\\_\-]"           # dots, slashes, backslashes, underscores, dashes
@@ -1206,6 +1257,7 @@ class ContentStore:
             "DELETE FROM source_tombstones WHERE source_id = ?", (source_id,))
         self.db.execute("DELETE FROM sources WHERE id = ?", (source_id,))
         self.db.commit()
+        self._cache_invalidate()                # deleted content must go away
         return True
 
     def compact(self, before_days: int = 90) -> int:

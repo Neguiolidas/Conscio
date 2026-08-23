@@ -556,6 +556,42 @@ class TestRetrieval:
         assert store.get_source(9999) is None
 
 
+
+    def test_same_query_within_ttl_is_cached(self, populated_store):
+        """Repeated identical recall queries must not re-run the FTS scan.
+
+        Field report (conscio 4.1.0 I/O loop): the daemon repeats the same
+        recall query dozens of times per minute; each one page-scanned the
+        WAL + main DB at 90-100% CPU. A short-TTL query cache collapses the
+        repeats — the second identical call must reuse the first result
+        without re-executing the lexical scans.
+        """
+        store = populated_store
+        calls = {"n": 0}
+        original_fts = store._fts_search
+        original_trigram = store._fts_search_trigram
+
+        def counting_fts(*a, **k):
+            calls["n"] += 1
+            return original_fts(*a, **k)
+
+        def counting_trigram(*a, **k):
+            calls["n"] += 1
+            return original_trigram(*a, **k)
+
+        store._fts_search = counting_fts
+        store._fts_search_trigram = counting_trigram
+        try:
+            first = store.search("error")
+            second = store.search("error")
+        finally:
+            store._fts_search = original_fts
+            store._fts_search_trigram = original_trigram
+
+        assert first == second                    # same results (cached)
+        assert calls["n"] == 1, \
+            f"FTS scan re-ran on cached query: {calls['n']} calls (expect 1)"
+
 # ─── Deletion Tests ─────────────────────────────────────────────────────
 
 class TestDeletion:
