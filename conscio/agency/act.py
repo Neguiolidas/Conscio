@@ -146,7 +146,7 @@ class ActPipeline:
         except GatewayError as exc:
             return self._fail(goal_fp, tool="", args={},
                               reason=f"decode failed: {exc}",
-                              goal_text=goal_text)
+                              goal_text=goal_text, infra=exc.infra)
 
         # deterministic checks (skeptic checks 1-2 + sandbox — no LLM)
         spec = self.registry.get(proposal.tool)
@@ -334,7 +334,8 @@ class ActPipeline:
     def _fail(self, goal_fp: str, *, tool: str, args: dict, reason: str,
               verdict: AuditVerdict | None = None, goal_text: str = "",
               report_status: ActStatus = ActStatus.FAILED,
-              proposal: ActionProposal | None = None) -> ActReport:
+              proposal: ActionProposal | None = None,
+              infra: bool = False) -> ActReport:
         row_id = self.ledger.record(goal_fp=goal_fp, goal_text=goal_text,
                                     tool=tool or "(none)",
                                     args_json=json.dumps(args), rationale="",
@@ -344,7 +345,13 @@ class ActPipeline:
             self.ledger.update_verdict(row_id, verdict.verdict,
                                        verdict.reasons)
         lockdown = False
-        if self.breaker.should_trip(goal_fp, task_type=tool or ""):
+        # An infra failure (endpoint unreachable, timeout, provider outage)
+        # repeats for every goal equally — it says nothing about THIS goal
+        # being intractable. Trip the breaker only on a goal-level failure
+        # (unknown tool, invalid args, skeptic reject, tool error), so a dead
+        # model endpoint cannot quarantine the lone executable goal and put
+        # the daemon into a 5-minute "arbiter returned None" loop.
+        if not infra and self.breaker.should_trip(goal_fp, task_type=tool or ""):
             self.breaker.trip(goal_fp, detail=reason, goal_text=goal_text)
             lockdown = self.breaker.global_lockdown_due()
         return ActReport(status=report_status, proposal=proposal,

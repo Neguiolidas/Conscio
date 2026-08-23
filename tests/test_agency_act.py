@@ -10,11 +10,12 @@ import pytest
 from conscio.agency.act import ActPipeline, ActStatus
 from conscio.agency.adapter import (
     AdapterCaps,
-    AdapterError,
+    AdapterConnectionError,
     InferenceAdapter,
     MockAdapter,
 )
 from conscio.agency.breaker import CircuitBreaker
+from conscio.agency.fingerprint import goal_fingerprint
 from conscio.agency.ledger import ActionLedger
 from conscio.agency.tools import Risk, ToolRegistry
 from conscio.context_manager import ConsciousnessState
@@ -136,9 +137,15 @@ class TestA1NoLeakage:
                 assert f"GOAL_MARKER_{i - 1}" not in call["prompt"]
 
 
-class _AlwaysFails(InferenceAdapter):
+class _ProseOnly(InferenceAdapter):
+    """Model replies but never in the JSON proposal contract — decode failure
+    (infra=False). A goal stuck here IS intractable: the model is up but
+    cannot hand over a valid action, so the breaker still collapses it."""
     def generate(self, prompt, **kw):
-        raise AdapterError("backend down")
+        from conscio.agency.adapter import InferenceResult
+        return InferenceResult(
+            text="The answer is 42 because models prefer round numbers.",
+            tokens_in=10, tokens_out=10)
 
     def capabilities(self):
         return AdapterCaps()
@@ -146,7 +153,7 @@ class _AlwaysFails(InferenceAdapter):
 
 class TestA4Breaker:
     def test_lockdown_after_max_retries_and_reflect_untouched(self, tmp_path):
-        pipeline, _, bus = _pipeline(tmp_path, _AlwaysFails())
+        pipeline, _, bus = _pipeline(tmp_path, _ProseOnly())
         state = _state(goal="stuck goal")
         for _ in range(3):                      # DEFAULT_MAX_RETRIES
             report = pipeline.act(state)
@@ -291,3 +298,35 @@ class TestTokensReachTheLedger:
                                        "A1: NO\nA2: NO\nA3: YES"]))
         row = ledger.get(pipeline.act(_state()).ledger_id)
         assert row["tokens_in"] == 0 and row["tokens_out"] == 0
+
+
+class _InfraFails(InferenceAdapter):
+    """Adapter whose endpoint is unreachable — infra, not a goal problem."""
+    def generate(self, prompt, **kw):
+        raise AdapterConnectionError("Connection refused: no route to host")
+    def capabilities(self):
+        return AdapterCaps()
+
+
+class TestInfraFailuresDoNotTripleTheGoal:
+    """A goal failing because the model endpoint is down is NOT 'intractable'.
+
+    Field report (conscio 4.1.0, deepseek-v4-flash daemon): `started 4+
+    days at 90-100% CPU`, `arbiter returned None — quarantined=[...]`, 145k
+    log lines. The lone executable `host health check` goal was being
+    quarantined by the breaker for `Connection refused` (infra), leaving
+    zero actable goals and a 5-minute retry loop. A dead endpoint is an
+    environment problem; the breaker must not collapse the goal for it.
+    """
+
+    def test_infra_failure_never_quarantines_the_goal(self, tmp_path):
+        pipeline, _, bus = _pipeline(tmp_path, _InfraFails())
+        state = _state(goal="Maintenance: host health check")
+        fp = goal_fingerprint("Maintenance: host health check")
+        for _ in range(6):                       # >> DEFAULT_MAX_RETRIES
+            report = pipeline.act(state)
+            assert report.status is ActStatus.FAILED
+        assert not pipeline.breaker.is_quarantined(fp)
+        assert not any("Intractable dissonance"
+                       in e.get("data", {}).get("message", "")
+                       for e in bus.events)

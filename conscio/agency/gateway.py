@@ -34,7 +34,18 @@ if TYPE_CHECKING:
 
 
 class GatewayError(Exception):
-    """All decode tiers failed for this cycle."""
+    """All decode tiers failed for this cycle.
+
+    ``infra`` is True when the failure came from the inference endpoint
+    (unreachable, timeout, provider outage, permanent reject) and False when
+    the model replied but no tier could decode a valid proposal. The caller
+    must not collapse a goal's circuit breaker for an infra failure — a dead
+    endpoint is an environment problem, not an intractable goal.
+    """
+
+    def __init__(self, message: str, *, infra: bool = False) -> None:
+        super().__init__(message)
+        self.infra = infra
 
 
 # ── lenient JSON repair (vendored, ~40 lines) ──────────────────────────
@@ -216,14 +227,17 @@ class OutputGateway:
                 from conscio.failure import FailureGovernor as _FG
                 cls = _FG.classify(self.last_adapter_error)
                 if not _FG.should_retry(cls):
-                    raise GatewayError("permanent failure: " + str(self.last_adapter_error))
+                    raise GatewayError(
+                        "permanent failure: " + str(self.last_adapter_error),
+                        infra=True)
                 if not self.last_raw:
                     # Nothing was ever decoded, so "decode failed" would send the
                     # operator to the schema and the model's output format to
                     # explain an unreachable host or a rejected request.
                     raise GatewayError(
                         f"adapter call failed ({cls.value}): "
-                        f"{self.last_adapter_error}")
+                        f"{self.last_adapter_error}",
+                        infra=True)
             raise GatewayError("all decode tiers failed" + self._decode_detail())
         return proposal_from_dict(data, goal_id=goal_id)
 
