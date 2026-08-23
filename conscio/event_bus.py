@@ -16,6 +16,7 @@ import hashlib
 import json
 import sqlite3
 import threading
+import time
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -23,6 +24,20 @@ from pathlib import Path
 from .constants import DEFAULT_DB_PATH
 from .sqlite_tuning import tune
 from .timeutil import naive_utcnow
+
+# ─── Write-contention constants ───────────────────────────────────────
+# With --awake the daemon and the agent write the same conscio.db. An emit()
+# landing inside the daemon's transaction window can hit a transient
+# "database is locked". Retry the write (with rollback + short backoff) a
+# few times rather than fail on the first lock.
+_WRITE_RETRIES = 3
+_WRITE_RETRY_BACKOFF_S = 0.05
+
+
+def _is_transient_lock(exc: sqlite3.OperationalError) -> bool:
+    """True only for lock/busy — not for real schema/disk errors."""
+    msg = str(exc).lower()
+    return ("locked" in msg or "busy" in msg or "in use" in msg)
 
 # ─── Data Classes ───────────────────────────────────────────────────────
 
@@ -213,41 +228,75 @@ class EventBus:
         timestamp = naive_utcnow().isoformat()
 
         # BUG-47: serialize concurrent writes across threads.
+        # Field report: with --awake the daemon and the agent write the same
+        # conscio.db; if this emit lands inside the daemon's transaction
+        # window it can hit "database is locked" transiently. Retry the write
+        # (with rollback + short backoff) instead of propagating the first
+        # transient lock, so the caller does not have to "tentar 2x".
         with self._lock:
-            # Check for recent duplicate (same type + hash within dedup window)
-            cutoff = (naive_utcnow() - timedelta(seconds=DEDUP_WINDOW_SECONDS)).isoformat()
-            existing = self.db.execute(
-                """
-                SELECT id FROM events
-                WHERE type = ? AND data_hash = ? AND timestamp >= ?
-                LIMIT 1
-                """,
-                (type, data_hash, cutoff),
-            ).fetchone()
+            for attempt in range(_WRITE_RETRIES):
+                try:
+                    return self._emit_once(type, category, data_hash,
+                                           data_json, timestamp, priority,
+                                           project_dir, attribution_confidence)
+                except sqlite3.OperationalError as exc:
+                    if not _is_transient_lock(exc):
+                        raise
+                    if attempt == _WRITE_RETRIES - 1:
+                        # Give the other writer a moment, then surface a clear
+                        # error at the top of the stack.
+                        time.sleep(_WRITE_RETRY_BACKOFF_S)
+                        raise
+                    try:
+                        self.db.rollback()          # clear a partial txn
+                    except sqlite3.OperationalError:
+                        pass
+                    time.sleep(_WRITE_RETRY_BACKOFF_S)
+            # Unreachable: every iteration either returns or, on the last
+            # attempt, re-raises. Kept so a static checker sees the `int`
+            # return contract is satisfied.
+            raise sqlite3.OperationalError("database is locked")
 
-            if existing:
-                # Suppressed, not stored: there is no second row to flag, so the
-                # count goes on the row that survived. (is_duplicate is a different
-                # thing — a soft-delete mark that hides a row from query() and
-                # feeds compact(); flagging the survivor would hide the original.)
-                self.db.execute(
-                    "UPDATE events SET duplicates_suppressed ="
-                    " duplicates_suppressed + 1 WHERE id = ?",
-                    (existing["id"],),
-                )
-                self.db.commit()
-                return int(existing["id"])
+    def _emit_once(
+        self, type: str, category: str, data_hash: str, data_json: str,
+        timestamp: str, priority: int, project_dir: str,
+        attribution_confidence: float,
+    ) -> int:
+        """Single non-retried emit body (mutates only on success)."""
+        # Check for recent duplicate (same type + hash within dedup window)
+        cutoff = (naive_utcnow() - timedelta(seconds=DEDUP_WINDOW_SECONDS)).isoformat()
+        existing = self.db.execute(
+            """
+            SELECT id FROM events
+            WHERE type = ? AND data_hash = ? AND timestamp >= ?
+            LIMIT 1
+            """,
+            (type, data_hash, cutoff),
+        ).fetchone()
 
-            cursor = self.db.execute(
-                """
-                INSERT INTO events (type, category, data, priority, data_hash, project_dir, attribution_confidence, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (type, category, data_json, priority, data_hash, project_dir, attribution_confidence, timestamp),
+        if existing:
+            # Suppressed, not stored: there is no second row to flag, so the
+            # count goes on the row that survived. (is_duplicate is a different
+            # thing — a soft-delete mark that hides a row from query() and
+            # feeds compact(); flagging the survivor would hide the original.)
+            self.db.execute(
+                "UPDATE events SET duplicates_suppressed ="
+                " duplicates_suppressed + 1 WHERE id = ?",
+                (existing["id"],),
             )
             self.db.commit()
+            return int(existing["id"])
 
-            return int(cursor.lastrowid or 0)
+        cursor = self.db.execute(
+            """
+            INSERT INTO events (type, category, data, priority, data_hash, project_dir, attribution_confidence, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (type, category, data_json, priority, data_hash, project_dir, attribution_confidence, timestamp),
+        )
+        self.db.commit()
+
+        return int(cursor.lastrowid or 0)
 
     def emit_batch(self, events: list[dict]) -> list[int]:
         """

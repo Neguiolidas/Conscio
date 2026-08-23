@@ -5,6 +5,7 @@ Covers: emit, dedup, query, filters, summary, compact, stats, edge cases.
 """
 
 import json
+import sqlite3
 from datetime import timedelta
 
 import pytest
@@ -618,3 +619,48 @@ class TestSuppressionIsVisible:
         bus.emit("error", "system", {"msg": "x"})
         assert bus.get(eid).is_duplicate is False  # suppression is not deletion
         assert bus.stats()["duplicates"] == 0
+
+
+class _FlakyConn:
+    """Proxy to a real sqlite3 connection whose FIRST commit fails with
+    'database is locked' — models an agent emit() landing inside the awake
+    daemon's transaction window. After that it behaves normally."""
+    def __init__(self, real):
+        self._real = real
+        self._commits = 0
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def execute(self, *a, **k):
+        return self._real.execute(*a, **k)
+
+    def commit(self):
+        self._commits += 1
+        if self._commits == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return self._real.commit()
+
+
+class TestWriteContention:
+    """emit() must retry past a transient SQLite lock, not fail once.
+
+    Field report: with --awake the daemon and the agent both write to the
+    same conscio.db; an emit() landing inside the daemon's transaction
+    window raised 'database is locked' on the first try and only succeeded
+    on the second. The agent observed this as 'precisa tentar 2x'. emit()
+    should roll back and retry a locked write instead of propagating the
+    transient OperationalError.
+    """
+
+    def test_emit_retries_after_transient_lock(self, bus):
+        real = bus.db
+        flaky = _FlakyConn(bus.db)
+        bus.db = flaky               # 1st commit raises "database is locked"
+        try:
+            eid = bus.emit("error", "trading", {"code": 1, "msg": "x"})
+        finally:
+            bus.db = real
+            flaky.close()
+        assert int(eid) > 0
+        assert flaky._commits >= 2    # first locked, retry succeeded

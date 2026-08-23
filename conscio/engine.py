@@ -45,6 +45,12 @@ from .obsstore import search as _obs_search
 from .output_filter import build_pipeline_from_dict
 from .reflection_gate import MAX_ENTITIES_FOR_CONTRADICTION, GateContext, ReflectionGate
 from .self_prompt import generate_self_prompts
+
+# observe() retry: with --awake the daemon and agent write the same obs.db;
+# a write landing inside the daemon's txn window can hit "database is locked"
+# transiently. Retry with a short backoff before giving up (fire-and-forget).
+_OBS_WRITE_RETRIES = 3
+_OBS_RETRY_BACKOFF_S = 0.05
 from .semantic import ContradictionDetector, SemanticEngine
 from .session_lifecycle import SessionLifecycle
 from .session_rag_factory import create_session_rag
@@ -1714,20 +1720,37 @@ class ConsciousnessEngine:
         sid = session_id or self._obs_session
         row = -1
         try:
-            with self._obs_lock:
-                row = _obs_put(
-                    self._obs_conn(),
-                    tool=tool,
-                    input_text=input_text,
-                    output_text=output_text,
-                    project=project,
-                    # Empty means "whoever this space is" — resolved from
-                    # instance.json by the same helper the capture hook uses,
-                    # so an explicit caller can still name a third party.
-                    agent=agent or _obs_agent_label(self.storage),
-                    session_id=sid,
-                    ts=naive_utcnow().isoformat(),
-                )
+            # With --awake the daemon and this agent write the same obs.db.
+            # If the daemon holds the write lock, the first commit can hit a
+            # transient 'database is locked'; retry (with rollback) so the
+            # caller does not have to observe twice. observe() is
+            # fire-and-forget, so on persistent failure we swallow and return
+            # -1 as before.
+            for attempt in range(_OBS_WRITE_RETRIES):
+                try:
+                    with self._obs_lock:
+                        row = _obs_put(
+                            self._obs_conn(),
+                            tool=tool,
+                            input_text=input_text,
+                            output_text=output_text,
+                            project=project,
+                            agent=agent or _obs_agent_label(self.storage),
+                            session_id=sid,
+                            ts=naive_utcnow().isoformat(),
+                        )
+                    break
+                except sqlite3.OperationalError as exc:
+                    msg = str(exc).lower()
+                    transient = ("locked" in msg or "busy" in msg
+                                 or "in use" in msg)
+                    if not transient or attempt == _OBS_WRITE_RETRIES - 1:
+                        raise
+                    try:
+                        self._obs_conn().rollback()   # clear a partial txn
+                    except sqlite3.OperationalError:
+                        pass
+                    time.sleep(_OBS_RETRY_BACKOFF_S)
         except Exception as exc:  # fire-and-forget: never break the agent
             logger.debug("observe() swallowed write error: %s", exc)
             return -1

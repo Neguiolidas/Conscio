@@ -6,6 +6,7 @@ preserved on disk for forensics (policy: quarantine + recreate + preserve).
 
 Origin: Hermet §9 Probe A reproducer, promoted to a regression test.
 """
+import sqlite3
 from pathlib import Path
 
 from conscio.content_layer import _RAG_DISABLED
@@ -118,3 +119,32 @@ def test_try_keep_healthy_db_not_quarantined(tmp_path):
     finally:
         eng.close()
     assert not _corrupt_files(tmp_path)
+
+
+def test_observe_retries_past_transient_lock_and_returns_id(tmp_path, monkeypatch):
+    """observe() must retry a transient 'database is locked', not return -1.
+
+    Field report: with --awake both the daemon and the agent write the same
+    conscio.db; an observe() landing inside the daemon's transaction window
+    returned -1 on the first try and only stored on the second (the caller
+    had to 'tentar 2x'). observe() should roll back and retry the write.
+    """
+    from conscio import engine as engine_mod
+
+    eng = _engine(tmp_path)
+    try:
+        calls = {"n": 0}
+        real_put = engine_mod._obs_put
+
+        def flaky_put(conn, **kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise sqlite3.OperationalError("database is locked")
+            return real_put(conn, **kw)
+
+        monkeypatch.setattr(engine_mod, "_obs_put", flaky_put)
+        oid = eng.observe("echo", "in", "out", project="p")
+        assert oid is not None and int(oid) > 0     # stored
+        assert calls["n"] >= 2                        # first locked, retry hit
+    finally:
+        eng.close()
