@@ -189,3 +189,44 @@ def test_main_once_exit_zero(tmp_path):
     rc = main(["--storage", str(tmp_path / "s"), "--model", "test-model",
                "--sensors", "host", "--once"])
     assert rc == 0
+
+
+def test_main_fails_fast_when_daemon_already_running(tmp_path):
+    """A second daemon must exit without opening the engine (pidfile first).
+
+    Field report (conscio 4.1.0): orphan conscio-daemon processes spawned
+    every 10-30s each re-opened the WAL-backed stores and page-scanned the
+    DB before reaching Daemon.run()->_acquire_pidfile and raising
+    DaemonAlreadyRunning — 95% CPU indefinitely. The pidfile probe must run
+    before any engine construction so the orphan fails O(1), not after
+    touching multi-GB stores.
+    """
+    from conscio.daemon import main
+    storage = tmp_path / "s"
+    storage.mkdir(parents=True, exist_ok=True)
+    pf = storage / "daemon.pid"
+    pf.write_text(str(os.getpid()))          # a live process holds the pidfile
+
+    # Monkeypatch engine construction to prove it is NEVER reached when the
+    # pidfile is held: main() must exit at the probe, before ConsciousnessEngine.
+    # main() does `from .engine import ConsciousnessEngine`, so patch the
+    # attribute on the engine module, not on the daemon module.
+    from conscio import engine as _eng
+    original = _eng.ConsciousnessEngine
+    reached = {"engine": False}
+
+    class _PoisonEngine:
+        def __init__(self, *a, **k):
+            reached["engine"] = True
+            raise RuntimeError("engine should never be constructed")
+
+    _eng.ConsciousnessEngine = _PoisonEngine
+    try:
+        rc = main(["--storage", str(storage), "--model", "test-model",
+                   "--sensors", "host", "--once"])
+    finally:
+        _eng.ConsciousnessEngine = original
+
+    assert rc == 1                                # daemon already running
+    assert reached["engine"] is False             # failed BEFORE opening the engine
+    assert pf.exists()                            # went file untouched

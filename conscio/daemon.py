@@ -489,6 +489,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .installer.binding import validate_binding  # R6
     validate_binding(args.storage)
 
+    # ── pidfile FIRST: a second daemon must fail before doing any expensive
+    # work (opening the DB, building sensors, waking the engine). Field report
+    # (conscio 4.1.0): orphan processes spawned every 10-30s each re-opened
+    # the multi-GB WAL-backed stores and page-scanned before reaching
+    # Daemon.run()->_acquire_pidfile and raising DaemonAlreadyRunning — 95% CPU
+    # forever. Acquire here (and release on the failure path straight after a
+    # *successful* later run() finalizes its own lifecycle). We probe the file
+    # cheaply first so the common no-daemon case stays O(1); the real
+    # _acquire_pidfile (with its liveness check) runs again at run() and is the
+    # authoritative one for the single-daemon invariant.
+    from .daemon import _pid_alive
+    _pf = Path(args.storage) / "daemon.pid" if args.storage else None
+    if _pf is not None and _pf.exists():
+        try:
+            _old = int(_pf.read_text().strip())
+        except (OSError, ValueError):
+            _old = None
+        if _old is not None and _pid_alive(_old):
+            log.error("daemon already running (pid %s) at %s — exiting", _old, _pf)
+            return 1
+
     # ── merge config (config < env < CLI) ──
     from .adapter_config import build_adapter_from_config, load_config
     cfg = load_config()
