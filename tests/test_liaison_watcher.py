@@ -201,21 +201,23 @@ class TestTickOnce:
         assert msgs == []
         assert code == ExitCode.CONFIG_ERROR
 
-    def test_no_outbox_surfaces_but_does_not_advance(self, mailbox_db):
-        """Without an outbox, msgs print to stdout but the cursor must NOT
-        advance (nothing durable recorded their delivery — next tick must
-        re-surface)."""
+    def test_no_outbox_surfaces_and_advances_cursor(self, mailbox_db):
+        """Without an outbox, stdout IS the delivery: the watcher prints the
+        new messages AND advances the per-peer cursor (legacy cron contract).
+        Next tick is then silent — no re-spam of the same set."""
         msgs, code = tick_once(mailbox_db, self_id=SELF,
                                peers=[PEER_A, PEER_B], outbox=None)
         assert code == ExitCode.OK
         assert {m["id"] for m in msgs} == {1, 5, 6}
-        # cursor untouched — peer state stays empty (never written)
-        assert _load_state(mailbox_db) == {}
-
-        # and the tick after still re-surfaces the same messages
-        msgs2, _ = tick_once(mailbox_db, self_id=SELF,
-                             peers=[PEER_A, PEER_B], outbox=None)
-        assert {m["id"] for m in msgs2} == {1, 5, 6}
+        # cursor advanced because stdout delivered them
+        st = _load_state(mailbox_db)
+        assert st[PEER_A]["last_seen_id"] == 5
+        assert st[PEER_B]["last_seen_id"] == 6
+        # and the next tick is silent-idle (no re-delivery / spam)
+        msgs2, code2 = tick_once(mailbox_db, self_id=SELF,
+                                 peers=[PEER_A, PEER_B], outbox=None)
+        assert msgs2 == []
+        assert code2 == ExitCode.OK
 
     def test_pending_capture_does_not_advance_other_peer(self, mailbox_db):
         """Peer-B advances even when Peer-A's outbox fails? No: outbox is
@@ -246,9 +248,10 @@ class TestExitCode:
 # ── Ato 3a: legacy-compat flags (--since, --interval) ──────────────────────
 
 class TestLegacyCompat:
-    def test_since_rewinds_cursor_then_tick_resurfaces(self, mailbox_db):
-        """Legacy --since rewinds the per-peer cursor; the next tick then
-        re-surfaces everything after that id (replay/recover hook)."""
+    def test_since_rewinds_then_tick_resurfaces(self, mailbox_db, capsys):
+        """Legacy --since rewinds the per-peer cursor; the single --once tick
+        that main() performs then re-surfaces everything after that id
+        (replay/recover hook) — printed and cursor re-advanced."""
         from conscio.liaison.watcher import main as wmain
         # consume everything first (cursor for PEER_A ends at 5)
         outbox = mailbox_db.parent / "inbox.json"
@@ -256,7 +259,7 @@ class TestLegacyCompat:
                   outbox=outbox)
         assert _load_state(mailbox_db)[PEER_A]["last_seen_id"] == 5
 
-        # --since 1 rewinds cursor(s) to 1 — do NOT tick inside wmain
+        # --since 1 rewinds, then main's single tick re-surfaces ids 5,6
         rc = wmain([
             "--liaison-db", str(mailbox_db),
             "--self-id", SELF,
@@ -264,12 +267,13 @@ class TestLegacyCompat:
             "--since", "1",
         ])
         assert rc == 0
-        assert _load_state(mailbox_db)[PEER_A]["last_seen_id"] == 1
-
-        # now a plain tick re-surfaces the messages > 1 (id 5, 6)
-        msgs, _ = tick_once(mailbox_db, self_id=SELF,
-                            peers=[PEER_A, PEER_B], outbox=outbox)
-        assert {m["id"] for m in msgs} == {5, 6}
+        # the replay tick printed both peer ids 5 and 6
+        out = capsys.readouterr().out
+        assert '"id": 5' in out and '"id": 6' in out
+        # cursor re-advanced to the new max (5 and 6)
+        st = _load_state(mailbox_db)
+        assert st[PEER_A]["last_seen_id"] == 5
+        assert st[PEER_B]["last_seen_id"] == 6
 
     def test_since_requires_self_id(self, mailbox_db):
         from conscio.liaison.watcher import main as wmain

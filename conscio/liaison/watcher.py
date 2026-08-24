@@ -206,13 +206,15 @@ def tick_once(db: Path, *, self_id: str, peers: list[str],
     }
 
     if outbox is None:
-        # NEW messages but no sink: surface them on stdout so the caller
-        # (--once without an outbox) still sees them, but DO NOT advance the
-        # cursor and DO NOT claim consumption — nothing durable recorded
-        # their delivery, so the next tick must re-surface them.
+        # NO outbox: stdout IS the durable delivery (the cron feeds it to
+        # the consumer channel, e.g. Telegram). So we print each peer's
+        # new messages AND advance the cursor — exactly the legacy
+        # relay_watch_hermes.py contract. Re-surfacing the same set on the
+        # next tick would spam the channel, so not advancing is wrong here.
         for peer, msgs in per_peer.items():
             print(json.dumps({"peer": peer, "messages": msgs},
                              ensure_ascii=False))
+        _save_state(db, pending)
         return [m for msgs in per_peer.values() for m in msgs], ExitCode.OK
 
     outbox = Path(outbox)
