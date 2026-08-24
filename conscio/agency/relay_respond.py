@@ -83,9 +83,40 @@ def _transcript(rows: list[dict], self_id: str, max_chars: int) -> str:
     return "\n".join(lines)
 
 
+# ── Delta transcript (Ato 1b): incremental context, 70-90% token cut ────────
+# The peer's un-answered turns feed the prompt instead of the whole bounded
+# thread re-sent each tick. Rows are chronological (oldest-first) from thread().
+
+def _last_outbound_id(thread_rows: list[dict], self_id: str) -> int:
+    """The id of the newest row *we* sent in an (oldest-first) thread.
+
+    Everything after it is the peer's newest turn (the delta). If we never
+    replied yet (no self row), return 0 → the whole thread is the delta."""
+    last = 0
+    for m in thread_rows:
+        if m.get("from_instance") == self_id:
+            last = m["id"]
+    return last
+
+
+def _delta_rows(thread_rows: list[dict], since_id: int) -> list[dict]:
+    """Incremental slice: rows newer than since_id (the peer's turns we have
+    not yet answered). This is the token cut — only new turns reach the LM."""
+    return [m for m in thread_rows if int(m["id"]) > since_id]
+
+
+def _transcript_delta(thread_rows: list[dict], self_id: str,
+                      max_chars: int) -> str:
+    """Delta transcript: peer turns since our last reply, clamped to max_chars.
+    Excludes already-answered history (vs the full-thread _transcript)."""
+    since = _last_outbound_id(thread_rows, self_id)
+    return _transcript(_delta_rows(thread_rows, since), self_id, max_chars)
+
+
 def auto_respond(adapter, liaison_db, self_id, peers, *, limit: int = 10,
                  max_reply_tokens: int = 512, system: str = DEFAULT_SYSTEM,
-                 thread_limit: int = 20, max_prompt_chars: int = 8000
+                 thread_limit: int = 20, max_prompt_chars: int = 8000,
+                 delta: bool = False
                  ) -> list[dict]:
     """Auto-reply to unread peer relay messages. Returns sent packets.
     No-op ([]) when adapter is None, liaison_db/self_id falsy, or peers empty."""
@@ -117,7 +148,10 @@ def auto_respond(adapter, liaison_db, self_id, peers, *, limit: int = 10,
         thread_rows = mailbox.thread(liaison_db, self_id, frm,
                                      limit=thread_limit
                                      + 2 * pending.get(frm, 0))
-        transcript = _transcript(thread_rows, self_id, max_prompt_chars)
+        # Ato 1b: delta=True sends ONLY the peer's un-answered turns (incremental)
+        # instead of re-sending the whole bounded thread — 70-90% token cut.
+        transcript = _transcript_delta(thread_rows, self_id, max_prompt_chars) \
+            if delta else _transcript(thread_rows, self_id, max_prompt_chars)
         prompt = system + "\n\nConversation so far:\n" + transcript
         try:
             text = adapter.generate(prompt, max_tokens=max_reply_tokens).text

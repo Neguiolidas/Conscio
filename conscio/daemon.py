@@ -458,6 +458,11 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="when cognize-responding, also WRITE the exchange "
                              "to episodic memory (content_store; recall-able "
                              "later). Rides on --cognize; OFF default (v2.9.1)")
+    parser.add_argument("--delta-no-history", action="store_true",
+                        help="send the relay prompt only the peer's UN-ANSWERED "
+                             "turns (incremental context) instead of the whole "
+                             "bounded thread — 70-90% token cut. Rides on "
+                             "--auto-respond (v4.1.1)")
     parser.add_argument("--initiate", action="store_true",
                         help="awake daemon proactively OPENS directed relay "
                              "conversations with peers via engine cognition "
@@ -588,19 +593,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 from .agency import relay_cognize
                 _engine = engine                        # R1: bind LOCAL engine
                 _remember = args.cognize_remember       # v2.9.1
+                _delta = args.delta_no_history           # v4.1.1
                 responder = lambda: relay_cognize.cognize_respond(
                     _engine, _adapter, liaison_db, self_id, _peers,
-                    limit=args.respond_limit, remember=_remember)
+                    limit=args.respond_limit, remember=_remember, delta=_delta)
                 log.info("relay cognize-respond armed (peers=%d, limit=%d, "
-                         "remember=%s)", len(_peers), args.respond_limit,
-                         _remember)
+                         "remember=%s, delta=%s)",
+                         len(_peers), args.respond_limit, _remember, _delta)
             else:
                 from .agency import relay_respond
+                _delta = args.delta_no_history           # v4.1.1
                 responder = lambda: relay_respond.auto_respond(
                     _adapter, liaison_db, self_id, _peers,
-                    limit=args.respond_limit)
-                log.info("relay auto-respond armed (peers=%d, limit=%d)",
-                         len(_peers), args.respond_limit)
+                    limit=args.respond_limit, delta=_delta)
+                log.info("relay auto-respond armed (peers=%d, limit=%d, "
+                         "delta=%s)", len(_peers), args.respond_limit, _delta)
         else:
             log.warning("--auto-respond inert: needs relay sensor + adapter + "
                         "--awake + --relay-peer; skipping")

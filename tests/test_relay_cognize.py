@@ -316,3 +316,40 @@ def test_burst_wider_than_thread_window_fully_covered(tmp_path):
     assert len(sent) == 1
     assert "burst-00" in captured["p"]         # oldest reached the adapter
     assert mailbox.inbox(db, ME, unread_only=True) == []   # all consumed
+
+
+# ── Ato 1b: delta transcript cuts answered history in cognize_respond too ────
+
+def test_delta_no_history_excludes_answered_turns(tmp_path):
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "earlier question"}, ts=1.0)
+    mailbox.send(db, from_instance=ME, to_instance=PEER, type="chat",
+                 payload={"text": "earlier answer", "auto_reply": True},
+                 ts=2.0)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "fresh question"}, ts=3.0)
+    captured = {}
+    a = MockAdapter(script=[lambda p: captured.setdefault("p", p) or "ok"])
+    relay_cognize.cognize_respond(SpyEngine(), a, db, ME, [PEER], delta=True)
+    p = captured["p"]
+    assert "fresh question" in p                # delta turn present
+    assert "earlier question" not in p          # answered history cut
+    assert "earlier answer" not in p
+
+
+def test_delta_default_off_preserves_history(tmp_path):
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "earlier question"}, ts=1.0)
+    mailbox.send(db, from_instance=ME, to_instance=PEER, type="chat",
+                 payload={"text": "earlier answer", "auto_reply": True},
+                 ts=2.0)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "fresh question"}, ts=3.0)
+    captured = {}
+    a = MockAdapter(script=[lambda p: captured.setdefault("p", p) or "ok"])
+    relay_cognize.cognize_respond(SpyEngine(), a, db, ME, [PEER])  # delta=False
+    p = captured["p"]
+    assert "earlier question" in p              # full history kept by default
+    assert "fresh question" in p

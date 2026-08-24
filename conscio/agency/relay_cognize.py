@@ -15,7 +15,14 @@ is untouched. Loop-breaker, _fit cap, per-row mark_read all match relay_respond.
 from __future__ import annotations
 
 from ..liaison import mailbox, relay
-from .relay_respond import _fit, _is_auto_reply, _msg_text, _pending_counts, _transcript
+from .relay_respond import (
+    _fit,
+    _is_auto_reply,
+    _msg_text,
+    _pending_counts,
+    _transcript,
+    _transcript_delta,
+)
 
 DEFAULT_SYSTEM = (
     "You are an autonomous agent replying to a peer agent over a relay "
@@ -93,6 +100,7 @@ def cognize_respond(engine, adapter, liaison_db, self_id, peers, *,
                     thread_limit: int = 20, max_prompt_chars: int = 8000,
                     recall_k: int = 3, max_reply_chars: int = 2000,
                     remember: bool = False,
+                    delta: bool = False,
                     system: str = DEFAULT_SYSTEM) -> list[dict]:
     """Auto-reply to unread peer relay messages, routed through engine cognition.
     Returns sent packets. No-op ([]) when engine/adapter is None, liaison_db/
@@ -127,7 +135,9 @@ def cognize_respond(engine, adapter, liaison_db, self_id, peers, *,
         thread_rows = mailbox.thread(liaison_db, self_id, frm,
                                      limit=thread_limit
                                      + 2 * pending.get(frm, 0))
-        transcript = _transcript(thread_rows, self_id, max_prompt_chars)
+        # Ato 1b: delta=True sends ONLY the peer's un-answered turns
+        transcript = _transcript_delta(thread_rows, self_id, max_prompt_chars) \
+            if delta else _transcript(thread_rows, self_id, max_prompt_chars)
         mind = _mind_block(engine, peer_text, recall_k=recall_k)
         prompt = (system + "\n\n" + mind
                   + "\n\nConversation so far:\n" + transcript)

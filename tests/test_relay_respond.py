@@ -244,3 +244,99 @@ def test_one_reply_per_peer_per_cycle(tmp_path):
     sent = relay_respond.auto_respond(a, db, ME, [PEER])
     assert len(sent) == 1 and len(a.calls) == 1
     assert _unread(db) == 1                    # both inbound read; reply unread
+
+
+# ── Ato 1b: delta transcript — incremental context, token cut ───────────────
+
+class TestDeltaHelpers:
+    def test_last_outbound_id_finds_our_newest_reply(self):
+        rows = [
+            {"id": 1, "from_instance": PEER, "to_instance": ME},
+            {"id": 2, "from_instance": ME, "to_instance": PEER},
+            {"id": 3, "from_instance": PEER, "to_instance": ME},
+        ]
+        assert relay_respond._last_outbound_id(rows, ME) == 2
+
+    def test_last_outbound_id_zero_when_no_self_reply(self):
+        rows = [{"id": 1, "from_instance": PEER, "to_instance": ME},
+                {"id": 3, "from_instance": PEER, "to_instance": ME}]
+        assert relay_respond._last_outbound_id(rows, ME) == 0
+
+    def test_delta_rows_takes_only_newer_than_since(self):
+        rows = [{"id": 1, "from_instance": PEER, "to_instance": ME},
+                {"id": 5, "from_instance": PEER, "to_instance": ME}]
+        assert [m["id"] for m in relay_respond._delta_rows(rows, 2)] == [5]
+        assert [m["id"] for m in relay_respond._delta_rows(rows, 0)] == [1, 5]
+
+    def test_delta_transcript_excludes_answered_history(self):
+        # peer asked (id 1), we answered (id 2), peer asks again (id 3)
+        rows = [
+            {"id": 1, "from_instance": PEER, "to_instance": ME, "type": "chat",
+             "payload": {"text": "earlier question"}},
+            {"id": 2, "from_instance": ME, "to_instance": PEER, "type": "chat",
+             "payload": {"text": "earlier answer", "auto_reply": True}},
+            {"id": 3, "from_instance": PEER, "to_instance": ME, "type": "chat",
+             "payload": {"text": "brand new question"}},
+        ]
+        t = relay_respond._transcript_delta(rows, ME, 4000)
+        assert "brand new question" in t          # the delta
+        assert "earlier question" not in t        # answered history cut
+        assert "earlier answer" not in t
+
+
+class TestAutoRespondDelta:
+    def test_delta_sends_only_new_turns(self, tmp_path):
+        db = _db(tmp_path)
+        # history: peer asked, we answered, peer asks again (all inbound read,
+        # then re-open the newest as unread trigger)
+        mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                     payload={"text": "turn 1"}, ts=1.0)
+        mailbox.send(db, from_instance=ME, to_instance=PEER, type="chat",
+                     payload={"text": "reply 1", "auto_reply": True}, ts=2.0)
+        mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                     payload={"text": "turn 2"},
+                     ts=3.0)  # unread
+        captured = {}
+
+        def gen(prompt):
+            captured["p"] = prompt
+            return "reply 2"
+
+        a = MockAdapter(script=[gen])
+        relay_respond.auto_respond(a, db, ME, [PEER], delta=True)
+        # delta: only the un-answered turn 2 reaches the LM, NOT turn 1
+        assert "turn 2" in captured["p"]
+        assert "turn 1" not in captured["p"]
+        # ALL inbound from PEER consumed (turn 1 + turn 2); new reply written
+        con = sqlite3.connect(db)
+        n = con.execute(
+            "SELECT COUNT(*) FROM messages WHERE to_instance=? AND read_ts IS NULL",
+            (ME,)).fetchone()[0]
+        con.close()
+        assert n == 0   # no unread inbound left for ME
+
+    def test_delta_without_prior_reply_includes_whole_thread(self, tmp_path):
+        db = _db(tmp_path)
+        mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                     payload={"text": "first"}, ts=1.0)
+        mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                     payload={"text": "second"}, ts=2.0)
+        captured = {}
+        a = MockAdapter(script=[lambda p: captured.setdefault("p", p) or "ok"])
+        relay_respond.auto_respond(a, db, ME, [PEER], delta=True)
+        # no self reply yet -> whole thread IS the delta
+        assert "first" in captured["p"] and "second" in captured["p"]
+
+    def test_default_is_full_thread_not_delta(self, tmp_path):
+        db = _db(tmp_path)
+        mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                     payload={"text": "turn 1"}, ts=1.0)
+        mailbox.send(db, from_instance=ME, to_instance=PEER, type="chat",
+                     payload={"text": "reply 1", "auto_reply": True}, ts=2.0)
+        mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                     payload={"text": "turn 2"}, ts=3.0)
+        captured = {}
+        a = MockAdapter(script=[lambda p: captured.setdefault("p", p) or "ok"])
+        relay_respond.auto_respond(a, db, ME, [PEER])   # delta defaults False
+        assert "turn 1" in captured["p"]   # full history preserved by default
+        assert "turn 2" in captured["p"]
