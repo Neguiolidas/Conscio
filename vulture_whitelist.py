@@ -299,10 +299,23 @@ IndexResult.chunks_added
 # one item at a time (ingestion itself now goes through embed_batch).
 EmbeddingPipeline.embed_chunk
 
-# ── observation store (v3.8) ───────────────────────────────────────
+# ── observation store (v3.8) ────────────────────────────────────────
 from conscio.obsstore import read_observation
 
 # The single-row reader of the DeepMiner store: the read path callers use is
 # search_observations(), but reversibility is the point of the store and this
 # is how a caller (and every test) gets one observation back whole.
 read_observation
+
+# ── liaison (v4.2.0 — A2A native watchdog / agents / routing) ───────
+# Public surface used by tests/test_liaison_a2a.py and tests/test_liaison_agents.py;
+# vulture can't see cross-package test imports.
+from conscio.liaison import a2a, agents, watcher
+
+a2a.route_and_send       # called by tests/test_liaison_a2a.py
+a2a.delta_ack_for        # called by tests/test_liaison_a2a.py
+agents.register_agent    # called by tests/test_liaison_agents.py
+agents.unregister        # called by tests/test_liaison_agents.py
+agents.discover          # alias kept for the public API contract; tests cover it
+watcher.OUTBOX_NAME      # module-level constant for the handoff filename convention
+watcher._read_since      # helper retained for callers importing the per-peer cursor API
