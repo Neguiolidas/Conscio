@@ -262,6 +262,15 @@ def main(argv: list[str] | None = None) -> int:
                    help="write new messages as JSON here")
     p.add_argument("--once", action="store_true",
                    help="single poll tick and exit (cron mode)")
+    p.add_argument("--since", type=int, default=None,
+                   help="override the per-peer cursor start (legacy compat:"
+                        " the old relay_watch_hermes --since)")
+    p.add_argument("--interval", type=float, default=0.0,
+                   help="when >0 and not --once, poll in a persistent loop"
+                        " sleeping this many seconds between ticks")
+    p.add_argument("--timeout", type=float, default=600.0,
+                   help="with --interval, max seconds the loop may run before"
+                        " exiting (default 600; defaults to one-shot otherwise)")
     args = p.parse_args(argv)
 
     db = Path(args.liaison_db) if args.liaison_db else default_db()
@@ -272,6 +281,42 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(
             f"config error: --self-id or env {SELF_ID_ENV} required\n")
         return int(ExitCode.CONFIG_ERROR)
+
+    # Legacy --since override: force the cursor back to this id for all peers
+    # so the previous processed message becomes the boundary again. This
+    # mirrors relay_watch_hermes.py --since (a replay/recover hook).
+    if args.since is not None and db.exists():
+        _app_state = _load_state(db)
+        _app_state.update({
+            str(p): {"last_seen_id": int(args.since),
+                     "status": _app_state.get(str(p), {}).get(
+                         "status", "idle")}
+            for p in peers
+        })
+        _save_state(db, _app_state)
+
+    # Persistent loop (legacy blocking-watcher parity): keeps polling every
+    # --interval until the first non-empty tick surfaces, then exits OK. If
+    # the timeout elapses with nothing new, exit OK (silent, not an error).
+    if not args.once and args.interval > 0:
+        import time as _time
+        deadline = _time.time() + max(args.timeout, 0.0)
+        while _time.time() < deadline:
+            msgs, code = tick_once(
+                db, self_id=self_id, peers=peers,
+                outbox=Path(args.outbox) if args.outbox else None,
+            )
+            if msgs:
+                # surfaced — print (stdout contract) and exit OK
+                print(json.dumps({"messages": msgs}, ensure_ascii=False))
+                return int(ExitCode.OK)
+            if code == ExitCode.CONFIG_ERROR:
+                # db vanished mid-loop — honest config error, retry-able next
+                # invocation rather than spinning forever
+                return int(code)
+            _time.sleep(args.interval)
+        # deadline reached, nothing new: silent (watchdog) exit OK
+        return int(ExitCode.OK)
 
     _, code = tick_once(
         db, self_id=self_id, peers=peers,

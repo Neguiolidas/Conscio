@@ -241,3 +241,38 @@ class TestExitCode:
         assert int(ExitCode.OK) == 0
         assert int(ExitCode.PENDING_CAPTURE) == 2
         assert int(ExitCode.CONFIG_ERROR) == 3
+
+
+# ── Ato 3a: legacy-compat flags (--since, --interval) ──────────────────────
+
+class TestLegacyCompat:
+    def test_since_rewinds_cursor_then_tick_resurfaces(self, mailbox_db):
+        """Legacy --since rewinds the per-peer cursor; the next tick then
+        re-surfaces everything after that id (replay/recover hook)."""
+        from conscio.liaison.watcher import main as wmain
+        # consume everything first (cursor for PEER_A ends at 5)
+        outbox = mailbox_db.parent / "inbox.json"
+        tick_once(mailbox_db, self_id=SELF, peers=[PEER_A, PEER_B],
+                  outbox=outbox)
+        assert _load_state(mailbox_db)[PEER_A]["last_seen_id"] == 5
+
+        # --since 1 rewinds cursor(s) to 1 — do NOT tick inside wmain
+        rc = wmain([
+            "--liaison-db", str(mailbox_db),
+            "--self-id", SELF,
+            "--relay-peer", PEER_A, "--relay-peer", PEER_B,
+            "--since", "1",
+        ])
+        assert rc == 0
+        assert _load_state(mailbox_db)[PEER_A]["last_seen_id"] == 1
+
+        # now a plain tick re-surfaces the messages > 1 (id 5, 6)
+        msgs, _ = tick_once(mailbox_db, self_id=SELF,
+                            peers=[PEER_A, PEER_B], outbox=outbox)
+        assert {m["id"] for m in msgs} == {5, 6}
+
+    def test_since_requires_self_id(self, mailbox_db):
+        from conscio.liaison.watcher import main as wmain
+        rc = wmain(["--liaison-db", str(mailbox_db),
+                    "--self-id", "", "--relay-peer", PEER_A])
+        assert rc == int(ExitCode.CONFIG_ERROR)
