@@ -1339,6 +1339,9 @@ class ContentStore:
                 (source_id, reason),
             )
             self.db.commit()
+            # A tombstone changes search results — drop cached reads so the
+            # stale chunks stop surfacing immediately (not after TTL).
+            self._cache_invalidate()
         except Exception:
             # Source may not exist (FK violation) — ignore silently
             pass
