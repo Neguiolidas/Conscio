@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.2.0] - 2026-08-24 — A2A agent society (native)
+
+### Added
+
+- **Native A2A relay watchdog** (`conscio/liaison/watcher.py`): replaces the
+  external `relay_watch_hermes.py` script. Reads `liaison.db` read-only,
+  surfaces new peer messages, persists a **per-peer cursor** in `watcher_state`
+  inside the same db. Honest exit codes (0 = ok, 2 = pending_capture,
+  3 = config error), silent-when-idle (cron watchdog contract), zero LLM.
+- **Delta transcript** (Ato 1b): `auto_respond` / `cognize_respond` accept
+  `delta=True` (CLI `--delta-no-history`) — the LM prompt carries only the
+  peer's un-answered turns instead of the whole bounded thread each tick
+  (~70-90% token cut). Default remains full-thread (no regression).
+- **Agent presence + capabilities** (`conscio/liaison/agents.py`): additive
+  `agents` table over the shared db — `register_agent` / `heartbeat`
+  (deterministic UPSERT, zero LLM) / `unregister` / `list_agents` /
+  `is_alive`, with normalized capability tagging.
+- **Capability routing** (`conscio/liaison/a2a.py`): `route_select` /
+  `route_and_send` — an emitter selects the destination by capability tag
+  instead of a hardcoded peer list; scalable to N agents.
+- Legacy-compat flags: the watcher now supports `--since` (cursor replay) and
+  a persistent `--interval` loop, matching the old script's surface.
+
+### Fixed
+
+- `content_store._mark_stale()` now invalidates the short-TTL query cache, so
+  a tombstone stops stale chunks from surfacing immediately (not after up to
+  30s of cached reads).
+
+---
+
 ## [4.1.0] - 2026-08-07 — A name every host accepts
 
 ### Changed

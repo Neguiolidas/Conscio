@@ -14,14 +14,17 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v4.1.0` "A name every host accepts":** every tool is now
-`conscio_recall`, not `conscio.recall`. A dot is legal in MCP, but hosts that
-reuse the Anthropic/OpenAI function-name rule reject it — one connects, reports
-success, and silently disables every tool it was served. The old spelling still
-dispatches, and no model ever saw it. Tags now also publish a GitHub Release
-carrying their notes and wheels. `4.0.x` made Conscio installable as a Claude Code plugin and gave its
-MCP surface three sizes — `lite` (10 tools) / `balanced` (18) / `ultra` (35),
-switchable at runtime with `conscio_mode`.
+**Latest release — `v4.2.0` "A2A agent society (native)":** a native A2A
+relay watchdog (`conscio/liaison/watcher.py`) replaces the external
+`relay_watch_hermes.py`, with a per-peer cursor and honest exit codes; a
+delta transcript cuts ~70-90% of prompt tokens in relay auto-reply
+(`--delta-no-history`); and an `agents` table + capability routing let the
+emitter target the right peer by tag. `4.1.0` made every MCP tool
+`conscio_recall` (a dot is legal in MCP but rejected by Anthropic/OpenAI
+function-name rules — one connects, reports success, and silently disables
+every tool served). `4.0.x` made Conscio installable as a Claude Code plugin
+and gave its MCP surface three sizes — `lite` (10) / `balanced` (18) / `ultra`
+(35), switchable at runtime with `conscio_mode`.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
