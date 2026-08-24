@@ -1,0 +1,284 @@
+# conscio/liaison/watcher.py
+"""Native A2A relay watchdog over the shared mailbox (v4.1.1).
+
+Replaces the external relay_watch_hermes.py. Reads liaison.db read-only,
+deposits new peer messages to an outbox JSON (the handoff the main session
+consumes), persists a per-peer cursor in watcher_state inside the same db.
+Zero LLM: pure deterministic plumbing.
+
+Exit codes: 0 = ok (incl. new messages surfaced via stdout/outbox);
+2 = emit-to-outbox failed (pending_capture — retry next tick);
+3 = config error (no db / no self-id / no peers).
+
+Never raises: missing/corrupt/locked db degrades to [] (RelaySensor rule).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sqlite3
+import sys
+from collections.abc import Iterable
+from enum import IntEnum
+from pathlib import Path
+
+from . import relay
+from .mailbox import default_db
+
+BUSY_TIMEOUT_MS = 3000  # mirror relay_watch_hermes.py
+STATE_TABLE = "watcher_state"
+OUTBOX_NAME = "relay_inbox.json"
+SELF_ID_ENV = "CONSCIO_SELF_ID"
+
+
+class ExitCode(IntEnum):
+    OK = 0
+    PENDING_CAPTURE = 2  # emit-to-outbox failed; retry next tick
+    CONFIG_ERROR = 3    # missing db / self-id / peers
+
+
+# ── watcher_state schema ──────────────────────────────────────────────
+# Per-peer cursor (the right granularity: peer A dropping out must not
+# freeze peer B's progress). PRIMARY KEY = peer id.
+_STATE_DDL = (
+    f"CREATE TABLE IF NOT EXISTS {STATE_TABLE} ("
+    " peer         TEXT PRIMARY KEY,"
+    " last_seen_id INTEGER NOT NULL DEFAULT 0,"
+    " status       TEXT NOT NULL DEFAULT 'idle'"
+    ")"
+)
+_STATE_COLS = ("peer", "last_seen_id", "status")
+
+
+def _state_conn(db: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+    conn.execute(_STATE_DDL)
+    conn.commit()
+    return conn
+
+
+def _load_state(db: Path) -> dict[str, dict]:
+    """All watcher_state rows keyed by peer. Missing/broken db → {}."""
+    db = Path(db)
+    if not db.exists():
+        return {}
+    try:
+        conn = _state_conn(db)
+        try:
+            rows = conn.execute(
+                f"SELECT {_STATE_COLS[0]}, {_STATE_COLS[1]}, {_STATE_COLS[2]}"
+                f" FROM {STATE_TABLE}"
+            ).fetchall()
+            return {r["peer"]: {"last_seen_id": int(r["last_seen_id"]),
+                                "status": r["status"]} for r in rows}
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return {}
+
+
+def _save_state(db: Path, updates: dict[str, dict]) -> None:
+    """UPSERT per-peer state rows. Never raises (best-effort)."""
+    if not updates:
+        return
+    try:
+        conn = _state_conn(Path(db))
+        try:
+            for peer, st in updates.items():
+                conn.execute(
+                    f"INSERT INTO {STATE_TABLE}(peer,last_seen_id,status)"
+                    " VALUES(?,?,?)"
+                    " ON CONFLICT(peer) DO UPDATE SET"
+                    "   last_seen_id=excluded.last_seen_id,"
+                    "   status=excluded.status",
+                    (str(peer), int(st["last_seen_id"]), str(st["status"])),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        pass
+
+
+def _read_since(db: Path, peer: str) -> int:
+    """Per-peer last_seen_id; 0 if unknown."""
+    return int(_load_state(db).get(peer, {}).get("last_seen_id", 0))
+
+
+# ── Poll ──────────────────────────────────────────────────────────────
+
+def poll_digest(db: Path, since_id: int, self_id: str,
+                peers: Iterable[str], *, limit: int = 100) -> list[dict]:
+    """New self-addressed peer messages in chronological order.
+
+    Filters: id > since_id, to_instance = self_id, from_instance ∈ peers,
+    non-reserved type, payload within size cap. Own messages (self_id)
+    are skipped. Missing/corrupt/locked db → [].
+    """
+    db = Path(db)
+    peers = list(peers)
+    if not peers or not self_id:
+        return []
+    if not db.exists():
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+    except sqlite3.Error:
+        return []
+    try:
+        placeholders = ",".join("?" * len(peers))
+        rows = conn.execute(
+            "SELECT id, from_instance, to_instance, type, payload, ts"
+            " FROM messages"
+            " WHERE id > ? AND to_instance = ?"
+            f"   AND from_instance IN ({placeholders})"
+            " ORDER BY id ASC LIMIT ?",
+            (since_id, self_id, *peers, max(1, min(limit, 500))),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+    peer_set = set(peers)
+    out: list[dict] = []
+    for r in rows:
+        frm = r["from_instance"]
+        if frm == self_id:
+            continue
+        if r["type"] in relay.RESERVED_TYPES:
+            continue
+        try:
+            payload_obj = json.loads(r["payload"])
+        except (TypeError, ValueError):
+            payload_obj = {"_raw": r["payload"]}
+        if not relay.is_relay_message(
+            {"from_instance": frm, "type": r["type"], "payload": payload_obj},
+            peer_set,
+        ):
+            continue
+        out.append({
+            "id": int(r["id"]),
+            "from_instance": frm,
+            "to_instance": r["to_instance"],
+            "type": r["type"],
+            "payload": payload_obj,
+            "ts": r["ts"],
+        })
+    return out
+
+
+# ── Tick ──────────────────────────────────────────────────────────────
+
+def tick_once(db: Path, *, self_id: str, peers: list[str],
+              outbox: Path | None) -> tuple[list[dict], ExitCode]:
+    """One poll turn per peer. Read cursor → poll → emit outbox → advance.
+
+    Silent-when-empty: no msgs → outbox untouched, cursors unchanged, OK.
+    """
+    db = Path(db)
+    if not db.exists() or not peers or not self_id:
+        return [], ExitCode.CONFIG_ERROR
+
+    state = _load_state(db)
+    per_peer: dict[str, list[dict]] = {}
+    new_cursors: dict[str, int] = {}
+
+    for peer in peers:
+        since = int(state.get(peer, {}).get("last_seen_id", 0))
+        msgs = poll_digest(db, since, self_id, [peer])
+        if msgs:
+            per_peer[peer] = msgs
+            new_cursors[peer] = max(m["id"] for m in msgs)
+
+    if not new_cursors:
+        return [], ExitCode.OK
+
+    # Advance cursors only after a successful outbox write below.
+    pending = {
+        peer: {"last_seen_id": new_cursors[peer], "status": "pending_consumption"}
+        for peer in new_cursors
+    }
+
+    if outbox is None:
+        # NEW messages but no sink: surface them on stdout so the caller
+        # (--once without an outbox) still sees them, but DO NOT advance the
+        # cursor and DO NOT claim consumption — nothing durable recorded
+        # their delivery, so the next tick must re-surface them.
+        for peer, msgs in per_peer.items():
+            print(json.dumps({"peer": peer, "messages": msgs},
+                             ensure_ascii=False))
+        return [m for msgs in per_peer.values() for m in msgs], ExitCode.OK
+
+    outbox = Path(outbox)
+    try:
+        outbox.parent.mkdir(parents=True, exist_ok=True)
+        tmp = outbox.with_suffix(outbox.suffix + ".new")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"status": "pending_consumption",
+                       "self_id": self_id,
+                       "messages_by_peer": per_peer}, f, ensure_ascii=False)
+        os.replace(tmp, outbox)
+    except OSError:
+        # Emit failed: leave cursors where they were, mark pending_capture.
+        _save_state(db, {peer: {"last_seen_id": int(state.get(
+            peer, {}).get("last_seen_id", 0)), "status": "pending_capture"}
+            for peer in per_peer})
+        return [m for msgs in per_peer.values() for m in msgs], ExitCode.PENDING_CAPTURE
+
+    # Emit succeeded: advance cursors.
+    _save_state(db, pending)
+    return [m for msgs in per_peer.values() for m in msgs], ExitCode.OK
+
+
+# ── CLI ───────────────────────────────────────────────────────────────
+
+def _resolve_self_id(arg: str) -> str:
+    if arg:
+        return arg
+    env = os.environ.get(SELF_ID_ENV, "").strip()
+    return env
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(
+        prog="conscio relay watcher",
+        description="Watchdog over the liaison mailbox: surface new inbound"
+                    " peer messages to the outbox, persist a per-peer cursor,"
+                    " exit silently when idle.",
+    )
+    p.add_argument("--liaison-db", default=None,
+                   help="path to liaison.db (default: $HERMES_HOME/liaison.db)")
+    p.add_argument("--self-id", default="",
+                   help=f"our provider instance id (or env {SELF_ID_ENV})")
+    p.add_argument("--relay-peer", action="append", default=[],
+                   help="trusted peer id (repeatable)")
+    p.add_argument("--outbox", default=None,
+                   help="write new messages as JSON here")
+    p.add_argument("--once", action="store_true",
+                   help="single poll tick and exit (cron mode)")
+    args = p.parse_args(argv)
+
+    db = Path(args.liaison_db) if args.liaison_db else default_db()
+    self_id = _resolve_self_id(args.self_id)
+    peers = list(dict.fromkeys(args.relay_peer))  # preserve order, dedupe
+
+    if not self_id:
+        sys.stderr.write(
+            f"config error: --self-id or env {SELF_ID_ENV} required\n")
+        return int(ExitCode.CONFIG_ERROR)
+
+    _, code = tick_once(
+        db, self_id=self_id, peers=peers,
+        outbox=Path(args.outbox) if args.outbox else None,
+    )
+    return int(code)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
