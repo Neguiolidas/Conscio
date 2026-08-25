@@ -15,24 +15,10 @@ giving them memory, self-judgment, and procedural skill — and to prove that cl
 measurement, not assertion.
 
 **Latest release — `v4.3.1` "Private-cursor relay sweep":** new
-`conscio.liaison.tick` module — private-cursor relay sweep + IMPORTANT
+`conscio.liaison.tick` module — a private-cursor relay sweep + IMPORTANT
 classification for host supervisors (systemd/cron), fixing the multi-agent
-cursor race in the shared-mailbox relay. See [CHANGELOG](CHANGELOG.md).
-council now resolves ambiguous/split decisions to `hold` (never a silent
-`proceed`), a clean critic votes `proceed` honestly, and each voice degrades
-gracefully instead of crashing the whole council. New `consensus_strength`
-and `dissenting_voices` fields. Previous — `v4.2.0` "A2A agent society
-(native)": a native A2A
-relay watchdog (`conscio/liaison/watcher.py`) replaces the external
-`relay_watch_hermes.py`, with a per-peer cursor and honest exit codes; a
-delta transcript cuts ~70-90% of prompt tokens in relay auto-reply
-(`--delta-no-history`); and an `agents` table + capability routing let the
-emitter target the right peer by tag. `4.1.0` made every MCP tool
-`conscio_recall` (a dot is legal in MCP but rejected by Anthropic/OpenAI
-function-name rules — one connects, reports success, and silently disables
-every tool served). `4.0.x` made Conscio installable as a Claude Code plugin
-and gave its MCP surface three sizes — `lite` (10) / `balanced` (18) / `ultra`
-(35), switchable at runtime with `conscio_mode`.
+cursor race in the shared-mailbox relay (one agent's watcher no longer
+consumes another's unread boundary). See [CHANGELOG](CHANGELOG.md).
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
