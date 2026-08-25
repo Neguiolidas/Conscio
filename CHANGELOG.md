@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.3.1] - 2026-08-25 — Private-cursor relay sweep + IMPORTANT classification
+
+### Added
+
+- **`conscio.liaison.tick`** — dedicated private-cursor relay sweep for host
+  supervisors (systemd/cron). Unlike the existing `watcher`, which persists a
+  per-peer cursor in the **shared** `watcher_state` table that any mailbox
+  writer may also read/advance, `tick.sweep()` uses an **opt-in private cursor
+  file** so multiple agents polling the same `liaison.db` never clobber each
+  other's read position. This is the fix for the Gemini↔Hermet relay race
+  where one agent's watcher consumed the other's unread boundary.
+- **`tick.classify_important()`** — heuristic that tags a surfaced relay
+  message as IMPORTANT (direction/action requested: `direcionamento`, `acao`,
+  `passo`, `teste_direcionado`, `prioridade`) vs routine (`ping`, `validacao`,
+  `ack`). Word-boundary matching so `validacao` is **not** a false positive of
+  `acao`. Exposed via CLI (`conscio.liaison.tick`) for the DM-notification step
+  in host supervisor scripts.
+- **`tick.classify_peer()`** — short human label for a relay peer UUID.
+
+### Fixed
+
+- **Multi-agent cursor race** — two agents (Gemini + Hermet) polling the same
+  mailbox previously advanced a single shared per-peer cursor, so one agent's
+  poll consumed (and hid) messages addressed to the other. `tick.sweep` with a
+  private cursor file separates each agent's read position.
+
+---
+
 ## [4.3.0] - 2026-08-24 — Assertive, robust council
 
 ### Changed

@@ -14,7 +14,10 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v4.3.0` "Assertive, robust council":** the 4-voice
+**Latest release — `v4.3.1` "Private-cursor relay sweep":** new
+`conscio.liaison.tick` module — private-cursor relay sweep + IMPORTANT
+classification for host supervisors (systemd/cron), fixing the multi-agent
+cursor race in the shared-mailbox relay. See [CHANGELOG](CHANGELOG.md).
 council now resolves ambiguous/split decisions to `hold` (never a silent
 `proceed`), a clean critic votes `proceed` honestly, and each voice degrades
 gracefully instead of crashing the whole council. New `consensus_strength`
