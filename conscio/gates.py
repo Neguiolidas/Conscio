@@ -152,31 +152,68 @@ def council(
         except Exception:
             pass  # reflect failure should not block council
 
-    voices = [
-        _voice_architect(engine, question, context, options),
-        _voice_skeptic(engine, question, context, options),
-        _voice_pragmatist(engine, question, context, options),
-        _voice_critic(engine, question, context, options),
+    voice_calls = [
+        ("architect", _voice_architect),
+        ("skeptic", _voice_skeptic),
+        ("pragmatist", _voice_pragmatist),
+        ("critic", _voice_critic),
     ]
+    voices: list[dict] = []
+    for role, fn in voice_calls:
+        try:
+            voices.append(fn(engine, question, context, options))
+        except Exception as e:  # a failing voice must never sink the council
+            voices.append({
+                "role": role,
+                "analysis": f"voice degraded (error): {e}",
+                "concerns": ["Voice could not analyze — treat as counsel withheld"],
+                "vote": "hold",
+            })
 
-    # Determine recommendation: majority vote
+    # ── Determine recommendation: conservative, not permissive. ─────────
+    # Default under ambiguity is HOLD, never PROCEED. Proceed only when there
+    # is a genuine affirmative majority (>=3 of 4) AND no veto. A split council
+    # (e.g. 2 hold / 2 proceed, or any veto) is an explicit "not ready" — never
+    # a silent go-ahead. This makes the council assertive about uncertainty.
     votes = [v["vote"] for v in voices]
     vetoes = votes.count("veto")
     holds = votes.count("hold")
+    proceeds = votes.count("proceed")
 
-    if vetoes >= 2:
+    if vetoes >= 1:
         recommendation = "veto"
-    elif holds >= 2 or vetoes >= 1:
+    elif holds >= 2:
         recommendation = "hold"
-    else:
+    elif proceeds >= 3:
         recommendation = "proceed"
+    else:
+        recommendation = "hold"  # 2-2 or ambiguous → not ready
+
+    # Consensus strength: how aligned the voices are (1.0 = unanimous).
+    # Conservative signal: veto and hold are dissent; proceed needs near-total.
+    if proceeds == 4:
+        consensus_strength = 1.0
+    elif proceeds == 3 and holds == 1:
+        consensus_strength = 0.75
+    elif proceeds == 3 and vetoes == 1:
+        consensus_strength = 0.6
+    elif proceeds == 2 and holds == 2:
+        consensus_strength = 0.4
+    elif holds >= 2 or vetoes >= 1:
+        consensus_strength = 0.2 if vetoes == 0 else 0.1
+    else:
+        consensus_strength = 0.5
+
+    dissenting = [v["role"] for v in voices if v["vote"] != recommendation]
 
     result = {
         "question": question,
         "voices": voices,
         "recommendation": recommendation,
+        "consensus_strength": consensus_strength,
+        "dissenting_voices": dissenting,
         "votes_summary": {
-            "proceed": votes.count("proceed"),
+            "proceed": proceeds,
             "hold": holds,
             "veto": vetoes,
         },
@@ -352,9 +389,17 @@ def _voice_critic(
                 f"List 2-3 specific failure modes. Be concise."
             )
             result = adapter.generate(prompt, max_tokens=256, temperature=0.3)
-            analysis_items.append(f"LLM analysis: {result.text[:200]}")
-            # Any LLM output counts as a concern to surface
-            concerns.append("LLM-identified risks — review critically")
+            analysis_text = result.text[:200]
+            analysis_items.append(f"LLM analysis: {analysis_text}")
+            # Only escalate to a concern when the LLM actually names a risk.
+            # A clean LLM endorsement should not be force-loaded into a hold.
+            _risk_tokens = ("fail", "risk", "can't", "cannot", "broken", "crash",
+                            "danger", "incompatible", "breaks", "regression",
+                            "unsafe", "reject", "veto", "problem", "corrupt",
+                            "deadlock", "race", "leak", "bottlen", "edge")
+            lowered = analysis_text.lower()
+            if any(tok in lowered for tok in _risk_tokens):
+                concerns.append("LLM identified risk(s) — review before proceeding")
         except Exception:
             # LLM failed — fall back to deterministic
             analysis_items.append("LLM unavailable — using deterministic fallback")
@@ -397,8 +442,11 @@ def _critic_deterministic(
     if context and any(w in context.lower() for w in ["delete", "remove", "drop", "destroy"]):
         concerns.append("Context mentions destructive action — ensure reversibility")
 
-    if not concerns:
-        concerns.append("No obvious failure modes identified — consider second-order effects")
+    # NOTE: do NOT append a synthetic concern here. A critic that finds no
+    # concrete failure mode votes PROCEED, which is the honest signal. The
+    # old behavior force-fed a "consider second-order effects" concern so the
+    # critic could never clearly endorse a decision — that biased every
+    # council toward hold/veto. Let a clean critic be a clean proceed.
 
     return concerns
 
