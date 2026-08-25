@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.3.0] - 2026-08-24 — Assertive, robust council
+
+### Changed
+
+- **Council recommendation is now conservative** (`conscio/gates.py`): a split
+  or ambiguous council (e.g. 2×2, or any veto) resolves to **`hold`**, never a
+  silent `proceed`. Proceed requires a genuine ≥3-of-4 affirmative majority with
+  no veto. This makes the council assertive about uncertainty instead of
+  defaulting to permissive go-ahead.
+- **Fair critic**: removed the synthetic "consider second-order effects" concern
+  that force-fed every critic toward hold/veto. A critic that finds no concrete
+  failure mode now votes `proceed` honestly.
+- **Honest LLM critic**: the LLM critic only escalates to a concern when its
+  output actually names a risk (fail, crash, leak, race conditions, etc.),
+  instead of unconditionally flagging every LLM response.
+
+### Added
+
+- `consensus_strength` (0..1) on the council result — how firm the verdict is
+  (1.0 = unanimous).
+- `dissenting_voices` — which voices voted against the recommendation.
+- **Voice-level degradation**: each council voice runs in its own `try/except`; a
+  failing subsystem (`world` / `meta` / `evolution` / adapter) degrades to a
+  `hold` voice instead of crashing the entire council.
+
+### Tests
+
+- New `tests/test_council_assertive.py` (12 cases): conservative resolution,
+  fair critic, consensus fields, voice-failure robustness.
+- 43 existing gates tests remain green; ruff + pyright clean.
+
+---
+
 ## [4.2.0] - 2026-08-24 — A2A agent society (native)
 
 ### Added

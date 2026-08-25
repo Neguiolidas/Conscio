@@ -14,7 +14,12 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v4.2.0` "A2A agent society (native)":** a native A2A
+**Latest release — `v4.3.0` "Assertive, robust council":** the 4-voice
+council now resolves ambiguous/split decisions to `hold` (never a silent
+`proceed`), a clean critic votes `proceed` honestly, and each voice degrades
+gracefully instead of crashing the whole council. New `consensus_strength`
+and `dissenting_voices` fields. Previous — `v4.2.0` "A2A agent society
+(native)": a native A2A
 relay watchdog (`conscio/liaison/watcher.py`) replaces the external
 `relay_watch_hermes.py`, with a per-peer cursor and honest exit codes; a
 delta transcript cuts ~70-90% of prompt tokens in relay auto-reply
