@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from conscio.squads._base import Voice, VoiceResult, _vote_from_concerns
+from conscio.squads._base import Voice, VoiceResult
 
 # Known target AI names (case-insensitive).
 _TARGET_AI = re.compile(
@@ -87,15 +87,42 @@ class PromptorVoice(Voice):
         # evaluating a decision/artefact (not a prompt to an LLM), the
         # "no target AI / no mode" concerns are noise. Only apply them
         # when the blob actually looks like a prompt for an LLM.
-        is_prompt_context = (
-            any(k in blob_lower for k in ("prompt", "escreva", "escrever", "write",
-                                          "gera", "gerar", "crie", "criar",
-                                          "explique", "explain", "ajuda", "help me",
-                                          "resuma", "summarize", "translate",
-                                          "traduza", "email", "texto", "text",
-                                          "curriculo", "resume", "copy", "marketing"))
-            or len(question.strip()) < 10  # very short = likely prompt
+        #
+        # Technical-decision markers (code, deploy, refactor, build, add,
+        # implement, etc.) STRONGLY indicate NOT-a-prompt; if present,
+        # skip the gate entirely unless explicit "prompt" words appear.
+        _TECH_MARKERS = (
+            "deploy", "refactor", "migrate", "implement",
+            "endpoint", "database", "sql", "commit", "merge",
+            "coverage", "pipeline", "cache", "service",
+            "helper", "util", "module", "function", "class",
+            "api", "code", "query", "test", "build", "add ",
+            "fix ",
         )
+        _PROMPT_MARKERS = (
+            "prompt", "escreva", "escrever", "write", "gera", "gerar",
+            "crie", "criar", "explique", "explain", "ajuda", "help me",
+            "resuma", "summarize", "translate", "traduza", "email",
+            "texto", "text", "curriculo", "resume", "copy", "marketing",
+        )
+        # If the question STARTS with a prompt verb, it's a prompt even
+        # when it mentions code ("write a function", "explain this code").
+        starts_with_prompt_verb = any(
+            blob_lower.startswith(k) for k in _PROMPT_MARKERS
+        )
+        is_prompt_context = (
+            starts_with_prompt_verb
+            or (
+                any(k in blob_lower for k in _PROMPT_MARKERS)
+                and not any(k in blob_lower for k in _TECH_MARKERS)
+            )
+        )
+        # Very short questions with no technical marker = likely a prompt
+        # to an LLM ("me ajuda", "write email").
+        if not is_prompt_context and len(question.strip()) < 10:
+            is_prompt_context = not any(
+                k in blob_lower for k in _TECH_MARKERS
+            )
         if not is_prompt_context:
             analysis_parts.append("not a prompt — scope: technical decision")
             # Don't apply prompt-specific concerns; vote proceed.
@@ -161,7 +188,15 @@ class PromptorVoice(Voice):
             analysis_parts.append("Prompt appears well-specified.")
 
         analysis = "; ".join(analysis_parts)
-        vote = _vote_from_concerns(concerns)
+        # Promptor vote: vagueness is the only true veto condition.
+        # Missing target AI / requirements / mode are "hold" (improvable),
+        # not "veto" (unusable). A vague prompt ("me ajuda") is unusable.
+        if is_vague:
+            vote = "veto"
+        elif concerns:
+            vote = "hold"
+        else:
+            vote = "proceed"
         return VoiceResult(
             role=self.role,
             analysis=analysis,

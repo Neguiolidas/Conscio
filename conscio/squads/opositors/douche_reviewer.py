@@ -11,6 +11,7 @@ Deterministic path enforces by construction; LLM path enforces by prompt.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from conscio.squads._base import Voice, VoiceResult, _vote_from_concerns
@@ -47,6 +48,9 @@ _IFRAME_ABUSE = (
     "iframe soup",
 )
 
+# Structural: an <iframe> tag nested inside another <iframe> (raw HTML).
+_IFRAME_NESTED = re.compile(r"<iframe[^>]*>.*?<iframe", re.IGNORECASE | re.DOTALL)
+
 # General code smell.
 _CODE_SMELL = (
     "god class",
@@ -57,6 +61,13 @@ _CODE_SMELL = (
     "hardcoded",
     "global variable",
     "eval(",
+)
+
+# Structural: nested callbacks (callback hell / pyramid of doom) — a
+# callback argument containing another callback within 8 lines.
+_CALLBACK_HELL = re.compile(
+    r"(?:function\s*\([^)]*\)|=>)\s*\{[^}]{0,400}?(?:function\s*\([^)]*\)|=>)",
+    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -105,6 +116,14 @@ class DoucheReviewerVoice(Voice):
                 "integrity of a house of cards in a wind tunnel."
             )
 
+        # Iframe abuse (structural: raw nested <iframe> tags)
+        if not iframe_hits and _IFRAME_NESTED.search(context):
+            analysis_parts.append("detected structural iframe nesting")
+            concerns.append(
+                "Iframe nesting detected in raw HTML — this architecture has "
+                "the structural integrity of a house of cards in a wind tunnel."
+            )
+
         # General code smell
         smell_hits = [t for t in _CODE_SMELL if t in blob]
         if smell_hits:
@@ -112,6 +131,14 @@ class DoucheReviewerVoice(Voice):
             concerns.append(
                 f"Code smell detected ({', '.join(smell_hits[:2])}) — "
                 f"this would be a great teaching example of what NOT to do."
+            )
+
+        # Callback hell / pyramid of doom (structural)
+        if _CALLBACK_HELL.search(context):
+            analysis_parts.append("detected callback pyramid (nesting > 1 deep)")
+            concerns.append(
+                "Callback nesting detected — this pyramid of doom would make "
+                "a great case study in why async/await exists."
             )
 
         if not analysis_parts:

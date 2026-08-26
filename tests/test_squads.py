@@ -77,7 +77,7 @@ class TestOptimizerVoice:
         v = OptimizerVoice()
         ctx = {
             "question": "Implement user lookup with nested posts query",
-            "context": "for each user, query posts separately",
+            "context": "per user, run a separate query for posts",
         }
         r = v.analyze(ctx)
         # Should flag a concern or hold/veto because of N+1 pattern

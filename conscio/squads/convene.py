@@ -55,6 +55,10 @@ def _compute_recommendation(
     unanimous proceed -> proceed, else hold.
     """
     votes = [v.vote for v in voices]
+    n_voices = len(votes)
+    if n_voices == 0:
+        return "hold"  # no voices = no consensus
+
     if strict:
         if "veto" in votes:
             return "veto"
@@ -70,9 +74,11 @@ def _compute_recommendation(
         return "veto"
     if holds >= 1:
         return "hold"
-    if proceeds >= 3 and holds == 0 and vetoes == 0:
+    # All votes are proceed → proceed. When there are 3+ voices, we
+    # already checked holds==0 above, so this is just "all proceed".
+    if proceeds == n_voices:
         return "proceed"
-    return "hold"  # ambiguous → not ready
+    return "hold"  # mixed / ambiguous → not ready
 
 
 def convene_squad(

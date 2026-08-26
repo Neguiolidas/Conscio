@@ -7,6 +7,7 @@ flags, and unbounded loops. Pure stdlib, no LLM.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from conscio.squads._base import Voice, VoiceResult, _vote_from_concerns
@@ -15,12 +16,19 @@ from conscio.squads._base import Voice, VoiceResult, _vote_from_concerns
 _NP1_TOKENS = (
     "n+1",
     "n plus 1",
-    "for each",
     "per row",
     "per user",
     "per entity",
     "separate query",
     "query separately",
+)
+
+# Structural N+1 detection: a for/while loop body containing a query
+# (SELECT / db.execute / db.query / fetch / .find / .get with a query).
+_LOOP_QUERY = re.compile(
+    r"(?:for\s+\w+\s+in\s+[^:]+:|while\s+[^:]+:)[^\n]*(?:\n[ \t]+[^\n]*){0,8}"
+    r"(?:select\s+|db\.(?:execute|query|fetch)|\.query\(|\.find\(|fetch(?:all|one)?\()",
+    re.IGNORECASE | re.DOTALL,
 )
 
 # Blocking I/O in a hot path.
@@ -69,7 +77,7 @@ class OptimizerVoice(Voice):
         analysis_parts: list[str] = []
         concerns: list[str] = []
 
-        # N+1 detection
+        # N+1 detection (declarative hints)
         np1_hits = [t for t in _NP1_TOKENS if t in blob]
         if np1_hits:
             analysis_parts.append(
@@ -78,6 +86,14 @@ class OptimizerVoice(Voice):
             concerns.append(
                 "N+1 query pattern suspected — per-entity queries in a loop "
                 "cause quadratic DB load."
+            )
+
+        # N+1 detection (structural: loop body contains a query)
+        if not np1_hits and _LOOP_QUERY.search(context):
+            analysis_parts.append("detected structural N+1 (loop + query in body)")
+            concerns.append(
+                "N+1 query pattern suspected — a query runs inside a loop; "
+                "consider a single JOIN or batch fetch."
             )
 
         # Blocking I/O in hot path
