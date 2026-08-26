@@ -27,7 +27,7 @@ def test_sets_are_nested():
 def test_exact_counts(tmp_path):
     assert len(_names("lite", tmp_path)) == 10
     assert len(_names("balanced", tmp_path)) == 18
-    assert len(_names("ultra", tmp_path)) == 35
+    assert len(_names("ultra", tmp_path)) == 37
 
 
 def test_description_counts_match_the_served_surface(tmp_path):
