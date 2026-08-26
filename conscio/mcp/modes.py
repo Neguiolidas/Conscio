@@ -1,6 +1,6 @@
 """Tool-surface modes.
 
-A small model drowns in 35 tools; a large one is crippled by 10. The mode is a
+A small model drowns in 37 tools; a large one is crippled by 10. The mode is a
 property of the *pairing* between host and server, so it lives next to the space
 (``<storage>/mcp_mode``) and outlives the process that set it.
 
@@ -13,6 +13,9 @@ but they are the *pre-filter* subsets. ``conscio_mode`` is appended after the mo
 filter (see ``MODE_TOOL_DEF``), so every mode serves one tool more than its set.
 Ultra has no set at all; it is the absence of a filter over the entries of
 ``BASE_TOOL_DEFS``.
+
+Relay (4 tools) and review/act (3 tools) are conditionally appended at startup
+when their respective features are configured — they are not part of any mode set.
 """
 from __future__ import annotations
 
