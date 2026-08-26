@@ -171,7 +171,8 @@ class Bindings:
 
         # 1. seleção: o modo filtra só a superfície BASE
         allowed = {"lite": modes.LITE_TOOLS,
-                   "balanced": modes.BALANCED_TOOLS}.get(self.mode)
+                   "balanced": modes.BALANCED_TOOLS,
+                   "high": modes.HIGH_TOOLS}.get(self.mode)
         if allowed is not None:
             defs = [d for d in defs if d["name"] in allowed]
         defs += flagged                      # flag digitada nunca é filtrada

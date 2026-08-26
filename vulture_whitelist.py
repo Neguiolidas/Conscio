@@ -319,3 +319,9 @@ agents.unregister        # called by tests/test_liaison_agents.py
 agents.discover          # alias kept for the public API contract; tests cover it
 watcher.OUTBOX_NAME      # module-level constant for the handoff filename convention
 watcher._read_since      # helper retained for callers importing the per-peer cursor API
+
+# ── squads (v4.4) ──────────────────────────────────────────────
+from conscio.squads._base import PROCEED, HOLD, VETO
+PROCEED
+HOLD
+VETO
