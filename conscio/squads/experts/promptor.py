@@ -82,6 +82,30 @@ class PromptorVoice(Voice):
         analysis_parts: list[str] = []
         concerns: list[str] = []
 
+        # 0. Scope gate — is this even a PROMPT being reviewed?
+        # Promptor specialises in PROMPT optimisation. When the squad is
+        # evaluating a decision/artefact (not a prompt to an LLM), the
+        # "no target AI / no mode" concerns are noise. Only apply them
+        # when the blob actually looks like a prompt for an LLM.
+        is_prompt_context = (
+            any(k in blob_lower for k in ("prompt", "escreva", "escrever", "write",
+                                          "gera", "gerar", "crie", "criar",
+                                          "explique", "explain", "ajuda", "help me",
+                                          "resuma", "summarize", "translate",
+                                          "traduza", "email", "texto", "text",
+                                          "curriculo", "resume", "copy", "marketing"))
+            or len(question.strip()) < 10  # very short = likely prompt
+        )
+        if not is_prompt_context:
+            analysis_parts.append("not a prompt — scope: technical decision")
+            # Don't apply prompt-specific concerns; vote proceed.
+            return VoiceResult(
+                role=self.role,
+                analysis="; ".join(analysis_parts),
+                concerns=[],
+                vote="proceed",
+            )
+
         # 1. Intent clarity — is the prompt too vague?
         is_vague = (
             len(question.strip()) < 10

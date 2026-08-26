@@ -39,18 +39,38 @@ def _resolve_voices(
     return [n for n in order if n in available and n in requested]
 
 
-def _compute_recommendation(voices: list[VoiceResult]) -> str:
-    """Conservative recommendation from voice votes (mirrors council)."""
+def _compute_recommendation(
+    voices: list[VoiceResult], *, strict: bool = False
+) -> str:
+    """Conservative recommendation from voice votes.
+
+    ``strict=True`` (Opositors): any concern blocks — one veto -> veto,
+    one hold -> hold, only unanimous proceed passes. Opositors exist to
+    pressure-test, so a single raised concern must never be drowned out
+    by the other voices' default 'no obvious issue'.
+
+    ``strict=False`` (Experts/Council): mirrors council semantics —
+    one veto -> veto, one hold -> hold (lowered from 2 to 1 because a
+    single specialist flagging a real concern is signal, not noise),
+    unanimous proceed -> proceed, else hold.
+    """
     votes = [v.vote for v in voices]
+    if strict:
+        if "veto" in votes:
+            return "veto"
+        if "hold" in votes:
+            return "hold"
+        return "proceed"
+
     vetoes = votes.count("veto")
     holds = votes.count("hold")
     proceeds = votes.count("proceed")
 
     if vetoes >= 1:
         return "veto"
-    if holds >= 2:
+    if holds >= 1:
         return "hold"
-    if proceeds >= 3:
+    if proceeds >= 3 and holds == 0 and vetoes == 0:
         return "proceed"
     return "hold"  # ambiguous → not ready
 
@@ -137,7 +157,8 @@ def convene_squad(
         })
 
     recommendation = _compute_recommendation(
-        [VoiceResult(**v) for v in voice_results]
+        [VoiceResult(**v) for v in voice_results],
+        strict=(squad == "opositors"),
     )
 
     votes = [v["vote"] for v in voice_results]

@@ -37,13 +37,18 @@ _BAD_CSS = (
 )
 
 # Visual hypocrisy: claims premium/professional but uses amateur patterns.
+# Word-level matching so "SaaS premium", "premium landing page", etc. hit.
+# Keep the claim words specific enough to avoid false positives on
+# ordinary "modern/clean" descriptions — only strong quality claims count.
 _HYPOCRISY = (
-    "premium dashboard",
+    "premium",
     "enterprise grade",
-    "professional ui",
-    "modern design",
-    "clean interface",
-    "minimalist",
+    "enterprise",
+    "professional",
+    "luxury",
+    "high-end",
+    "top-tier",
+    "world-class",
 )
 
 # Amateurs signals that contradict premium claims.
