@@ -102,19 +102,24 @@ and reads it back to confirm), but the reconnect above is still yours to do.
 
 Every tool schema the server advertises costs context before the first prompt —
 about 3100 tokens at `ultra`. A small model drowns in 35 tools; a large one is
-crippled by 10. Three nested surfaces size the list to the model:
+crippled by 10. Four nested surfaces size the list to the model:
 
 | Surface | Tools served | Advertised schema |
 |---|---|---|
 | `lite` | 10 | ~570 tokens, descriptions flattened to ≤120 chars |
 | `balanced` | 18 | ~1520 tokens |
+| `high` | 22 | ~1900 tokens |
 | `ultra` (default) | 35 | ~3100 tokens |
 
 **`lite`** — `advisory`, `events`, `feed`, `health`, `intercept`, `mode`, `note`,
 `recall`, `remember`, `state`.
 **`balanced`** adds — `context_budget`, `council`, `decide`, `handoff`,
 `kg_query`, `recall_observations`, `verify`, `wings_search`.
-**`ultra`** adds the remaining 17 base tools documented below. With `act`, review
+**`high`** adds — `squad_experts`, `squad_opositors` (two squad wrapper tools
+that expose Expert and Opositor voices via parameterised `voices` arrays; see
+[Squads](#squads) below). Each wrapper replaces what would be 4 individual
+voice tools — a 75% token saving over a per-voice surface.
+**`ultra`** adds the remaining 13 base tools documented below. With `act`, review
 and relay all enabled, the maximum served is 42.
 
 The sets nest, so raising the surface never removes a tool. Three properties
@@ -490,6 +495,67 @@ entry has a `name`, `params` (the same arg schema the Skeptic validates), a base
 
 Every action writes an `ActionLedger` row — the same audited trail native `act()`
 uses. `act` is **never** local dispatch: Conscio audits, the host executes.
+
+## Squads (v4.4)
+
+Two orthogonal advisory squads run alongside the Council. Each squad is a
+closed namespace — its voices, event types, and MCP tool are isolated from
+the Council and from each other.
+
+### `conscio_squad_experts(question, context, voices?, use_llm?)`
+
+Convene the **Experts** squad — constructive, technical specialisation.
+
+| Voice | Focus | Deterministic | LLM opt-in |
+|---|---|---|---|
+| `optimizer` | Performance: hot paths, latencies, query plans, algorithmic complexity | ✅ | ✅ |
+| `auditor` | Security: static analysis, secrets, permissions, threat modelling | ✅ | ✅ |
+| `qa` | Quality: tests, fuzzing, edge cases, regression, coverage gaps | ✅ | ✅ |
+| `promptor` | Prompt optimisation: intent extraction, clarity, completeness, mode selection | ✅ (always) | — |
+
+Parameters:
+- `voices` — array of voice names (default: all available in current mode).
+  Unknown names are ignored silently.
+- `use_llm` — boolean (default `false`). When true and an adapter is attached,
+  voices that support `analyze_llm()` will use it; deterministic fallback
+  runs for the rest.
+- `question` (required) — the decision or artefact to evaluate.
+- `context` — additional context string.
+
+Returns `{question, squad: "experts", voices: [...], recommendation, votes_summary}`.
+
+Event emitted: `squad:experts:convened`.
+
+### `conscio_squad_opositors(question, context, voices?, use_llm?)`
+
+Convene the **Opositors** squad — hostile pressure to validate premises.
+
+| Voice | Focus | Deterministic | LLM opt-in |
+|---|---|---|---|
+| `caustic` | Acidic visual/UX critique; exposes hypocrisy in design decisions | ✅ | ✅ |
+| `devils_advocate` | Argues the opposite position; forces proof-by-contradiction | ✅ | ✅ |
+| `skeptic_engineer` | Hunts over-engineering, unnecessary complexity, ego-driven architecture | ✅ | ✅ |
+| `douche_reviewer` | Passive-aggressive code review; sniffs slop, regex hacks, iframe abuse | ✅ | ✅ |
+
+Parameters and return shape match `squad_experts`. Event emitted:
+`squad:opositors:convened`.
+
+> **Caustic tone boundary.** Permitted: sarcasm, irony, crude technical
+> metaphors. Blocked: personal attacks, hate speech, slurs, attacks on
+> protected categories. The deterministic path generates this boundary by
+> construction; the LLM path is guided by a system prompt that enforces it.
+
+### Voice availability by surface mode
+
+| Surface | Council | Experts | Opositors |
+|---|---|---|---|
+| `lite` | 4 voices (det) | — | — |
+| `balanced` | 4 voices (det) | optimizer, auditor (det) | — |
+| `high` | 4 voices (det) | all 4 (det) | caustic, douche_reviewer (det) |
+| `ultra` | 4 voices (det+LLM critic) | all 4 (LLM opt-in) | all 4 (LLM opt-in) |
+
+> The Council is unaffected by the squad system — `engine.council()` and
+> `conscio_council` remain the same API with the same 4 voices.
 
 ## Common pitfalls
 

@@ -14,11 +14,10 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v4.3.1` "Private-cursor relay sweep":** new
-`conscio.liaison.tick` module — a private-cursor relay sweep + IMPORTANT
-classification for host supervisors (systemd/cron), fixing the multi-agent
-cursor race in the shared-mailbox relay (one agent's watcher no longer
-consumes another's unread boundary). See [CHANGELOG](CHANGELOG.md).
+**Latest release — `v4.4.0` "Multi-Squad":** two
+orthogonal advisory squads (Experts + Opositors) alongside the Council,
+8 specialised voices, a new `high` mode tier, and two MCP tool wrappers.
+See [CHANGELOG](CHANGELOG.md) for details.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).
 
@@ -218,7 +217,7 @@ Thirteen deterministic, EventBus-backed tools — no LLM calls:
 
 | Group | Tools |
 |---|---|
-| **Gates** | `decide` (ADRs) · `council` (Architect + Skeptic + Pragmatist + Critic) · `loop_gate` · `delivery_check` · `investigate` |
+| **Gates** | `decide` (ADRs) · `council` (Architect + Skeptic + Pragmatist + Critic) · `squad_experts` (Optimizer + Auditor + QA + Promptor) · `squad_opositors` (Caustic + Devil's Advocate + Skeptic Engineer + Douche Reviewer) · `loop_gate` · `delivery_check` · `investigate` |
 | **Pipelines** | `acceptance_criteria` · `verify` · `continuous_loop` · `strategic_compact` · `ledger` (paper → dry_run → live) |
 | **Diagnostics** | `context_budget` · `eval_harness` (pass@k) · `rules_distill` |
 
@@ -357,7 +356,7 @@ up to 3 iterations, each one an EventBus record.
    ├─ Coherence      CoherenceEngine · semantic reconciliation · unmeasured dimensions named
    ├─ Structural     StructuralDistiller (graph → ranked signal; data, not code)
    ├─ Evaluation     evaluate — 5/6-axis rubric
-   ├─ Gates          decide · council · loop_gate · delivery_check · investigate
+   ├─ Gates          decide · council · squad_experts · squad_opositors · loop_gate · delivery_check · investigate
    ├─ Pipelines      acceptance_criteria · verify · continuous_loop ·
    │                 strategic_compact · ledger
    ├─ Diagnostics    context_budget · eval_harness · rules_distill

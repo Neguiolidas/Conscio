@@ -30,6 +30,12 @@
 | v2.13 | ReflectionGate | adaptive reflection depth | ✅ Done |
 | v2.15 | Self-Evaluation | `evaluate()` 5-axis rubric + ECC workflow skills | ✅ Done |
 | v3.0 | G-P-D | 13 ECC tools: gates (5) + pipelines (5) + diagnostics (3) | ✅ Done |
+| v3.4+ | Graphify/Observatory | D3 observatory UI + Graphify CLI | ✅ Done |
+| v4.0 | Autocontido | self-contained framework (no external deps at core) | ✅ Done |
+| v4.1+ | Council robusto | assertive council, deterministic voices, consensus fields | ✅ Done |
+| v4.2 | Fable/Garimpo | fable method + garimpo workflows | ✅ Done |
+| v4.3.1 | Liaison tick | private-cursor relay sweep + IMPORTANT classification | ✅ Done |
+| v4.4.0 | Multi-Squad | Experts + Opositors squads, tier high, squad MCP tools | 🚧 Planned (see brainstorm 2026-08-25-v4.4-multi-squads.md) |
 
 > Full per-release detail lives in [`CHANGELOG.md`](../CHANGELOG.md). The
 > **G-P-D** band (v3.0 — 13 advisory ECC tools: gates, pipelines, diagnostics)

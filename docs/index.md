@@ -55,6 +55,20 @@ prompt — a small model drowns in 35 tools, a large one is crippled by 10. See 
 [MCP guide](guides/mcp.md#tool-surfaces) and the
 [changelog](https://github.com/Neguiolidas/Conscio/blob/main/CHANGELOG.md).
 
+**v4.4** ("Multi-Squad") adds two orthogonal advisory squads beside the Council:
+**Experts** (Optimizer, Auditor, QA, Promptor — quality/performance/security/
+prompt specialisation, all deterministic) and **Opositors** (Caustic, Devil's
+Advocate, Skeptic Engineer, Douche Reviewer — hostile pressure to validate
+premises, deterministic fallback + optional LLM). Each squad is a closed
+namespace with its own EventBus event types; the Council (`engine.council()`)
+is untouched. A new mode tier **high** sits between `balanced` and `ultra`
+(22 tools) and trades determinism vs LLM: high = all voices deterministic with
+minimal LLM opt-in, ultra = all voices with full LLM support. The two squad
+wrappers (`conscio_squad_experts`, `conscio_squad_opositors`) replace what
+would have been 8 individual voice tools — a 75% reduction in MCP tool-list
+token cost. See the [MCP guide](guides/mcp.md#tool-surfaces) for the tier
+matrix.
+
 ## Install
 
 ```bash

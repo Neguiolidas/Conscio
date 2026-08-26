@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.4.0] - 2026-08-26 — Multi-Squad advisory system + mode 'high'
+
+### Added
+
+- **Squads system** — two orthogonal advisory squads that run alongside the
+  Council. Each squad is a closed namespace (own voices, event types, MCP tool).
+
+  - **Experts squad** — constructive technical specialisation:
+    - `Optimizer` — performance heuristics (N+1, blocking I/O, complexity)
+    - `Auditor` — security heuristics (hardcoded secrets, SQL injection,
+      command injections, unsafe eval)
+    - `QA` — test/coverage heuristics (missing tests, xfail/skip abuse,
+      edge-case omission)
+    - `Promptor` — prompt optimisation (intent clarity, specificity, target AI,
+      mode selection). Always deterministic — no LLM path.
+
+  - **Opositors squad** — hostile pressure to validate premises:
+    - `Caustic` — acidic visual/UX critique (bad CSS, visual hypocrisy,
+      UX anti-patterns). Tone boundary enforced: sarcasm OK, personal
+      attacks/hate speech blocked.
+    - `Devil's Advocate` — argues the opposite position, forces
+      proof-by-contradiction, challenges unverified claims.
+    - `Skeptic Engineer` — hunts over-engineering, unnecessary IPC,
+      framework bloat, ego-driven architecture.
+    - `Douche Reviewer` — passive-aggressive code review (code slop,
+      regex hacks, iframe abuse, code smells). Same tone boundary as Caustic.
+
+- **Mode 'high'** — new tier between balanced and ultra:
+  - `lite(10) ⊂ balanced(18) ⊂ high(20) ⊂ ultra(all)`
+  - High adds `conscio_squad_experts` and `conscio_squad_opositors` tools.
+
+- **MCP tools** — two new tool wrappers:
+  - `conscio_squad_experts` — convene experts with voice selection and
+    optional LLM support.
+  - `conscio_squad_opositors` — convene opositors with voice selection and
+    optional LLM support.
+
+- **Engine methods**:
+  - `engine.squad_experts(question, context, voices, use_llm)`
+  - `engine.squad_opositors(question, context, voices, use_llm)`
+
+- **Event types**:
+  - `squad:experts:convened`
+  - `squad:opositors:convened`
+
+### Changed
+
+- `conscio.mcp.modes.MODES` now includes 'high' tier.
+- `conscio.event_bus.VALID_TYPES` includes squad event types.
+- All voices deterministic by default; LLM opt-in per-call via `use_llm=True`.
+
+### Unchanged
+
+- Council (`conscio.gates.council()`) is untouched.
+- `engine.council()` signature and behavior unchanged.
+- Existing tools, schemas, and modes retrocompatible.
+
+---
+
 ## [4.3.1] - 2026-08-25 — Private-cursor relay sweep + IMPORTANT classification
 
 ### Added
