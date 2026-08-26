@@ -1523,6 +1523,26 @@ class ConsciousnessEngine:
         from .gates import council as _council
         return _council(self, question=question, context=context, options=options)
 
+    def squad_experts(self, *, question: str = "", context: str = "",
+                      voices: list[str] | None = None,
+                      use_llm: bool = False) -> dict:
+        """Convene the Experts squad (Optimizer, Auditor, QA, Promptor)."""
+        from .squads.convene import convene_squad
+        return convene_squad(
+            self, squad="experts", question=question, context=context,
+            voices=voices, use_llm=use_llm,
+        )
+
+    def squad_opositors(self, *, question: str = "", context: str = "",
+                        voices: list[str] | None = None,
+                        use_llm: bool = False) -> dict:
+        """Convene the Opositors squad (Caustic, Devil's Advocate, etc.)."""
+        from .squads.convene import convene_squad
+        return convene_squad(
+            self, squad="opositors", question=question, context=context,
+            voices=voices, use_llm=use_llm,
+        )
+
     def loop_gate(self, *, task: str = "", frequency: str = "",
                   verifiable: bool = True, budget_ok: bool = True,
                   has_tools: bool = True) -> dict:

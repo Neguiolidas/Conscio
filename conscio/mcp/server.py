@@ -230,6 +230,12 @@ class Bindings:
                             self.engine.council(
                                 question=a.get("question", ""), context=a.get("context", ""),
                                 options=a.get("options"))),
+            "conscio_squad_experts": lambda a: self.engine.squad_experts(
+                            question=a.get("question", ""), context=a.get("context", ""),
+                            voices=a.get("voices"), use_llm=a.get("use_llm", False)),
+            "conscio_squad_opositors": lambda a: self.engine.squad_opositors(
+                            question=a.get("question", ""), context=a.get("context", ""),
+                            voices=a.get("voices"), use_llm=a.get("use_llm", False)),
             "conscio_loop_gate": lambda a: self.engine.loop_gate(
                 task=a.get("task", ""), frequency=a.get("frequency", ""),
                 verifiable=a.get("verifiable", True),

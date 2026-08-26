@@ -4,21 +4,21 @@ A small model drowns in 35 tools; a large one is crippled by 10. The mode is a
 property of the *pairing* between host and server, so it lives next to the space
 (``<storage>/mcp_mode``) and outlives the process that set it.
 
-The sets are nested — lite ⊂ balanced ⊂ ultra — so raising the mode never
+The sets are nested — lite ⊂ balanced ⊂ high ⊂ ultra — so raising the mode never
 removes a tool the caller was already using. ``conscio_remember`` is in all
-three: a mode without a memory write is not a Conscio.
+four: a mode without a memory write is not a Conscio.
 
-Mind the off-by-one when reading the frozensets below: they hold 9 and 17, but
-they are the *pre-filter* subsets. ``conscio_mode`` is appended after the mode
-filter (see ``MODE_TOOL_DEF``), so every mode serves one tool more than its set
-— 10 / 18 / 35 is what a host actually lists. Ultra has no set at all; it is the
-absence of a filter over the 34 entries of ``BASE_TOOL_DEFS``.
+Mind the off-by-one when reading the frozensets below: they hold 9, 17, and 19,
+but they are the *pre-filter* subsets. ``conscio_mode`` is appended after the mode
+filter (see ``MODE_TOOL_DEF``), so every mode serves one tool more than its set.
+Ultra has no set at all; it is the absence of a filter over the entries of
+``BASE_TOOL_DEFS``.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-MODES = ("lite", "balanced", "ultra")
+MODES = ("lite", "balanced", "high", "ultra")
 
 #: What a bare `conscio-mcp` serves. Deliberately the widest surface: an existing
 #: `conscio install` user passes no --mode and must not silently lose tools.
@@ -45,6 +45,11 @@ BALANCED_TOOLS = LITE_TOOLS | frozenset({
     "conscio_council",
     "conscio_verify",
     "conscio_context_budget",
+})
+
+HIGH_TOOLS = BALANCED_TOOLS | frozenset({
+    "conscio_squad_experts",
+    "conscio_squad_opositors",
 })
 
 _FILENAME = "mcp_mode"

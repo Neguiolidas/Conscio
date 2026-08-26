@@ -112,6 +112,8 @@ VALID_TYPES = {
  "harness:failure",       # v3.1: classified failure event
  "harness:account",       # v3.1: token account recorded
  "tool:observed",         # v3.8: DeepMiner fire-and-forget tool-call observation
+ "squad:experts:convened",   # v4.4: Experts squad session result
+ "squad:opositors:convened", # v4.4: Opositors squad session result
  }
 
 VALID_CATEGORIES = {"system", "trading", "consciousness", "external", "session"}

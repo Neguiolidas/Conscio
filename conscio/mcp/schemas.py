@@ -175,6 +175,33 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "context": {"type": "string"},
                                     "options": {"type": "array", "items": {"type": "string"}}},
                      "required": ["question"]}},
+    # ── v4.4 Squad tools ─────────────────────────────────────────
+    {"name": "conscio_squad_experts",
+     "description": "Convene the Experts squad (optimizer, auditor, qa, promptor) "
+                    "for constructive technical review. Returns voice analyses "
+                    "and recommendation.",
+     "inputSchema": {"type": "object",
+                     "properties": {"question": {"type": "string"},
+                                    "context": {"type": "string"},
+                                    "voices": {"type": "array",
+                                               "items": {"type": "string",
+                                                         "enum": ["optimizer", "auditor", "qa", "promptor"]}},
+                                    "use_llm": {"type": "boolean", "default": False}},
+                     "required": ["question"]}},
+    {"name": "conscio_squad_opositors",
+     "description": "Convene the Opositors squad (caustic, devils_advocate, "
+                    "skeptic_engineer, douche_reviewer) for hostile pressure-"
+                    "testing of premises and decisions. Returns voice analyses "
+                    "and recommendation.",
+     "inputSchema": {"type": "object",
+                     "properties": {"question": {"type": "string"},
+                                    "context": {"type": "string"},
+                                    "voices": {"type": "array",
+                                               "items": {"type": "string",
+                                                         "enum": ["caustic", "devils_advocate",
+                                                                  "skeptic_engineer", "douche_reviewer"]}},
+                                    "use_llm": {"type": "boolean", "default": False}},
+                     "required": ["question"]}},
     {"name": "conscio_loop_gate",
      "description": "Vet an autonomous loop against 4 conditions: frequency, "
                     "verifiable, budget_ok, has_tools. Returns approved/vetoed.",
