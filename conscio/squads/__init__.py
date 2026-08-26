@@ -32,6 +32,10 @@ from conscio.squads.experts import load_voices as _load_experts
 
 _load_experts()
 
+from conscio.squads.opositors import load_voices as _load_opositors
+
+_load_opositors()
+
 __all__ = [
     "EXPERTS_ORDER",
     "EXPERTS_VOICES",
