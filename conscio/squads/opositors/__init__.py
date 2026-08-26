@@ -17,9 +17,11 @@ __all__ = ["load_voices"]
 def load_voices() -> None:
     """Register all Opositors voices in the registry (idempotent)."""
     from conscio.squads.opositors.caustic import CausticVoice
+    from conscio.squads.opositors.devils_advocate import DevilsAdvocateVoice
     from conscio.squads.opositors.douche_reviewer import DoucheReviewerVoice
+    from conscio.squads.opositors.skeptic_engineer import SkepticEngineerVoice
 
     register_voice("caustic", CausticVoice(), squad="opositors")
     register_voice("douche_reviewer", DoucheReviewerVoice(), squad="opositors")
-
-    # Ato 4 adds devils_advocate + skeptic_engineer here.
+    register_voice("devils_advocate", DevilsAdvocateVoice(), squad="opositors")
+    register_voice("skeptic_engineer", SkepticEngineerVoice(), squad="opositors")
