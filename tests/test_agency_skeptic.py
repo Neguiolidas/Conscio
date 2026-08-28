@@ -146,17 +146,20 @@ def test_the_pipeline_hands_the_skeptic_the_resolved_spec(tmp_path):
     from conscio.agency.tools import Risk, ToolRegistry
     from conscio.context_manager import ConsciousnessState
 
+    # deploy: MEDIUM, audited (not in _SKEPTIC_SKIP_TOOLS). world_prune is
+    # deliberately skipped by the skeptic, so it can no longer serve as the
+    # proof that the registry spec reaches the auditor.
     reg = ToolRegistry()
-    reg.register("world_prune", lambda: "pruned 0", params={},
+    reg.register("deploy", lambda env: f"deploy {env}", params={},
                  risk=Risk.MEDIUM,
-                 description="prune entities the world model has let go stale")
+                 description="deploy to the target environment")
 
     class _Bus:
         def emit(self, **kw):
             return 1
 
     auditor = MockAdapter(script=["A1: NO\nA2: NO\nA3: YES"])
-    actor = MockAdapter(script=[('{"tool": "world_prune", "args": {}, '
+    actor = MockAdapter(script=[('{"tool": "deploy", "args": {"env": "prod"}, '
                                  '"rationale": "r", "expected_outcome": "e"}')])
     ledger = ActionLedger(tmp_path / "conscio.db")
     bus = _Bus()
@@ -164,10 +167,10 @@ def test_the_pipeline_hands_the_skeptic_the_resolved_spec(tmp_path):
                        breaker=CircuitBreaker(ledger, bus),
                        emit_fn=bus.emit, skeptic=Skeptic(auditor))
     pipe.act(ConsciousnessState(state_summary="s",
-                                active_goals=["prune stale entities"],
+                                active_goals=["deploy the build"],
                                 coherence_note="epistemic"))
 
     assert auditor.calls, "the audit never ran"
     sent = auditor.calls[0]["prompt"]
-    assert "prune entities the world model has let go stale" in sent
+    assert "deploy to the target environment" in sent
     assert "registry" in sent

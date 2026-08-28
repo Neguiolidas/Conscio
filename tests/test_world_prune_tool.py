@@ -16,6 +16,7 @@ import pytest
 from conscio import ConsciousnessEngine
 from conscio.agency.adapter import MockAdapter
 from conscio.agency.tools import Risk, make_default_registry
+from conscio.context_manager import ConsciousnessState
 from conscio.world_model import WorldModel
 
 
@@ -118,3 +119,54 @@ class TestLiveWiring:
             pipe = eng.attach_adapter(MockAdapter(script=[]),
                                       sandbox_root=tmp_path / "sb")
             assert pipe.registry.get("world_prune") is not None
+
+
+class TestSkepticSkip:
+    """world_prune is in-process GC, no external effect — the skeptic audit
+    must be skipped, exactly like memory_note / host_health.
+
+    Field report (v4.4.x, live daemon): the maintenance drive spawned the
+    prune_stale goal; the actor picked world_prune every cycle; the skeptic
+    LLM refused it (`act:world_prune:skeptic_fail` 37x), and each failure fed
+    the next reflect() as a curiosity anomaly -> a new goal -> the same
+    proposal -> the same refusal: a noise loop that vetoed legitimate work.
+    """
+
+    def test_world_prune_skips_the_skeptic_audit(self, tmp_path, world):
+        """A skeptic that would FAIL must not run for world_prune. The actor
+        response alone should be enough for the action to proceed — so with a
+        script holding one proposal and no audit fill, report must not reflect
+        a skeptic rejection."""
+        with ConsciousnessEngine("glm-5.1", storage_path=tmp_path) as eng:
+            pipe = eng.attach_adapter(
+                MockAdapter(script=[
+                    '{"tool": "world_prune", "args": {}, "rationale": "r",'
+                    ' "expected_outcome": "e"}',
+                ]),
+                sandbox_root=tmp_path / "sb")
+            report = eng.act(ConsciousnessState(active_goals=["prune stale"]))
+            # Skip = PASS, audited=False -> the action executes (world_prune
+            # is MEDIUM, not HIGH, so it is not parked pending approval).
+            assert report.status.value in ("executed", "proposed")
+            assert "skeptic" not in (report.reason or "")
+
+    def test_the_loop_does_not_mint_recurring_world_prune_failures(
+            self, tmp_path, world):
+        """Regression: without the skip, a FAIL verdict on world_prune would
+        record act:world_prune:skeptic_fail, which frequent_errors() surfaces
+        and reflect() converts into an anomaly -> a curiosity goal -> the same
+        doomed proposal. Prove the recorded error never appears."""
+        with ConsciousnessEngine("glm-5.1", storage_path=tmp_path) as eng:
+            meta = eng.meta
+            meta.expire_error("act:world_prune:", max_remove=10)
+            pipe = eng.attach_adapter(
+                MockAdapter(script=[
+                    '{"tool": "world_prune", "args": {}, "rationale": "r",'
+                    ' "expected_outcome": "e"}',
+                ]),
+                sandbox_root=tmp_path / "sb")
+            eng.act(ConsciousnessState(active_goals=["prune stale"]))
+            pats = meta.frequent_errors(min_count=1)
+            assert not any(
+                p["pattern"] == "act:world_prune:skeptic_fail"
+                for p in pats)
