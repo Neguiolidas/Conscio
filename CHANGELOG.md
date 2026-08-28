@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.4.1] - 2026-08-28 — Fix world_prune skeptic noise loop
+
+### Fixed
+
+- **`world_prune` no longer trips the skeptic audit.** The maintenance drive
+  raises a `prune_stale` goal whose action is `world_prune`. The skeptic LLM
+  was refusing the proposal every cycle (`act:world_prune:skeptic_fail`,
+  37x in production). Each failure fed back into `reflect()` as a curiosity
+  anomaly -> the same goal -> the same proposal -> the same refusal: a
+  self-sustaining noise loop vetoing the engine's own maintenance.
+
+  `world_prune` is in-process GC of the world model (decay + remove
+  entities, no filesystem or network I/O). It belongs in
+  `_SKEPTIC_SKIP_TOOLS` next to `memory_note` and `host_health`.
+
+  - `conscio/agency/act.py`: add `world_prune` to `_SKEPTIC_SKIP_TOOLS`
+  - `tests/test_world_prune_tool.py`: +2 regression tests (skip audit,
+    no recurring `act:world_prune:skeptic_fail`)
+  - `tests/test_agency_skeptic.py`: switch the resolved-spec proof to an
+    audited tool (`deploy`) since `world_prune` no longer reaches the auditor.
+
+  Suite: 3518 passed, 19 skipped, 0 failed.
+
+---
+
 ## [4.4.0] - 2026-08-26 — Multi-Squad advisory system + mode 'high'
 
 ### Added
