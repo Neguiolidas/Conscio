@@ -138,10 +138,9 @@ class TestSkepticSkip:
         script holding one proposal and no audit fill, report must not reflect
         a skeptic rejection."""
         with ConsciousnessEngine("glm-5.1", storage_path=tmp_path) as eng:
-            pipe = eng.attach_adapter(
+            eng.attach_adapter(
                 MockAdapter(script=[
-                    '{"tool": "world_prune", "args": {}, "rationale": "r",'
-                    ' "expected_outcome": "e"}',
+                    '{"tool": "world_prune", "args": {}, "rationale": "r", "expected_outcome": "e"}',
                 ]),
                 sandbox_root=tmp_path / "sb")
             report = eng.act(ConsciousnessState(active_goals=["prune stale"]))
@@ -159,10 +158,9 @@ class TestSkepticSkip:
         with ConsciousnessEngine("glm-5.1", storage_path=tmp_path) as eng:
             meta = eng.meta
             meta.expire_error("act:world_prune:", max_remove=10)
-            pipe = eng.attach_adapter(
+            eng.attach_adapter(
                 MockAdapter(script=[
-                    '{"tool": "world_prune", "args": {}, "rationale": "r",'
-                    ' "expected_outcome": "e"}',
+                    '{"tool": "world_prune", "args": {}, "rationale": "r", "expected_outcome": "e"}',
                 ]),
                 sandbox_root=tmp_path / "sb")
             eng.act(ConsciousnessState(active_goals=["prune stale"]))
