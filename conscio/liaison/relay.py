@@ -43,3 +43,24 @@ def is_relay_message(row: dict, peers: set[str]) -> bool:
     if row.get("type") in RESERVED_TYPES:
         return False
     return payload_size(row.get("payload")) <= MAX_PAYLOAD_BYTES
+
+
+def envelope_of(row: dict) -> dict | None:
+    """The runtime identity embedded in a message's `_meta.from` (v4.5).
+
+    Returns the envelope dict, or None when absent or malformed (a non-dict
+    `_meta.from` is ignored — envelope is metadata, it never blocks delivery).
+    Mirrors mailbox.send's identity baking (Ato 1)."""
+    try:
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            return None
+        meta = payload.get("_meta")
+        if not isinstance(meta, dict):
+            return None
+        frm = meta.get("from")
+        if not isinstance(frm, dict):
+            return None
+        return frm
+    except Exception:
+        return None

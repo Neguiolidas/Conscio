@@ -8,6 +8,28 @@ def test_payload_size_compact():
     assert relay.payload_size({"a": 1}) == len(b'{"a":1}')
 
 
+# ── envelope_of (v4.5: identidade no envelope) ────────────────────────
+
+def test_envelope_of_returns_meta_from():
+    row = {"payload": {"_meta": {"from": {"id": "A", "modelo": "opus"},
+                                  "id": 7}, "text": "oi"}}
+    assert relay.envelope_of(row) == {"id": "A", "modelo": "opus"}
+
+
+def test_envelope_of_none_when_absent():
+    assert relay.envelope_of({"payload": {"text": "oi"}}) is None
+
+
+def test_envelope_of_none_when_meta_malformed():
+    # _meta existe mas from não é dict → None (defensivo)
+    assert relay.envelope_of({"payload": {"_meta": {"from": "A"}, "text": "x"}}) is None
+    assert relay.envelope_of({"payload": {"_meta": "notadict"}}) is None
+
+
+def test_envelope_of_none_when_payload_not_dict():
+    assert relay.envelope_of({"payload": "raw string"}) is None
+
+
 def test_constants():
     assert relay.MAX_PAYLOAD_BYTES == 64 * 1024
     assert relay.RETENTION_DAYS == 7

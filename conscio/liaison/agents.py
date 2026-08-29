@@ -39,9 +39,37 @@ _DDL = (
     " model          TEXT NOT NULL DEFAULT '',"
     " status         TEXT NOT NULL DEFAULT 'alive',"
     " capabilities   TEXT NOT NULL DEFAULT '',"
-    " last_heartbeat REAL NOT NULL"
+    " last_heartbeat REAL NOT NULL,"   # trailing comma abaixo pre-ALTER
+    " nome           TEXT NOT NULL DEFAULT '',"
+    " familia        TEXT NOT NULL DEFAULT '',"
+    " runtime        TEXT NOT NULL DEFAULT '',"
+    " papel          TEXT NOT NULL DEFAULT ''"
     ")"
 )
+
+# v4.5: colunas de identidade (nome/familia/runtime/papel). Registros legados
+# (criados sem elas) recebem via ALTER idempotente no caminho de escrita.
+_IDENTITY_COLS = ("nome", "familia", "runtime", "papel")
+
+
+def _ensure_identity_columns(conn: sqlite3.Connection) -> None:
+    """Migrate a legacy agents table by adding the v4.5 identity columns.
+
+    Idempotent: checks PRAGMA table_info and only ALTERs absent columns.
+    Never raises (best-effort) — a failing migration degrades to missing
+    columns, and the code that reads them defaults to ''.
+    """
+    try:
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({TABLE})")}
+        for name in _IDENTITY_COLS:
+            if name not in cols:
+                conn.execute(
+                    f"ALTER TABLE {TABLE} ADD COLUMN {name} "
+                    "TEXT NOT NULL DEFAULT ''"
+                )
+        conn.commit()
+    except sqlite3.Error:
+        pass
 
 
 # ── internal ──────────────────────────────────────────────────────────
@@ -58,6 +86,7 @@ def _conn(db: Path, *, read_only: bool = False) -> sqlite3.Connection | None:
             conn = _connect(db)
             conn.execute(_DDL)
             conn.commit()
+            _ensure_identity_columns(conn)   # v4.5: migra db legado
         except sqlite3.Error:
             return None
     try:
@@ -95,11 +124,19 @@ def _parse_caps(s: str) -> list[str]:
 def register_agent(db: Path, *, instance_id: str, model: str = "",
                    capabilities: Iterable[str] = (),
                    status: str = "alive",
-                   heartbeat: float | None = None) -> bool:
-    """UPSERT an agent's row (presence + capabilities).
+                   heartbeat: float | None = None,
+                   nome: str = "", familia: str = "", runtime: str = "",
+                   papel: str = "") -> bool:
+    """UPSERT an agent's row (presence + capabilities + identity).
 
     heartbeat defaults to time.time(). Returns True on success, False on
-    a missing/broken/locked db (never raises). Idempotent."""
+    a missing/broken/locked db (never raises). Idempotent.
+
+    v4.5 identity: `nome/familia/runtime/papel` são opcionais (default '').
+    No upsert, identidade PRETENCHIDA no registro sobrescreve; identidade
+    vazia no upsert preserva a anterior (não zera) — assim um heartbeat/
+    re-registro que não passa identity não apaga o modelo/familia já vistos.
+    """
     if not instance_id:
         return False
     ts = float(heartbeat if heartbeat is not None else time.time())
@@ -107,15 +144,31 @@ def register_agent(db: Path, *, instance_id: str, model: str = "",
     if conn is None:
         return False
     try:
+        # Busca identidade prévia p/ preservar nos campos vazios
+        prev = conn.execute(
+            f"SELECT nome, familia, runtime, papel FROM {TABLE} WHERE instance_id=?",
+            (instance_id,),
+        ).fetchone()
+        p = {c: (prev[c] if prev is not None else "")
+             for c in ("nome", "familia", "runtime", "papel")}
+        new_nome = nome if nome else p["nome"]
+        new_fam = familia if familia else p["familia"]
+        new_run = runtime if runtime else p["runtime"]
+        new_papel = papel if papel else p["papel"]
         conn.execute(
-            f"INSERT INTO {TABLE}(instance_id,model,status,capabilities,last_heartbeat)"
-            " VALUES(?,?,?,?,?)"
+            f"INSERT INTO {TABLE}(instance_id,model,status,capabilities,last_heartbeat,nome,familia,runtime,papel)"
+            " VALUES(?,?,?,?,?,?,?,?,?)"
             " ON CONFLICT(instance_id) DO UPDATE SET"
             "   model=excluded.model,"
             "   status=excluded.status,"
             "   capabilities=excluded.capabilities,"
-            "   last_heartbeat=excluded.last_heartbeat",
-            (instance_id, model or "", status, _normalize_caps(capabilities), ts),
+            "   last_heartbeat=excluded.last_heartbeat,"
+            "   nome=excluded.nome,"
+            "   familia=excluded.familia,"
+            "   runtime=excluded.runtime,"
+            "   papel=excluded.papel",
+            (instance_id, model or "", status, _normalize_caps(capabilities), ts,
+             new_nome, new_fam, new_run, new_papel),
         )
         conn.commit()
         return True
@@ -192,14 +245,16 @@ def get_agent(db: Path, instance_id: str) -> dict | None:
         return None
     try:
         row = conn.execute(
-            f"SELECT instance_id, model, status, capabilities, last_heartbeat"
-            f" FROM {TABLE} WHERE instance_id=?",
+            f"SELECT instance_id, model, status, capabilities, last_heartbeat,"
+            f" nome, familia, runtime, papel FROM {TABLE} WHERE instance_id=?",
             (instance_id,),
         ).fetchone()
         if row is None:
             return None
         d = dict(row)
         d["capabilities"] = _parse_caps(d.get("capabilities", ""))
+        for c in _IDENTITY_COLS:          # garante presença mesmo sem migração
+            d.setdefault(c, "")
         return d
     except sqlite3.Error:
         return None
@@ -216,8 +271,8 @@ def list_agents(db: Path, *, capability: str | None = None,
         return []
     try:
         rows = conn.execute(
-            f"SELECT instance_id, model, status, capabilities, last_heartbeat"
-            f" FROM {TABLE}"
+            f"SELECT instance_id, model, status, capabilities, last_heartbeat,"
+            f" nome, familia, runtime, papel FROM {TABLE}"
         ).fetchall()
     except sqlite3.Error:
         return []
@@ -230,6 +285,8 @@ def list_agents(db: Path, *, capability: str | None = None,
         d = dict(r)
         caps = _parse_caps(d.pop("capabilities", ""))
         d["capabilities"] = caps
+        for c in _IDENTITY_COLS:
+            d.setdefault(c, "")
         if not include_stale and (now - float(d.get("last_heartbeat", 0)
                                              or 0)) > STALE_AFTER_S:
             continue

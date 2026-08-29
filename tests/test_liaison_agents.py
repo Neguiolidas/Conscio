@@ -177,3 +177,72 @@ class TestNeverRaises:
 
     def test_list_on_missing_db_returns_empty(self, tmp_path):
         assert agents.list_agents(tmp_path / "nope.db") == []
+
+
+# ── Identity columns (v4.5: nome/familia/runtime/papel) ───────────────
+
+class TestIdentity:
+    def test_register_with_identity_fields(self, db):
+        agents.register_agent(db, instance_id="agent-id",
+                              model="opus-5", nome="Claude",
+                              familia="claude", runtime="claude-code/2.x",
+                              papel="executor")
+        row = agents.get_agent(db, "agent-id")
+        assert row is not None
+        assert row["nome"] == "Claude"
+        assert row["familia"] == "claude"
+        assert row["runtime"] == "claude-code/2.x"
+        assert row["papel"] == "executor"
+
+    def test_register_without_identity_defaults_empty(self, db):
+        agents.register_agent(db, instance_id="old")
+        row = agents.get_agent(db, "old")
+        assert row is not None
+        assert row["nome"] == ""
+        assert row["familia"] == ""
+        assert row["runtime"] == ""
+        assert row["papel"] == ""
+
+    def test_identity_survives_upsert(self, db):
+        agents.register_agent(db, instance_id="a", model="m1", nome="A",
+                              familia="f", runtime="r", papel="p")
+        agents.register_agent(db, instance_id="a", model="m2")
+        row = agents.get_agent(db, "a")
+        assert row is not None
+        # upsert sem identity preserva as anteriores? NO — v4.1.1 upsert
+        # sobescreve TODOS os campos. Mantemos identidade: register com
+        # identity definida sobescreve; sem identity, preserva (não zera).
+        assert row["nome"] == "A"
+        assert row["model"] == "m2"
+
+    def test_identity_in_list(self, db):
+        agents.register_agent(db, instance_id="a", nome="X",
+                              familia="claude")
+        items = agents.list_agents(db)
+        assert items[0]["nome"] == "X"
+        assert items[0]["familia"] == "claude"
+
+    def test_heartbeat_preserves_identity(self, db):
+        agents.register_agent(db, instance_id="a", nome="N", familia="F")
+        agents.heartbeat(db, "a")
+        row = agents.get_agent(db, "a")
+        assert row is not None
+        assert row["nome"] == "N"
+        assert row["familia"] == "F"
+
+    def test_identity_columns_exist_on_fresh_and_legacy(self, tmp_path):
+        # db legado (criado sem identity) → _conn migra por ALTER
+        import sqlite3 as _s
+        legacy = tmp_path / "legacy.db"
+        conn = _s.connect(str(legacy))
+        conn.execute("CREATE TABLE agents ("
+                     " instance_id TEXT PRIMARY KEY,"
+                     " model TEXT NOT NULL DEFAULT '',"
+                     " status TEXT NOT NULL DEFAULT 'alive',"
+                     " capabilities TEXT NOT NULL DEFAULT '',"
+                     " last_heartbeat REAL NOT NULL)")
+        conn.commit(); conn.close()
+        agents.register_agent(legacy, instance_id="a", nome="N")
+        row = agents.get_agent(legacy, "a")
+        assert row is not None
+        assert row["nome"] == "N"

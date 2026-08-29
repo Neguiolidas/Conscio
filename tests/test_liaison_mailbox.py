@@ -192,3 +192,102 @@ def test_last_broadcast_ts_filters_by_sender(tmp_path):
 
 def test_last_broadcast_ts_missing_db_is_none(tmp_path):
     assert mailbox.last_broadcast_ts(tmp_path / "nope.db", "A") is None
+
+
+# ── Envelope _meta.from (v4.5) ───────────────────────────────────────
+
+def test_send_with_identity_stamps_meta_from(tmp_path):
+    db = tmp_path / "m.db"
+    ident = {"id": "A", "modelo": "opus-5", "familia": "claude",
+             "runtime": "claude-code/2.x", "papel": "executor"}
+    mid = mailbox.send(db, from_instance="A", to_instance="B", type="chat",
+                       payload={"text": "oi"}, identity=ident)
+    rows = mailbox.inbox(db, "B")
+    assert len(rows) == 1
+    meta = rows[0]["payload"].get("_meta")
+    assert meta is not None
+    assert meta.get("from") == ident
+    assert meta.get("id") == mid
+
+
+def test_send_without_identity_has_no_meta(tmp_path):
+    db = tmp_path / "m.db"
+    mailbox.send(db, from_instance="A", to_instance="B", type="chat",
+                 payload={"text": "oi"})
+    rows = mailbox.inbox(db, "B")
+    assert "_meta" not in rows[0]["payload"]
+
+
+def test_send_identity_overrides_existing_meta(tmp_path):
+    db = tmp_path / "m.db"
+    # payload já veio com _meta do corpo (auto-declarado) — runtime vence
+    ident = {"id": "B", "modelo": "gemini", "familia": "gemini"}
+    mailbox.send(db, from_instance="B", to_instance="A", type="chat",
+                 payload={"text": "x", "_meta": {"from": {"modelo": "fake"}}},
+                 identity=ident)
+    rows = mailbox.inbox(db, "A")
+    assert rows[0]["payload"]["_meta"]["from"] == ident
+
+
+def test_send_identity_preserves_text(tmp_path):
+    db = tmp_path / "m.db"
+    mailbox.send(db, from_instance="A", to_instance="B", type="chat",
+                 payload={"text": "conteudo original"}, identity={"id": "A"})
+    rows = mailbox.inbox(db, "B")
+    assert rows[0]["payload"]["text"] == "conteudo original"
+
+
+# ── Quarentena (v4.5) ────────────────────────────────────────────────
+
+def test_inbox_quarantines_malformed_and_delivers_rest(tmp_path):
+    import sqlite3
+    db = tmp_path / "m.db"
+    mailbox.send(db, from_instance="A", to_instance="B", type="chat",
+                 payload={"text": "ok"})
+    # injeta um row malformado direto no sqlite
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "INSERT INTO messages (from_instance,to_instance,type,payload,ts)"
+        " VALUES (?,?,?,?,?)",
+        ("A", "B", "chat", "{not valid json!!", 1.0))
+    conn.commit(); conn.close()
+    rows = mailbox.inbox(db, "B")
+    txts = [r["payload"]["text"] for r in rows]
+    assert "ok" in txts                      # o válido entrega
+    q = mailbox.list_quarantine(db)
+    assert len(q) == 1                       # o malformado foi p/ quarentena
+    assert q[0]["payload_raw"] is not None
+
+
+def test_thread_quarantines_malformed(tmp_path):
+    import sqlite3
+    db = tmp_path / "m.db"
+    mailbox.send(db, from_instance="A", to_instance="B", type="chat",
+                 payload={"text": "ok"})
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "INSERT INTO messages (from_instance,to_instance,type,payload,ts)"
+        " VALUES (?,?,?,?,?)",
+        ("B", "A", "chat", "{bad", 2.0))
+    conn.commit(); conn.close()
+    t = mailbox.thread(db, "A", "B")
+    assert len(t) >= 1
+    q = mailbox.list_quarantine(db)
+    assert len(q) == 1
+
+
+def test_purge_quarantine_removes_old(tmp_path):
+    import sqlite3
+    import time
+    db = tmp_path / "m.db"
+    mailbox.send(db, from_instance="A", to_instance="B", type="chat",
+                 payload={"text": "seed"})   # cria schema (rw)
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "INSERT INTO quarantine (source_row, motivo, payload_raw, ts)"
+        " VALUES (?,?,?,?)", (1, "payload_nao_json", "{bad", time.time() - 100.0))
+    conn.commit(); conn.close()
+    assert len(mailbox.list_quarantine(db)) == 1
+    n = mailbox.purge_quarantine(db, older_than_days=0.0001)  # cutoff 8.64s; row 100s velho > cutoff → remove
+    assert n == 1
+    assert mailbox.list_quarantine(db) == []

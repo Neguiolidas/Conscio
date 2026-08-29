@@ -29,6 +29,15 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_to
     ON messages(to_instance, type, read_ts);
+-- v4.5: payload que não parseia como JSON mora aqui (quarentena), em vez de
+-- derrubar a leitura. O row original é preservado em payload_raw p/ auditoria.
+CREATE TABLE IF NOT EXISTS quarantine (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_row  INTEGER NOT NULL,
+    motivo      TEXT NOT NULL,
+    payload_raw TEXT,
+    ts          REAL NOT NULL
+);
 """
 
 
@@ -50,19 +59,97 @@ def _clamp(n: int) -> int:
     return max(1, min(n, 200))
 
 
+def quarantine(db: Path, *, source_row: int, motivo: str,
+               payload_raw: str | None = None) -> bool:
+    """Park a malformed message row so it can't stall the inbox. Best-effort
+    (never raises); a failing quarantine write does NOT propagate — the row is
+    just skipped, same as before, so a broken db never becomes a write-path
+    crash."""
+    db = Path(db)
+    try:
+        conn = _connect(db)
+        try:
+            conn.execute(
+                "INSERT INTO quarantine (source_row, motivo, payload_raw, ts)"
+                " VALUES (?,?,?,?)",
+                (source_row, motivo, payload_raw, time.time()))
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False
+
+
+def list_quarantine(db: Path, *, limit: int = 100) -> list[dict]:
+    """All quarantined rows (newest first). Missing/corrupt db -> []."""
+    db = Path(db)
+    if not db.exists():
+        return []
+    try:
+        conn = _connect(db)
+    except sqlite3.Error:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT id, source_row, motivo, payload_raw, ts"
+            " FROM quarantine ORDER BY id DESC LIMIT ?",
+            [_clamp(limit)]).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
+def purge_quarantine(db: Path, *, older_than_days: float = 7.0) -> int:
+    """Delete quarantined rows older than the cutoff. Missing/corrupt db -> 0."""
+    db = Path(db)
+    if not db.exists():
+        return 0
+    try:
+        conn = _connect(db)
+    except sqlite3.Error:
+        return 0
+    cutoff = time.time() - older_than_days * 86400.0
+    try:
+        cur = conn.execute(
+            "DELETE FROM quarantine WHERE ts < ?", (cutoff,))
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
 def send(db: Path, *, from_instance: str, to_instance: str, type: str,
-         payload: dict, ts: float | None = None) -> int:
+         payload: dict, ts: float | None = None,
+         identity: dict | None = None) -> int:
     db = Path(db)
     db.parent.mkdir(parents=True, exist_ok=True)
+    # v4.5 envelope: identidade do RUNTIME (não do corpo) é o `_meta.from`.
+    # Se o payload já carregava _meta (auto-declaração), o runtime vence —
+    # nunca deixar identidade do corpo prevalecer sobre a do runtime.
+    final_payload = dict(payload)
+    if identity:
+        final_payload["_meta"] = {"from": identity}
+    # identity ausente: preserva qualquer _meta já presente no corpo (compat)
     conn = _connect(db)
     try:
         cur = conn.execute(
             "INSERT INTO messages (from_instance, to_instance, type, payload, ts,"
             " read_ts) VALUES (?,?,?,?,?,NULL)",
-            (from_instance, to_instance, type, json.dumps(payload),
+            (from_instance, to_instance, type, json.dumps(final_payload),
              time.time() if ts is None else ts))
         conn.commit()
-        return cur.lastrowid or 0
+        mid = cur.lastrowid or 0
+        # Bake o id da mensagem no envelope (imutável pós-insert)
+        if identity and mid:
+            baked = dict(final_payload)
+            baked["_meta"] = {"from": identity, "id": mid}
+            conn.execute("UPDATE messages SET payload=? WHERE id=?",
+                         (json.dumps(baked), mid))
+            conn.commit()
+        return mid
     finally:
         conn.close()
 
@@ -98,7 +185,11 @@ def inbox(db: Path, to_instance: str, *, types: list[str] | None = None,
         try:
             d["payload"] = json.loads(d["payload"])
         except (TypeError, ValueError):
-            continue                                    # unparseable row -> skip
+            # v4.5: nunca deixar payload malformado bloquear a fila —
+            # quarentena a mensagem e segue (gargalo #2 do relay).
+            quarantine(db, source_row=int(r["id"]), motivo="payload_nao_json",
+                       payload_raw=str(r["payload"]))
+            continue
         out.append(d)
     return out
 
@@ -133,7 +224,9 @@ def thread(db: Path, a: str, b: str, *, limit: int = 20) -> list[dict]:
         try:
             d["payload"] = json.loads(d["payload"])
         except (TypeError, ValueError):
-            continue                      # unparseable row -> skip
+            quarantine(db, source_row=int(r["id"]), motivo="payload_nao_json",
+                       payload_raw=str(r["payload"]))
+            continue
         out.append(d)
     return out
 
