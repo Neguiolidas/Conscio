@@ -280,3 +280,68 @@ class TestLegacyCompat:
         rc = wmain(["--liaison-db", str(mailbox_db),
                     "--self-id", "", "--relay-peer", PEER_A])
         assert rc == int(ExitCode.CONFIG_ERROR)
+
+
+# ── Ato 2 (v4.5): heartbeat 3 estados + presença ─────────────────────────
+
+class TestHeartbeat3Estados:
+    def test_nada_novo_when_empty(self, tmp_path):
+        from conscio.liaison.watcher import tick_summary
+        db = tmp_path / "m.db"
+        s = tick_summary(db, self_id=SELF, peers=[PEER_A], outbox=None)
+        assert s["estado"] == "nada_novo"
+        assert s["motivo"] == ""
+        assert s["par"] == SELF
+
+    def test_nao_entregue_when_config_error(self, tmp_path):
+        from conscio.liaison.watcher import tick_summary
+        # sem peers → CONFIG_ERROR → não_entregue (diagnóstico honesto)
+        s = tick_summary(tmp_path / "m.db", self_id="", peers=[], outbox=None)
+        assert s["estado"] == "não_entregue"
+        assert s["motivo"]
+
+    def test_nao_entregue_when_db_blocked(self, tmp_path):
+        from conscio.liaison.watcher import tick_summary
+        # caminho que não é db (arquivo que impede sqlite) → degrada honesto
+        blocker = tmp_path / "blocker"
+        blocker.write_text("not a dir")
+        s = tick_summary(blocker / "m.db", self_id=SELF, peers=[PEER_A],
+                         outbox=None)
+        assert s["estado"] in ("nada_novo", "não_entregue")
+
+    def test_entregue_when_messages(self, mailbox_db, capsys):
+        from conscio.liaison.watcher import tick_summary
+        s = tick_summary(mailbox_db, self_id=SELF,
+                         peers=[PEER_A, PEER_B], outbox=None)
+        assert s["estado"] == "entregue"
+        assert s["cursor"].get(PEER_A, 0) > 0
+
+    def test_nunca_levanta(self, tmp_path):
+        from conscio.liaison.watcher import tick_summary
+        # db apontando pra um arquivo não-db (diretório) → degrada
+        s = tick_summary(tmp_path, self_id=SELF, peers=[PEER_A], outbox=None)
+        assert s["estado"] in ("nada_novo", "não_entregue")
+
+
+class TestPresenca:
+    def test_tick_registers_self(self, tmp_path):
+        from conscio.liaison import agents
+        from conscio.liaison.watcher import tick_summary
+        db = tmp_path / "m.db"
+        tick_summary(db, self_id=SELF, peers=[PEER_A], outbox=None)
+        row = agents.get_agent(db, SELF)
+        assert row is not None
+        assert row["status"] == "alive"
+
+    def test_tick_renovates_heartbeat(self, tmp_path):
+        import time
+
+        from conscio.liaison import agents
+        from conscio.liaison.watcher import tick_summary
+        db = tmp_path / "m.db"
+        tick_summary(db, self_id=SELF, peers=[PEER_A], outbox=None)
+        hb1 = agents.get_agent(db, SELF)["last_heartbeat"]
+        time.sleep(0.01)
+        tick_summary(db, self_id=SELF, peers=[PEER_A], outbox=None)
+        hb2 = agents.get_agent(db, SELF)["last_heartbeat"]
+        assert hb2 > hb1

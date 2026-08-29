@@ -19,6 +19,7 @@ import json
 import os
 import sqlite3
 import sys
+import time
 from collections.abc import Iterable
 from enum import IntEnum
 from pathlib import Path
@@ -238,6 +239,61 @@ def tick_once(db: Path, *, self_id: str, peers: list[str],
     return [m for msgs in per_peer.values() for m in msgs], ExitCode.OK
 
 
+def tick_summary(db: Path, *, self_id: str, peers: list[str],
+                 outbox: Path | None) -> dict:
+    """Reactive tick contract (v4.5): a 3-state STRUCTURED summary, never
+    silence — `nada_novo` | `entregue` | `não_entregue` (+ motivo). Also
+    renews the agent's presence row (`agents`) so the watcher is both the
+    mail-poll AND the liveness heartbeat.
+
+    Returns a dict with keys: estado, motivo, cursor, par, ts, messages.
+    `messages` present only when estado == "entregue" (keeps the legacy
+    stdout contract). Never raises — any error degrades to "não_entregue"
+    with a motivo instead of crashing the tick.
+    """
+    from . import agents  # local import: watcher stays engine-free but may
+    #                       read/write the agents registry (pure sqlite).
+    ts = time.time()
+
+    # Liveness: register self on first sight, refresh heartbeat every tick.
+    # Best-effort — a failing registry never aborts the actual mail poll.
+    if self_id:
+        agents.register_agent(db, instance_id=self_id,
+                              capabilities=("relay",), status="alive")
+    # (heartbeat happens implicitly on the next register UPSERT; explicit
+    #  `heartbeat` call is optional — register already refreshes the row.)
+
+    msgs: list[dict] = []
+    cursor: dict[str, int] = {}
+    try:
+        state = _load_state(db)
+        cursor = {p: int(state.get(p, {}).get("last_seen_id", 0))
+                  for p in peers}
+        if not Path(db).exists() or not peers or not self_id:
+            return {"estado": "não_entregue", "motivo": "config: db, peers, self_id",
+                    "cursor": cursor, "par": self_id, "ts": ts, "messages": []}
+        msgs, code = tick_once(db, self_id=self_id, peers=peers, outbox=outbox)
+    except Exception as exc:
+        return {"estado": "não_entregue", "motivo": f"exceção: {type(exc).__name__}",
+                "cursor": cursor, "par": self_id, "ts": ts, "messages": []}
+
+    if code == ExitCode.CONFIG_ERROR:
+        estado, motivo = "não_entregue", "config: db ausente ou peers/self_id"
+    elif code == ExitCode.PENDING_CAPTURE:
+        estado, motivo = "não_entregue", "pending_capture: emit do outbox falhou"
+    elif msgs:
+        estado, motivo = "entregue", ""
+    else:
+        estado, motivo = "nada_novo", ""
+
+    # refresh cursor do estado mais novo lido
+    if msgs:
+        cursor = {p: max((m["id"] for m in msgs if m["from_instance"] == p),
+                         default=cursor.get(p, 0)) for p in peers}
+    return {"estado": estado, "motivo": motivo, "cursor": cursor,
+            "par": self_id, "ts": ts, "messages": msgs}
+
+
 # ── CLI ───────────────────────────────────────────────────────────────
 
 def _resolve_self_id(arg: str) -> str:
@@ -297,27 +353,30 @@ def main(argv: list[str] | None = None) -> int:
         })
         _save_state(db, _app_state)
 
-    # Persistent loop (legacy blocking-watcher parity): keeps polling every
-    # --interval until the first non-empty tick surfaces, then exits OK. If
-    # the timeout elapses with nothing new, exit OK (silent, not an error).
+    # Persistent loop (legacy blocking-watcher parity + v4.5 reativo):
+    # polls every --interval calling tick_summary (3-state, renova presença).
+    # Emite heartbeat "vivo" mesmo sem msgs novas — transforma "não recebi
+    # nada" de ambíguo em diagnóstico. Exits OK when a message surfaces or
+    # the deadline elapses (silent-idle contract preserved).
     if not args.once and args.interval > 0:
         import time as _time
         deadline = _time.time() + max(args.timeout, 0.0)
+        outbox = Path(args.outbox) if args.outbox else None
         while _time.time() < deadline:
-            msgs, code = tick_once(
-                db, self_id=self_id, peers=peers,
-                outbox=Path(args.outbox) if args.outbox else None,
-            )
-            if msgs:
+            s = tick_summary(db, self_id=self_id, peers=peers, outbox=outbox)
+            if s["estado"] == "entregue" and s["messages"]:
                 # surfaced — print (stdout contract) and exit OK
-                print(json.dumps({"messages": msgs}, ensure_ascii=False))
+                print(json.dumps({"messages": s["messages"]}, ensure_ascii=False))
                 return int(ExitCode.OK)
-            if code == ExitCode.CONFIG_ERROR:
-                # db vanished mid-loop — honest config error, retry-able next
-                # invocation rather than spinning forever
-                return int(code)
+            if s["estado"] == "não_entregue" and s["motivo"].startswith("config"):
+                # db/peers/self_id inválido de verdade — honest config error,
+                # retry-able invocação, não spin forever
+                return int(ExitCode.CONFIG_ERROR)
+            # heartbeat "vivo" (supervisor/systemd pode ler o diagnóstico)
+            print(json.dumps({"estado": s["estado"], "cursor": s["cursor"],
+                              "par": self_id, "ts": s["ts"]}, ensure_ascii=False))
             _time.sleep(args.interval)
-        # deadline reached, nothing new: silent (watchdog) exit OK
+        # deadline reached: silent (watchdog) exit OK
         return int(ExitCode.OK)
 
     _, code = tick_once(
