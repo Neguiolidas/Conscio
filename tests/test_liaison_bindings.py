@@ -418,7 +418,7 @@ def test_relay_two_instance_end_to_end(tmp_path):
         assert len(msgs) == 1
         assert msgs[0]["from_instance"] == "A"
         assert msgs[0]["type"] == "note"
-        assert msgs[0]["payload"] == {"hi": 1}
+        assert msgs[0]["payload"].get("hi") == 1   # _meta envelope presente
         assert B._relay_read({"ids": [msgs[0]["id"]]})["marked"] == 1
         assert B._relay_inbox({})["messages"] == []           # consumed
     finally:
@@ -527,8 +527,8 @@ def test_relay_broadcast_fans_out_to_all_peers(tmp_path):
         assert r["ok"] is True
         assert {s["to"] for s in r["sent"]} == {"B", "C"}
         assert r["errors"] == []
-        assert mailbox.inbox(db, "B")[0]["payload"] == {"hi": 1}
-        assert mailbox.inbox(db, "C")[0]["payload"] == {"hi": 1}
+        assert mailbox.inbox(db, "B")[0]["payload"].get("hi") == 1
+        assert mailbox.inbox(db, "C")[0]["payload"].get("hi") == 1
     finally:
         seen.close()
         eng.close()
@@ -578,16 +578,120 @@ def test_relay_broadcast_send_failure_isolated(tmp_path, monkeypatch):
     try:
         real = srv.mailbox.send
 
-        def flaky(dbp, *, from_instance, to_instance, type, payload):
+        def flaky(dbp, *, from_instance, to_instance, type, payload, identity=None):
             if to_instance == "B":
                 raise _sq.OperationalError("database is locked")
             return real(dbp, from_instance=from_instance,
-                        to_instance=to_instance, type=type, payload=payload)
+                        to_instance=to_instance, type=type, payload=payload,
+                        identity=identity)
 
         monkeypatch.setattr(srv.mailbox, "send", flaky)
         r = b._relay_broadcast({"type": "note", "payload": {"hi": 1}})
         assert {s["to"] for s in r["sent"]} == {"C"}     # C still delivered
         assert {e["to"] for e in r["errors"]} == {"B"}   # B reported, not fatal
+    finally:
+        seen.close()
+        eng.close()
+
+
+# ── Ato 3 (v4.5): identity do runtime + peers dinâmicos ─────────────────
+
+def test_identity_empty_without_self_instance(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="")
+    try:
+        b.identity_model = "opus-5"
+        b.identity_familia = "claude"
+        b.identity_runtime = "claude-code/2.x"
+        b.identity_papel = "executor"
+        # self_instance_id vazio → sem envelope (não inventa identidade)
+        assert b._identity() == {}
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_identity_builds_envelope(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="inst-abc")
+    try:
+        b.identity_model = "gemini-2.5"
+        b.identity_familia = "gemini"
+        b.identity_runtime = "claude-code/2.x"
+        b.identity_papel = "executor"
+        env = b._identity()
+        assert env["id"] == "inst-abc"
+        assert env["modelo"] == "gemini-2.5"
+        assert env["familia"] == "gemini"
+        assert env["papel"] == "executor"
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_resolve_peers_falls_back_to_static(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="X", relay=True,
+                         relay_peers=("A", "B"))
+    try:
+        # sem registro → fallback para --relay-peer
+        assert b._resolve_peers() == {"A", "B"}
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_resolve_peers_uses_registry_and_excludes_self(tmp_path):
+    from conscio.liaison import agents
+    b, eng, seen = _bind(tmp_path, instance_id="X", relay=True,
+                         relay_peers=("STALE",),
+                         liaison_db=tmp_path / "liaison.db")
+    try:
+        db = b.liaison_db
+        agents.register_agent(db, instance_id="X", capabilities=("relay",))
+        agents.register_agent(db, instance_id="alive-1",
+                              capabilities=("relay",))
+        agents.register_agent(db, instance_id="alive-2",
+                              capabilities=("relay",))
+        agents.register_agent(db, instance_id="stale-peer",
+                              heartbeat=1.0)   # velho → offiline
+        peers = b._resolve_peers()
+        assert "X" not in peers                 # exclui o próprio
+        assert "alive-1" in peers and "alive-2" in peers
+        assert "stale-peer" not in peers        # sem heartbeat recente
+        assert "STALE" not in peers             # registro vence a fallback
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_send_stamps_identity_envelope(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="X", relay=True,
+                         relay_peers=("B",), liaison_db=tmp_path / "liaison.db")
+    try:
+        b.identity_model = "m-1"
+        b.identity_familia = "fam"
+        r = b._relay_send({"to": "B", "type": "chat", "payload": {"text": "oi"}})
+        assert r["ok"] is True
+        rows = mailbox.inbox(b.liaison_db, "B")
+        meta = rows[0]["payload"].get("_meta")
+        assert meta is not None
+        assert meta["from"]["modelo"] == "m-1"
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_send_without_identity_fields_has_id_only(tmp_path):
+    # self_instance_id existe → envelope SEMPRE sai, mas com campos de modelo
+    # vazios quando o runtime não os forneceu (id é a âncora mínima).
+    b, eng, seen = _bind(tmp_path, instance_id="X", relay=True,
+                         relay_peers=("B",), liaison_db=tmp_path / "liaison.db")
+    try:
+        r = b._relay_send({"to": "B", "type": "chat", "payload": {"text": "oi"}})
+        assert r["ok"] is True
+        rows = mailbox.inbox(b.liaison_db, "B")
+        meta = rows[0]["payload"].get("_meta")
+        assert meta is not None
+        assert meta["from"]["id"] == "X"
+        assert meta["from"]["modelo"] == ""
     finally:
         seen.close()
         eng.close()

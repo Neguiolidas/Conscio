@@ -79,7 +79,9 @@ class Bindings:
                  relay: bool = False,
                  relay_peers: tuple[str, ...] = (),
                  auto_review: bool = False,
-                 mode: str = modes.DEFAULT_MODE) -> None:
+                 mode: str = modes.DEFAULT_MODE,
+                 identity_model: str = "", identity_familia: str = "",
+                 identity_runtime: str = "", identity_papel: str = "") -> None:
         self.engine = engine
         self.seen = seen
         self.adapter_name = adapter_name
@@ -96,6 +98,11 @@ class Bindings:
         self.auto_review = auto_review        # v2.6.2: --auto-review
         self.last_auto_apply_ts = 0.0         # v2.6.3 #2: throttle clock
         self.mode = mode                      # v4.0: lite / balanced / ultra
+        # v4.5 identity do runtime (preenchido pelo cli/runtime, não pelo agente)
+        self.identity_model = identity_model
+        self.identity_familia = identity_familia
+        self.identity_runtime = identity_runtime
+        self.identity_papel = identity_papel
         self._pending_notifications: list[dict] = []
 
         # v3.7: ModeRouter — chunkifica output conforme prompt_complexity
@@ -475,13 +482,16 @@ class Bindings:
         to = str(args.get("to", ""))
         mtype = str(args.get("type", ""))
         payload = args.get("payload", {})
+        self._ensure_registered()                     # v4.5: presença
         try:
             relay.validate_send(to=to, type=mtype, payload=payload,
-                                peers=set(self.relay_peers))
+                                peers=self._resolve_peers())
         except ValueError as exc:
             return {"ok": False, "reason": str(exc)}
+        identity = self._identity() or None           # v4.5: envelope
         mid = mailbox.send(self.liaison_db, from_instance=self.self_instance_id,
-                           to_instance=to, type=mtype, payload=payload)
+                           to_instance=to, type=mtype, payload=payload,
+                           identity=identity)
         try:                                      # R2 best-effort retention
             mailbox.purge_read(self.liaison_db, relay.RETENTION_DAYS)
         except Exception as exc:
@@ -512,10 +522,12 @@ class Bindings:
         host_act -> daemon-perceives/server-acts holds."""
         mtype = str(args.get("type", ""))
         payload = args.get("payload", {})
-        peers = set(self.relay_peers)
+        self._ensure_registered()                     # v4.5: presença
+        peers = self._resolve_peers()
+        identity = self._identity() or None           # v4.5: envelope
         sent: list[dict] = []
         errors: list[dict] = []
-        for peer in self.relay_peers:
+        for peer in peers:
             try:
                 relay.validate_send(to=peer, type=mtype, payload=payload,
                                     peers=peers)
@@ -526,7 +538,7 @@ class Bindings:
                 mid = mailbox.send(self.liaison_db,
                                    from_instance=self.self_instance_id,
                                    to_instance=peer, type=mtype,
-                                   payload=payload)
+                                   payload=payload, identity=identity)
             except Exception as exc:      # per-peer isolation: keep fanning out
                 errors.append({"to": peer,
                                "reason": f"send failed: {type(exc).__name__}"})
@@ -563,6 +575,54 @@ class Bindings:
                if isinstance(i, int) and not isinstance(i, bool)]  # R1-menor
         n = mailbox.mark_read(self.liaison_db, ids)
         return {"ok": True, "marked": n}
+
+    # ── v4.5: identidade do runtime + descoberta dinâmica de peers ──────
+
+    def _identity(self) -> dict:
+        """Runtime identity envelope (v4.5). Empty {} when self_instance_id is
+        absent — never invents identity from the body."""
+        if not self.self_instance_id:
+            return {}
+        return {
+            "id": self.self_instance_id,
+            "modelo": self.identity_model,
+            "familia": self.identity_familia,
+            "runtime": self.identity_runtime,
+            "papel": self.identity_papel,
+        }
+
+    def _ensure_registered(self) -> None:
+        """Self-register + refresh presence. Best-effort (never raises): a
+        failed registry write just skips this tick's presence refresh."""
+        if not self.self_instance_id:
+            return
+        try:
+            from ..liaison import agents
+            agents.register_agent(
+                self.liaison_db, instance_id=self.self_instance_id,
+                model=self.identity_model, familia=self.identity_familia,
+                runtime=self.identity_runtime, papel=self.identity_papel,
+                capabilities=("relay",), status="alive")
+        except Exception:
+            pass
+
+    def _resolve_peers(self) -> set[str]:
+        """Live peers from the agents registry (v4.5 D1), falling back to the
+        static --relay-peer allowlist when the registry has no OTHER live
+        agent beyond self. Excludes self. The registry is the authority for
+        newly-seen agents; the seed list keeps working until a live peer
+        actually appears in the registry (a self-only registry must not clear
+        the configured peers)."""
+        try:
+            from ..liaison import agents
+            rows = agents.list_agents(self.liaison_db, include_stale=False)
+        except Exception:
+            rows = []
+        others = [a for a in rows
+                  if a.get("instance_id") and a["instance_id"] != self.self_instance_id]
+        if others:
+            return {a["instance_id"] for a in others}
+        return {p for p in self.relay_peers if p and p != self.self_instance_id}
 
     def _intercept(self, args: dict) -> dict:
         """Evaluate a safe expression via the Intercepter AST evaluator.
@@ -1047,7 +1107,17 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="enable opt-in general cross-agent messaging")
     parser.add_argument("--relay-peer", action="append", default=[],
                         metavar="INSTANCE_ID",
-                        help="trusted relay peer instance_id (repeatable)")
+                        help="trusted relay peer instance_id (repeatable); "
+                             "v4.5: seed/fallback — authority vira o registro")
+    parser.add_argument("--identity-model", default="",
+                        help="v4.5: modelo do runtime (ex: claude-opus-5); "
+                             "no envelope, não no corpo")
+    parser.add_argument("--identity-familia", default="",
+                        help="v4.5: familia do modelo (ex: claude, gemini)")
+    parser.add_argument("--identity-runtime", default="",
+                        help="v4.5: runtime (ex: claude-code/2.x)")
+    parser.add_argument("--identity-papel", default="",
+                        help="v4.5: papel (ex: executor, researcher)")
     parser.add_argument("--auto-review", action="store_true",
                         help="auto-apply inbound review verdicts each request "
                              "when awake (needs --enable-act + "
@@ -1310,7 +1380,11 @@ def main(argv: list[str] | None = None) -> int:
                         relay=args.enable_relay,
                         relay_peers=tuple(args.relay_peer),
                         auto_review=args.auto_review,
-                        mode=tool_mode)
+                        mode=tool_mode,
+                        identity_model=args.identity_model,
+                        identity_familia=args.identity_familia,
+                        identity_runtime=args.identity_runtime,
+                        identity_papel=args.identity_papel)
     mode = "act" if args.enable_act else "propose-only"
     if args.enable_hermes_review:
         if args.reviewer:
