@@ -14,9 +14,12 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v4.4.0` "Multi-Squad":** two
-orthogonal advisory squads (Experts + Opositors) alongside the Council,
-8 specialised voices, a new `high` mode tier, and two MCP tool wrappers.
+**Latest release — `v4.5.0` "Relay Reativo + Agent's Hall":** o relay deixa de ser
+allowlist estática e vira um mailbus reativo multi-agente — envelope de procedência
+(modelo/familia/runtime/papel no `_meta.from`), heartbeat de 3 estados (nunca silêncio),
+peers descobertos no registro, quarentena de payload malformado, e Agent's Hall (grupos
+nomeados de agentes com fan-out). Observatory ganha as rotas `/api/agents`, `/api/halls`
+e `/api/mailboxes` com view de tempo real.
 See [CHANGELOG](CHANGELOG.md) for details.
 
 > Full version history: [**CHANGELOG.md**](CHANGELOG.md).

@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.5.0] - 2026-08-29 — Relay reativo + Agent's Hall
+
+### Added
+
+- **Agent's Hall** (`conscio/liaison/halls.py`): grupos nomeados de agentes sobre o
+  mesmo mailbox. Halls com dono, `hall_id` = slug `dono--nome`, membros com papel e
+  presença. Fan-out `send_to_hall` exclui o remetente. Engine-free, never-raises.
+- **Tools MCP `conscio_hall_*`** (create/list/join/leave/members/send) atrás da flag
+  `--can-create-halls`. `hall_members` enriquece com modelo/familia do registro.
+- **Observatory** (`halls_view.py` + rotas `/api/agents`, `/api/halls`, `/api/mailboxes`):
+  projeção read-only de agents + halls + mailbox, com stale marcado como `offline`
+  (não some). Tabs "Halls" e "Agents" no app.js com poll de 3s (tempo real).
+- **Envelope de procedência**: `mailbox.send(identity=...)` carimba `_meta.from` com a
+  identidade do runtime (modelo/familia/runtime/papel); `relay.envelope_of` extrai.
+  A identidade do runtime vence auto-declaração no corpo.
+- **Colunas de identidade no registro** `agents`: `nome/familia/runtime/papel`, com
+  migração ALTER idempotente para DBs legados.
+- **Heartbeat de 3 estados** `tick_summary()`: `nada_novo | entregue | não_entregue
+  (+motivo)` — nunca silêncio. Watcher renova presença no registro a cada tick e emite
+  "vivo" no loop persistente.
+- **Quarentena** (`mailbox.quarantine/list/purge`): payload que não parseia vai para
+  `quarantine` em vez de derrubar a fila.
+
+### Changed
+
+- **Peers dinâmicos**: `Bindings._resolve_peers()` consulta `agents.list_agents()`
+  (vivos, exclui self); `--relay-peer` vira seed/fallback, não autoridade.
+- `--identity-model/familia/runtime/papel` e `--can-create-halls` no CLI do MCP.
+- `mcp/server.py` `route()` do observatory ganha o parâmetro `halls`.
+
+### Fixed
+
+- O relay 503/silêncio estrutural: componente nunca mais anuncia sucesso sem entregar
+  (3 estados) nem deixa payload malformado bloquear a leitura (quarentena).
+
+---
+
 ## [4.4.1] - 2026-08-28 — Fix world_prune skeptic noise loop
 
 ### Fixed

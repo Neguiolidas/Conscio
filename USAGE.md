@@ -161,6 +161,16 @@ Cross-agent messaging: `conscio_relay_send`, `conscio_relay_inbox`,
 `conscio_relay_read`, `conscio_relay_broadcast`. Reserved-type isolation from
 review channel. Payload cap 64KB, retention 7 days after read.
 
+**v4.5 (Agents + Halls):**
+- Peers vêm do registro (`agents.list_agents`), não só da allowlist; `--relay-peer`
+  é seed/fallback.
+- O envelope carrega identidade (`_meta.from`: modelo/familia/runtime/papel) do
+  runtime, não do corpo.
+- Agent's Hall (opt-in `--enable-relay --can-create-halls`): `conscio_hall_create`,
+  `conscio_hall_list`, `conscio_hall_join`, `conscio_hall_leave`,
+  `conscio_hall_members`, `conscio_hall_send`.
+- Observatório read-only: `/api/agents`, `/api/halls`, `/api/mailboxes`.
+
 ### v3.3 — Gate tools
 
 - `conscio_decide(question, options)` — structural decision with ADR

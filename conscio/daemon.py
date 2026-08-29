@@ -461,7 +461,7 @@ def _arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--delta-no-history", action="store_true",
                         help="send the relay prompt only the peer's UN-ANSWERED "
                              "turns (incremental context) instead of the whole "
-                             "bounded thread — 70-90% token cut. Rides on "
+                             "bounded thread — 70-90%% token cut. Rides on "
                              "--auto-respond (v4.1.1)")
     parser.add_argument("--initiate", action="store_true",
                         help="awake daemon proactively OPENS directed relay "

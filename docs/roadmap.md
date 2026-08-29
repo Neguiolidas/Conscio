@@ -35,7 +35,9 @@
 | v4.1+ | Council robusto | assertive council, deterministic voices, consensus fields | ✅ Done |
 | v4.2 | Fable/Garimpo | fable method + garimpo workflows | ✅ Done |
 | v4.3.1 | Liaison tick | private-cursor relay sweep + IMPORTANT classification | ✅ Done |
-| v4.4.0 | Multi-Squad | Experts + Opositors squads, tier high, squad MCP tools | 🚧 Planned (see brainstorm 2026-08-25-v4.4-multi-squads.md) |
+| v4.4.0 | Multi-Squad | Experts + Opositors squads, tier high, squad MCP tools | ✅ Done |
+| v4.4.1 | Multi-Squad fix | world_prune skeptic noise loop | ✅ Done |
+| v4.5.0 | Relay reativo + Hall | envelope de procedência, 3 estados, peers dinâmicos, Agent's Hall, observatory tempo real | 🚧 Implementado, aguardando ship (ver ato1..6 em docs/plans/v4.5-relay-halls/) |
 
 > Full per-release detail lives in [`CHANGELOG.md`](../CHANGELOG.md). The
 > **G-P-D** band (v3.0 — 13 advisory ECC tools: gates, pipelines, diagnostics)
