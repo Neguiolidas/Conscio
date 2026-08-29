@@ -23,6 +23,7 @@ from .protocol import SUPPORTED_PROTOCOLS, Dispatcher
 from .schemas import (
     ACT_TOOL_DEFS,
     BASE_TOOL_DEFS,
+    HALL_TOOL_DEFS,
     LIAISON_TOOL_DEFS,
     MODE_TOOL_DEF,
     RELAY_TOOL_DEFS,
@@ -81,7 +82,8 @@ class Bindings:
                  auto_review: bool = False,
                  mode: str = modes.DEFAULT_MODE,
                  identity_model: str = "", identity_familia: str = "",
-                 identity_runtime: str = "", identity_papel: str = "") -> None:
+                 identity_runtime: str = "", identity_papel: str = "",
+                 can_create_halls: bool = False) -> None:
         self.engine = engine
         self.seen = seen
         self.adapter_name = adapter_name
@@ -103,6 +105,7 @@ class Bindings:
         self.identity_familia = identity_familia
         self.identity_runtime = identity_runtime
         self.identity_papel = identity_papel
+        self.can_create_halls = can_create_halls  # v4.5: Agent's Hall tools
         self._pending_notifications: list[dict] = []
 
         # v3.7: ModeRouter — chunkifica output conforme prompt_complexity
@@ -175,6 +178,8 @@ class Bindings:
                 flagged.append(d)
         if self.relay:
             flagged += list(RELAY_TOOL_DEFS)
+        if self.can_create_halls:                # v4.5: Agent's Hall tools
+            flagged += list(HALL_TOOL_DEFS)
 
         # 1. seleção: o modo filtra só a superfície BASE
         allowed = {"lite": modes.LITE_TOOLS,
@@ -327,6 +332,13 @@ class Bindings:
             tools["conscio_relay_inbox"] = self._relay_inbox
             tools["conscio_relay_read"] = self._relay_read
             tools["conscio_relay_broadcast"] = self._relay_broadcast
+            if self.can_create_halls:      # v4.5: Agent's Hall tools
+                tools["conscio_hall_create"] = self._hall_create
+                tools["conscio_hall_list"] = self._hall_list
+                tools["conscio_hall_join"] = self._hall_join
+                tools["conscio_hall_leave"] = self._hall_leave
+                tools["conscio_hall_members"] = self._hall_members
+                tools["conscio_hall_send"] = self._hall_send
         tools["conscio_mode"] = self._mode_toggler   # existe em todo modo
         return tools
 
@@ -623,6 +635,94 @@ class Bindings:
         if others:
             return {a["instance_id"] for a in others}
         return {p for p in self.relay_peers if p and p != self.self_instance_id}
+
+    # ── v4.5: Agent's Hall tools ──────────────────────────────────────
+
+    def _hall_fail(self, motivo: str) -> dict:
+        return {"ok": False, "motivo": motivo}
+
+    def _hall_create(self, args: dict) -> dict:
+        from ..liaison import halls
+        if not self.self_instance_id:
+            return self._hall_fail("sem self_instance_id")
+        if not self.can_create_halls:
+            return self._hall_fail("agente sem permissao de criar hall")
+        nome = str(args.get("nome", "")).strip()
+        if not nome:
+            return self._hall_fail("nome vazio")
+        self._ensure_registered()
+        h = halls.create_hall(self.liaison_db, dono=self.self_instance_id,
+                              nome=nome)
+        if h is None:
+            return self._hall_fail("hall duplicado ou db indisponivel")
+        # dono entra como membro automaticamente
+        halls.add_member(self.liaison_db, hall_id=h["hall_id"],
+                         instance_id=self.self_instance_id, papel="dono")
+        return {"ok": True, "hall": h}
+
+    def _hall_list(self, args: dict) -> dict:
+        from ..liaison import halls
+        if not self.self_instance_id:
+            return self._hall_fail("sem self_instance_id")
+        mine = halls.halls_of(self.liaison_db, self.self_instance_id)
+        owned = halls.list_halls(self.liaison_db,
+                                 dono=self.self_instance_id)
+        # junta sem duplicar (halls_of cobre ownership via membership)
+        seen = {h["hall_id"] for h in mine}
+        for h in owned:
+            if h["hall_id"] not in seen:
+                mine.append(h)
+        return {"ok": True, "halls": mine}
+
+    def _hall_join(self, args: dict) -> dict:
+        from ..liaison import halls
+        if not self.self_instance_id:
+            return self._hall_fail("sem self_instance_id")
+        hall_id = str(args.get("hall_id", "")).strip()
+        if not hall_id:
+            return self._hall_fail("hall_id vazio")
+        OK = halls.add_member(self.liaison_db, hall_id=hall_id,
+                              instance_id=self.self_instance_id)
+        return {"ok": OK, "hall_id": hall_id}
+
+    def _hall_leave(self, args: dict) -> dict:
+        from ..liaison import halls
+        if not self.self_instance_id:
+            return self._hall_fail("sem self_instance_id")
+        hall_id = str(args.get("hall_id", "")).strip()
+        halls.remove_member(self.liaison_db, hall_id=hall_id,
+                            instance_id=self.self_instance_id)
+        return {"ok": True, "hall_id": hall_id}
+
+    def _hall_members(self, args: dict) -> dict:
+        from ..liaison import halls
+        hall_id = str(args.get("hall_id", "")).strip()
+        if not hall_id:
+            return self._hall_fail("hall_id vazio")
+        members = halls.members_of(self.liaison_db, hall_id, alive_only=True)
+        # enriquece com modelo do registro (v4.5: auditoria/roteamento)
+        from ..liaison import agents
+        for m in members:
+            reg = agents.get_agent(self.liaison_db, m["instance_id"]) or {}
+            m["modelo"] = reg.get("model", "")
+            m["familia"] = reg.get("familia", "")
+        return {"ok": True, "hall_id": hall_id, "members": members}
+
+    def _hall_send(self, args: dict) -> dict:
+        from ..liaison import halls
+        if not self.self_instance_id:
+            return self._hall_fail("sem self_instance_id")
+        hall_id = str(args.get("hall_id", "")).strip()
+        mtype = str(args.get("type", ""))
+        payload = args.get("payload", {})
+        if not hall_id or not mtype or not isinstance(payload, dict):
+            return self._hall_fail("hall_id/type/payload invalidos")
+        self._ensure_registered()
+        identity = self._identity() or None
+        n = halls.send_to_hall(self.liaison_db, from_instance=self.self_instance_id,
+                               hall_id=hall_id, type=mtype, payload=payload,
+                               identity=identity)
+        return {"ok": True, "delivered": n}
 
     def _intercept(self, args: dict) -> dict:
         """Evaluate a safe expression via the Intercepter AST evaluator.
@@ -1118,6 +1218,9 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="v4.5: runtime (ex: claude-code/2.x)")
     parser.add_argument("--identity-papel", default="",
                         help="v4.5: papel (ex: executor, researcher)")
+    parser.add_argument("--can-create-halls", action="store_true",
+                        help="v4.5: habilita tools do Agent's Hall "
+                             "(agente pode criar grupos/equipes)")
     parser.add_argument("--auto-review", action="store_true",
                         help="auto-apply inbound review verdicts each request "
                              "when awake (needs --enable-act + "
@@ -1384,7 +1487,8 @@ def main(argv: list[str] | None = None) -> int:
                         identity_model=args.identity_model,
                         identity_familia=args.identity_familia,
                         identity_runtime=args.identity_runtime,
-                        identity_papel=args.identity_papel)
+                        identity_papel=args.identity_papel,
+                        can_create_halls=args.can_create_halls)
     mode = "act" if args.enable_act else "propose-only"
     if args.enable_hermes_review:
         if args.reviewer:

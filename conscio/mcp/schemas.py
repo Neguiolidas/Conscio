@@ -499,3 +499,42 @@ RELAY_TOOL_DEFS: list[dict] = [
                     "(fan-out; review types excluded).",
      "inputSchema": _RELAY_BROADCAST_INPUT},
 ]
+
+# ── Agent's Hall tools (v4.5) ─────────────────────────────────────────
+
+_HALL_CREATE_INPUT = {"type": "object",
+                      "properties": {"nome": {"type": "string"}},
+                      "required": ["nome"]}
+_HALL_ID_REQUIRED = {"type": "object",
+                     "properties": {"hall_id": {"type": "string"}},
+                     "required": ["hall_id"]}
+_HALL_MEMBERS_INPUT = {"type": "object",
+                       "properties": {"hall_id": {"type": "string"}},
+                       "required": ["hall_id"]}
+_HALL_SEND_INPUT = {"type": "object",
+                    "properties": {"hall_id": {"type": "string"},
+                                   "type": {"type": "string"},
+                                   "payload": {"type": "object"}},
+                    "required": ["hall_id", "type", "payload"]}
+
+HALL_TOOL_DEFS: list[dict] = [
+    {"name": "conscio_hall_create",
+     "description": "Create an Agent's Hall (named group of agents) as owner. "
+                    "The owner auto-joins as member.",
+     "inputSchema": _HALL_CREATE_INPUT},
+    {"name": "conscio_hall_list",
+     "description": "List halls this agent is a member of or owns.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "conscio_hall_join",
+     "description": "Join an existing hall as a member.",
+     "inputSchema": _HALL_ID_REQUIRED},
+    {"name": "conscio_hall_leave",
+     "description": "Leave a hall.",
+     "inputSchema": _HALL_ID_REQUIRED},
+    {"name": "conscio_hall_members",
+     "description": "List a hall's members with their model attribution.",
+     "inputSchema": _HALL_MEMBERS_INPUT},
+    {"name": "conscio_hall_send",
+     "description": "Fan-out a message to every member of a hall except the sender.",
+     "inputSchema": _HALL_SEND_INPUT},
+]

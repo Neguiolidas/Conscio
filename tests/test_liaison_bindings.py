@@ -10,14 +10,18 @@ from conscio.mcp.server import Bindings
 
 def _bind(tmp_path, *, instance_id, reviewers=(), hermes_review=True,
           act_flag=False, liaison_db=None, storage=None,
-          relay=False, relay_peers=()):
+          relay=False, relay_peers=(), can_create_halls=False,
+          identity_model="", identity_familia=""):
     eng = ConsciousnessEngine("glm-5.1", storage_path=storage or tmp_path)
     seen = SeenStore((storage or tmp_path) / "mcp_seen.db")
     b = Bindings(eng, seen, adapter_name=None, workspace_id="ws",
                  act_flag=act_flag, hermes_review=hermes_review,
                  reviewers=tuple(reviewers), self_instance_id=instance_id,
                  liaison_db=liaison_db or (tmp_path / "liaison.db"),
-                 relay=relay, relay_peers=tuple(relay_peers))
+                 relay=relay, relay_peers=tuple(relay_peers),
+                 can_create_halls=can_create_halls,
+                 identity_model=identity_model,
+                 identity_familia=identity_familia)
     return b, eng, seen
 
 
@@ -695,3 +699,82 @@ def test_relay_send_without_identity_fields_has_id_only(tmp_path):
     finally:
         seen.close()
         eng.close()
+
+
+# ── Ato 4 (v4.5): Agent's Hall tools ─────────────────────────────────────
+
+def test_hall_tools_absent_without_flag(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="A", relay=True,
+                         can_create_halls=False)
+    try:
+        names = {t["name"] for t in b.tool_defs()}
+        assert not any(n.startswith("conscio_hall") for n in names)
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_hall_tools_present_with_flag(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="A", relay=True,
+                         can_create_halls=True)
+    try:
+        names = {t["name"] for t in b.tool_defs()}
+        assert {"conscio_hall_create", "conscio_hall_list", "conscio_hall_join",
+                "conscio_hall_leave", "conscio_hall_members", "conscio_hall_send"} \
+            <= names
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_hall_create_and_owner_joins(tmp_path):
+    from conscio.liaison import halls
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", relay=True,
+                         can_create_halls=True, liaison_db=db)
+    try:
+        r = b._hall_create({"nome": "Squad QA"})
+        assert r["ok"] is True
+        hid = r["hall"]["hall_id"]
+        assert hid == "a--squad-qa"
+        # dono virou membro automaticamente
+        assert halls.is_member(db, hid, "A")
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_hall_create_requires_flag(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="A", relay=True,
+                         can_create_halls=False, liaison_db=tmp_path / "l.db")
+    try:
+        r = b._hall_create({"nome": "squad"})
+        assert r["ok"] is False
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_hall_send_fanout(tmp_path):
+    db = tmp_path / "liaison.db"
+    A, engA, seenA = _bind(tmp_path, instance_id="A", relay=True,
+                           can_create_halls=True, liaison_db=db,
+                           storage=tmp_path / "A")
+    B, engB, seenB = _bind(tmp_path, instance_id="B", relay=True,
+                           can_create_halls=True, liaison_db=db,
+                           storage=tmp_path / "B")
+    try:
+        r = A._hall_create({"nome": "team"})
+        hid = r["hall"]["hall_id"]
+        A._hall_join({"hall_id": hid})       # A já está (dono)
+        # B entra no mesmo hall (via _hall_join — precisa saber o hid)
+        bj = B._hall_join({"hall_id": hid})
+        assert bj["ok"] is True
+        sent = A._hall_send({"hall_id": hid, "type": "chat",
+                             "payload": {"text": "oi elenco"}})
+        assert sent["delivered"] == 1        # B recebeu, A (remetente) não
+        inbox_B = mailbox.inbox(db, "B")
+        assert len(inbox_B) == 1
+        assert inbox_B[0]["payload"].get("text") == "oi elenco"
+    finally:
+        seenA.close(); engA.close(); seenB.close(); engB.close()
