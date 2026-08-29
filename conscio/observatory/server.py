@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .. import __version__
+from .halls_view import HallsProjection
 from .knowledge_view import KnowledgeProjection
 from .liaison_view import LiaisonProjection
 from .projection import Projection
@@ -63,8 +64,18 @@ def _int(query: dict, key: str, default: int) -> int:
         return default
 
 
+def _bool(query: dict, key: str, default: bool = False) -> bool:
+    v = query.get(key)
+    if v is None:
+        return default
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    return bool(v)
+
+
 def route(method: str, path: str, query: dict, *, projection: Projection,
           society: SocietyProjection, liaison: LiaisonProjection,
+          halls: HallsProjection,
           structural: StructuralProjection,
           knowledge: KnowledgeProjection,
           token: str | None, auth: str | None,
@@ -110,6 +121,19 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
     if path == "/api/relay/inbox":
         self_id = str(projection.identity().get("instance_id") or "")
         return Resp(200, liaison.inbox(self_id, limit=_int(query, "limit", 50)))
+
+    # ── v4.5: agents + halls + mailboxes (read-only, tempo real) ─────
+    if path == "/api/agents":
+        return Resp(200, halls.agents(
+            include_stale=_bool(query, "stale"),
+            limit=_int(query, "limit", 200)))
+    if path == "/api/halls":
+        return Resp(200, halls.halls(
+            dono=query.get("dono") or None))
+    if path == "/api/mailboxes":
+        self_id = str(projection.identity().get("instance_id") or "")
+        return Resp(200, halls.mailboxes(self_id,
+                                         limit=_int(query, "limit", 200)))
 
     # ── structural + knowledge (v3.4) ──────────────────────────
     if path == "/api/structural/drift":
@@ -265,6 +289,7 @@ def make_server(host: str, port: int, token: str | None,
     projection = Projection(storage)
     society = SocietyProjection(noosphere)
     liaison_proj = LiaisonProjection(liaison)
+    halls_proj = HallsProjection(liaison)   # v4.5: agents + halls (mesmo db)
     structural = StructuralProjection(storage)
     knowledge = KnowledgeProjection(storage)
 
@@ -273,6 +298,7 @@ def make_server(host: str, port: int, token: str | None,
         _projection = projection
         _society = society
         _liaison = liaison_proj
+        _halls = halls_proj
         _structural = structural
         _knowledge = knowledge
         _workspace_root = workspace_root or str(Path.cwd())
@@ -287,6 +313,7 @@ class Handler(BaseHTTPRequestHandler):
     _liaison: LiaisonProjection | None = None
     _structural: StructuralProjection | None = None
     _knowledge: KnowledgeProjection | None = None
+    _halls: HallsProjection | None = None
     _workspace_root: str = "."
 
     # Signature mirrors BaseHTTPRequestHandler's exactly, keyword name included:
@@ -302,15 +329,17 @@ class Handler(BaseHTTPRequestHandler):
         liai = self._liaison
         struct = self._structural
         know = self._knowledge
-        if proj is None or soc is None or liai is None or struct is None or know is None:
+        halls = self._halls
+        if proj is None or soc is None or liai is None or struct is None \
+                or know is None or halls is None:
             return self._send(_err(500, "internal error", "no projection"))
         # v3.5: inject workspace_root fallback for /graph
         if parsed.path == "/graph" and "root" not in query:
             query["root"] = self._workspace_root
         try:
             resp = route(method, parsed.path, query, projection=proj,
-                         society=soc, liaison=liai, structural=struct,
-                         knowledge=know, token=self._token,
+                         society=soc, liaison=liai, halls=halls,
+                         structural=struct, knowledge=know, token=self._token,
                          auth=self.headers.get("Authorization"),
                          workspace_root=self._workspace_root)
         except Exception as exc:               # no traceback leak

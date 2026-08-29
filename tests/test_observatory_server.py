@@ -59,9 +59,23 @@ SP = FakeStructural()
 KP = FakeKnowledge()
 
 
+class FakeHalls:
+    def agents(self, **k):
+        return [{"instance_id": "a1", "model": "opus-5", "offline": False}]
+    def halls(self, **k):
+        return [{"hall_id": "a1--squad", "nome": "Squad", "member_count": 2}]
+    def hall_members(self, hall_id, **k):
+        return [{"instance_id": "a1", "modelo": "opus-5"}]
+    def mailboxes(self, self_id, **k):
+        return [{"from_instance": "peer", "unread": 1}]
+
+
+HP = FakeHalls()
+
+
 def _route(method, path, query=None, *, token=None, auth=None):
     return srv.route(method, path, query or {}, projection=P, society=S,
-                     liaison=L, structural=SP, knowledge=KP,
+                     liaison=L, halls=HP, structural=SP, knowledge=KP,
                      token=token, auth=auth, workspace_root=None)
 
 
@@ -150,3 +164,35 @@ def test_head_accepted_not_501():
     # v2.4 deferred fix folded in: route() accepts HEAD; Handler.do_HEAD wires it.
     assert _route("HEAD", "/api/events").status == 200
     assert _route("HEAD", "/").status == 200
+
+
+# ── v4.5: /api/agents + /api/halls + /api/mailboxes ─────────────────────
+
+def test_agents_route():
+    r = _route("GET", "/api/agents")
+    assert r.status == 200
+    assert r.payload[0]["instance_id"] == "a1"
+
+
+def test_agents_route_stale_flag():
+    # não quebra com o flag; o Fake ignora, mas a rota aceita
+    r = _route("GET", "/api/agents", {"stale": "1"})
+    assert r.status == 200
+
+
+def test_halls_route():
+    r = _route("GET", "/api/halls")
+    assert r.status == 200
+    assert r.payload[0]["hall_id"] == "a1--squad"
+
+
+def test_mailboxes_route():
+    r = _route("GET", "/api/mailboxes")
+    assert r.status == 200
+    assert r.payload[0]["from_instance"] == "peer"
+
+
+def test_halls_routes_405_on_mutation():
+    for path in ("/api/agents", "/api/halls", "/api/mailboxes"):
+        for m in ("POST", "PUT", "PATCH", "DELETE"):
+            assert _route(m, path).status == 405

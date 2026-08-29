@@ -21,10 +21,12 @@
     events:"Logs",goals:"Goals",actions:"Actions",skills:"Skills",
     state:"State",daemon:"Daemon",relay:"Relay",identity:"Identity",
     society_members:"Society",society_skills:"Soc.Skills",society_records:"Soc.Records",
-    structural:"Debug",knowledge:"KG",graphview:"Graph View"
+    structural:"Debug",knowledge:"KG",graphview:"Graph View",
+    halls:"Halls",agents:"Agents"
   };
   var TAB_ORDER = ["events","goals","actions","skills","state","daemon","relay",
-    "identity","society_members","society_skills","society_records","structural","knowledge","graphview"];
+    "identity","society_members","society_skills","society_records","structural","knowledge","graphview",
+    "halls","agents"];
 
   App.toggleSidebar = function () {
     App._sidebarOpen = !App._sidebarOpen;
@@ -103,6 +105,7 @@
 
   App.switchTab = function (tab) {
     if (App._sim) { App._sim.stop(); App._sim = null; }
+    App._clearHallsTimer();              // v4.5: para o poll ao trocar de tab
     document.querySelectorAll("#tabs button").forEach(function (b) {
       b.classList.toggle("active", b.dataset.tab === tab);
     });
@@ -115,6 +118,13 @@
       title.textContent = App._activeProject ? "Graph: " + App._activeProject.name : "Graph View";
       content.className = "graph-mode";
       App._renderGraph(content);
+      return;
+    }
+    if (tab === "halls" || tab === "agents") {
+      title.textContent = LABELS[tab] || tab;
+      content.className = "";
+      content.innerHTML = "<pre>carregando…</pre>";
+      App._renderHalls(content, tab);
       return;
     }
     title.textContent = LABELS[tab] || tab;
@@ -494,6 +504,66 @@
       _draw(ctx, c, App._nodes, App._links, App._zoom, App._hoverNode, App._selectedNode);
     }
   }
+
+  // ── v4.5: Halls + Agents (tempo real, poll curto) ───────────────
+
+  App._hallsTimer = null;
+  App._hallsTab = null;
+
+  App._clearHallsTimer = function () {
+    if (App._hallsTimer) { clearInterval(App._hallsTimer); App._hallsTimer = null; }
+  };
+
+  function _esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g,
+      function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; });
+  }
+
+  App._renderHalls = function (content, tab) {
+    App._clearHallsTimer();
+    App._hallsTab = tab;
+    var render = function () {
+      if (tab !== App._hallsTab) return;         // tab trocou → para
+      var parts = [];
+      Promise.all([
+        fetch("/api/agents").then(function (r) { return r.json(); })
+          .catch(function () { return []; }),
+        fetch("/api/halls").then(function (r) { return r.json(); })
+          .catch(function () { return []; }),
+        fetch("/api/mailboxes").then(function (r) { return r.json(); })
+          .catch(function () { return []; })
+      ]).then(function (res) {
+        var agents = res[0] || [], halls = res[1] || [], mail = res[2] || [];
+        if (tab === "agents") {
+          parts.push("<h3>Agentes (" + agents.length + ")</h3><ul>");
+          agents.forEach(function (a) {
+            var off = a.offline ? ' style="opacity:0.45"' : "";
+            parts.push("<li" + off + "><b>" + _esc(a.instance_id) + "</b> &middot; "
+              + _esc(a.modelo || a.model || "") + " &middot; " + _esc(a.familia || "")
+              + (a.offline ? " <i>offline</i>" : "")
+              + "</li>");
+          });
+          parts.push("</ul>");
+        } else {
+          parts.push("<h3>Halls</h3>");
+          if (halls.length === 0) parts.push("<p>Nenhum hall criado.</p>");
+          halls.forEach(function (h) {
+            parts.push("<p><b>" + _esc(h.nome) + "</b> "
+              + "(id <code>" + _esc(h.hall_id) + "</code>) &middot; dono "
+              + _esc(h.dono) + " &middot; " + h.member_count + " membro(s)</p>");
+          });
+          parts.push("<h3>Mailbox não-lido</h3>");
+          if (mail.length === 0) parts.push("<p>vazio</p>");
+          mail.forEach(function (m) {
+            parts.push("<p>" + _esc(m.from_instance) + " : " + m.unread + "</p>");
+          });
+        }
+        content.innerHTML = parts.join("");
+      });
+    };
+    render();
+    App._hallsTimer = setInterval(render, 3000);   // tempo real (poll curto)
+  };
 
   // ── Init ─────────────────────────────────────────────────────────
   if (document.readyState === "loading") {

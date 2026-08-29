@@ -1,6 +1,7 @@
 """Tests for structural + knowledge endpoints in route()."""
 from __future__ import annotations
 
+from conscio.observatory.halls_view import HallsProjection
 from conscio.observatory.knowledge_view import KnowledgeProjection
 from conscio.observatory.liaison_view import LiaisonProjection
 from conscio.observatory.projection import Projection
@@ -17,13 +18,14 @@ def _projections(tmp_path):
     proj = Projection(tmp_path)
     soc = SocietyProjection(noo)
     liai_proj = LiaisonProjection(liai)
-    return proj, soc, liai_proj, sp, kp
+    halls_proj = HallsProjection(liai)   # v4.5
+    return proj, soc, liai_proj, sp, kp, halls_proj
 
 
 def _call(method, path, query, projs, token=None, auth=None):
-    proj, soc, liai, sp, kp = projs
+    proj, soc, liai, sp, kp, halls = projs
     return route(method, path, query, projection=proj, society=soc,
-                 liaison=liai, structural=sp, knowledge=kp,
+                 liaison=liai, halls=halls, structural=sp, knowledge=kp,
                  token=token, auth=auth)
 
 

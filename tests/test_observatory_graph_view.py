@@ -1,6 +1,7 @@
 """Tests for /graph endpoint — serves graphify-out/graph.html from workspace."""
 from __future__ import annotations
 
+from conscio.observatory.halls_view import HallsProjection
 from conscio.observatory.knowledge_view import KnowledgeProjection
 from conscio.observatory.liaison_view import LiaisonProjection
 from conscio.observatory.projection import Projection
@@ -12,13 +13,14 @@ from conscio.observatory.structural_view import StructuralProjection
 def _projections(tmp_path):
     return (Projection(tmp_path), SocietyProjection(tmp_path / "noo.db"),
             LiaisonProjection(tmp_path / "liai.db"),
+            HallsProjection(tmp_path / "liai.db"),
             StructuralProjection(tmp_path), KnowledgeProjection(tmp_path))
 
 
 def _call(method, path, query, projs, token=None, auth=None):
-    proj, soc, liai, sp, kp = projs
+    proj, soc, liai, halls, sp, kp = projs
     return route(method, path, query, projection=proj, society=soc,
-                 liaison=liai, structural=sp, knowledge=kp,
+                 liaison=liai, halls=halls, structural=sp, knowledge=kp,
                  token=token, auth=auth)
 
 
