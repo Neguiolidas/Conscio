@@ -119,8 +119,12 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
     if path == "/api/identity":
         return Resp(200, projection.identity())
     if path == "/api/relay/inbox":
-        self_id = str(projection.identity().get("instance_id") or "")
-        return Resp(200, liaison.inbox(self_id, limit=_int(query, "limit", 50)))
+        # relay-self = CONSCIO_SELF_ID (mesmo contrato do watcher/reactor),
+        # fallback o instance_id do storage. As mensagens do relay são
+        # endereçadas ao self do relay, NÃO ao id do storage (que é outro).
+        self_id = (os.environ.get("CONSCIO_SELF_ID", "").strip()
+                   or str(projection.identity().get("instance_id") or ""))
+        return Resp(200, liaison.relay_inbox(self_id, limit=_int(query, "limit", 200)))
 
     # ── v4.5: agents + halls + mailboxes (read-only, tempo real) ─────
     if path == "/api/agents":

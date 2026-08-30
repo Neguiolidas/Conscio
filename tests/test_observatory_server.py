@@ -32,6 +32,9 @@ class FakeLiaison:
     db = "/fake/liaison.db"                      # real LiaisonProjection exposes .db
     def inbox(self, self_id, **k):
         return [{"id": 9, "from_instance": "peer", "payload": {"text": "hi"}}]
+    def relay_inbox(self, self_id, **k):
+        return [{"from_instance": self_id, "messages": [
+            {"id": 9, "type": "chat", "payload": {"text": "hi"}}]}]
 
 
 L = FakeLiaison()
@@ -147,7 +150,15 @@ def test_daemon_and_identity_routes():
 def test_relay_inbox_route_resolves_self_from_identity():
     r = _route("GET", "/api/relay/inbox")
     assert r.status == 200
-    assert r.payload[0]["from_instance"] == "peer"
+    # sem CONSCIO_SELF_ID → self = identity do storage (me-123)
+    assert r.payload[0]["from_instance"] == "me-123"
+
+
+def test_relay_inbox_route_uses_self_id_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("CONSCIO_SELF_ID", "relay-self-000")
+    r = _route("GET", "/api/relay/inbox")
+    assert r.status == 200
+    assert r.payload[0]["from_instance"] == "relay-self-000"
 
 
 def test_new_read_routes_405_on_mutation():

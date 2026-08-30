@@ -359,12 +359,68 @@
 		</div>`;
 	}
 
-	function renderRelay() {
-		paintPageHead('Relay inbox', 'live · directed');
-		return `<div class="card">
-			<div class="card-head"><h3 class="card-title">Endpoint</h3><span class="card-meta">/api/relay/inbox</span></div>
-			<pre class="code">${esc(JSON.stringify({ note: 'use a tool MCP conscio_relay_inbox para listar mensagens detalhadas' }, null, 2))}</pre>
-		</div>`;
+	function renderRelayInbox() {
+		paintPageHead('Relay inbox', 'por peer · colapsável');
+		return `<div id="relay-inbox"><div class="empty"><div class="empty-title">carregando…</div></div></div>`;
+	}
+
+	function relayPayloadText(msg) {
+		const pl = msg.payload || {};
+		// tenta extrair um texto legível direto, senao mostra o JSON
+		if (typeof pl.text === 'string' || typeof pl.mensagem === 'string') {
+			return pl.text || pl.mensagem || '';
+		}
+		if (pl.content && typeof pl.content === 'string') return pl.content;
+		return JSON.stringify(pl, null, 2);
+	}
+
+	async function paintRelayInbox() {
+		const host = $('#relay-inbox');
+		if (!host) return;
+		// preserva o estado "aberto" dos grupos/msgs entre re-renders (poll)
+		const open = Array.from(host.querySelectorAll('details[open]'))
+			.map(d => d.dataset.id || d.getAttribute('data-peer')).
+			filter(Boolean);
+		try {
+			const groups = await getJson('/api/relay/inbox');
+			if (!groups || groups.length === 0) {
+				host.innerHTML = renderEmpty('nenhuma mensagem de peer', 'o relay inbox aparece aqui quando peers enviam');
+				return;
+			}
+			host.innerHTML = groups.map(g => {
+				const unread = g.messages.filter(m => m.read_ts === null).length;
+				return `
+					<details class="relay-group" data-peer="${esc(g.from_instance)}" ${open.includes(g.from_instance) ? 'open' : ''}>
+						<summary class="relay-summary">
+							<span class="relay-peer-id">${esc(truncate(g.from_instance, 24))}</span>
+							<span class="badge ${unread ? 'is-warn' : 'is-offline'}">${g.messages.length} msg</span>
+							${unread ? `<span class="badge is-live">${unread} nova${unread !== 1 ? 's' : ''}</span>` : ''}
+						</summary>
+						<div class="relay-msgs">
+							${g.messages.map(m => `
+								<details class="relay-msg ${m.read_ts === null ? 'is-unread' : ''}" data-id="${m.id}" ${open.includes(String(m.id)) ? 'open' : ''}>
+									<summary class="relay-msg-summary">
+										<span class="mono">#${m.id}</span>
+										<span class="badge">${esc(m.type)}</span>
+										<span class="relay-msg-preview">${esc(truncate(relayPayloadText(m), 60))}</span>
+										<span class="row-meta">${ago(m.ts)}</span>
+									</summary>
+									<div class="relay-msg-body">
+										<div class="entity-meta" style="margin-bottom:8px">
+											<span><b>de</b> ${esc(truncate(m.from_instance, 24))}</span>
+											<span><b>para</b> ${esc(truncate(m.to_instance, 24))}</span>
+											<span><b>id</b> ${m.id}</span>
+											<span><b>${m.read_ts === null ? 'não lida' : 'lida'}</b></span>
+										</div>
+										<pre class="code">${esc(JSON.stringify(m.payload, null, 2))}</pre>
+									</div>
+								</details>`).join('')}
+						</div>
+					</details>`;
+			}).join('');
+		} catch (e) {
+			host.innerHTML = renderEmpty('erro ao carregar inbox', e.message);
+		}
 	}
 
 	function renderSociety() {
@@ -423,7 +479,7 @@
 		daemon: renderDaemon,
 		halls: renderHalls,
 		mailboxes: renderMailboxes,
-		relay: renderRelay,
+		relay: renderRelayInbox,
 		identity: renderIdentity,
 		society: renderSociety,
 		'society-skills': renderSocietySkills,
@@ -463,7 +519,14 @@
 		halls: pollHalls,
 		mailboxes: pollMailboxes,
 		identity: pollIdentity,
+		relay: pollRelay,
 	};
+
+	async function pollRelay() {
+		try {
+			if (state.tab === 'relay') await paintRelayInbox();
+		} catch (e) {}
+	}
 
 	function startPolling(tab) {
 		const fn = POLL_MAP[tab];

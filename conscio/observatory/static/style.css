@@ -558,6 +558,71 @@ pre.code {
 	color: var(--accent-strong);
 }
 
+/* Relay inbox (collapsible peer groups → per-id messages) */
+.relay-group {
+	border: 1px solid var(--line);
+	border-radius: var(--radius-sm);
+	background: var(--bg-surface);
+	margin-bottom: 10px;
+	overflow: hidden;
+}
+.relay-group[open] { border-color: var(--line-strong); }
+.relay-summary {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 14px;
+	cursor: pointer;
+	list-style: none;
+	user-select: none;
+}
+.relay-summary::-webkit-details-marker { display: none; }
+.relay-summary:hover { background: var(--bg-surface-hover); }
+.relay-peer-id {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	color: var(--text);
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.relay-msgs {
+	border-top: 1px solid var(--line);
+	padding: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.relay-msg {
+	border: 1px solid var(--line);
+	border-radius: var(--radius-sm);
+	background: var(--bg-deep);
+	overflow: hidden;
+}
+.relay-msg.is-unread { border-color: var(--accent-border); }
+.relay-msg-summary {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 10px;
+	cursor: pointer;
+	list-style: none;
+	font-size: 12px;
+}
+.relay-msg-summary::-webkit-details-marker { display: none; }
+.relay-msg-summary:hover { background: var(--bg-surface); }
+.relay-msg-preview {
+	flex: 1;
+	color: var(--text-faint);
+	font-size: 12px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.relay-msg-body { padding: 10px; border-top: 1px solid var(--line); }
+.relay-msg-body .code { font-size: 11px; max-height: 260px; overflow: auto; }
+
 /* Accentirzon (subtle background grid - sem ser AI-blob) */
 .bg-grid {
 	position: fixed;

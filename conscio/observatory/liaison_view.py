@@ -55,3 +55,47 @@ class LiaisonProjection:
                 continue                      # unparseable row -> skip (R1: logged)
             out.append(d)
         return out
+
+    def relay_inbox(self, self_id: str, *, limit: int = 200) -> list[dict]:
+        """Relay conversations grouped by peer (from_instance), newest first.
+
+        Read-only viewer of ALL self-addressed messages (read and unread) so
+        the Observatory can show the full relay thread per peer. Each peer
+        gets its own group sorted newest-first, each message carries its id,
+        type, ts and readable payload — the UI renders it collapsible by peer
+        with a per-id expandable message.
+        """
+        if not self_id or not self.db.exists():
+            return []
+        try:
+            conn = self._ro()
+        except sqlite3.OperationalError:
+            return []
+        try:
+            rows = conn.execute(
+                "SELECT id, from_instance, to_instance, type, payload, ts, read_ts"
+                " FROM messages WHERE to_instance=? ORDER BY id DESC LIMIT ?",
+                [self_id, clamp_int(limit, 1, 500)]).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        finally:
+            conn.close()
+        # reserva: filtra types do canal de review
+        from ..liaison import relay as _relay
+        groups: dict[str, list[dict]] = {}
+        for r in rows:
+            if r["type"] in _relay.RESERVED_TYPES:
+                continue
+            d = dict(r)
+            try:
+                d["payload"] = json.loads(d["payload"])
+            except (TypeError, ValueError):
+                log.warning("skipping liaison row %s: unparseable payload",
+                            d.get("id"))
+                continue
+            groups.setdefault(d["from_instance"], []).append(d)
+        # cada grupo já vem ORDER BY id DESC; mantém (mais nova no topo)
+        return [
+            {"from_instance": peer, "messages": msgs}
+            for peer, msgs in groups.items()
+        ]
