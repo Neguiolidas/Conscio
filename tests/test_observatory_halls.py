@@ -37,6 +37,26 @@ class TestAgents:
         assert "a1" in ids and "a2" in ids and "stale" not in ids
         assert not any(a.get("offline") for a in live)
 
+    def test_agents_on_legacy_db_no_crash(self, tmp_path):
+        # REGRESSÃO: agents() delega a list_agents (probe PRAGMA) e NÃO pode
+        # hardcodar SELECT com colunas ausentes em db legado.
+        import sqlite3 as _s
+        import time as _t
+        db = tmp_path / "legacy.db"
+        c = _s.connect(str(db))
+        c.execute("CREATE TABLE agents (instance_id TEXT PRIMARY KEY,"
+                  " model TEXT NOT NULL DEFAULT '', status TEXT NOT NULL"
+                  " DEFAULT 'alive', capabilities TEXT NOT NULL DEFAULT '',"
+                  " last_heartbeat REAL NOT NULL)")
+        c.execute("INSERT INTO agents VALUES ('a1','gemini','alive','relay',?)",
+                  (_t.time(),))
+        c.commit(); c.close()
+        p = HallsProjection(db)
+        rows = p.agents(include_stale=True)
+        assert len(rows) == 1
+        assert rows[0]["instance_id"] == "a1"
+        assert rows[0]["familia"] == ""   # ausente vira '' por _identity_select
+
     def test_agents_include_stale_shows_offline(self, tmp_path):
         db = _db(tmp_path); _seed(db)
         p = HallsProjection(db)

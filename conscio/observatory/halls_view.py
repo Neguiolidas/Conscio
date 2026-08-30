@@ -46,16 +46,18 @@ class HallsProjection:
                limit: int = 200) -> list[dict]:
         """Agent registry rows (identity + presence). Stale excluded by
         default; when include_stale, each row carries `offline: True` so the
-        viewer can dim it out instead of hiding it."""
-        rows = self._select(
-            "SELECT instance_id, model, status, capabilities, last_heartbeat,"
-            " nome, familia, runtime, papel FROM agents ORDER BY last_heartbeat"
-            f" DESC LIMIT {clamp_int(limit, 1, 500)}", [])
-        out: list[dict] = []
+        viewer can dim it out instead of hiding it.
+
+        Delegates to `agents.list_agents`: single source of truth for the
+        identity-column SELECT (`_identity_select` probes PRAGMA so a legacy
+        db without nome/familia/runtime/papel still reads, never hardcodes).
+        """
         from ..liaison import agents as _agents
+        rows = _agents.list_agents(self.db, include_stale=include_stale)
         now = time.time()
-        for r in rows:
-            r["capabilities"] = _agents._parse_caps(r.get("capabilities", ""))
+        out: list[dict] = []
+        for r in rows[:clamp_int(limit, 1, 500)]:
+            r = dict(r)
             offline = (now - float(r.get("last_heartbeat", 0) or 0)) \
                 > _agents.STALE_AFTER_S
             r["offline"] = offline
