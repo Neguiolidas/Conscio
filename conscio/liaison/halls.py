@@ -219,27 +219,51 @@ def members_of(db: Path, hall_id: str, *,
                alive_only: bool = False) -> list[dict]:
     """All members of a hall. `alive_only` crosses with `agents.is_alive` when
     a registry row exists — but a member with NO registry row is still returned
-    (absence of registry ≠ death; presence IS the signal, not absence)."""
+    (absence of registry ≠ death; presence IS the signal, not absence).
+
+    Perf: single JOIN read (one connection + one query), not N×get_agent — a
+    hall with M members used to open ~2M connections (one per get_agent +
+    one per is_alive)."""
     conn = _conn(db, read_only=True)
     if conn is None:
         return []
     try:
-        rows = conn.execute(
-            f"SELECT hall_id, instance_id, papel, entrou_em FROM {MEMBERS_TABLE}"
-            " WHERE hall_id=?", (hall_id,)).fetchall()
+        if alive_only:
+            # v4.5 perf: resolve liveness in ONE join instead of per-member
+            # get_agent+is_alive (2 queries each). A member without a registry
+            # row stays visible (absence != death); only a stale row drops it.
+            try:
+                rows = conn.execute(
+                    f"SELECT m.hall_id, m.instance_id, m.papel, m.entrou_em,"
+                    f" a.last_heartbeat FROM {MEMBERS_TABLE} m"
+                    f" LEFT JOIN agents a ON a.instance_id = m.instance_id"
+                    " WHERE m.hall_id=?",
+                    (hall_id,)).fetchall()
+            except sqlite3.OperationalError:
+                # agents table may not exist yet (created on first register);
+                # no liveness data then, so every member counts as alive.
+                rows = conn.execute(
+                    f"SELECT hall_id, instance_id, papel, entrou_em FROM"
+                    f" {MEMBERS_TABLE} WHERE hall_id=?",
+                    (hall_id,)).fetchall()
+        else:
+            rows = conn.execute(
+                f"SELECT hall_id, instance_id, papel, entrou_em FROM"
+                f" {MEMBERS_TABLE} WHERE hall_id=?", (hall_id,)).fetchall()
     except sqlite3.Error:
         return []
     finally:
         conn.close()
+    from . import agents as _agents
     out: list[dict] = []
     for r in rows:
         d = dict(r)
         if alive_only:
-            from . import agents
-            # only drop when there IS a registry row that's stale: presence
-            # is the liveness signal; absence stays visible (no false death).
-            reg = agents.get_agent(db, d["instance_id"])
-            if reg is not None and not agents.is_alive(db, d["instance_id"]):
+            hb = d.pop("last_heartbeat", None)
+            # drop only when a registry row exists AND it is stale; absence
+            # of registry keeps the member visible (no false death).
+            if hb is not None and \
+               (time.time() - float(hb)) > _agents.STALE_AFTER_S:
                 continue
         out.append(d)
     return out

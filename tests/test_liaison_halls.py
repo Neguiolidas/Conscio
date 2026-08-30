@@ -82,6 +82,26 @@ class TestPresenceAware:
         # sem registro → alive_only=True não consegue filtrar: inclui todos
         assert len(halls.members_of(db, h["hall_id"], alive_only=True)) == 1
 
+    def test_members_alive_only_single_connection(self, db):
+        # REGRESSÃO perf v4.5: alive_only resolve liveness num único JOIN —
+        # antes abria ~2 conexões por membro (get_agent + is_alive).
+        h = halls.create_hall(db, dono="d", nome="hall")
+        for i in range(20):
+            halls.add_member(db, hall_id=h["hall_id"], instance_id=f"m{i}")
+            agents.register_agent(db, instance_id=f"m{i}", capabilities=("relay",))
+        import sqlite3 as _s
+        _raw, _calls = _s.connect, {"n": 0}
+        def _spy(*a, **k):
+            _calls["n"] += 1
+            return _raw(*a, **k)
+        _s.connect = _spy
+        try:
+            alive = halls.members_of(db, h["hall_id"], alive_only=True)
+        finally:
+            _s.connect = _raw
+        assert len(alive) == 20
+        assert _calls["n"] <= 1   # uma única conexão pra tudo
+
 
 class TestSendToHall:
     def test_fanout_excludes_sender(self, db):
