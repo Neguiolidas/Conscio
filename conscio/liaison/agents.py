@@ -238,15 +238,36 @@ def unregister(db: Path, instance_id: str) -> bool:
         conn.close()
 
 
+def _identity_select(conn: sqlite3.Connection) -> str:
+    """Build the identity-column SELECT fragment for the current schema.
+
+    The read-only path (mode=ro) must NOT run ALTER migrations — but a legacy
+    db (schema antigo, sem nome/familia/runtime/papel) would fail a fixed
+    `SELECT ... nome, familia, ...` with `no such column`, and the enclosing
+    utility swallows that as [] / None. PRAGMA table_info is a pure read:
+    probe which identity columns EXIST and only select those, defaulting the
+    absent ones to '' via literal. Returns the fragment like
+    `nome, familia, runtime, papel` (all four, with '' for missing)."""
+    try:
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({TABLE})")}
+    except sqlite3.Error:
+        cols = set()
+    parts = []
+    for c in _IDENTITY_COLS:
+        parts.append(c if c in cols else "'' AS " + c)
+    return ", ".join(parts)
+
+
 def get_agent(db: Path, instance_id: str) -> dict | None:
     """A single agent's row as a plain dict, or None if absent / db bad."""
     conn = _conn(db, read_only=True)
     if conn is None:
         return None
     try:
+        id_cols = _identity_select(conn)
         row = conn.execute(
             f"SELECT instance_id, model, status, capabilities, last_heartbeat,"
-            f" nome, familia, runtime, papel FROM {TABLE} WHERE instance_id=?",
+            f" {id_cols} FROM {TABLE} WHERE instance_id=?",
             (instance_id,),
         ).fetchone()
         if row is None:
@@ -270,9 +291,10 @@ def list_agents(db: Path, *, capability: str | None = None,
     if conn is None:
         return []
     try:
+        id_cols = _identity_select(conn)
         rows = conn.execute(
             f"SELECT instance_id, model, status, capabilities, last_heartbeat,"
-            f" nome, familia, runtime, papel FROM {TABLE}"
+            f" {id_cols} FROM {TABLE}"
         ).fetchall()
     except sqlite3.Error:
         return []

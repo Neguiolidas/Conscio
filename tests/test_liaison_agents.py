@@ -246,3 +246,26 @@ class TestIdentity:
         row = agents.get_agent(legacy, "a")
         assert row is not None
         assert row["nome"] == "N"
+
+    def test_list_on_legacy_db_readonly_does_not_crash(self, tmp_path):
+        # REGRESSÃO v4.5: read-only em db legado (sem colunas identity) não
+        # pode falhar com "no such column" e engolir como [] — o SELECT precisa
+        # testar PRAGMA table_info e devolver '' nas colunas ausentes.
+        import sqlite3 as _s
+        import time as _t
+        legacy = tmp_path / "legacy.db"
+        conn = _s.connect(str(legacy))
+        conn.execute("CREATE TABLE agents ("
+                     " instance_id TEXT PRIMARY KEY,"
+                     " model TEXT NOT NULL DEFAULT '',"
+                     " status TEXT NOT NULL DEFAULT 'alive',"
+                     " capabilities TEXT NOT NULL DEFAULT '',"
+                     " last_heartbeat REAL NOT NULL)")
+        conn.execute("INSERT INTO agents VALUES ('a1','gemini','alive','relay',?)",
+                     (_t.time(),))
+        conn.commit(); conn.close()
+        rows = agents.list_agents(legacy, include_stale=True)
+        assert len(rows) == 1
+        assert rows[0]["nome"] == "" and rows[0]["familia"] == ""
+        assert agents.get_agent(legacy, "a1") is not None
+        assert agents.is_alive(legacy, "a1") is True
