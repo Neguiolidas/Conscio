@@ -1,6 +1,7 @@
 """Hostile review — try to break v3.4 implementation."""
 import sqlite3
 
+from conscio.observatory.halls_view import HallsProjection
 from conscio.observatory.knowledge_view import KnowledgeProjection
 from conscio.observatory.liaison_view import LiaisonProjection
 from conscio.observatory.projection import Projection
@@ -12,6 +13,7 @@ from conscio.observatory.structural_view import StructuralProjection
 def _projections(storage):
     return (Projection(storage), SocietyProjection(storage / "noo.db"),
             LiaisonProjection(storage / "liai.db"),
+            HallsProjection(storage / "liai.db"),
             StructuralProjection(storage), KnowledgeProjection(storage))
 
 
@@ -77,27 +79,27 @@ def test_kg_no_tables(tmp_path):
 # ── Server hostile ──
 
 def test_post_blocked_on_structural(tmp_path):
-    proj, soc, liai, sp, kp = _projections(tmp_path)
+    proj, soc, liai, halls_v, sp, kp = _projections(tmp_path)
     resp = route("POST", "/api/structural/graph", {},
-                 projection=proj, society=soc, liaison=liai,
+                 projection=proj, society=soc, liaison=liai, halls=halls_v,
                  structural=sp, knowledge=kp, token=None, auth=None,
                  workspace_root=None)
     assert resp.status == 405
 
 
 def test_delete_blocked_on_knowledge(tmp_path):
-    proj, soc, liai, sp, kp = _projections(tmp_path)
+    proj, soc, liai, halls_v, sp, kp = _projections(tmp_path)
     resp = route("DELETE", "/api/knowledge/entities", {},
-                 projection=proj, society=soc, liaison=liai,
+                 projection=proj, society=soc, liaison=liai, halls=halls_v,
                  structural=sp, knowledge=kp, token=None, auth=None,
                  workspace_root=None)
     assert resp.status == 405
 
 
 def test_token_required_when_set(tmp_path):
-    proj, soc, liai, sp, kp = _projections(tmp_path)
+    proj, soc, liai, halls_v, sp, kp = _projections(tmp_path)
     resp = route("GET", "/api/structural/drift", {},
-                 projection=proj, society=soc, liaison=liai,
+                 projection=proj, society=soc, liaison=liai, halls=halls_v,
                  structural=sp, knowledge=kp,
                  token="secret", auth=None,
                  workspace_root=None)
@@ -105,9 +107,9 @@ def test_token_required_when_set(tmp_path):
 
 
 def test_404_on_unknown_path(tmp_path):
-    proj, soc, liai, sp, kp = _projections(tmp_path)
+    proj, soc, liai, halls_v, sp, kp = _projections(tmp_path)
     resp = route("GET", "/api/nonexistent", {},
-                 projection=proj, society=soc, liaison=liai,
+                 projection=proj, society=soc, liaison=liai, halls=halls_v,
                  structural=sp, knowledge=kp, token=None, auth=None,
                  workspace_root=None)
     assert resp.status == 404

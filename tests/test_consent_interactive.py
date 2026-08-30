@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 
+from conscio.observatory.halls_view import HallsProjection
 from conscio.structural_consent import (
     ConsentScope,
     StructuralConsent,
@@ -104,10 +105,11 @@ def test_consent_status_endpoint(tmp_path):
     L = LiaisonProjection(tmp_path / "liai.db")
     SP = StructuralProjection(storage)
     KP = KnowledgeProjection(storage)
-    
+    HP = HallsProjection(tmp_path / "liai.db")
+
     r = route("GET", "/api/consent", {},
-              projection=P, society=S, liaison=L, structural=SP,
-              knowledge=KP, token=None, auth=None,
+              projection=P, society=S, liaison=L, halls=HP,
+              structural=SP, knowledge=KP, token=None, auth=None,
               workspace_root=str(tmp_path))
     status, payload = r.status, r.payload
     assert status == 200
