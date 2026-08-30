@@ -325,3 +325,24 @@ from conscio.squads._base import PROCEED, HOLD, VETO
 PROCEED
 HOLD
 VETO
+
+# ── relay v4.5 (reactor / relay_net / roles / halls / mailbox quarentena) ─
+# Public API surface: consumed by MCP server, observatory, CLI, systemd
+# wrappers and tests/test_liaison_*.py — vulture can't see cross-package
+# consumers, so these are the exported contracts, not dead code.
+from conscio.liaison import halls, mailbox, relay, relay_net, roles
+
+halls.get_hall             # single-hall reader (tests + futuras tools MCP)
+halls.is_member            # membership check (tests/MCP hall_join/list)
+mailbox.list_quarantine    # quarantine viewer (tests + auditoria)
+mailbox.purge_quarantine   # quarantine purger (tests + auditoria)
+relay.envelope_of          # envelope extraction (tests + observatory inbox)
+relay_net.transport_send   # cross-machine HTTP client (tests + peers)
+roles.VALID_PAPELS         # role vocabulary (tests)
+roles.get_role             # role reader (tests + notify wrapper/orquestrador)
+roles.set_role             # role setter com invariante orquestrador (tests/MCP)
+roles.who_is_orchestrator  # squad leader lookup (tests/notify wrapper)
+HallsProjection            # observatory projection class (server via route)
+HallsProjection.hall_members  # used by /api route (server.py)
+HallsProjection.mailboxes     # used by /api/mailboxes route
+LiaisonProjection.relay_inbox # used by /api/relay/inbox route

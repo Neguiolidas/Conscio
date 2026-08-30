@@ -15,7 +15,7 @@ provides the bridge between the shared-MB model and a remote peer:
                              100.x / MagicDNS address — the transport is
                              plain HTTP (token-protected).
 
-Auth: a shared token (`CONSCIO_RELAY_TOKEN`) is required on POST via
+Auth: a shared token is required on POST via
 `Authorization: Bearer <token>`. The tailnet is already a private network;
 the token keeps /api-layer safety minimal and stops accidental LAN writes.
 
@@ -41,7 +41,6 @@ from . import mailbox, relay
 log = logging.getLogger("conscio.liaison.relay_net")
 MAX_BODY_BYTES = 64 * 1024                    # hard wall, above relay cap
 _AUTH_HEADER = "Authorization"
-TOKEN_ENV = "CONSCIO_RELAY_TOKEN"
 
 
 # ── validation ─────────────────────────────────────────────────────────
