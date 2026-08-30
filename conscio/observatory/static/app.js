@@ -1,574 +1,592 @@
-/* Conscio Observatory — App (v3.4.2) */
+/* ==========================================================================
+   Conscio Observatory v4.5 - frontend
+   Estado centralizado, render declarativo, polling por visibilidade.
+   ========================================================================== */
+
 (function () {
-  "use strict";
+	'use strict';
 
-  var App = window.App = {
-    _sidebarOpen: true,
-    _projects: [],
-    _activeProject: null,
-    _sim: null,
-    _fpsTimer: null,
-    _fpsFrames: 0,
-    _fps: 60,
-    _zoom: { scale: 1, x: 0, y: 0 },
-    _dragNode: null,
-    _panStart: null,
-    _hoverNode: null,
-    _selectedNode: null,
-  };
+	// ── helpers ───────────────────────────────────────────────────────────
 
-  var LABELS = {
-    events:"Logs",goals:"Goals",actions:"Actions",skills:"Skills",
-    state:"State",daemon:"Daemon",relay:"Relay",identity:"Identity",
-    society_members:"Society",society_skills:"Soc.Skills",society_records:"Soc.Records",
-    structural:"Debug",knowledge:"KG",graphview:"Graph View",
-    halls:"Halls",agents:"Agents"
-  };
-  var TAB_ORDER = ["events","goals","actions","skills","state","daemon","relay",
-    "identity","society_members","society_skills","society_records","structural","knowledge","graphview",
-    "halls","agents"];
+	const $ = (sel, root = document) => root.querySelector(sel);
+	const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-  App.toggleSidebar = function () {
-    App._sidebarOpen = !App._sidebarOpen;
-    var sb = document.getElementById("sidebar");
-    sb.classList.toggle("closed", !App._sidebarOpen);
-    if (window.innerWidth <= 768) {
-      sb.classList.toggle("open", App._sidebarOpen);
-      sb.classList.toggle("closed", !App._sidebarOpen);
-    }
-  };
+	function esc(s) {
+		return String(s == null ? '' : s)
+			.replace(/&/g, '\u0026amp;')
+			.replace(/</g, '\u003c')
+			.replace(/>/g, '\u003e')
+			.replace(/"/g, '\u0022')
+			.replace(/'/g, '\u0027');
+	}
 
-  App.init = function () {
-    App._renderTabs();
-    App.loadProjects();
-    document.getElementById("main").addEventListener("click", function () {
-      if (window.innerWidth <= 768 && App._sidebarOpen) App.toggleSidebar();
-    });
-  };
+	function fmtTime(ts) {
+		if (!ts) return '—';
+		const d = new Date(ts * 1000);
+		const now = Date.now();
+		const diff = (now / 1000) - ts;
+		if (diff < 60) return Math.floor(diff) + 's ago';
+		if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+		if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+		return Math.floor(diff / 86400) + 'd ago';
+	}
 
-  App._renderTabs = function () {
-    var nav = document.getElementById("tabs");
-    nav.innerHTML = "";
-    TAB_ORDER.forEach(function (id) {
-      var b = document.createElement("button");
-      b.textContent = LABELS[id] || id;
-      b.dataset.tab = id;
-      b.addEventListener("click", function () { App.switchTab(id); });
-      nav.appendChild(b);
-    });
-  };
+	function fmtNumber(n) {
+		if (n == null || n === '') return '—';
+		if (n >= 1000) return n.toLocaleString('en-US');
+		return String(n);
+	}
 
-  App.loadProjects = function () {
-    fetch("/api/projects").then(function (r) { return r.json(); }).then(function (ps) {
-      App._projects = ps;
-      var el = document.getElementById("project-list");
-      el.innerHTML = "";
-      if (!ps.length) { el.style.display = "none"; return; }
-      el.style.display = "";
-      // Fetch consent status
-      fetch("/api/consent").then(function (r2) { return r2.json(); }).then(function (consents) {
-        var consentMap = {};
-        consents.forEach(function (c) { consentMap[c.workspace_id] = c; });
-        ps.forEach(function (p) {
-          var d = document.createElement("div");
-          d.className = "project-item";
-          // consent icon
-          var ci = p.ws_id && consentMap[p.ws_id] ? (consentMap[p.ws_id].granted ? "\u2705" : "\u26d4") : "";
-          d.innerHTML = '<span class="dot"></span><span>' + p.name + "</span>" +
-            (ci ? '<span style="margin-left:4px;font-size:10px" title="consent: ' + (consentMap[p.ws_id] ? consentMap[p.ws_id].scope : "unknown") + '">' + ci + '</span>' : "") +
-            '<span style="margin-left:auto;color:#666;font-size:11px">' + p.node_count + "n</span>";
-          d.addEventListener("click", function () { App.selectProject(p); });
-          el.appendChild(d);
-        });
-      }).catch(function () {
-        // fallback without consent
-        ps.forEach(function (p) {
-          var d = document.createElement("div");
-          d.className = "project-item";
-          d.innerHTML = '<span class="dot"></span><span>' + p.name + "</span><span style=\"margin-left:auto;color:#666;font-size:11px\">" + p.node_count + "n</span>";
-          d.addEventListener("click", function () { App.selectProject(p); });
-          el.appendChild(d);
-        });
-      });
-    }).catch(function () {});
-  };
+	function ago(ts) {
+		if (!ts) return '—';
+		return fmtTime(ts);
+	}
 
-  App.selectProject = function (proj) {
-    App._activeProject = proj;
-    var items = document.querySelectorAll("#project-list .project-item");
-    items.forEach(function (i) { i.classList.remove("active"); });
-    var idx = App._projects.indexOf(proj);
-    if (idx >= 0 && items[idx]) items[idx].classList.add("active");
-    document.getElementById("project-badge").textContent = proj.name + " (" + proj.node_count + " nodes)";
-    App.switchTab("graphview");
-  };
+	function titleCase(s) {
+		return String(s || '').replace(/\b\w/g, c => c.toUpperCase());
+	}
 
-  App.switchTab = function (tab) {
-    if (App._sim) { App._sim.stop(); App._sim = null; }
-    App._clearHallsTimer();              // v4.5: para o poll ao trocar de tab
-    document.querySelectorAll("#tabs button").forEach(function (b) {
-      b.classList.toggle("active", b.dataset.tab === tab);
-    });
-    var content = document.getElementById("content");
-    content.className = "";
-    content.innerHTML = "";
-    var title = document.getElementById("title");
+	function truncate(s, n) {
+		s = String(s || '');
+		if (s.length <= n) return s;
+		return s.slice(0, n - 1) + '…';
+	}
 
-    if (tab === "graphview") {
-      title.textContent = App._activeProject ? "Graph: " + App._activeProject.name : "Graph View";
-      content.className = "graph-mode";
-      App._renderGraph(content);
-      return;
-    }
-    if (tab === "halls" || tab === "agents") {
-      title.textContent = LABELS[tab] || tab;
-      content.className = "";
-      content.innerHTML = "<pre>carregando…</pre>";
-      App._renderHalls(content, tab);
-      return;
-    }
-    title.textContent = LABELS[tab] || tab;
-    content.innerHTML = "<pre>loading\u2026</pre>";
-    var endpoints = {
-      events:"/api/events",goals:"/api/goals",actions:"/api/actions",
-      skills:"/api/skills",state:"/api/state",daemon:"/api/daemon",
-      relay:"/api/relay/inbox",identity:"/api/identity",
-      society_members:"/api/society/members",society_skills:"/api/society/skills",
-      society_records:"/api/society/records",structural:"/api/structural/drift",
-      knowledge:"/api/knowledge/entities",
-    };
-    var url = endpoints[tab];
-    if (!url) { content.querySelector("pre").textContent = "no endpoint for " + tab; return; }
-    fetch(url).then(function (r) { return r.json(); }).then(function (data) {
-      content.innerHTML = "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
-    }).catch(function (e) {
-      content.innerHTML = "<pre>error: " + e + "</pre>";
-    });
-  };
+	// ── api (fetch wrapper com timeout + error handling) ─────────────────
 
-  // ── D3.js Canvas Graph Renderer with zoom/pan/drag/detail ──────
+	async function getJson(path, opts = {}) {
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), opts.timeout || 8000);
+		try {
+			const r = await fetch(path, { signal: controller.signal });
+			if (!r.ok) {
+				throw new Error('HTTP ' + r.status);
+			}
+			return await r.json();
+		} finally {
+			clearTimeout(timer);
+		}
+	}
 
-  function _screenToWorld(sx, sy, z) {
-    return { x: (sx - z.x) / z.scale, y: (sy - z.y) / z.scale };
-  }
+	// ── state ─────────────────────────────────────────────────────────────
 
-  function _hitTest(wx, wy, nodes) {
-    for (var i = nodes.length - 1; i >= 0; i--) {
-      var n = nodes[i], dx = wx - n.x, dy = wy - n.y;
-      if (dx * dx + dy * dy < (n.r + 4) * (n.r + 4)) return n;
-    }
-    return null;
-  }
+	const state = {
+		tab: 'overview',
+		visible: !document.hidden,
+		polling: new Map(),    // tab name -> interval id
+		live: {
+			version: null,
+			storage: null,
+			agents: [],
+			allAgents: [],
+			halls: [],
+			mailboxes: [],
+			daemon: null,
+			identity: null,
+		},
+		search: {
+			agents: '',
+		},
+		showOffline: true,
+	};
 
-  function _draw(ctx, canvas, nodes, links, z, hover, selected) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#0f0f1a";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+	// ── topbar (live status) ─────────────────────────────────────────────
 
-    ctx.save();
-    ctx.translate(z.x, z.y);
-    ctx.scale(z.scale, z.scale);
+	function paintTopbar() {
+		const lv = state.live;
+		const isLive = !!lv.version;
+		const pill = $('#status-live');
+		pill.classList.toggle('is-live', isLive);
+		$('#status-text').textContent = isLive ? 'live' : 'offline';
+		$('#version-text').textContent = lv.version ? 'v' + lv.version : 'v—';
+		if (lv.storage) {
+			const tail = lv.storage.split('/').pop();
+			$('#storage-text').textContent = tail || '—';
+			$('#storage-text').title = lv.storage;
+		}
+		$('#brand-meta').textContent = 'Observatory · v' + (lv.version || '—');
+	}
 
-    // links
-    links.forEach(function (l) {
-      if (!l.source || !l.target) return;
-      var hi = l.source === hover || l.target === hover ||
-               l.source === selected || l.target === selected;
-      ctx.strokeStyle = hi ? "rgba(100,170,255,0.7)" : "rgba(100,100,140,0.25)";
-      ctx.lineWidth = hi ? 1.5 / z.scale : 0.5 / z.scale;
-      ctx.beginPath();
-      ctx.moveTo(l.source.x, l.source.y);
-      ctx.lineTo(l.target.x, l.target.y);
-      ctx.stroke();
-    });
+	// ── sidebar nav counts ───────────────────────────────────────────────
 
-    // nodes
-    var showLabel = z.scale > 0.4;
-    nodes.forEach(function (n) {
-      var r = n.r;
-      var isHover = n === hover;
-      var isSel = n === selected;
-      var rDraw = (isHover || isSel) ? r * 1.6 : r;
+	function paintCounts() {
+		const lv = state.live;
+		const ids = { agents: lv.agents.length, halls: lv.halls.length, mailboxes: lv.mailboxes.length };
+		$$('[data-count]').forEach(el => {
+			const key = el.dataset.count;
+			el.textContent = ids[key] || 0;
+		});
+	}
 
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, rDraw, 0, Math.PI * 2);
-      // glow for hover/selected
-      if (isHover || isSel) {
-        var g = ctx.createRadialGradient(n.x, n.y, rDraw * 0.3, n.x, n.y, rDraw * 2.5);
-        g.addColorStop(0, "#6affcc");
-        g.addColorStop(1, "rgba(100,170,255,0.05)");
-        ctx.fillStyle = g;
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, rDraw, 0, Math.PI * 2);
-      }
-      ctx.fillStyle = (isHover || isSel) ? "#6af" : n.color;
-      ctx.globalAlpha = (isHover || isSel) ? 1 : 0.85;
-      ctx.fill();
-      ctx.globalAlpha = 1;
+	// ── rendering: tab content ───────────────────────────────────────────
 
-      if (showLabel && (rDraw > 4 || isHover || isSel)) {
-        ctx.fillStyle = (isHover || isSel) ? "#fff" : "rgba(255,255,255,0.6)";
-        ctx.font = ((isHover || isSel) ? 11 : 9) + "px sans-serif";
-        ctx.fillText(n.label, n.x + rDraw + 3, n.y + 3);
-      }
-    });
+	function paintPageHead(title, subtitle) {
+		$('#page-title').textContent = title;
+		$('#page-subtitle').textContent = subtitle || 'live';
+	}
 
-    ctx.restore();
-  }
+	function renderEmpty(title, hint) {
+		return `<div class="empty">
+			<div class="empty-title">${esc(title)}</div>
+			${hint ? `<div class="empty-hint">${esc(hint)}</div>` : ''}
+		</div>`;
+	}
 
-  App._renderGraph = function (container) {
-    if (!App._activeProject) {
-      container.innerHTML = "<div style=\"padding:40px;text-align:center;color:#666\">Select a project from the sidebar</div>";
-      return;
-    }
+	function renderSkeleton() {
+		return `<div class="grid grid-4">
+			${Array(4).fill(0).map(() =>
+				`<div class="card"><div class="skeleton" style="width:60%"></div><div style="height:14px"></div><div class="skeleton" style="width:40%"></div></div>`
+			).join('')}
+		</div>`;
+	}
 
-    // reset zoom
-    App._zoom = { scale: 1, x: 0, y: 0 };
-    App._dragNode = null;
-    App._panStart = null;
-    App._hoverNode = null;
-    App._selectedNode = null;
+	function kpi(label, value, meta, kind) {
+		return `<div class="card kpi">
+			<div class="kpi-label">${esc(label)}</div>
+			<div class="kpi-value ${value == null || value === '' ? 'is-empty' : ''}">${esc(value)}</div>
+			${meta ? `<div class="kpi-meta ${kind || ''}">${esc(meta)}</div>` : ''}
+		</div>`;
+	}
 
-    var canvas = document.createElement("canvas");
-    canvas.id = "graph-canvas";
-    canvas.width = container.clientWidth;
-    canvas.height = container.clientHeight || window.innerHeight - 48;
-    container.appendChild(canvas);
-    var ctx = canvas.getContext("2d");
+	function badge(state, label) {
+		const map = {
+			alive: 'is-live', online: 'is-live', active: 'is-live', ok: 'is-live',
+			offline: 'is-offline', stale: 'is-offline', dead: 'is-err',
+			warn: 'is-warn', err: 'is-err', error: 'is-err',
+		};
+		const cls = map[String(state || '').toLowerCase()] || '';
+		return `<span class="badge ${cls}">${esc(label || state || '?')}</span>`;
+	}
 
-    // toolbar
-    var toolbar = document.createElement("div");
-    toolbar.className = "graph-toolbar";
-    toolbar.innerHTML = "<button onclick=\"App._zoomIn()\" title=\"Zoom in\">+</button>" +
-      "<button onclick=\"App._zoomOut()\" title=\"Zoom out\">\u2212</button>" +
-      "<button onclick=\"App._zoomFit()\" title=\"Fit all\">\u2922</button>" +
-      "<span id=\"zoom-pct\" style=\"margin-left:6px;font-size:11px;color:#888\">100%</span>";
-    container.appendChild(toolbar);
+	function relTime(ts) {
+		const diff = (Date.now() / 1000) - ts;
+		if (!ts) return '—';
+		if (diff < 0) return 'agora';
+		if (diff < 60) return Math.floor(diff) + 's';
+		if (diff < 3600) return Math.floor(diff / 60) + 'm';
+		if (diff < 86400) return Math.floor(diff / 3600) + 'h';
+		return Math.floor(diff / 86400) + 'd';
+	}
 
-    // freshness card
-    var card = document.createElement("div");
-    card.className = "freshness-card";
-    card.textContent = "Loading\u2026";
-    container.appendChild(card);
-    fetch("/api/structural/freshness?root=" + encodeURIComponent(App._activeProject ? App._activeProject.path || "" : "")).then(function (r) { return r.json(); }).then(function (f) {
-      var msg, color, border;
-      if (!f.known) {
-        // Sem consent ou sem graph — não mostra card
-        card.style.display = "none";
-        return;
-      }
-      if (f.is_stale) {
-        msg = "\u26a0 graph outdated";
-        color = "#e55";
-        border = "#e55";
-      } else {
-        msg = "\u2713 up to date";
-        color = "#5a5";
-        border = "#5a5";
-      }
-      card.textContent = msg;
-      card.style.borderColor = border;
-      card.style.color = color;
-    }).catch(function () { card.style.display = "none"; });
+	// ── tab renderers ────────────────────────────────────────────────────
 
-    // detail panel
-    var detail = document.createElement("div");
-    detail.id = "detail-panel";
-    detail.className = "detail-panel";
-    detail.style.display = "none";
-    container.appendChild(detail);
+	function renderOverview() {
+		paintPageHead('Overview', 'live · ' + new Date().toLocaleTimeString('pt-BR'));
+		const lv = state.live;
+		const liveAgents = lv.agents.length;
+		const totalAgents = lv.allAgents.length;
+		const hallCount = lv.halls.length;
+		const mbTotal = lv.mailboxes.reduce((acc, m) => acc + (m.unread || 0), 0);
+		const daemon = lv.daemon || {};
+		const identity = lv.identity || {};
+		const selfId = identity.instance_id || '—';
 
-    // load graph data
-    fetch("/api/projects/" + App._activeProject.id + "/graph").then(function (r) { return r.json(); }).then(function (data) {
-      var nodes = (data.nodes || []).map(function (n, i) {
-        return {id:n.id, label:n.label||n.id, group:n.group||n.community||null,
-          x:Math.random()*canvas.width, y:Math.random()*canvas.height,
-          r:Math.max(3, Math.sqrt(n.degree||1)*2),
-          color:n.color&&n.color.background||"#6af",
-          degree:n.degree||0, _i:i, _raw:n};
-      });
-      var links = (data.links || []).map(function (l) {
-        return {source:typeof l.source==="object"?l.source.id:l.source,
-                target:typeof l.target==="object"?l.target.id:l.target};
-      });
+		return `
+			<section class="grid grid-4">
+				${kpi('Agents live', liveAgents, totalAgents ? liveAgents + ' de ' + totalAgents : '—', liveAgents ? 'is-live' : 'is-offline')}
+				${kpi('Halls', hallCount, hallCount ? lv.halls.reduce((a, h) => a + (h.member_count || 0), 0) + ' membros totais' : 'nenhum criado', hallCount ? 'is-live' : 'is-offline')}
+				${kpi('Mailbox', mbTotal, mbTotal ? mbTotal + ' mensagens não-lidas' : 'caixa vazia', mbTotal ? 'is-live' : 'is-offline')}
+				${kpi('Daemon', daemon.running ? 'rodando' : (daemon.running === false ? 'parado' : '—'), daemon.awake ? 'awake · ' + (daemon.cycles || 0) + ' ciclos' : 'idle', daemon.running ? 'is-live' : 'is-offline')}
+			</section>
 
-      // node index for connections lookup
-      var nodeMap = {};
-      nodes.forEach(function (n) { nodeMap[n.id] = n; });
+			<section class="grid grid-2" style="margin-top:18px">
+				<div class="card">
+					<div class="card-head">
+						<h3 class="card-title">Identidade local</h3>
+					</div>
+					<div class="row-list">
+						<div class="row">
+							<span class="row-id">instance_id</span>
+							<span class="badge ${identity.instance_id ? 'is-live' : ''}">${esc(truncate(selfId, 18))}</span>
+							<span class="row-meta">${ago(identity.created_ts)}</span>
+						</div>
+						<div class="row">
+							<span class="row-id">label</span>
+							<span></span>
+							<span class="row-meta">${esc(identity.label || '—')}</span>
+						</div>
+					</div>
+				</div>
 
-      // FPS monitor
-      App._fpsFrames = 0;
-      if (App._fpsTimer) clearInterval(App._fpsTimer);
-      App._fpsTimer = setInterval(function () {
-        App._fps = App._fpsFrames;
-        App._fpsFrames = 0;
-      }, 1000);
+				<div class="card">
+					<div class="card-head">
+						<h3 class="card-title">Mailbox não-lido</h3>
+						<span class="card-meta">${lv.mailboxes.length} peers</span>
+					</div>
+					${lv.mailboxes.length === 0
+						? renderEmpty('nenhuma mensagem', 'quando outros agentes escreverem, aparece aqui')
+						: `<div class="row-list">${lv.mailboxes.map(m => `
+							<div class="row">
+								<span class="row-id">${esc(truncate(m.from_instance, 24))}</span>
+								<span></span>
+								<span class="row-meta">${fmtNumber(m.unread)} não-lidas</span>
+							</div>`).join('')}</div>`
+					}
+				</div>
+			</section>
 
-      var sim = d3.forceSimulation(nodes)
-        .force("link", d3.forceLink(links).id(function (d) { return d.id; }).distance(40))
-        .force("charge", d3.forceManyBody().strength(-80).theta(0.9))
-        .force("center", d3.forceCenter(canvas.width / 2, canvas.height / 2))
-        .alphaDecay(0.02)
-        .on("tick", function () {
-          App._fpsFrames++;
-          _draw(ctx, canvas, nodes, links, App._zoom, App._hoverNode, App._selectedNode);
-        });
-      App._sim = sim;
-      App._nodes = nodes;
-      App._links = links;
+			<section>
+				<div class="section-h">
+					<h2 class="section-title">Halls ativos</h2>
+					<span class="section-meta">${hallCount} hall${hallCount !== 1 ? 's' : ''}</span>
+				</div>
+				${lv.halls.length === 0
+					? renderEmpty('nenhum hall criado', 'use a tool MCP conscio_hall_create para criar grupos')
+					: `<div class="grid grid-3">${lv.halls.map(h => `
+						<div class="entity">
+							<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+								<span class="entity-id">${esc(h.nome)}</span>
+								<span class="badge is-live">${h.member_count} membro${h.member_count !== 1 ? 's' : ''}</span>
+							</div>
+							<div class="entity-meta">
+								<span><b>id</b> ${esc(truncate(h.hall_id, 32))}</span>
+								<span><b>dono</b> ${esc(truncate(h.dono, 18))}</span>
+							</div>
+						</div>`).join('')}</div>`
+				}
+			</section>
+		`;
+	}
 
-      // ── Zoom (wheel) ──
-      canvas.addEventListener("wheel", function (e) {
-        e.preventDefault();
-        var rect = canvas.getBoundingClientRect();
-        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
-        var factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-        var nz = App._zoom.scale * factor;
-        if (nz < 0.05 || nz > 20) return;
-        App._zoom.x = mx - (mx - App._zoom.x) * factor;
-        App._zoom.y = my - (my - App._zoom.y) * factor;
-        App._zoom.scale = nz;
-        document.getElementById("zoom-pct").textContent = Math.round(nz * 100) + "%";
-        _draw(ctx, canvas, nodes, links, App._zoom, App._hoverNode, App._selectedNode);
-      }, { passive: false });
+	function renderAgents() {
+		paintPageHead('Agents', 'live · heartbeat 3 estados');
+		const lv = state.live;
+		const list = state.showOffline ? lv.allAgents : lv.agents;
+		const filtered = state.search.agents
+			? list.filter(a =>
+				(a.instance_id || '').toLowerCase().includes(state.search.agents.toLowerCase()) ||
+				(a.modelo || a.model || '').toLowerCase().includes(state.search.agents.toLowerCase()) ||
+				(a.familia || '').toLowerCase().includes(state.search.agents.toLowerCase()))
+			: list;
 
-      // ── Pan (middle click or right click drag) ──
-      canvas.addEventListener("mousedown", function (e) {
-        var rect = canvas.getBoundingClientRect();
-        var sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-        var w = _screenToWorld(sx, sy, App._zoom);
-        var hit = _hitTest(w.x, w.y, nodes);
+		return `
+			<div class="toolbar">
+				<input class="search" placeholder="buscar por id, modelo, família..." value="${esc(state.search.agents)}" oninput="App._searchAgents(this.value)">
+				<button class="toggle ${state.showOffline ? 'is-on' : ''}" onclick="App._toggleOffline()">
+					${state.showOffline ? '●' : '○'} offline
+				</button>
+			</div>
+			${filtered.length === 0
+				? renderEmpty(state.showOffline ? 'nenhum agent registrado' : 'nenhum agent vivo', 'watcher precisa bater heartbeat para aparecer aqui')
+				: `<div class="grid grid-2">${filtered.map(a => {
+					const isOffline = !!a.offline;
+					return `
+						<div class="entity ${isOffline ? 'is-offline' : ''}">
+							<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+								<span class="entity-id">${esc(truncate(a.instance_id, 36))}</span>
+								${badge(isOffline ? 'offline' : 'alive', isOffline ? 'offline' : 'alive')}
+							</div>
+							<div class="entity-meta">
+								<span><b>modelo</b> ${esc(a.modelo || a.model || '—')}</span>
+								<span><b>família</b> ${esc(a.familia || '—')}</span>
+								<span><b>runtime</b> ${esc(a.runtime || '—')}</span>
+								<span><b>papel</b> ${esc(a.papel || '—')}</span>
+							</div>
+							<div class="entity-meta">
+								<span><b>cap</b> ${esc((a.capabilities || []).join(', ') || '—')}</span>
+								<span><b>hb</b> ${relTime(a.last_heartbeat)}</span>
+							</div>
+						</div>`;
+				}).join('')}</div>`
+			}
+		`;
+	}
 
-        if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
-          // pan
-          App._panStart = { sx: sx, sy: sy, zx: App._zoom.x, zy: App._zoom.y };
-          e.preventDefault();
-        } else if (e.button === 0 && hit) {
-          // drag node
-          App._dragNode = hit;
-          hit.fx = hit.x;
-          hit.fy = hit.y;
-          sim.alphaTarget(0.3).restart();
-        } else if (e.button === 0 && !hit) {
-          // pan with left click on empty space
-          App._panStart = { sx: sx, sy: sy, zx: App._zoom.x, zy: App._zoom.y };
-        }
-      });
+	function renderHalls() {
+		paintPageHead('Halls', 'live · Agent groups');
+		const lv = state.live;
+		if (lv.halls.length === 0) {
+			return renderEmpty('nenhum hall criado', 'use a tool MCP conscio_hall_create para criar grupos');
+		}
+		return `<div class="grid grid-2">${lv.halls.map(h => `
+			<div class="entity">
+				<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+					<span class="entity-id">${esc(h.nome)}</span>
+					<span class="badge is-live">${h.member_count} membro${h.member_count !== 1 ? 's' : ''}</span>
+				</div>
+				<div class="entity-meta">
+					<span><b>id</b> ${esc(truncate(h.hall_id, 40))}</span>
+				</div>
+				<div class="entity-meta">
+					<span><b>dono</b> ${esc(truncate(h.dono, 24))}</span>
+					<span><b>criado</b> ${ago(h.criado_em)}</span>
+				</div>
+			</div>`).join('')}</div>`;
+	}
 
-      canvas.addEventListener("mousemove", function (e) {
-        var rect = canvas.getBoundingClientRect();
-        var sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-        var w = _screenToWorld(sx, sy, App._zoom);
+	function renderMailboxes() {
+		paintPageHead('Mailboxes', 'live · peer unread');
+		const lv = state.live;
+		if (lv.mailboxes.length === 0) {
+			return renderEmpty('nenhuma mensagem não-lida', 'caixa de entrada vazia');
+		}
+		return `<div class="grid grid-2">${lv.mailboxes.map(m => `
+			<div class="entity">
+				<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+					<span class="entity-id">${esc(truncate(m.from_instance, 36))}</span>
+					<span class="badge ${m.unread > 0 ? 'is-warn' : 'is-offline'}">${fmtNumber(m.unread)}</span>
+				</div>
+				<div class="entity-meta">
+					<span><b>direção</b> incoming</span>
+					<span><b>tipo</b> chat/delegation/status</span>
+				</div>
+			</div>`).join('')}</div>`;
+	}
 
-        // panning
-        if (App._panStart) {
-          App._zoom.x = App._panStart.zx + (sx - App._panStart.sx);
-          App._zoom.y = App._panStart.zy + (sy - App._panStart.sy);
-          _draw(ctx, canvas, nodes, links, App._zoom, App._hoverNode, App._selectedNode);
-          return;
-        }
+	function renderDaemon() {
+		paintPageHead('Daemon', 'process state');
+		const d = state.live.daemon || {};
+		const items = [
+			['running', d.running ? 'yes' : 'no'],
+			['awake', d.awake ? 'yes' : 'no'],
+			['cycles', fmtNumber(d.cycles)],
+			['uptime', d.uptime || '—'],
+		];
+		return `<div class="grid grid-4">
+			${items.map(([k, v]) => kpi(titleCase(k), v, '', d.running && k === 'running' ? 'is-live' : '')).join('')}
+		</div>
+		<div class="card" style="margin-top:18px">
+			<div class="card-head"><h3 class="card-title">Detalhes</h3></div>
+			<pre class="code">${esc(JSON.stringify(d, null, 2))}</pre>
+		</div>`;
+	}
 
-        // dragging node
-        if (App._dragNode) {
-          App._dragNode.fx = w.x;
-          App._dragNode.fy = w.y;
-          return;
-        }
+	function renderIdentity() {
+		paintPageHead('Identity', 'self · persistent');
+		const id = state.live.identity || {};
+		return `<div class="card">
+			<pre class="code">${esc(JSON.stringify(id, null, 2))}</pre>
+		</div>`;
+	}
 
-        // hover
-        var hit = _hitTest(w.x, w.y, nodes);
-        canvas.style.cursor = hit ? "pointer" : (App._panStart ? "grabbing" : "grab");
-        if (hit !== App._hoverNode) {
-          App._hoverNode = hit;
-          _draw(ctx, canvas, nodes, links, App._zoom, App._hoverNode, App._selectedNode);
-        }
-      });
+	function renderRelay() {
+		paintPageHead('Relay inbox', 'live · directed');
+		return `<div class="card">
+			<div class="card-head"><h3 class="card-title">Endpoint</h3><span class="card-meta">/api/relay/inbox</span></div>
+			<pre class="code">${esc(JSON.stringify({ note: 'use a tool MCP conscio_relay_inbox para listar mensagens detalhadas' }, null, 2))}</pre>
+		</div>`;
+	}
 
-      canvas.addEventListener("mouseup", function (e) {
-        if (App._dragNode) {
-          App._dragNode.fx = null;
-          App._dragNode.fy = null;
-          App._dragNode = null;
-          sim.alphaTarget(0);
-        }
-        App._panStart = null;
-      });
+	function renderSociety() {
+		paintPageHead('Society · Members', 'peer instances');
+		return `<div class="card"><pre class="code" id="json-out">carregando…</pre></div>`;
+	}
+	function renderSocietySkills() {
+		paintPageHead('Society · Skills', 'shared procedures');
+		return `<div class="card"><pre class="code" id="json-out">carregando…</pre></div>`;
+	}
+	function renderSocietyRecords() {
+		paintPageHead('Society · Records', 'entry counts');
+		return `<div class="card"><pre class="code" id="json-out">carregando…</pre></div>`;
+	}
 
-      // click to select node and show detail
-      canvas.addEventListener("click", function (e) {
-        var rect = canvas.getBoundingClientRect();
-        var sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-        var w = _screenToWorld(sx, sy, App._zoom);
-        var hit = _hitTest(w.x, w.y, nodes);
+	function renderEvents() { paintPageHead('Events', 'log stream'); return simpleJson('/api/events', 'events'); }
+	function renderActions() { paintPageHead('Actions', 'audit trail'); return simpleJson('/api/actions', 'actions'); }
+	function renderGoals() { paintPageHead('Goals', 'intentions'); return simpleJson('/api/goals', 'goals'); }
+	function renderSkills() { paintPageHead('Skills', 'library'); return simpleJson('/api/skills', 'skills'); }
 
-        if (hit) {
-          App._selectedNode = hit;
-          _showDetail(hit, links, nodeMap);
-        } else {
-          App._selectedNode = null;
-          detail.style.display = "none";
-        }
-        _draw(ctx, canvas, nodes, links, App._zoom, App._hoverNode, App._selectedNode);
-      });
+	function renderKgEntities() { paintPageHead('KG · Entities', 'nodes'); return simpleJson('/api/knowledge/entities', 'entities'); }
+	function renderKgRelationships() { paintPageHead('KG · Relationships', 'edges'); return simpleJson('/api/knowledge/relationships', 'relationships'); }
+	function renderKgTimeline() { paintPageHead('KG · Timeline', 'history'); return simpleJson('/api/knowledge/timeline', 'timeline'); }
+	function renderStructural() { paintPageHead('Structural · Drift', 'repo drift'); return simpleJson('/api/structural/drift', 'drift'); }
 
-      // double-click to center on node
-      canvas.addEventListener("dblclick", function (e) {
-        var rect = canvas.getBoundingClientRect();
-        var sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-        var w = _screenToWorld(sx, sy, App._zoom);
-        var hit = _hitTest(w.x, w.y, nodes);
-        if (hit) {
-          App._zoom.x = canvas.width / 2 - hit.x * App._zoom.scale;
-          App._zoom.y = canvas.height / 2 - hit.y * App._zoom.scale;
-          _draw(ctx, canvas, nodes, links, App._zoom, App._hoverNode, App._selectedNode);
-        }
-      });
+	function renderGraph() {
+		paintPageHead('Graph', 'verdade via /graph');
+		return `<div class="card" style="padding:0;overflow:hidden">
+			<div id="graph-host" style="height:560px"></div>
+			<div style="padding:14px 18px;border-top:1px solid var(--line);font-size:12px;color:var(--text-faint);font-family:var(--font-mono)">
+				serve graphify-out/graph.html da raiz do workspace. /graph retorna 404 enquanto não há projeto com graph gerado.
+			</div>
+		</div>`;
+	}
 
-      // resize
-      var onResize = function () {
-        canvas.width = container.clientWidth;
-        canvas.height = container.clientHeight || window.innerHeight - 48;
-        sim.force("center", d3.forceCenter(canvas.width / 2, canvas.height / 2));
-        sim.alpha(0.3).restart();
-      };
-      window.addEventListener("resize", onResize);
+	function simpleJson(endpoint, key) {
+		const id = 'json-' + key + '-' + Date.now();
+		setTimeout(async () => {
+			try {
+				const data = await getJson(endpoint);
+				const el = document.getElementById('json-out');
+				if (el) el.textContent = JSON.stringify(data, null, 2);
+			} catch (e) {
+				const el = document.getElementById('json-out');
+				if (el) el.textContent = 'erro: ' + e.message;
+			}
+		}, 0);
+		return `<div class="card"><pre class="code" id="json-out">carregando…</pre></div>`;
+	}
 
-      function _showDetail(node, links, nodeMap) {
-        // find connected nodes
-        var connected = [];
-        links.forEach(function (l) {
-          if (l.source === node && nodeMap[l.target.id]) connected.push(l.target);
-          if (l.target === node && nodeMap[l.source.id]) connected.push(l.source);
-        });
-        var html = "<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px\">" +
-          "<strong style=\"color:#6af\">" + node.label + "</strong>" +
-          "<button onclick=\"document.getElementById('detail-panel').style.display='none'\" style=\"background:none;border:none;color:#888;cursor:pointer;font-size:16px\">\u00d7</button></div>" +
-          "<div style=\"font-size:11px;color:#888;margin-bottom:8px\">ID: " + node.id + "</div>" +
-          "<div style=\"font-size:12px;color:#ccc;margin-bottom:4px\">Degree: " + node.degree + "</div>" +
-          "<div style=\"font-size:12px;color:#ccc;margin-bottom:4px\">Group: " + (node.group || "none") + "</div>" +
-          "<div style=\"font-size:12px;color:#ccc;margin-bottom:8px\">Connections: " + connected.length + "</div>";
-        if (connected.length > 0) {
-          html += "<div style=\"font-size:11px;color:#888;margin-bottom:4px\">Connected to:</div>";
-          connected.slice(0, 20).forEach(function (c) {
-            html += "<div style=\"font-size:12px;color:#aaa;padding:2px 0;cursor:pointer\" onclick=\"App._focusNode('" + c.id.replace(/'/g, "\\'") + "')\">" + c.label + "</div>";
-          });
-          if (connected.length > 20) html += "<div style=\"font-size:11px;color:#666\">...and " + (connected.length - 20) + " more</div>";
-        }
-        detail.innerHTML = html;
-        detail.style.display = "";
-      }
-    }).catch(function () {
-      container.innerHTML = "<div style=\"padding:40px;text-align:center;color:#e55\">Failed to load graph. Run \u201cgraphify update <project>\u201d first.</div>";
-    });
-  };
+	// ── dispatcher ───────────────────────────────────────────────────────
 
-  // zoom controls
-  App._zoomIn = function () {
-    var z = App._zoom;
-    z.scale = Math.min(20, z.scale * 1.3);
-    z.x -= (canvas_w() / 2 - z.x) * 0.3;
-    z.y -= (canvas_h() / 2 - z.y) * 0.3;
-    document.getElementById("zoom-pct").textContent = Math.round(z.scale * 100) + "%";
-    _redraw();
-  };
-  App._zoomOut = function () {
-    var z = App._zoom;
-    z.scale = Math.max(0.05, z.scale / 1.3);
-    z.x += (canvas_w() / 2 - z.x) * 0.23;
-    z.y += (canvas_h() / 2 - z.y) * 0.23;
-    document.getElementById("zoom-pct").textContent = Math.round(z.scale * 100) + "%";
-    _redraw();
-  };
-  App._zoomFit = function () {
-    App._zoom = { scale: 1, x: 0, y: 0 };
-    document.getElementById("zoom-pct").textContent = "100%";
-    _redraw();
-  };
-  App._focusNode = function (id) {
-    if (!App._nodes) return;
-    var n = App._nodes.find(function (n) { return n.id === id; });
-    if (!n) return;
-    App._selectedNode = n;
-    App._zoom.x = canvas_w() / 2 - n.x * App._zoom.scale;
-    App._zoom.y = canvas_h() / 2 - n.y * App._zoom.scale;
-    _redraw();
-  };
+	const RENDERERS = {
+		overview: renderOverview,
+		agents: renderAgents,
+		daemon: renderDaemon,
+		halls: renderHalls,
+		mailboxes: renderMailboxes,
+		relay: renderRelay,
+		identity: renderIdentity,
+		society: renderSociety,
+		'society-skills': renderSocietySkills,
+		'society-records': renderSocietyRecords,
+		events: renderEvents,
+		actions: renderActions,
+		goals: renderGoals,
+		skills: renderSkills,
+		'kg-entities': renderKgEntities,
+		'kg-relationships': renderKgRelationships,
+		'kg-timeline': renderKgTimeline,
+		structural: renderStructural,
+		graphview: renderGraph,
+	};
 
-  function canvas_w() { var c = document.getElementById("graph-canvas"); return c ? c.width : 800; }
-  function canvas_h() { var c = document.getElementById("graph-canvas"); return c ? c.height : 600; }
-  function _redraw() {
-    var c = document.getElementById("graph-canvas");
-    if (c && App._nodes && App._links) {
-      var ctx = c.getContext("2d");
-      _draw(ctx, c, App._nodes, App._links, App._zoom, App._hoverNode, App._selectedNode);
-    }
-  }
+	function switchTab(tab) {
+		state.tab = tab;
+		$$('.nav-item').forEach(b => {
+			b.classList.toggle('is-active', b.dataset.tab === tab);
+		});
+		stopAllPolling();
+		const render = RENDERERS[tab] || simpleJson.bind(null, '/api/' + tab, tab);
+		$('#content').innerHTML = render();
+		startPolling(tab);
+		// graphview init
+		if (tab === 'graphview') {
+			initGraph();
+		}
+	}
 
-  // ── v4.5: Halls + Agents (tempo real, poll curto) ───────────────
+	// ── polling (visibility-aware) ──────────────────────────────────────
 
-  App._hallsTimer = null;
-  App._hallsTab = null;
+	const POLL_MAP = {
+		overview: pollOverview,
+		agents: pollAgents,
+		daemon: pollDaemon,
+		halls: pollHalls,
+		mailboxes: pollMailboxes,
+		identity: pollIdentity,
+	};
 
-  App._clearHallsTimer = function () {
-    if (App._hallsTimer) { clearInterval(App._hallsTimer); App._hallsTimer = null; }
-  };
+	function startPolling(tab) {
+		const fn = POLL_MAP[tab];
+		if (!fn) return;
+		fn();   // first paint immediately
+		state.polling.set(tab, setInterval(fn, 3000));
+	}
 
-  function _esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"]/g,
-      function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; });
-  }
+	function stopAllPolling() {
+		state.polling.forEach((id) => clearInterval(id));
+		state.polling.clear();
+	}
 
-  App._renderHalls = function (content, tab) {
-    App._clearHallsTimer();
-    App._hallsTab = tab;
-    var render = function () {
-      if (tab !== App._hallsTab) return;         // tab trocou → para
-      var parts = [];
-      Promise.all([
-        fetch("/api/agents").then(function (r) { return r.json(); })
-          .catch(function () { return []; }),
-        fetch("/api/halls").then(function (r) { return r.json(); })
-          .catch(function () { return []; }),
-        fetch("/api/mailboxes").then(function (r) { return r.json(); })
-          .catch(function () { return []; })
-      ]).then(function (res) {
-        var agents = res[0] || [], halls = res[1] || [], mail = res[2] || [];
-        if (tab === "agents") {
-          parts.push("<h3>Agentes (" + agents.length + ")</h3><ul>");
-          agents.forEach(function (a) {
-            var off = a.offline ? ' style="opacity:0.45"' : "";
-            parts.push("<li" + off + "><b>" + _esc(a.instance_id) + "</b> &middot; "
-              + _esc(a.modelo || a.model || "") + " &middot; " + _esc(a.familia || "")
-              + (a.offline ? " <i>offline</i>" : "")
-              + "</li>");
-          });
-          parts.push("</ul>");
-        } else {
-          parts.push("<h3>Halls</h3>");
-          if (halls.length === 0) parts.push("<p>Nenhum hall criado.</p>");
-          halls.forEach(function (h) {
-            parts.push("<p><b>" + _esc(h.nome) + "</b> "
-              + "(id <code>" + _esc(h.hall_id) + "</code>) &middot; dono "
-              + _esc(h.dono) + " &middot; " + h.member_count + " membro(s)</p>");
-          });
-          parts.push("<h3>Mailbox não-lido</h3>");
-          if (mail.length === 0) parts.push("<p>vazio</p>");
-          mail.forEach(function (m) {
-            parts.push("<p>" + _esc(m.from_instance) + " : " + m.unread + "</p>");
-          });
-        }
-        content.innerHTML = parts.join("");
-      });
-    };
-    render();
-    App._hallsTimer = setInterval(render, 3000);   // tempo real (poll curto)
-  };
+	async function pollOverview() {
+		try {
+			const [health, agents, halls, mb, daemon, identity] = await Promise.all([
+				getJson('/api/health'),
+				getJson('/api/agents'),
+				getJson('/api/halls'),
+				getJson('/api/mailboxes'),
+				getJson('/api/daemon'),
+				getJson('/api/identity'),
+			]);
+			state.live.version = health.version;
+			state.live.storage = health.liaison;
+			state.live.agents = agents.filter(a => !a.offline);
+			state.live.allAgents = agents;
+			state.live.halls = halls;
+			state.live.mailboxes = mb;
+			state.live.daemon = daemon;
+			state.live.identity = identity;
+			paintTopbar(); paintCounts();
+			if (state.tab === 'overview') {
+				$('#content').innerHTML = renderOverview();
+			}
+		} catch (e) { /* degrade silently */ }
+	}
 
-  // ── Init ─────────────────────────────────────────────────────────
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", App.init);
-  } else {
-    App.init();
-  }
+	async function pollAgents() {
+		try {
+			const include = state.showOffline ? '?stale=1' : '';
+			const data = await getJson('/api/agents' + include);
+			state.live.allAgents = data;
+			state.live.agents = data.filter(a => !a.offline);
+			paintCounts();
+			if (state.tab === 'agents') {
+				$('#content').innerHTML = renderAgents();
+			}
+		} catch (e) {}
+	}
+
+	async function pollDaemon() {
+		try {
+			state.live.daemon = await getJson('/api/daemon');
+			if (state.tab === 'daemon') $('#content').innerHTML = renderDaemon();
+		} catch (e) {}
+	}
+
+	async function pollHalls() {
+		try {
+			state.live.halls = await getJson('/api/halls');
+			paintCounts();
+			if (state.tab === 'halls') $('#content').innerHTML = renderHalls();
+		} catch (e) {}
+	}
+
+	async function pollMailboxes() {
+		try {
+			state.live.mailboxes = await getJson('/api/mailboxes');
+			paintCounts();
+			if (state.tab === 'mailboxes') $('#content').innerHTML = renderMailboxes();
+		} catch (e) {}
+	}
+
+	async function pollIdentity() {
+		try {
+			state.live.identity = await getJson('/api/identity');
+			if (state.tab === 'identity') $('#content').innerHTML = renderIdentity();
+		} catch (e) {}
+	}
+
+	// ── graph via graphview.js (contrato TAB_RENDERERS) ────────────────
+
+	function initGraph() {
+		const host = $('#graph-host');
+		if (!host) return;
+		if (window.TAB_RENDERERS && typeof window.TAB_RENDERERS.graphview === 'function') {
+			window.TAB_RENDERERS.graphview(host);
+		} else {
+			host.innerHTML = '<div class="empty"><div class="empty-title">graphview não carregado</div></div>';
+		}
+	}
+
+	// ── interactivity exports ───────────────────────────────────────────
+
+	window.App = {
+		switchTab,
+		_searchAgents: (v) => { state.search.agents = v; $('#content').innerHTML = renderAgents(); },
+		_toggleOffline: () => { state.showOffline = !state.showOffline; pollAgents(); },
+	};
+
+	// ── nav wiring ───────────────────────────────────────────────────────
+
+	$$('.nav-item').forEach(b => {
+		b.addEventListener('click', () => switchTab(b.dataset.tab));
+	});
+
+	// visibility-aware: para polling quando a aba some (evita gastos)
+	document.addEventListener('visibilitychange', () => {
+		state.visible = !document.hidden;
+		if (!state.visible) {
+			stopAllPolling();
+		} else if (state.tab) {
+			startPolling(state.tab);
+		}
+	});
+
+	// ── boot ─────────────────────────────────────────────────────────────
+
+	(async function init() {
+		// primeira carga (skeleton), depois pinta
+		$('#content').innerHTML = renderSkeleton();
+		await pollOverview();
+		switchTab('overview');
+	})();
 })();
