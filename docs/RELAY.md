@@ -5,15 +5,15 @@
 
 ---
 
-## 1. Architecture (3 processes on the Hermet-side VM)
+## 1. Architecture (3 processes on the primary-side VM)
 
 ```
                     ┌─────────────────────────────────────────────────┐
-                    │  Hermet-side VM (tailnet VM_TS_IP)               │
+                    │  primary-side VM (tailnet VM_TS_IP)               │
                     │                                                 │
   POST/GET via     │  ┌──────────────────────────┐   ┌──────────────┐ │
   tailscale ───────┼─▶│ conscio-relay-bridge      │   │ reactor      │ │
-  (port 8789)      │  │ (Hermet-side, systemd)    │   │ (systemd)    │ │
+  (port 8789)      │  │ (primary-side, systemd)    │   │ (systemd)    │ │
                     │  │  · relay_net HTTP        │   │  · poll      │ │
                     │  │  · watcher + ack         │──▶│  · notify    │─┼─▶ DM Telegram
                     │  │  · presence announce     │   │  hook <2s    │ │
@@ -44,7 +44,7 @@
                     └────────────────────────────────┘
 ```
 
-- **Hermet-side bridge** (`conscio-relay-bridge.service`): script
+- **primary-side bridge** (`conscio-relay-bridge.service`): script
   `~/.hermes/scripts/tailscale_relay_service.py`, bind `VM_TS_IP:8789`
   (tailnet only, no proxy). Handles talks/acks, announces presence,
   serves `/relay/health`.
@@ -109,7 +109,7 @@ Current peer allowlist: `3c8c0259-...`, `bbdcfe4c-...`, `<remote-gemini-uuid>`,
 | `~/.hermes/relay_peers.json` | remote peers: id, endpoint, peer token |
 | `~/.hermes/relay_token` | bridge 8789 token |
 | `~/.gemini/antigravity/relay_token` | Antigravity watcher 8788 token |
-| `/etc/systemd/system/conscio-relay-bridge.service` | Hermet-side bridge |
+| `/etc/systemd/system/conscio-relay-bridge.service` | primary-side bridge |
 | `/etc/systemd/system/conscio-antigravity-relay.service` | Antigravity watcher |
 | `/etc/systemd/system/conscio-relay-reactor.service` | reactor + peer allowlist |
 
@@ -161,7 +161,7 @@ sudo tailscale serve --bg 8789              # beware: creates a 443 route if pat
 
 1. `tailscaled` (network)
 2. `conscio-antigravity-relay` (8788) — Antigravity watcher
-3. `conscio-relay-bridge` (8789) — Hermet-side bridge
+3. `conscio-relay-bridge` (8789) — primary-side bridge
 4. `conscio-relay-reactor` (poll + notify hook)
 
 All `Restart=always`; they depend on `network-online.target` and

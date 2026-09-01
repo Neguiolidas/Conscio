@@ -80,7 +80,7 @@ class ModelRegistry:
                                   "Large ctx but weaker on complex tasks."),
         "minimax-m3": ModelInfo("minimax-m3", 1_000_000, ContextMode.STANDARD,
                                  ["long_context", "reasoning"],
-                                 "1M ctx. Hae runtime model."),
+                                 "1M ctx. Default runtime model."),
         "step-flash-3.7": ModelInfo("step-flash-3.7", 260_000, ContextMode.STANDARD,
                                     ["speed", "long_context"],
                                     "Fast but inconsistent on complex tasks."),
