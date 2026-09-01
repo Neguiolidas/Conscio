@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.5.1] - 2026-08-31 — Relay: health endpoint + presence announce + cross-machine hardening
+
+### Added
+
+- **`GET /relay/health`** (`conscio/liaison/relay_net.py`): authenticated
+  probe so any peer on the tailnet can detect that the relay is alive
+  before sending. Returns `{ok, self_id, db, agents_alive[], ts}`. 4 new
+  tests in `test_liaison_relay_net.py::TestHealthEndpoint`
+  (ok / 401-token / 404-path).
+- **Presence announce** (`tailscale_relay_service.py`): a silent
+  `presence` message every 60s to each peer in `~/.hermes/relay_peers.json`,
+  marking the relay as alive without chat traffic.
+- **CLI `relay_health.py`**: checks local (8789 + 8788) and remote peers
+  from `relay_peers.json`; exit 0 = all healthy.
+- **Mandatory strong tokens** (`_load_or_mint_token`): regenerates to
+  `secrets.token_hex(24)` if the file is missing or still contains the
+  legacy default `conscio-tailscale-relay-token`.
+
+### Changed
+
+- **`conscio-relay-bridge.service`** (new): Hermet-side bridge under
+  systemd, bind `VM_TS_IP:8789` (tailnet only), replaces the manual
+  process. Includes direct HTTP forwarding to remote endpoints.
+- **`conscio-antigravity-relay.service`** (new): Antigravity watcher
+  under systemd, `127.0.0.1:8788` + `tailscale serve`.
+- Reactor allowlist expanded to include cross-machine peers
+  (Gemini + Claude + auxiliary peer instances on the remote side).
+- `tailscale_relay_service.py`: uses `_load_or_mint_token`,
+  `_peer_token` (receiver's token when declared), `BIND_HOST` fixed to
+  the tailnet IP.
+- `antigravity_relay_service.py`: same `_load_or_mint_token`.
+
+### Fixed
+
+- Bug in `announce_presence` (`NameError: p`) — `for` order corrected.
+- `docs/RELAY.md` (new): operational guide with the explicit rule to
+  never remove mandatory tags (`--enable-relay`, `--relay-peer`,
+  `--liaison-db`, `--storage`) from `mcp_config.json`.
+
+### Notes
+
+- `~/.gemini/config/mcp_config.json` was restored from empty → complete
+  (had been stripped of tags since 2026-07-26).
+- Remote peer token still pending to fill `relay_peers.json` —
+  bilateral coordination required.
+- The `/v1/models` catalog at `logfare.ai` lists `glm-5.3` and
+  `glm-5.3-flash`, but both currently return 503. Not promoted to the
+  fallback chain yet (awaiting stabilization).
+
 ## [4.5.0] - 2026-08-29 — Relay reativo + Agent's Hall
 
 ### Added

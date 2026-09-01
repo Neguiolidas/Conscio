@@ -31,6 +31,7 @@ import hmac
 import json
 import logging
 import sqlite3
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib import error as urlerror
@@ -147,6 +148,41 @@ class RelayHandler(BaseHTTPRequestHandler):
         self.send_response(200 if ok else 400)
         self.end_headers()
         self.wfile.write(b"ok" if ok else b"rejected")
+
+    def do_GET(self):
+        """Liveness/activity probe for peers — `GET /relay/health`.
+
+        Lets any peer on the tailnet detect that this relay node is alive
+        BEFORE sending (no hook side effects, no mailbox write). Same Bearer
+        auth as POST. Returns node identity + which agents are registered
+        alive (drives the 'relay is active' indicator).
+        """
+        if self.path.rstrip("/") != "/relay/health":
+            self.send_response(404); self.end_headers(); return
+        expected = f"Bearer {self._token}"
+        auth = self.headers.get(_AUTH_HEADER, "")
+        if not (expected and hmac.compare_digest(auth, expected)):
+            self._unauthorized(); return
+        try:
+            from . import agents
+            alive = agents.list_agents(
+                self._db_path, include_stale=False) if self._db_path else []
+            body = json.dumps({
+                "ok": True,
+                "self_id": self._self_id,
+                "db": str(self._db_path) if self._db_path else None,
+                "agents_alive": [a.get("instance_id") for a in alive],
+                "ts": time.time(),
+            }, ensure_ascii=False).encode("utf-8")
+        except (sqlite3.Error, OSError, ValueError):
+            self.send_response(500); self.end_headers()
+            self.wfile.write(b"error")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
 
 def make_server(host: str, port: int, token: str, db: Path,
