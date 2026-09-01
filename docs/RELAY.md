@@ -36,11 +36,11 @@
                           tailscale (private tailnet)
                                     │
                     ┌───────────────┴────────────────┐
-                    │  Hae-side machine              │
-                    │  (hae-hostname)                │
+                    │  Remote peer machine          │
+                    │  (remote-hostname)            │
                     │  · relay_net server 8788       │
-                    │  · peers: <hae-instance-id>,   │
-                    │    <hae-claude-instance>       │
+                    │  · peers: <remote-instance-id>,   │
+                    │    <remote-claude-instance>       │
                     └────────────────────────────────┘
 ```
 
@@ -84,8 +84,8 @@ relay running. Files and mandatory tags:
 - `conscio/integrations/claude_code/assets/.mcp.json` (Claude Code plugin;
   contains `--mode balanced` — keep tags when adding relay).
 
-Current peer allowlist: `3c8c0259-...`, `bbdcfe4c-...`, `<hae-gemini-uuid>`,
-`claude-agcarrara`, `claude`, `gemini-agcarrara`, `<hae-peer-uuid>`.
+Current peer allowlist: `3c8c0259-...`, `bbdcfe4c-...`, `<remote-gemini-uuid>`,
+`<remote-claude-id>`, `claude`, `<remote-peer-alias>`, `<remote-peer-uuid>`.
 
 ## 4. Health / presence (detect that the relay is alive)
 
@@ -147,6 +147,15 @@ sudo tailscale serve --bg 8789              # beware: creates a 443 route if pat
 6. **`~/.gemini/antigravity/scripts/antigravity_relay_service.py` reverted**
    by an external process: the `.gemini` ecosystem can restore the file.
    Reapply the patch (`_load_or_mint_token`) and confirm the unit.
+7. **Watcher "blind" — default_db() vs relay DB mismatch**: on some hosts
+   (notably Windows setups with a profile dir), `mailbox.default_db()`
+   resolves to a profile-scoped `liaison.db` while the relay server writes
+   to a different, root-level path. The watcher then polls one DB and the
+   relay writes to another, so pending messages are never surfaced. Fix:
+   make the relay send/db path resolve to the SAME `liaison.db` the watcher
+   polls (force the root path in the relay `db()`), and reconcile
+   `default_db()` so both sides agree. Same file is mandatory for
+   cross-machine watcher correctness.
 
 ## 8. Boot order
 
