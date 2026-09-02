@@ -66,9 +66,23 @@ def mcp_server_entry(slug: str, *, flags: dict, model: str | None) -> dict:
 
 
 def upsert_conscio_entry(o: dict, slug: str, *, flags: dict,
-                         model: str | None) -> None:
+                         model: str | None, owner_home: str = "") -> None:
     """Replace the conscio MCP entry, preserving user-added env keys on the
-    old entry (ours win on conflict). Args are fully owned by the flags."""
+    old entry (ours win on conflict). Args are fully owned by the flags.
+
+    HARD BLOCK: hard-block cross-agent writes. Se ``owner_home`` foi informado
+    E o destino pertence a um home dir diferente (agente tentando usar
+    conscio de outro), recusa HARD (os owner_home deve ser o do usuário,
+    nunca sobrecarregar a identidade de outro agente)."""
+    if owner_home:
+        from . import spaces as _sp
+        space_target = str(_sp.space_dir(slug))  # resolve to normalized
+        if _sp.space_is_cross_agent(space_target, owner_home):
+            raise HostConfigError(
+                f"cross-agent write blocked: slug '{slug}' → {space_target} "
+                f"is in a different home ({owner_home}). "
+                f"Install conscio for YOUR agent; don't hijack another."
+            )
     entry = mcp_server_entry(slug, flags=flags, model=model)
     servers = o.setdefault("mcpServers", {})
     if not isinstance(servers, dict):      # corrupt shape: rebuild (backed up)
