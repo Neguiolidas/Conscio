@@ -14,7 +14,7 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v4.5.2` "Isolamento por agente":** hard-block cross-agent — um agente de outro ambiente não grava sobre a instalação de outro (leitura cross-agente permitida); cada espaço tem seu próprio `liaison.db` privado (comunicação entre agentes só por transporte tailscale/HTTP); utility `tools/consolidate_agent_identity.py` para migrar identidades duplicadas de instalações antigas.
+**Latest release — `v4.5.2` "Per-agent isolation":** cross-agent hard-block — a foreign agent cannot write over another agent's install (cross-agent read is still allowed); each space gets its own private `liaison.db` (cross-agent communication is transport-only, over tailscale/HTTP); a `tools/consolidate_agent_identity.py` utility migrates duplicated identities from old installs.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 

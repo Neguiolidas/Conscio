@@ -7,39 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [4.5.2] - 2026-09-01 — Isolamento por agente (hard-block cross-agent + liaison próprio)
+## [4.5.2] - 2026-09-01 — Per-agent isolation (cross-agent hard-block + own liaison)
 
 ### Added
 
-- **`spaces.space_is_cross_agent(space, self_instance_id)`**: guard de
-  isolamento por IDENTIDADE do espaço (lê `instance.json`). Bloqueia que um
-  agente de outro ambiente grave sobre a instalação de outro (HARD-BLOCK de
-  escrita; leitura continua permitida). Fracassa-fechado se a identidade do
-  espaço estiver corrompida. Não depende de home-dir (agentes coabitam o mesmo
-  home).
-- **`spaces.liaison_db_path(slug)`**: cada espaço passa a ter seu próprio
-  `liaison.db` privado (`~/.conscio/instances/<slug>/liaison.db`), em vez de
-  um mailbox global compartilhado. Comunicação entre agentes passa a ser
-  obrigatoriamente por transporte (HTTP/tailscale), nunca por DB partilhado.
-- **`tools/consolidate_agent_identity.py`**: utilitário de migração para
-  instalações com identidade duplicada (mesmo agente sob 2 instance ids).
-  Idempotente, com backup de tudo: migra `instance.json`, consolida
-  `agents`/`messages`/`watcher_state` no id canônico.
-- **Tests de isolamento** (`tests/test_installer_isolation.py`): 12 casos
-  cobrindo cross-agent, identidade corrompida (fails-closed), liaison por
-  espaço e guard no `upsert_conscio_entry`.
+- **`spaces.space_is_cross_agent(space, self_instance_id)`**: isolation guard
+  based on the space's IDENTITY (reads `instance.json`). Blocks a foreign
+  agent from writing over another agent's install (HARD-BLOCK on write;
+  cross-agent READ is still allowed). Fails closed when the space identity is
+  corrupt. Does not rely on home-dir heuristics (agents cohabit one home).
+- **`spaces.liaison_db_path(slug)`**: each space now has its own private
+  `liaison.db` (`~/.conscio/instances/<slug>/liaison.db`), instead of a shared
+  global mailbox. Cross-agent communication is transport-only (HTTP/tailscale),
+  never via a shared DB.
+- **`tools/consolidate_agent_identity.py`**: migration utility for installs
+  with a duplicated identity (same agent under 2 instance ids). Idempotent,
+  backs up everything it touches: migrates `instance.json`, consolidates
+  `agents`/`messages`/`watcher_state` onto the canonical id.
+- **Isolation tests** (`tests/test_installer_isolation.py`): 12 cases covering
+  cross-agent, corrupt identity (fails-closed), per-space liaison, and the
+  `upsert_conscio_entry` guard.
 
 ### Changed
 
-- `hostcfg.upsert_conscio_entry`: novo parâmetro `self_instance_id` — quando
-  informado, chama o guard cross-agent e levanta `HostConfigError` em conflito.
+- `hostcfg.upsert_conscio_entry`: new `self_instance_id` parameter — when set,
+  invokes the cross-agent guard and raises `HostConfigError` on conflict.
 
 ### Notes
 
-- Docs internos de conta (design, planos, decisões) NÃO são commitados —
-  ficam locais + Conscio/Neurata. Sanitização de PII verificada antes de cada
-  release (IPs, hostnames, e-mails, UUIDs de instância).
-- PyPI: build validado; publicação pendente do owner.
+- Internal account docs (design, plans, decisions) are NOT committed — they
+  stay local + Conscio/Neurata. PII sanitization is checked before every
+  release (IPs, hostnames, emails, instance UUIDs).
+- PyPI: build validated; publish pending the owner.
 
 ## [4.5.1] - 2026-08-31 — Relay: health endpoint + presence announce + cross-machine hardening
 
