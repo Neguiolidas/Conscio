@@ -67,6 +67,7 @@ def _legacy_name(name: str) -> str:
 # liaison SELECT on every single tool call in a chatty session. host_act.approve
 # remains the authority; this only paces the opportunistic poll.
 AUTO_APPLY_THROTTLE_S = 5.0
+CARD_REPUBLISH_S = 60.0        # v4.5.4 I6: _ensure_registered roda toda ferramenta
 
 
 class Bindings:
@@ -106,6 +107,10 @@ class Bindings:
         self.identity_runtime = identity_runtime
         self.identity_papel = identity_papel
         self.can_create_halls = can_create_halls  # v4.5: Agent's Hall tools
+        # v4.5.4: cartão público no diretório (C2). Erro fica visível em vez
+        # de virar agente invisível que se acha publicado.
+        self.card_error: str = ""
+        self._card_ts: float = 0.0
         self._pending_notifications: list[dict] = []
 
         # v3.7: ModeRouter — chunkifica output conforme prompt_complexity
@@ -603,11 +608,63 @@ class Bindings:
             "papel": self.identity_papel,
         }
 
+    def _publish_card(self) -> None:
+        """Publica o endereço público no diretório. Throttled (I6). Falha não
+        derruba a chamada, mas fica em self.card_error — agente invisível que
+        se acha visível é a falha silenciosa que R1 proíbe."""
+        from ..liaison import directory
+        now = time.monotonic()
+        if self._card_ts and now - self._card_ts < CARD_REPUBLISH_S:
+            return
+        self._card_ts = now
+        card = {
+            "instance_id": self.self_instance_id,
+            "spool": str(directory.spool_dir(self.self_instance_id)),
+            # meu cartão local nunca tem url: quem me alcança de fora usa o
+            # remotes.json do lado dele (conscio relay pair).
+            "url": "",
+            "modelo": self.identity_model, "familia": self.identity_familia,
+            "runtime": self.identity_runtime, "papel": self.identity_papel,
+            "capabilities": ["relay"], "updated_at": time.time(),
+        }
+        try:
+            old = directory.get(self.self_instance_id) or {}
+            # membership é do agente e sobrevive ao republish de 60s (Task 3b)
+            for key in ("halls", "halls_declined"):
+                if old.get(key):
+                    card[key] = old[key]
+            directory.publish(card)
+            self.card_error = ""
+        except Exception as exc:
+            self.card_error = f"cartão não publicado: {exc}"
+
+    def _sync_directory_registry(self) -> None:
+        """Projeta os cartões do diretório na tabela `agents` local. Com o db
+        por agente, ninguém mais escreve no meu banco — sem esta projeção, o
+        observatory e `conscio_agents` param de enxergar a sociedade."""
+        from ..liaison import agents, directory
+        for card in directory.peers(exclude=self.self_instance_id):
+            cid = card.get("instance_id")
+            if not cid:
+                continue
+            try:
+                agents.register_agent(
+                    self.liaison_db, instance_id=cid,
+                    model=card.get("modelo", ""), familia=card.get("familia", ""),
+                    runtime=card.get("runtime", ""), papel=card.get("papel", ""),
+                    capabilities=tuple(card.get("capabilities") or ("relay",)),
+                    status="alive" if directory.is_live(card) else "stale",
+                    # o heartbeat é o do CARTÃO, não `agora`: projetar com o
+                    # relógio local faria peer morto parecer vivo para sempre
+                    heartbeat=float(card.get("updated_at") or 0.0))
+            except Exception:
+                continue          # um cartão ruim não derruba a projeção
+
     def _ensure_registered(self) -> None:
-        """Self-register + refresh presence. Best-effort (never raises): a
-        failed registry write just skips this tick's presence refresh."""
+        """Self-register + refresh presence + publica o cartão (v4.5.4 C2)."""
         if not self.self_instance_id:
             return
+        self._publish_card()
         try:
             from ..liaison import agents
             agents.register_agent(
@@ -615,26 +672,25 @@ class Bindings:
                 model=self.identity_model, familia=self.identity_familia,
                 runtime=self.identity_runtime, papel=self.identity_papel,
                 capabilities=("relay",), status="alive")
+            self._sync_directory_registry()
         except Exception:
             pass
 
     def _resolve_peers(self) -> set[str]:
-        """Live peers from the agents registry (v4.5 D1), falling back to the
-        static --relay-peer allowlist when the registry has no OTHER live
-        agent beyond self. Excludes self. The registry is the authority for
-        newly-seen agents; the seed list keeps working until a live peer
-        actually appears in the registry (a self-only registry must not clear
-        the configured peers)."""
-        try:
-            from ..liaison import agents
-            rows = agents.list_agents(self.liaison_db, include_stale=False)
-        except Exception:
-            rows = []
-        others = [a for a in rows
-                  if a.get("instance_id") and a["instance_id"] != self.self_instance_id]
-        if others:
-            return {a["instance_id"] for a in others}
-        return {p for p in self.relay_peers if p and p != self.self_instance_id}
+        """Peers do DIRETÓRIO (v4.5.4 C2), sem filtro de vivacidade: o spool é
+        arquivo, peer parado continua endereçável. --relay-peer deixa de ser
+        REQUISITO e vira RESTRIÇÃO opcional; vazio = todos do diretório.
+
+        Nomeou peers ⇒ é exatamente esse conjunto. Não é interseção com o
+        diretório: peer de OUTRA máquina (remotes.json, via Tailscale) não tem
+        cartão aqui, e interseção o apagaria em silêncio — que é a falha que
+        esta versão existe para acabar."""
+        from ..liaison import directory
+        allow = {p for p in self.relay_peers if p and p != self.self_instance_id}
+        if allow:
+            return allow
+        return {c["instance_id"] for c in directory.peers(
+            exclude=self.self_instance_id) if c.get("instance_id")}
 
     # ── v4.5: Agent's Hall tools ──────────────────────────────────────
 
