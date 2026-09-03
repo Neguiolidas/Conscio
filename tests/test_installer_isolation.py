@@ -8,7 +8,7 @@ read still allowed. Not home-dir heuristics (agents cohabit one home).
 import pytest
 
 from conscio.installer import hostcfg, spaces
-from conscio.noosphere.identity import load_or_create, NoosphereIdentityError
+from conscio.noosphere.identity import load_or_create
 
 
 def _make_space(base, slug):
@@ -30,7 +30,7 @@ class TestSpaceIsCrossAgent:
         assert spaces.space_is_cross_agent(str(d), "self-abc") is False
 
     def test_cross_agent_blocks(self, tmp_path):
-        space, owner = _make_space(tmp_path, "gemini")
+        space, _owner = _make_space(tmp_path, "gemini")
         assert spaces.space_is_cross_agent(str(space), "self-hermet") is True
 
     def test_same_owner_passes(self, tmp_path):
@@ -60,7 +60,7 @@ class TestLiaisonDbPath:
 
 class TestUpsertCrossAgentGuard:
     def test_cross_agent_write_raises(self, tmp_path, monkeypatch):
-        d, owner = _make_space(tmp_path, "gemini")
+        _d, _owner = _make_space(tmp_path, "gemini")
         monkeypatch.setattr(spaces, "INSTANCES_ROOT", lambda: tmp_path / "instances")
         cfg = {}
         with pytest.raises(hostcfg.HostConfigError):
@@ -69,7 +69,7 @@ class TestUpsertCrossAgentGuard:
                 self_instance_id="self-hermet-wrong-id")
 
     def test_same_agent_write_passes(self, tmp_path, monkeypatch):
-        d, owner = _make_space(tmp_path, "hermet")
+        _d, owner = _make_space(tmp_path, "hermet")
         monkeypatch.setattr(spaces, "INSTANCES_ROOT", lambda: tmp_path / "instances")
         cfg = {}
         hostcfg.upsert_conscio_entry(
