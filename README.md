@@ -14,7 +14,7 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v4.5.1` "Relay cross-machine hardening":** `GET /relay/health` (Bearer) for any tailnet peer to detect relay liveness, silent `presence` announce every 60s, mandatory strong tokens via `secrets.token_hex(24)`, two systemd units (`conscio-relay-bridge` on 8789, `conscio-antigravity-relay` on 8788), `relay_health.py` CLI, and `docs/RELAY.md` with the explicit rule to never remove mandatory tags from `mcp_config.json`.
+**Latest release — `v4.5.2` "Isolamento por agente":** hard-block cross-agent — um agente de outro ambiente não grava sobre a instalação de outro (leitura cross-agente permitida); cada espaço tem seu próprio `liaison.db` privado (comunicação entre agentes só por transporte tailscale/HTTP); utility `tools/consolidate_agent_identity.py` para migrar identidades duplicadas de instalações antigas.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 

@@ -62,22 +62,37 @@ def _owner_tag_from_home(home: str) -> str:
         return Path(h).name.upper()
     return Path(h).stem.upper()
 
-def space_is_cross_agent(space: str, owner_home: str) -> bool:
-    """True se ``space`` pertence a outro agente (home dir diferente).
-    HARD-BLOCK: cross-agent por home dir. Leitura cross-agente é permitida
-    (consulta entre agents é okay). Detect via user home resolution.
+def space_is_cross_agent(space: str, self_instance_id: str) -> bool:
+    """True se ``space`` é dono de um AGENTE diferente do atual.
+
+    Modelo: cada espaço tem um ``instance.json`` de identidade própria (criado
+    por ``load_or_create``). O guard compara a identidade gravada no espaço com
+    a identidade do agente que está tentando escrever (``self_instance_id`` —
+    ex. ``CONSCIO_SELF_ID`` ou o instance_id do home do próprio agente).
+
+    Se o espaço já tem um dono (instance.json existe) e esse dono NÃO é o self,
+    então é um espaço de outro agente → HARD-BLOCK de escrita (leitura continua
+    permitida). Sem instance_id próprio (espaço novo) → não é cross.
+
+    Não depende de heurística de home dir, porque agentes distintos coabitam o
+    mesmo home. Home é só onde o espaço mora; a autoridade é a identidade.
     """
-    if not space or not owner_home:
+    if not space or not self_instance_id:
         return False
     try:
-        owner_home_r = Path(owner_home).expanduser().resolve()
-        space_r = Path(space).expanduser().resolve()
+        from ..noosphere.identity import NoosphereIdentityError, _read
+        d = Path(space).expanduser().resolve()
     except (OSError, ValueError, TypeError):
         return False
-    # same user home? → not cross
-    if str(space_r).startswith(str(owner_home_r) + os.path.sep):
+    if not (d / "instance.json").exists():
+        # Espaço ainda não tem dono — o primeiro a reivindicar decide.
         return False
-    return True
+    try:
+        owner_id = _read(d / "instance.json").instance_id
+    except NoosphereIdentityError:
+        # identity corrompida = espaço não confiável; falha fechada.
+        return True
+    return owner_id != self_instance_id
 
 def liaison_db_path(slug: str) -> Path:
     """Cada agente tem seu liaison.db privado DENTRO de instances/<slug>/.
