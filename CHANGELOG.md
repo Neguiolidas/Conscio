@@ -89,40 +89,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `glm-5.3-flash`, but both currently return 503. Not promoted to the
   fallback chain yet (awaiting stabilization).
 
-## [4.5.0] - 2026-08-29 — Relay reativo + Agent's Hall
+## [4.5.0] - 2026-08-29 — Reactive relay + Agent's Hall
 
 ### Added
 
-- **Agent's Hall** (`conscio/liaison/halls.py`): grupos nomeados de agentes sobre o
-  mesmo mailbox. Halls com dono, `hall_id` = slug `dono--nome`, membros com papel e
-  presença. Fan-out `send_to_hall` exclui o remetente. Engine-free, never-raises.
-- **Tools MCP `conscio_hall_*`** (create/list/join/leave/members/send) atrás da flag
-  `--can-create-halls`. `hall_members` enriquece com modelo/familia do registro.
-- **Observatory** (`halls_view.py` + rotas `/api/agents`, `/api/halls`, `/api/mailboxes`):
-  projeção read-only de agents + halls + mailbox, com stale marcado como `offline`
-  (não some). Tabs "Halls" e "Agents" no app.js com poll de 3s (tempo real).
-- **Envelope de procedência**: `mailbox.send(identity=...)` carimba `_meta.from` com a
-  identidade do runtime (modelo/familia/runtime/papel); `relay.envelope_of` extrai.
-  A identidade do runtime vence auto-declaração no corpo.
-- **Colunas de identidade no registro** `agents`: `nome/familia/runtime/papel`, com
-  migração ALTER idempotente para DBs legados.
-- **Heartbeat de 3 estados** `tick_summary()`: `nada_novo | entregue | não_entregue
-  (+motivo)` — nunca silêncio. Watcher renova presença no registro a cada tick e emite
-  "vivo" no loop persistente.
-- **Quarentena** (`mailbox.quarantine/list/purge`): payload que não parseia vai para
-  `quarantine` em vez de derrubar a fila.
+- **Agent's Hall** (`conscio/liaison/halls.py`): named groups of agents over
+  the same mailbox. Halls with an owner, `hall_id` = `owner--name` slug, members
+  with role and presence. `send_to_hall` fan-out excludes the sender.
+  Engine-free, never-raises.
+- **MCP tools `conscio_hall_*`** (create/list/join/leave/members/send) behind
+  the `--can-create-halls` flag. `hall_members` enriches with model/family from
+  the registry.
+- **Observatory** (`halls_view.py` + `/api/agents`, `/api/halls`, `/api/mailboxes`):
+  read-only projection of agents + halls + mailbox, with stale marked as
+  `offline` (does not disappear). "Halls" and "Agents" tabs in app.js with a
+  3s poll (real time).
+- **Provenance envelope**: `mailbox.send(identity=...)` stamps `_meta.from`
+  with the runtime identity (model/family/runtime/role); `relay.envelope_of`
+  extracts it. Runtime identity wins over self-declaration in the body.
+- **Identity columns in the `agents` registry**: `nome/familia/runtime/papel`,
+  with idempotent ALTER migration for legacy DBs.
+- **3-state heartbeat** `tick_summary()`: `nothing_new | delivered | not_delivered
+  (+reason)` — never silent. Watcher renews presence each tick and emits
+  "alive" in the persistent loop.
+- **Quarantine** (`mailbox.quarantine/list/purge`): a payload that doesn't parse
+  goes to `quarantine` instead of dropping the queue.
 
 ### Changed
 
-- **Peers dinâmicos**: `Bindings._resolve_peers()` consulta `agents.list_agents()`
-  (vivos, exclui self); `--relay-peer` vira seed/fallback, não autoridade.
-- `--identity-model/familia/runtime/papel` e `--can-create-halls` no CLI do MCP.
-- `mcp/server.py` `route()` do observatory ganha o parâmetro `halls`.
+- **Dynamic peers**: `Bindings._resolve_peers()` consults `agents.list_agents()`
+  (alive, excludes self); `--relay-peer` becomes seed/fallback, not authority.
+- `--identity-model/familia/runtime/papel` and `--can-create-halls` on the MCP CLI.
+- `mcp/server.py` `route()` for the observatory gains the `halls` parameter.
 
 ### Fixed
 
-- O relay 503/silêncio estrutural: componente nunca mais anuncia sucesso sem entregar
-  (3 estados) nem deixa payload malformado bloquear a leitura (quarentena).
+- Structural relay 503/silence: the component no longer announces success
+  without delivering (3 states) nor lets a malformed payload block reading
+  (quarantine).
 
 ---
 
