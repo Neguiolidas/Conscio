@@ -22,14 +22,12 @@ def _neutral_default() -> Path:
 
 
 def conscio_home() -> Path:
-    """Resolve the Conscio home dir, neutral-first with legacy preservation.
+    """Resolve the Conscio home dir, neutral-first with legacy override.
 
-    Precedence:
+    Precedence (deterministic — no filesystem detection):
       1. ``CONSCIO_HOME`` — the explicit neutral override.
       2. ``HERMES_HOME`` — explicit legacy override (still supported).
-      3. otherwise, preserve a detected legacy install: if ``~/.hermes`` already
-         exists (an older Conscio laid down storage there), keep using it; else a
-         fresh agent starts in the neutral ``~/.conscio``.
+      3. otherwise ``~/.conscio`` (the neutral default).
 
     ``expanduser`` is applied because a value read from the environment is
     whatever a shell/systemd/wrapper exported, and ``X=~/.x`` nothing expanded is
@@ -39,8 +37,7 @@ def conscio_home() -> Path:
         return Path(os.environ["CONSCIO_HOME"]).expanduser()
     if os.environ.get("HERMES_HOME"):
         return Path(os.environ["HERMES_HOME"]).expanduser()
-    legacy = Path.home() / ".hermes"
-    return legacy if legacy.exists() else _neutral_default()
+    return _neutral_default()
 
 
 # Deprecated alias — retained so callers that still import ``hermes_home`` don't

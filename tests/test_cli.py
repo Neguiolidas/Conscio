@@ -11,21 +11,24 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 class TestStorageDefault:
-    """v1.5.1: default CLI storage routes through HERMES_HOME (env-overridable)
-    rather than a hardcoded ~/.hermes path, matching session_lifecycle/session_rag.
-    """
+    """v4.5.3: default CLI storage routes through the neutral CONSCIO_HOME
+    (~/.conscio), with HERMES_HOME kept as a legacy override. Both are env-var
+    overridable and deterministic (no filesystem detection)."""
 
     def test_explicit_arg_wins(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "ignored"))
+        monkeypatch.setenv("CONSCIO_HOME", str(tmp_path / "ignored"))
         assert _storage(str(tmp_path / "explicit")) == str(tmp_path / "explicit")
 
     def test_default_honors_hermes_home_env(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CONSCIO_HOME", raising=False)
         monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
         assert _storage("") == str(tmp_path / "home" / "consciousness")
 
-    def test_default_without_env_uses_dot_hermes(self, monkeypatch):
+    def test_default_without_env_uses_neutral_home(self, monkeypatch, tmp_path):
         monkeypatch.delenv("HERMES_HOME", raising=False)
-        assert _storage("") == str(pathlib.Path.home() / ".hermes" / "consciousness")
+        monkeypatch.delenv("CONSCIO_HOME", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        assert _storage("") == str(tmp_path / ".conscio" / "consciousness")
 
 
 def test_version(capsys):
