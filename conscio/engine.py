@@ -257,7 +257,7 @@ class ConsciousnessEngine:
         proposals = engine.evolution.pending_proposals()
     """
 
-    DEFAULT_STORAGE = Path.home() / ".hermes" / "consciousness"
+    DEFAULT_STORAGE = Path.home() / ".conscio" / "consciousness"
 
     def __init__(
         self,

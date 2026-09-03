@@ -2,9 +2,12 @@
   "mcpServers": {
     "conscio": {
       "command": "uvx",
+      "env": {
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8"
+      },
       "args": [
-        "--from", "conscio==4.5.2", "conscio-mcp",
-        "--mode", "balanced",
+        "--from", "conscio==4.5.3", "conscio-mcp",
         "--storage", "${CLAUDE_PLUGIN_DATA}/space",
         "--default-model", "claude-opus-5"
       ]

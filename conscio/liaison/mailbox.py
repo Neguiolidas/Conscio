@@ -1,7 +1,7 @@
 # conscio/liaison/mailbox.py
 """Engine-free shared mailbox — the v2.6.0 Liaison substrate.
 
-A single SQLite table at $HERMES_HOME/liaison.db carries directed messages
+A single SQLite table at $CONSCIO_HOME/liaison.db carries directed messages
 between agent instances (review_request / review_verdict). WAL + busy_timeout
 mirror the noosphere catalog so concurrent same-host peers read latest-committed
 rows. Read path tolerates a missing/corrupt/locked db (returns []); the write
@@ -42,8 +42,8 @@ CREATE TABLE IF NOT EXISTS quarantine (
 
 
 def default_db() -> Path:
-    from ..noosphere.paths import hermes_home  # pure leaf; not the engine
-    return hermes_home() / "liaison.db"
+    from ..noosphere.paths import conscio_home  # pure leaf; not the engine
+    return conscio_home() / "liaison.db"
 
 
 def _connect(db: Path) -> sqlite3.Connection:

@@ -7,7 +7,7 @@ ConsciousnessEngine offline (no LLM, no network) and default to an ephemeral
 storage dir so a quick CLI look never clobbers a real workspace.
 
 NOTE: as of v1.5.1, CLI commands default to the persistent storage dir
-(~/.hermes/consciousness) so that awake/sleep state survives across calls.
+(~/.conscio/consciousness) so that awake/sleep state survives across calls.
 
 Engine construction is deferred into the handlers, so `conscio version`,
 `conscio --help`, and `conscio plugins` never build an engine.
@@ -115,13 +115,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p_consent.add_argument("scope", nargs="?",
                            choices=["off", "project", "parent"],
                            help="grant this scope (omit to show the current one)")
-    p_consent.add_argument("--storage", default="", help="storage dir (default: ~/.hermes)")
+    p_consent.add_argument("--storage", default="", help="storage dir (default: ~/.conscio)")
 
     p_structure = sub.add_parser(
         "structure",
         help="show structural drift + freshness for the current workspace (read-only)")
     p_structure.add_argument(
-        "--storage", default="", help="storage dir (default: ~/.hermes)")
+        "--storage", default="", help="storage dir (default: ~/.conscio)")
 
     p_awake = sub.add_parser("awake",
                              help="enter Awake Mode (R9; enables autonomous run)")
@@ -137,7 +137,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "trial",
         help="trial a quarantined imported skill in a throwaway sandbox")
     p_trial.add_argument("--storage", default="",
-                         help="instance storage dir (default: ~/.hermes)")
+                         help="instance storage dir (default: ~/.conscio)")
     p_trial.add_argument("--quarantine", type=int, required=True,
                          metavar="ROWID", help="quarantine row id to trial")
     p_trial.add_argument("--model", default=DEFAULT_MODEL)
@@ -149,7 +149,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "promote",
         help="promote a trialed quarantined skill into the live library")
     p_promote.add_argument("--storage", default="",
-                           help="instance storage dir (default: ~/.hermes)")
+                           help="instance storage dir (default: ~/.conscio)")
     p_promote.add_argument("--quarantine", type=int, required=True,
                            metavar="ROWID",
                            help="quarantine row id to promote")
@@ -181,7 +181,7 @@ def _build_parser() -> argparse.ArgumentParser:
                                "chunks (default: 0.2)")
     p_ingest.add_argument("--model", default=DEFAULT_MODEL)
     p_ingest.add_argument("--storage", default="",
-                          help="storage dir (default: ~/.hermes)")
+                          help="storage dir (default: ~/.conscio)")
 
     p_search = sub.add_parser(
         "search",
@@ -192,7 +192,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("--category", default=None,
                           help="filter by category")
     p_search.add_argument("--storage", default="",
-                          help="storage dir (default: ~/.hermes)")
+                          help="storage dir (default: ~/.conscio)")
     p_search.add_argument("--model", default=DEFAULT_MODEL)
     p_search.add_argument("--include-stale", action="store_true",
                           help="include tombstoned chunks")
@@ -219,11 +219,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_obs.add_argument("--token", default=None,
                        help="optional bearer token for API access")
     p_obs.add_argument("--storage", default="",
-                       help="storage dir (default: ~/.hermes)")
+                       help="storage dir (default: ~/.conscio)")
     p_obs.add_argument("--noosphere", default="",
-                       help="noosphere.db path (default: ~/.hermes/noosphere.db)")
+                       help="noosphere.db path (default: ~/.conscio/noosphere.db)")
     p_obs.add_argument("--liaison-db", default="",
-                       help="liaison.db path (default: ~/.hermes/liaison.db)")
+                       help="liaison.db path (default: ~/.conscio/liaison.db)")
     return parser
 
 
@@ -231,10 +231,9 @@ def _storage(arg: str) -> str:
     if arg:
         return arg
     # Persistent default so awake/sleep state survives across CLI calls. Route
-    # through HERMES_HOME (default ~/.hermes) to match session_lifecycle/session_rag.
-    home = Path(os.environ.get("HERMES_HOME",
-                               Path.home() / ".hermes")).expanduser()
-    return str(home / "consciousness")
+    # through the neutral conscio home (with legacy HERMES_HOME preservation).
+    from .noosphere.paths import default_storage
+    return str(default_storage())
 
 
 def _note_if_unknown(model: str, model_info) -> None:
@@ -1118,7 +1117,8 @@ def _cmd_observatory(*, host: str, port: int, root: str,
     if storage:
         storage_path = Path(storage).expanduser()
     else:
-        storage_path = Path.home() / ".hermes" / "consciousness"
+        from .noosphere.paths import default_storage
+        storage_path = default_storage()
     noo = Path(noosphere).expanduser() if noosphere else _DEFAULT_NOOSPHERE
     liai = Path(liaison_db).expanduser() if liaison_db else _DEFAULT_LIAISON
     root_abs = str(Path(root).expanduser().resolve())

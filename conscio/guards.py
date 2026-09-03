@@ -70,7 +70,13 @@ def atomic_write_text(path: Path, text: str) -> None:
     ``os.replace`` (atomic on POSIX). Guards the torn-write class (B-012 / R-09):
     a tailing reader or a power-loss mid-write never sees a truncated file, and
     the prior contents survive a failed write. ``os.replace`` raising propagates
-    (the original file is left intact)."""
+    (the original file is left intact).
+
+    Encoding is forced to UTF-8. ``Path.write_text`` otherwise falls back to the
+    OS default codec — on Windows that is ``cp1252``, which cannot represent much
+    of the state content and raises ``UnicodeEncodeError`` mid-write (bug seen on
+    `--awake` startup). Explicit UTF-8 makes the write deterministic everywhere.
+    """
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text)
+    tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)

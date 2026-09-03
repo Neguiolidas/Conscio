@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.5.3] - 2026-09-03 — Neutral home (un-couple from Hermes) + three fixes
+
+### Fixed
+
+- **Windows `cp1252` crash on state writes**: `atomic_write_text` (and the other
+  state writers — goal_generator, inner_monologue, structural_drift,
+  structural_consent, daemon heartbeat) wrote files without an explicit
+  `encoding="utf-8"`, so on Windows the OS `cp1252` code page could not encode
+  much of the state and raised `UnicodeEncodeError` mid-write, killing
+  `--awake` startup. All state writes now force UTF-8; the Claude Code plugin
+  template also ships `env: PYTHONUTF8=1, PYTHONIOENCODING=utf-8`.
+- **`conscio_cognitive_cycle` missing in balanced/high surfaces**: the tool
+  lived in `BASE_TOOL_DEFS` and the dispatch table but not in any mode set, so
+  the `tool_defs()` filter dropped it in balanced/high — hosts saw it missing
+  and calls surfaced as "internal error". Added to `BALANCED_TOOLS` (inherits
+  high).
+
+### Changed
+
+- **Install-vs-update mode detection**: `DEFAULT_MODE` is now `balanced` for a
+  genuinely fresh install, but a pre-4.5.3 space (has `instance.json` but no
+  `mcp_mode`) keeps its historical `ultra` surface — an update never shrinks an
+  existing install. The settled mode is persisted on first boot.
+
+### Breaking / behaviour
+
+- **Neutral home, Hermes no longer the default**: `conscio.home` now resolves
+  `CONSCIO_HOME` (neutral `~/.conscio`) at the top, with `HERMES_HOME` kept as a
+  legacy override that preserves pre-4.5.3 installs (an existing `~/.hermes` is
+  auto-detected and reused). `noosphere.paths.hermes_home()` remains a
+  backward-compat alias of the new `conscio_home()`. All internal defaults
+  (engine, CLI, mailbox, observatory, hub, session lifecycle/RAG) now point at
+  the neutral home.
+
+### Notes
+
+- Internal account docs (design, plans, decisions) are NOT committed — they
+  stay local + Conscio/Neurata. PII sanitization checked before every release.
+- PyPI: pending the owner's authorization.
+
 ## [4.5.2] - 2026-09-01 — Per-agent isolation (cross-agent hard-block + own liaison)
 
 ### Added

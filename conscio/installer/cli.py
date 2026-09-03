@@ -1,7 +1,7 @@
 """`conscio init` entry — builds a terminal PromptIO and runs the wizard.
 
 The IO swallows EOFError (closed stdin in CI/non-interactive) and returns the
-default, so an unattended run never hangs (Hermet plan-gate ressalva)."""
+default, so an unattended run never hangs."""
 from __future__ import annotations
 
 import argparse

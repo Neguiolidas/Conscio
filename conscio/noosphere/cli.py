@@ -20,11 +20,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     def _storage_arg(sp: argparse.ArgumentParser) -> None:
         sp.add_argument("--storage", default="",
-                        help="instance storage dir (default: $HERMES_HOME/consciousness)")
+                        help="instance storage dir (default: $CONSCIO_HOME/consciousness)")
 
     def _noosphere_arg(sp: argparse.ArgumentParser) -> None:
         sp.add_argument("--noosphere", default="",
-                        help="shared catalog path (default: $HERMES_HOME/noosphere.db)")
+                        help="shared catalog path (default: $CONSCIO_HOME/noosphere.db)")
 
     for name, helptext in (
             ("publish", "publish this instance's proven skills"),

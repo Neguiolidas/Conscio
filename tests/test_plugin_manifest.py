@@ -39,9 +39,13 @@ def test_mcp_pin_is_never_a_floor():
     assert ">=" not in text, "a floor pin makes an old server indistinguishable from a bug"
 
 
-def test_mcp_requests_balanced_mode():
+def test_mcp_does_not_pin_a_mode():
+    """The template must not hard-code --mode: a fresh install defaults to
+    balanced via resolve_mode, and an EXISTING install's persisted mode must
+    survive a rebuild of the manifest. Hard-coding --mode balanced here would
+    downgrade an ultra user on every plugin update (the v4.5.1/4.5.2 regression)."""
     args = json.loads(MCP.read_text())["mcpServers"]["conscio"]["args"]
-    assert args[args.index("--mode") + 1] == "balanced"
+    assert "--mode" not in args, "template must not pin --mode"
 
 
 def test_hooks_cover_every_deepminer_event():

@@ -22,7 +22,6 @@ Usage:
 import hashlib
 import json
 import logging
-import os
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -40,10 +39,11 @@ logger = logging.getLogger(__name__)
 # Config
 # ---------------------------------------------------------------------------
 
-HERMES_HOME = Path(os.environ.get("HERMES_HOME",
-                                  Path.home() / ".hermes")).expanduser()
-SESSION_DB = HERMES_HOME / "state.db"
-RAG_DB = HERMES_HOME / "consciousness" / "session_rag.db"
+from .noosphere.paths import conscio_home
+
+CONSCIO_HOME = conscio_home()
+SESSION_DB = CONSCIO_HOME / "state.db"
+RAG_DB = CONSCIO_HOME / "consciousness" / "session_rag.db"
 
 # Default endpoints — auto-detected by session_rag_factory.py
 # OpenAI-compatible (LM Studio, vLLM, llama.cpp server, etc.)

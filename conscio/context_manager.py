@@ -170,7 +170,7 @@ class ContextManager:
         )
         self.mode = self.model_info.mode
         self.budget = MODE_BUDGETS[self.mode]
-        self.storage_path = Path(storage_path or "~/.hermes/consciousness").expanduser()
+        self.storage_path = Path(storage_path or "~/.conscio/consciousness").expanduser()
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
     @property

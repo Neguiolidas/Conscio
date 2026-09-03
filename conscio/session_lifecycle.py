@@ -28,9 +28,10 @@ logger = logging.getLogger(__name__)
 # Config
 # ---------------------------------------------------------------------------
 
-HERMES_HOME = Path(os.environ.get("HERMES_HOME",
-                                  Path.home() / ".hermes")).expanduser()
-SESSION_DB = HERMES_HOME / "state.db"
+from .noosphere.paths import conscio_home
+
+CONSCIO_HOME = conscio_home()
+SESSION_DB = CONSCIO_HOME / "state.db"
 HANDOFF_DIR = Path.home() / ".conscio" / "handoff"
 HANDOFF_PATH = HANDOFF_DIR / "_session_handoff.md"
 HEARTBEAT_PATH = HANDOFF_DIR / "_latest_heartbeat.md"
@@ -267,7 +268,7 @@ def _extract_keywords(text: str, max_kw: int = 5) -> list[str]:
         "bom","boa","dia","tarde","noite","olá","hello","hi","hey",
         "obrigado","obrigada","valeu","thanks","thank","please",
         "entendi","entende","ok","tá","ta","sim","claro","certo",
-        "senhor","senhora","hermet","hermes",
+        "senhor","senhora",
         "vou","deixe","deixar","aqui","agora","hoje",
         "verificar","funcionou","feito",
         "panorama","diagnóstico","pronto","resumo","relatou",

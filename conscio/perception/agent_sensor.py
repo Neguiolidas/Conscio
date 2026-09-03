@@ -3,7 +3,7 @@
 
 A read-only reference `SensorAdapter` that lets Conscio act as the
 consciousness-layer *for* (really: *watching*) a peer agent — an OpenClaw /
-Claude Code / Hermes worker backed by Conscio storage. It surfaces the peer's
+Claude Code / other agent worker backed by Conscio storage. It surfaces the peer's
 **open goals**, **last reflection**, and **last handoff** as observations so the
 host engine can reflect on what the peer is doing.
 

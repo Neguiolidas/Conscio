@@ -114,3 +114,27 @@ class TestClampInt:
     def test_boundaries_inclusive(self):
         assert clamp_int(0, 0, 100) == 0
         assert clamp_int(100, 0, 100) == 100
+
+
+# ── UTF-8 encoding class: no cp1252 crash on state writes (v4.5.3) ──────────
+class TestAtomicWriteUtf8:
+    def test_unicode_state_survives_roundtrip(self, tmp_path):
+        """B-014: `atomic_write_text` must write UTF-8 explicitly. On Windows
+        `Path.write_text` falls back to the cp1252 code page, which cannot encode
+        much state content (e.g. emoji / accented tokens) and raises
+        UnicodeEncodeError mid-write — crashing `--awake` startup. Writing with
+        `encoding="utf-8"` makes the write deterministic everywhere."""
+        from conscio.guards import atomic_write_text
+
+        p = tmp_path / "state_injection.txt"
+        payload = "predição: coesão σ=0.87 — λ glyph ✨ (#café sério)"
+        atomic_write_text(p, payload)
+        # round-trips byte-identical, and the file decodes as UTF-8
+        assert p.read_text(encoding="utf-8") == payload
+
+    def test_atomic_write_is_actually_utf8_bytes(self, tmp_path):
+        from conscio.guards import atomic_write_text
+
+        p = tmp_path / "state.txt"
+        atomic_write_text(p, "é")
+        assert p.read_bytes().decode("utf-8") == "é"

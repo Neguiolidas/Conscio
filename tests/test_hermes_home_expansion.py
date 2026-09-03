@@ -32,6 +32,7 @@ _REPO = Path(__file__).resolve().parent.parent
 # environment so a local developer's HERMES_HOME never leaks into the probe.
 _ENV_VARS = (
     "HERMES_HOME",
+    "CONSCIO_HOME",
     "CONSCIO_SESSION_DB",
     "CONSCIO_HANDOFF_DIR",
     "CONSCIO_BASE",
@@ -97,22 +98,24 @@ def _probe_sites(sites: list[tuple], env: dict[str, str]) -> dict[str, str]:
 # the root that env_var resolves to ("" if the site IS the root).
 
 _HERMES_SITES = [
-    ("session_lifecycle.HERMES_HOME", "conscio.session_lifecycle",
-     "HERMES_HOME", None, "HERMES_HOME", ""),
+    ("session_lifecycle.CONSCIO_HOME", "conscio.session_lifecycle",
+     "CONSCIO_HOME", None, "CONSCIO_HOME", ""),
     ("session_lifecycle.SESSION_DB", "conscio.session_lifecycle",
-     "SESSION_DB", None, "HERMES_HOME", "state.db"),
-    ("session_rag.HERMES_HOME", "conscio.session_rag",
-     "HERMES_HOME", None, "HERMES_HOME", ""),
+     "SESSION_DB", None, "CONSCIO_HOME", "state.db"),
+    ("session_rag.CONSCIO_HOME", "conscio.session_rag",
+     "CONSCIO_HOME", None, "CONSCIO_HOME", ""),
     ("session_rag.RAG_DB", "conscio.session_rag",
-     "RAG_DB", None, "HERMES_HOME", "consciousness/session_rag.db"),
+     "RAG_DB", None, "CONSCIO_HOME", "consciousness/session_rag.db"),
+    ("noosphere.paths.conscio_home", "conscio.noosphere.paths",
+     "conscio_home", (), "CONSCIO_HOME", ""),
     ("noosphere.paths.hermes_home", "conscio.noosphere.paths",
-     "hermes_home", (), "HERMES_HOME", ""),
+     "hermes_home", (), "CONSCIO_HOME", ""),
     ("cli._storage", "conscio.cli",
-     "_storage", ("",), "HERMES_HOME", "consciousness"),
+     "_storage", ("",), "CONSCIO_HOME", "consciousness"),
     ("observatory._DEFAULT_NOOSPHERE", "conscio.observatory.server",
-     "_DEFAULT_NOOSPHERE", None, "HERMES_HOME", "noosphere.db"),
+     "_DEFAULT_NOOSPHERE", None, "CONSCIO_HOME", "noosphere.db"),
     ("observatory._DEFAULT_LIAISON", "conscio.observatory.server",
-     "_DEFAULT_LIAISON", None, "HERMES_HOME", "liaison.db"),
+     "_DEFAULT_LIAISON", None, "CONSCIO_HOME", "liaison.db"),
 ]
 
 # Each extension site is tested in isolation — only its env var is set, so
@@ -152,7 +155,7 @@ def elsewhere(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def hermes_tilde(home):
-    return _probe_sites(_HERMES_SITES, _clean_env(home, {"HERMES_HOME": "~/.hermes"}))
+    return _probe_sites(_HERMES_SITES, _clean_env(home, {"CONSCIO_HOME": "~/.conscio"}))
 
 @pytest.fixture(scope="module")
 def hermes_unset(home):
@@ -160,7 +163,7 @@ def hermes_unset(home):
 
 @pytest.fixture(scope="module")
 def hermes_absolute(home, elsewhere):
-    return _probe_sites(_HERMES_SITES, _clean_env(home, {"HERMES_HOME": str(elsewhere)}))
+    return _probe_sites(_HERMES_SITES, _clean_env(home, {"CONSCIO_HOME": str(elsewhere)}))
 
 
 @pytest.mark.parametrize("site, rel",
@@ -168,14 +171,14 @@ def hermes_absolute(home, elsewhere):
 def test_hermes_tilde_is_expanded(hermes_tilde, home, site, rel):
     resolved = hermes_tilde[site]
     assert "~" not in resolved, f"{site} kept the tilde literally"
-    expected = str(home / ".hermes" / rel) if rel else str(home / ".hermes")
+    expected = str(home / ".conscio" / rel) if rel else str(home / ".conscio")
     assert resolved == expected, f"{site}: {resolved} != {expected}"
 
 
 @pytest.mark.parametrize("site, rel",
                          [(s[0], s[5]) for s in _HERMES_SITES])
 def test_hermes_unset_falls_back(hermes_unset, home, site, rel):
-    expected = str(home / ".hermes" / rel) if rel else str(home / ".hermes")
+    expected = str(home / ".conscio" / rel) if rel else str(home / ".conscio")
     assert hermes_unset[site] == expected, f"{site}: {hermes_unset[site]} != {expected}"
 
 

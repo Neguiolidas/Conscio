@@ -72,7 +72,8 @@ class StructuralConsent:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             self._path.write_text(json.dumps(
-                {k: s.value for k, s in self._map.items()}, indent=1))
+                {k: s.value for k, s in self._map.items()}, indent=1),
+                encoding="utf-8")
         except OSError as exc:
             log.warning("structural consent save failed: %s", exc)
 

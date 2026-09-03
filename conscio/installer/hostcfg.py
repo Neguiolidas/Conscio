@@ -1,7 +1,7 @@
 """Emit + verify a host's MCP launch config. Per-host binding lives here:
 --storage <space> + env CONSCIO_VAULT_DIR=<space>/keys. Backs up before write
 (R5) and reads back to confirm (never fails silently). Prunes old backups to
-the most recent MAX_BACKUPS per config file (Hermet plan-gate ressalva)."""
+the most recent MAX_BACKUPS per config file."""
 from __future__ import annotations
 
 import json

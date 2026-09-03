@@ -376,8 +376,8 @@ BASE_TOOL_DEFS: list[dict] = [
 # modo, para existir nos três modos (em lite é a única saída de volta).
 MODE_TOOL_DEF: dict = {
     "name": "conscio_mode",
-    "description": "Read or set the tool surface: lite (10 tools), balanced (18), "
-                   "high (20) or ultra (all 37). The choice persists across restarts.",
+    "description": "Read or set the tool surface: lite (10 tools), balanced (19), "
+                   "high (21) or ultra (all 37). The choice persists across restarts.",
     "inputSchema": {
         "type": "object",
         "properties": {

@@ -355,3 +355,11 @@ LiaisonProjection.relay_inbox # used by /api/relay/inbox route
 from conscio.installer.spaces import liaison_db_path  # noqa: F401
 
 liaison_db_path
+
+# ── noosphere home un-coupling (v4.5.3) ─────────────────────────────
+# hermes_home: backward-compat alias of conscio_home. Pinned by
+# tests/test_noosphere_paths.py + tests/test_hermes_home_expansion.py; kept so
+# pre-4.5.3 callers importing it don't break after the neutral-home move.
+from conscio.noosphere.paths import hermes_home  # noqa: F401
+
+hermes_home

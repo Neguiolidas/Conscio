@@ -342,7 +342,8 @@ class StructuralDriftStore:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             self._path.write_text(json.dumps(
-                {k: d.to_json() for k, d in self._map.items()}, indent=1))
+                {k: d.to_json() for k, d in self._map.items()}, indent=1),
+                encoding="utf-8")
         except OSError as exc:
             log.warning("structural drift store save failed: %s", exc)
 

@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .. import __version__
+from ..noosphere.paths import conscio_home
 from .halls_view import HallsProjection
 from .knowledge_view import KnowledgeProjection
 from .liaison_view import LiaisonProjection
@@ -30,18 +31,17 @@ _STATIC = Path(__file__).parent / "static"
 _STATIC_WHITELIST = {"index.html", "app.js", "style.css", "d3.min.js", "graphview.js"}
 _CONTENT_TYPES = {".html": "text/html", ".js": "application/javascript",
                   ".css": "text/css"}
-_DEFAULT_STORAGE = Path.home() / ".hermes" / "consciousness"
+_DEFAULT_STORAGE = Path.home() / ".conscio" / "consciousness"
 
 
 def _workspace_id(root: Path) -> str:
     """Derive a stable workspace ID (sha256 of path, first 16 chars)."""
     import hashlib
     return hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:16]
-# Reference: conscio/noosphere/paths.py:default_noosphere_db — keep in sync.
-_HERMES_HOME = Path(
-    os.environ.get("HERMES_HOME", Path.home() / ".hermes")).expanduser()
-_DEFAULT_NOOSPHERE = _HERMES_HOME / "noosphere.db"
-_DEFAULT_LIAISON = _HERMES_HOME / "liaison.db"
+# Reference: conscio/noosphere/paths.py:conscio_home — keep in sync.
+_HOME = conscio_home()
+_DEFAULT_NOOSPHERE = _HOME / "noosphere.db"
+_DEFAULT_LIAISON = _HOME / "liaison.db"
 
 
 @dataclass
@@ -384,11 +384,11 @@ def _arg_parser() -> argparse.ArgumentParser:
         prog="conscio-observatory",
         description="Conscio Observatory — read-only localhost state viewer")
     p.add_argument("--storage", default=str(_DEFAULT_STORAGE),
-                   help="instance storage dir (default: ~/.hermes/consciousness)")
+                   help="instance storage dir (default: ~/.conscio/consciousness)")
     p.add_argument("--noosphere", default=str(_DEFAULT_NOOSPHERE),
-                   help="host-shared noosphere.db (default: $HERMES_HOME/noosphere.db)")
+                   help="host-shared noosphere.db (default: $CONSCIO_HOME/noosphere.db)")
     p.add_argument("--liaison-db", default=str(_DEFAULT_LIAISON),
-                   help="host-shared liaison.db (default: $HERMES_HOME/liaison.db)")
+                   help="host-shared liaison.db (default: $CONSCIO_HOME/liaison.db)")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8788)
     p.add_argument("--token",

@@ -140,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
                     " to the agent's notify hook (CONSCIO_NOTIFY_CMD), loop "
                     "forever, at-least-once.",)
     p.add_argument("--liaison-db", default=None,
-                   help="path to liaison.db (default: $HERMES_HOME/liaison.db)")
+                   help="path to liaison.db (default: $CONSCIO_HOME/liaison.db)")
     p.add_argument("--self-id", default="",
                    help="our provider instance id (or env CONSCIO_SELF_ID)")
     p.add_argument("--relay-peer", action="append", default=[],

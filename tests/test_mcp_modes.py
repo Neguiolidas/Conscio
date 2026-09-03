@@ -26,7 +26,7 @@ def test_sets_are_nested():
 
 def test_exact_counts(tmp_path):
     assert len(_names("lite", tmp_path)) == 10
-    assert len(_names("balanced", tmp_path)) == 18
+    assert len(_names("balanced", tmp_path)) == 19
     assert len(_names("ultra", tmp_path)) == 37
 
 
@@ -78,7 +78,7 @@ def test_mode_read_reports_current_surface(tmp_path):
     try:
         out = json.loads(b.call_tool("conscio_mode", {})["content"][0]["text"])
         assert out["mode"] == "balanced"
-        assert out["tools"] == 18
+        assert out["tools"] == 19
         assert out["modes"] == list(modes.MODES)
     finally:
         engine.close()
@@ -114,8 +114,16 @@ def test_mode_write_rejects_unknown(tmp_path):
     assert modes.read_mode(tmp_path) is None     # nem toca no disco
 
 
-def test_default_mode_is_ultra_so_existing_installs_do_not_shrink():
-    assert modes.DEFAULT_MODE == "ultra"
+def test_fresh_install_defaults_balanced():
+    # v4.5.3: a fresh install (no instance.json, no mcp_mode) starts balanced
+    assert modes.DEFAULT_MODE == "balanced"
+
+
+def test_preexisting_install_preserves_legacy_ultra(tmp_path):
+    # a pre-4.5.3 install has instance.json but no mcp_mode -> keep ultra
+    from conscio.noosphere.identity import load_or_create
+    load_or_create(tmp_path)           # simula instalacao anterior (identity)
+    assert modes.resolve_mode(tmp_path, None) == "ultra"
 
 
 def test_lite_schemas_are_flat(tmp_path):
@@ -189,7 +197,8 @@ def test_cli_beats_default_when_nothing_persisted(tmp_path):
 
 
 def test_default_when_neither(tmp_path):
-    assert modes.resolve_mode(tmp_path, None) == "ultra"
+    # fresh (no identity, no mcp_mode, no --mode) -> balanced default
+    assert modes.resolve_mode(tmp_path, None) == "balanced"
 
 
 def test_mode_rejects_guessed_argument_name(tmp_path):

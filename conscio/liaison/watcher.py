@@ -311,7 +311,7 @@ def main(argv: list[str] | None = None) -> int:
                     " exit silently when idle.",
     )
     p.add_argument("--liaison-db", default=None,
-                   help="path to liaison.db (default: $HERMES_HOME/liaison.db)")
+                   help="path to liaison.db (default: $CONSCIO_HOME/liaison.db)")
     p.add_argument("--self-id", default="",
                    help=f"our provider instance id (or env {SELF_ID_ENV})")
     p.add_argument("--relay-peer", action="append", default=[],

@@ -14,7 +14,7 @@ nothing else). It is built to make small, local models punch above their size �
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v4.5.2` "Per-agent isolation":** cross-agent hard-block — a foreign agent cannot write over another agent's install (cross-agent read is still allowed); each space gets its own private `liaison.db` (cross-agent communication is transport-only, over tailscale/HTTP); a `tools/consolidate_agent_identity.py` utility migrates duplicated identities from old installs.
+**Latest release — `v4.5.3` "Neutral home + fixes":** Conscio no longer defaults to the Hermes agent's `~/.hermes` — it resolves a neutral `CONSCIO_HOME` (`~/.conscio`) with `HERMES_HOME` kept only as a legacy override that preserves older installs; Windows `cp1252` crash on `--awake` state writes fixed (explicit UTF-8 everywhere + plugin `PYTHONUTF8` env); `conscio_cognitive_cycle` restored to the balanced/high surfaces; and mode resolution now distinguishes a fresh install (balanced) from an upgrade (keeps the existing surface).
 
 See [CHANGELOG](CHANGELOG.md) for details.
 

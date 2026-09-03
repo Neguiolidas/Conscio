@@ -283,7 +283,7 @@ def _arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=8787)
     p.add_argument("--token", default=os.environ.get("CONSCIO_HUB_TOKEN") or None)
     p.add_argument("--storage", default=None,
-                   help="instance storage dir (default ~/.hermes/consciousness); "
+                   help="instance storage dir (default ~/.conscio/consciousness); "
                         "where the daemon control file is written — must match "
                         "the daemon's --storage or the awake toggle is a no-op")
     p.add_argument("--vault-dir", default=None,

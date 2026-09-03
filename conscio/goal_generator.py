@@ -225,7 +225,8 @@ class GoalGenerator:
 
     def _save(self) -> None:
         data = [g.to_dict() for g in self._goals]
-        self.path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        self.path.write_text(json.dumps(data, indent=2, ensure_ascii=False),
+                             encoding="utf-8")
 
     # --- Goal Generation from Drives ---
 

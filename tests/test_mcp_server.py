@@ -17,7 +17,7 @@ def _bindings(tmp_path, *, script=None, ws="ws123"):
         eng.attach_adapter(MockAdapter(script=script))
     seen = SeenStore(tmp_path / "mcp_seen.db")
     return Bindings(eng, seen, adapter_name="mock" if script else None,
-                    workspace_id=ws), eng, seen
+                    workspace_id=ws, mode="ultra"), eng, seen
 
 
 def _run(bindings, requests):

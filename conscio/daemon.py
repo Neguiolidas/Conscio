@@ -130,7 +130,7 @@ class Daemon:
                         and ws.id != self._synced_ws_id):
                     # v3.4.2: interactive consent — if no consent for this
                     # workspace but graph.json exists, emit consent:request.
-                    # The agent layer (Hermes/CLI) intercepts and asks the user.
+                    # The agent layer intercepts and asks the user.
                     # In YOLO/bypass mode, the agent auto-approves.
                     from .structural_consent import GRAPH_RELPATH
                     graph_file = ws.root / GRAPH_RELPATH if hasattr(ws, 'root') else None
@@ -313,7 +313,7 @@ class Daemon:
             # B-012: atomic write so a host tailing the heartbeat (v1.6 #5/#9)
             # never reads a torn/partial file — write a sibling tmp then replace.
             tmp = self.heartbeat_path.with_name(self.heartbeat_path.name + ".tmp")
-            tmp.write_text(json.dumps(data, indent=2))
+            tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
             os.replace(tmp, self.heartbeat_path)
         except OSError as exc:
             log.warning("heartbeat write failed: %s", exc)
@@ -440,7 +440,7 @@ def _arg_parser() -> argparse.ArgumentParser:
                              "machine via the process list")
     parser.add_argument("--liaison-db", default=None,
                         help="mailbox db for the relay sensor "
-                             "(default $HERMES_HOME/liaison.db)")
+                             "(default $CONSCIO_HOME/liaison.db)")
     parser.add_argument("--relay-peer", action="append", default=[],
                         metavar="INSTANCE_ID",
                         help="trusted relay peer for the relay sensor (repeatable)")

@@ -439,7 +439,7 @@ class Bindings:
             return
         if result.get("approval_policy") != "hermes_review":
             return
-        row = self.engine.host_act.ledger.get(result["ledger_id"]) if self.engine.host_act else None  # Hermet R1
+        row = self.engine.host_act.ledger.get(result["ledger_id"]) if self.engine.host_act else None
         if row is None:
             return
         args = self._row_args(row)
@@ -899,20 +899,20 @@ class Bindings:
         return {"result": self.engine.structural_lookup(str(key))}
 
     def _cognitive_cycle(self, args: dict) -> dict:
-            """Run one explicit cognitive pass and return a per-stage report.
+        """Run one explicit cognitive pass and return a per-stage report.
 
-            The act stage runs only when act is enabled on this server; otherwise
-            it is propose-only (reflect/synthesize/self-improve). Accepts
-            session_tokens so the loop also feeds the metabolic tier.
-            Output is chunkified via ModeRouter.
-            """
-            st = args.get("session_tokens")
-            if isinstance(st, int) and not isinstance(st, bool) and st >= 0:
-                self.engine.session_tokens_used = st
-            raw = self.engine.cognitive_cycle(
-                world_state=args.get("world_state", "") or "",
-                act=self._act_enabled())
-            return self._router.format_cognitive_cycle(raw)
+        The act stage runs only when act is enabled on this server; otherwise
+        it is propose-only (reflect/synthesize/self-improve). Accepts
+        session_tokens so the loop also feeds the metabolic tier.
+        Output is chunkified via ModeRouter.
+        """
+        st = args.get("session_tokens")
+        if isinstance(st, int) and not isinstance(st, bool) and st >= 0:
+            self.engine.session_tokens_used = st
+        raw = self.engine.cognitive_cycle(
+            world_state=args.get("world_state", "") or "",
+            act=self._act_enabled())
+        return self._router.format_cognitive_cycle(raw)
 
     # ── v3.2 Memory tool handlers ────────────────────────────────────
 
@@ -1202,7 +1202,7 @@ def _arg_parser() -> argparse.ArgumentParser:
                         metavar="INSTANCE_ID",
                         help="trusted reviewer instance_id (repeatable)")
     parser.add_argument("--liaison-db", default=None,
-                        help="mailbox db path (default $HERMES_HOME/liaison.db)")
+                        help="mailbox db path (default $CONSCIO_HOME/liaison.db)")
     parser.add_argument("--enable-relay", action="store_true",
                         help="enable opt-in general cross-agent messaging")
     parser.add_argument("--relay-peer", action="append", default=[],
@@ -1230,8 +1230,10 @@ def _arg_parser() -> argparse.ArgumentParser:
                              "schemas to reduce token usage for small models "
                              "(Qwen 0.8B, etc.). Saves ~80%% of schema tokens.")
     parser.add_argument("--mode", choices=modes.MODES, default=None,
-                        help="tool surface: lite (9), balanced (17) or ultra (all). "
-                             "A mode persisted in the space wins over this flag.")
+                        help="tool surface: lite (10), balanced (19), high (21) "
+                             "or ultra (all 37). A mode persisted in the space "
+                             "wins over this flag; a fresh install defaults to "
+                             "balanced, an existing install keeps its own.")
     parser.add_argument("--default-model", default=None, metavar="NAME",
                         help="model name used ONLY when --model, config.json and "
                              "$CONSCIO_MODEL are all empty (last resort)")
@@ -1493,7 +1495,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.enable_hermes_review:
         if args.reviewer:
             mode += f"+hermes-review(reviewers={len(args.reviewer)})"
-        else:                              # active but no recipients (Hermet)
+        else:
             mode += "+hermes-review(reviewers=0; no publish targets)"
     if args.enable_relay:
         if args.relay_peer:

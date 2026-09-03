@@ -179,14 +179,14 @@ class InnerMonologue:
 
         # Append to existing file
         if path.exists():
-            existing = path.read_text()
-            path.write_text(existing + "\n\n---\n\n" + full)
+            existing = path.read_text(encoding="utf-8")
+            path.write_text(existing + "\n\n---\n\n" + full, encoding="utf-8")
         else:
-            path.write_text(full)
+            path.write_text(full, encoding="utf-8")
 
         # Also save the summary as the current state
         summary_path = self.ctx.storage_path / "state_summary.txt"
-        summary_path.write_text(summary)
+        summary_path.write_text(summary, encoding="utf-8")
 
         return path
 

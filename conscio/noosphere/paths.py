@@ -1,31 +1,60 @@
 # conscio/noosphere/paths.py
-"""Filesystem layout. Mirrors conscio.cli._storage exactly: HERMES_HOME
-(default ~/.hermes); per-instance state under <storage> (default
-$HERMES_HOME/consciousness); host-shared noosphere.db at $HERMES_HOME/noosphere.db."""
+"""Filesystem layout. Neutral by default — Conscio is an agent framework, not a
+Hermes-only tool.
+
+The home dir resolves as: ``CONSCIO_HOME`` (explicit, neutral) > ``HERMES_HOME``
+(legacy override) > an auto-detect that preserves an existing ``~/.hermes``
+install and otherwise defaults to ``~/.conscio``. This keeps pre-existing
+installs on their current layout while giving fresh agents a neutral home that
+has nothing to do with the Hermes agent.
+"""
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
 
-def hermes_home() -> Path:
-    """$HERMES_HOME, or ~/.hermes.
+def _neutral_default() -> Path:
+    """The neutral home: ``~/.conscio``. Used when nothing explicit is set and no
+    legacy ~/.hermes install is detected."""
+    return Path(os.environ.get("CONSCIO_HOME",
+                               Path.home() / ".conscio")).expanduser()
 
-    expanduser: the default is already absolute, but a value read from the
-    environment is whatever a shell, systemd unit or wrapper exported — and
-    `HERMES_HOME=~/.hermes` that nothing expanded is a *relative* path to a
-    directory named `~` under the working directory.
+
+def conscio_home() -> Path:
+    """Resolve the Conscio home dir, neutral-first with legacy preservation.
+
+    Precedence:
+      1. ``CONSCIO_HOME`` — the explicit neutral override.
+      2. ``HERMES_HOME`` — explicit legacy override (still supported).
+      3. otherwise, preserve a detected legacy install: if ``~/.hermes`` already
+         exists (an older Conscio laid down storage there), keep using it; else a
+         fresh agent starts in the neutral ``~/.conscio``.
+
+    ``expanduser`` is applied because a value read from the environment is
+    whatever a shell/systemd/wrapper exported, and ``X=~/.x`` nothing expanded is
+    a *relative* path to a literal ``~`` directory under the cwd.
     """
-    return Path(os.environ.get("HERMES_HOME",
-                               Path.home() / ".hermes")).expanduser()
+    if os.environ.get("CONSCIO_HOME"):
+        return Path(os.environ["CONSCIO_HOME"]).expanduser()
+    if os.environ.get("HERMES_HOME"):
+        return Path(os.environ["HERMES_HOME"]).expanduser()
+    legacy = Path.home() / ".hermes"
+    return legacy if legacy.exists() else _neutral_default()
+
+
+# Deprecated alias — retained so callers that still import ``hermes_home`` don't
+# break; new code should import ``conscio_home``.
+def hermes_home() -> Path:
+    return conscio_home()
 
 
 def default_storage() -> Path:
-    return hermes_home() / "consciousness"
+    return conscio_home() / "consciousness"
 
 
 def default_noosphere_db() -> Path:
-    return hermes_home() / "noosphere.db"
+    return conscio_home() / "noosphere.db"
 
 
 def resolve_storage(storage: str | os.PathLike[str] | None) -> Path:

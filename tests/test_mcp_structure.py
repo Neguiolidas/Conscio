@@ -20,7 +20,8 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "graph_small.json"
 def _bindings(tmp_path):
     eng = ConsciousnessEngine("glm-5.1", storage_path=tmp_path / "s")
     seen = SeenStore(tmp_path / "mcp_seen.db")
-    return Bindings(eng, seen, adapter_name=None, workspace_id="ws"), eng, seen
+    return Bindings(eng, seen, adapter_name=None, workspace_id="ws",
+                    mode="ultra"), eng, seen
 
 
 def _plant(root):
