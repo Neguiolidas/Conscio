@@ -346,3 +346,12 @@ HallsProjection            # observatory projection class (server via route)
 HallsProjection.hall_members  # used by /api route (server.py)
 HallsProjection.mailboxes     # used by /api/mailboxes route
 LiaisonProjection.relay_inbox # used by /api/relay/inbox route
+
+# ── installer isolation (v4.5.2) ─────────────────────────────────
+# liaison_db_path: public contract da fase "liaison.db por agente". O
+# mcp_server_entry ainda aponta para o mailbox compartilhado (fase
+# seguinte); a funcao ja e exposta e testada em tests/test_installer_isolation.py
+# para fixar o contrato antes da integracao do consumo.
+from conscio.installer.spaces import liaison_db_path  # noqa: F401
+
+liaison_db_path

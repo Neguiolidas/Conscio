@@ -44,23 +44,7 @@ def ensure_space(slug: str) -> tuple[Path, Identity, bool]:
     return d, ident, created
 
 
-# ─── v4.6.0: isolation por agente (hard-blocks cross-env)
-
-_OWNER_ENV_TAGS = ("HERMET", "CLAUDE", "GEMINI", "ANTIGRAVITY", "QWEN")
-
-def _owner_tag_from_home(home: str) -> str:
-    """Detecta o owner a partir do home dir (e.g. '/home/ubuntu' → 'UBUNTU').
-    Agents thought profile dir names. For paths like /home/ubuntu/.gemini,
-    the owner is the USER (e.g. /home/ubuntu), not the app (~/.gemini).
-    """
-    h = str(Path(home).expanduser().resolve())
-    # extract the user from /home/<user>/ prefix
-    parts = Path(h).parts
-    if len(parts) >= 3 and parts[1] == "home":
-        return parts[2].upper()
-    if len(parts) >= 2 and parts[0] == "/" and parts[1] in ("root", "Users"):
-        return Path(h).name.upper()
-    return Path(h).stem.upper()
+# ─── isolation por agente (hard-block cross-env)
 
 def space_is_cross_agent(space: str, self_instance_id: str) -> bool:
     """True se ``space`` é dono de um AGENTE diferente do atual.
