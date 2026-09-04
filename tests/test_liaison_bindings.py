@@ -4,9 +4,18 @@ from types import SimpleNamespace
 
 from conscio.agency import MockAdapter
 from conscio.engine import ConsciousnessEngine
-from conscio.liaison import mailbox, review
+from conscio.liaison import mailbox, review, spool
 from conscio.mcp.seen import SeenStore
 from conscio.mcp.server import Bindings
+
+
+def _publish(*ids):
+    """A peer is reachable only if it has an address (v4.5.4): give the test
+    peers the card their real server would publish at boot."""
+    from conscio.liaison import directory
+    for cid in ids:
+        directory.publish({"instance_id": cid,
+                           "spool": str(directory.spool_dir(cid)), "url": ""})
 
 
 def _bind(tmp_path, *, instance_id, reviewers=(), hermes_review=True,
@@ -79,6 +88,7 @@ def test_reviews_lists_and_dedups_by_fp(tmp_path):
 def test_review_approve_emits_verdict_and_marks_request_read(tmp_path):
     db = tmp_path / "liaison.db"
     b, eng, seen = _bind(tmp_path, instance_id="HERMES", liaison_db=db)
+    _publish("CLAUDE", "HERMES")
     try:
         mailbox.send(db, from_instance="CLAUDE", to_instance="HERMES",
                      type="review_request",
@@ -100,6 +110,7 @@ def test_review_approve_emits_verdict_and_marks_request_read(tmp_path):
 def test_review_reject_emits_reject_verdict(tmp_path):
     db = tmp_path / "liaison.db"
     b, eng, seen = _bind(tmp_path, instance_id="HERMES", liaison_db=db)
+    _publish("CLAUDE", "HERMES")
     try:
         mailbox.send(db, from_instance="CLAUDE", to_instance="HERMES",
                      type="review_request",
@@ -145,6 +156,7 @@ _INTENT = {"tool": "echo", "args": {"msg": "hi"}, "rationale": "r",
 
 
 def _proposer(tmp_path, storage, *, instance_id, reviewers, liaison_db):
+    _publish(instance_id, *reviewers)     # a peer with no card is unreachable
     eng = ConsciousnessEngine("glm-5.1", storage_path=storage)
     eng.attach_adapter(MockAdapter(script=[]))
     eng.wake()                                       # _gate() needs awake
@@ -161,6 +173,7 @@ def test_propose_hermes_review_publishes_one_request_per_reviewer(tmp_path):
     db = tmp_path / "liaison.db"
     b, eng, seen = _proposer(tmp_path, tmp_path / "A", instance_id="A",
                              reviewers=("B", "C"), liaison_db=db)
+    _publish("B", "C")
     try:
         res = b._act({"intent": _INTENT})
         assert res["status"] == "pending_approval"
@@ -293,16 +306,23 @@ def test_poll_replay_is_noop(tmp_path):
 
 
 def test_two_instance_end_to_end(tmp_path):
-    db = tmp_path / "liaison.db"
+    """The review round trip with the v4.5.4 topology: A and B own separate
+    dbs, so request and verdict only arrive through the spool. A shared db
+    would let this pass while production never delivered anything."""
+    db_a, db_b = tmp_path / "a.db", tmp_path / "b.db"
     A, engA, seenA = _proposer(tmp_path, tmp_path / "A", instance_id="A",
-                               reviewers=("B",), liaison_db=db)
+                               reviewers=("B",), liaison_db=db_a)
     B, engB, seenB = _bind(tmp_path, instance_id="B", hermes_review=True,
-                           liaison_db=db, storage=tmp_path / "B")
+                           liaison_db=db_b, storage=tmp_path / "B")
     try:
         A._act({"intent": _INTENT})                   # A proposes
+        assert B._reviews({}) == []                    # nothing ingested yet
+        assert spool.ingest(db_b, "B") == 1            # B pulls its own spool
         reqs = B._reviews({})                          # B sees it
         assert len(reqs) == 1
         B._review_approve({"fp": reqs[0]["fp"]})       # B approves
+        assert A._poll_reviews({}) == []               # verdict still in spool
+        assert spool.ingest(db_a, "A") == 1
         applied = A._poll_reviews({})                  # A applies
         assert applied[0]["status"] == "executable"
     finally:
@@ -409,16 +429,21 @@ def test_relay_send_rejects_oversize(tmp_path):
 
 
 def test_relay_two_instance_end_to_end(tmp_path):
-    db = tmp_path / "liaison.db"
+    """v4.5.4: each agent owns its db — the message crosses through the spool,
+    never by one agent writing into the other's database."""
+    db_a, db_b = tmp_path / "a.db", tmp_path / "b.db"
     A, engA, seenA = _bind(tmp_path, instance_id="A", hermes_review=False,
-                           relay=True, relay_peers=("B",), liaison_db=db,
+                           relay=True, relay_peers=("B",), liaison_db=db_a,
                            storage=tmp_path / "A")
     B, engB, seenB = _bind(tmp_path, instance_id="B", hermes_review=False,
-                           relay=True, relay_peers=("A",), liaison_db=db,
+                           relay=True, relay_peers=("A",), liaison_db=db_b,
                            storage=tmp_path / "B")
+    _publish("A", "B")
     try:
         r = A._relay_send({"to": "B", "type": "note", "payload": {"hi": 1}})
         assert r["ok"] is True
+        assert mailbox.inbox(db_b, "B", unread_only=True) == []   # not yet
+        assert spool.ingest(db_b, "B") == 1        # B ingests its own spool
         msgs = B._relay_inbox({})["messages"]
         assert len(msgs) == 1
         assert msgs[0]["from_instance"] == "A"
@@ -475,6 +500,7 @@ def test_relay_send_invokes_purge_best_effort(tmp_path, monkeypatch, capsys):
             calls["n"] += 1
             raise OSError("disk full")
         monkeypatch.setattr(srv.mailbox, "purge_read", boom)
+        _publish("B")
         r = b._relay_send({"to": "B", "type": "note", "payload": {}})
         assert r["ok"] is True                # send survives a purge failure
         assert calls["n"] == 1                # purge attempted
@@ -527,13 +553,16 @@ def test_relay_broadcast_fans_out_to_all_peers(tmp_path):
     db = tmp_path / "liaison.db"
     b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
                          relay=True, relay_peers=("B", "C"), liaison_db=db)
+    _publish("B", "C")
     try:
         r = b._relay_broadcast({"type": "note", "payload": {"hi": 1}})
         assert r["ok"] is True
         assert {s["to"] for s in r["sent"]} == {"B", "C"}
         assert r["errors"] == []
-        assert mailbox.inbox(db, "B")[0]["payload"].get("hi") == 1
-        assert mailbox.inbox(db, "C")[0]["payload"].get("hi") == 1
+        for peer in ("B", "C"):                  # each one reads its own db
+            db_peer = tmp_path / f"{peer}.db"
+            assert spool.ingest(db_peer, peer) == 1
+            assert mailbox.inbox(db_peer, peer)[0]["payload"].get("hi") == 1
     finally:
         seen.close()
         eng.close()
@@ -583,14 +612,16 @@ def test_relay_broadcast_send_failure_isolated(tmp_path, monkeypatch):
     try:
         real = srv.mailbox.send
 
-        def flaky(dbp, *, from_instance, to_instance, type, payload, identity=None):
+        def flaky(dbp, *, from_instance, to_instance, type, payload,
+                  identity=None, hall=None):
             if to_instance == "B":
                 raise _sq.OperationalError("database is locked")
             return real(dbp, from_instance=from_instance,
                         to_instance=to_instance, type=type, payload=payload,
-                        identity=identity)
+                        identity=identity, hall=hall)
 
         monkeypatch.setattr(srv.mailbox, "send", flaky)
+        _publish("B", "C")
         r = b._relay_broadcast({"type": "note", "payload": {"hi": 1}})
         assert {s["to"] for s in r["sent"]} == {"C"}     # C still delivered
         assert {e["to"] for e in r["errors"]} == {"B"}   # B reported, not fatal
@@ -688,12 +719,19 @@ def test_relay_send_stamps_identity_envelope(tmp_path):
     try:
         b.identity_model = "m-1"
         b.identity_familia = "fam"
+        _publish("B")
         r = b._relay_send({"to": "B", "type": "chat", "payload": {"text": "oi"}})
         assert r["ok"] is True
-        rows = mailbox.inbox(b.liaison_db, "B")
+        rows = mailbox.inbox(b.liaison_db, "B")          # my outbox copy
         meta = rows[0]["payload"].get("_meta")
         assert meta is not None
         assert meta["from"]["modelo"] == "m-1"
+        # and the same envelope crosses the wire — an identity that only
+        # exists in the sender's copy tells the recipient nothing
+        db_b = tmp_path / "b.db"
+        assert spool.ingest(db_b, "B") == 1
+        wire = mailbox.inbox(db_b, "B")[0]["payload"]["_meta"]
+        assert wire["from"]["modelo"] == "m-1"
     finally:
         seen.close()
         eng.close()
@@ -704,6 +742,7 @@ def test_relay_send_without_identity_fields_has_id_only(tmp_path):
     # vazios quando o runtime não os forneceu (id é a âncora mínima).
     b, eng, seen = _bind(tmp_path, instance_id="X", relay=True,
                          relay_peers=("B",), liaison_db=tmp_path / "liaison.db")
+    _publish("B")
     try:
         r = b._relay_send({"to": "B", "type": "chat", "payload": {"text": "oi"}})
         assert r["ok"] is True
@@ -788,12 +827,12 @@ def test_hall_create_duplicate_and_bad_name_are_explained(tmp_path):
 
 
 def test_hall_send_fanout(tmp_path):
-    db = tmp_path / "liaison.db"
+    db_a, db_b = tmp_path / "a.db", tmp_path / "b.db"
     A, engA, seenA = _bind(tmp_path, instance_id="A", relay=True,
-                           can_create_halls=True, liaison_db=db,
+                           can_create_halls=True, liaison_db=db_a,
                            storage=tmp_path / "A")
     B, engB, seenB = _bind(tmp_path, instance_id="B", relay=True,
-                           can_create_halls=True, liaison_db=db,
+                           can_create_halls=True, liaison_db=db_b,
                            storage=tmp_path / "B")
     try:
         r = A._hall_create({"name": "team"})
@@ -805,7 +844,8 @@ def test_hall_send_fanout(tmp_path):
         sent = A._hall_send({"hall_id": hid, "type": "chat",
                              "payload": {"text": "oi elenco"}})
         assert sent["delivered"] == 1        # B recebeu, A (remetente) não
-        inbox_B = mailbox.inbox(db, "B")
+        assert spool.ingest(db_b, "B") == 1  # entrega real, não cópia do autor
+        inbox_B = mailbox.inbox(db_b, "B")
         assert len(inbox_B) == 1
         assert inbox_B[0]["payload"].get("text") == "oi elenco"
         # a mensagem diz de qual hall veio (agente em vários halls)

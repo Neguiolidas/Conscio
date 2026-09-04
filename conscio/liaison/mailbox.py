@@ -200,23 +200,35 @@ def purge_quarantine(db: Path, *, older_than_days: float = 7.0) -> int:
         conn.close()
 
 
-def send(db: Path, *, from_instance: str, to_instance: str, type: str,
-         payload: dict, ts: float | None = None,
-         identity: dict | None = None, hall: dict | None = None) -> int:
-    db = Path(db)
-    db.parent.mkdir(parents=True, exist_ok=True)
-    # v4.5 envelope: identidade do RUNTIME (não do corpo) é o `_meta.from`.
-    # Se o payload já carregava _meta (auto-declaração), o runtime vence —
-    # nunca deixar identidade do corpo prevalecer sobre a do runtime.
+def with_envelope(payload: dict, identity: dict | None = None,
+                  hall: dict | None = None) -> dict:
+    """v4.5 envelope: the RUNTIME identity (not the body) is ``_meta.from``.
+
+    If the payload already carried a self-declared _meta, the runtime wins —
+    body identity must never outrank runtime identity. With neither identity
+    nor hall, any _meta already in the body is preserved (compat).
+
+    Shared with the wire on purpose (v4.5.4): a message delivered through the
+    spool must carry the same envelope as one written locally, otherwise the
+    recipient cannot tell who spoke or from which hall.
+    """
     final_payload = dict(payload)
     meta: dict = {}
     if identity:
         meta["from"] = identity
     if hall:
-        meta["hall"] = hall      # {"id": …, "function": …} — sem isso, agente
-    if meta:                     # em vários halls não sabe de onde veio nada
+        meta["hall"] = hall      # {"id": …, "function": …}: without it, an
+    if meta:                     # agent in many halls can't tell the origin
         final_payload["_meta"] = meta
-    # sem identity nem hall: preserva qualquer _meta já no corpo (compat)
+    return final_payload
+
+
+def send(db: Path, *, from_instance: str, to_instance: str, type: str,
+         payload: dict, ts: float | None = None,
+         identity: dict | None = None, hall: dict | None = None) -> int:
+    db = Path(db)
+    db.parent.mkdir(parents=True, exist_ok=True)
+    final_payload = with_envelope(payload, identity, hall)
     conn = _connect(db)
     try:
         cur = conn.execute(
@@ -226,8 +238,9 @@ def send(db: Path, *, from_instance: str, to_instance: str, type: str,
              time.time() if ts is None else ts))
         conn.commit()
         mid = cur.lastrowid or 0
-        # Bake o id da mensagem no envelope (imutável pós-insert)
-        if meta and mid:
+        # Bake the message id into the envelope (immutable after insert)
+        meta = final_payload.get("_meta")
+        if isinstance(meta, dict) and mid:
             baked = dict(final_payload)
             baked["_meta"] = {**meta, "id": mid}
             conn.execute("UPDATE messages SET payload=? WHERE id=?",

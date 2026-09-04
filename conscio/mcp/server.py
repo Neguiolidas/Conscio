@@ -432,10 +432,18 @@ class Bindings:
         if not match:
             return {"ok": False, "reason": "unknown_fp"}
         proposer = match[0]["from_instance"]
+        verdict = review.build_verdict(fp=fp, decision=decision, reason=reason)
+        # v4.5.4: the verdict travels the same road as any other message —
+        # the proposer reads only its OWN db, so writing it here would be a
+        # verdict nobody ever reads. Unreached ⇒ the request stays unread and
+        # the reviewer can retry, instead of a decision lost in silence.
+        delivered, why = self._deliver_to_peer(proposer, "review_verdict",
+                                               verdict, self._identity() or None)
+        if not delivered:
+            return {"ok": False, "fp": fp, "reason": why}
         mailbox.send(self.liaison_db, from_instance=self.self_instance_id,
                      to_instance=proposer, type="review_verdict",
-                     payload=review.build_verdict(fp=fp, decision=decision,
-                                                  reason=reason))
+                     payload=verdict)
         mailbox.mark_read(self.liaison_db, [m["id"] for m in match])  # all fp rows
         return {"ok": True, "fp": fp, "decision": decision, "to": proposer}
 
@@ -457,13 +465,20 @@ class Bindings:
             fp=fp, tool=row["tool"], args=args,
             goal=row.get("goal_text", ""), verdict=row.get("verdict", ""),
             rationale=row.get("rationale", ""))
-        try:                                       # best-effort: the act is already
-            for r in self.reviewers:               # ledgered pending; publish is 2nd
+        identity = self._identity() or None
+        for r in self.reviewers:      # best-effort: the act is already ledgered
+            try:                      # pending; publishing the request is 2nd
+                delivered, why = self._deliver_to_peer(r, "review_request",
+                                                       payload, identity)
+                if not delivered:     # a reviewer nobody can reach is a fact
+                    print(f"liaison: review_request to {r} not delivered: {why}",
+                          file=sys.stderr)
+                    continue
                 mailbox.send(self.liaison_db, from_instance=self.self_instance_id,
                              to_instance=r, type="review_request", payload=payload)
-        except Exception as exc:                   # never break act on a bad mailbox
-            print(f"liaison: review_request publish failed: {exc}",
-                  file=sys.stderr)
+            except Exception as exc:               # never break act on a bad mailbox
+                print(f"liaison: review_request publish failed: {exc}",
+                      file=sys.stderr)
 
     @staticmethod
     def _row_args(row: dict) -> dict:
@@ -509,6 +524,12 @@ class Bindings:
         except ValueError as exc:
             return {"ok": False, "reason": str(exc)}
         identity = self._identity() or None           # v4.5: envelope
+        delivered, reason = self._deliver_to_peer(to, mtype, payload, identity)
+        if not delivered:
+            return {"ok": False, "reason": reason}
+        # Local copy is the OUTBOX and only exists after an accepted delivery
+        # (v4.5.4 A4): a row claiming "sent" with nothing delivered is the lie
+        # that made every past debugging session start from a false premise.
         mid = mailbox.send(self.liaison_db, from_instance=self.self_instance_id,
                            to_instance=to, type=mtype, payload=payload,
                            identity=identity)
@@ -516,7 +537,26 @@ class Bindings:
             mailbox.purge_read(self.liaison_db, relay.RETENTION_DAYS)
         except Exception as exc:
             print(f"liaison: relay purge failed: {exc}", file=sys.stderr)
-        return {"ok": True, "id": mid}
+        return {"ok": True, "id": mid, "to": to}
+
+    def _deliver_to_peer(self, to: str, mtype: str, payload: dict,
+                         identity: dict | None,
+                         hall: dict | None = None) -> tuple[bool, str]:
+        """Hand one message to the peer's own address. Returns (ok, reason).
+
+        Single delivery path for send / broadcast / hall fan-out: three copies
+        of "how do I reach a peer" is how one of them keeps writing into a db
+        nobody reads.
+        """
+        from ..liaison import directory, relay_transport
+        card = directory.get(to)
+        if card is None:
+            return False, f"peer {to} is not in the directory"
+        envelope = {"from": self.self_instance_id, "to": to, "type": mtype,
+                    "payload": mailbox.with_envelope(payload, identity, hall)}
+        if not relay_transport.deliver(card, envelope):
+            return False, f"peer {to} unreachable"
+        return True, ""
 
     def _recall_observations(self, args: dict) -> dict:
         """FTS search over observations, scoped to this session unless widened.
@@ -555,6 +595,11 @@ class Bindings:
                 errors.append({"to": peer, "reason": str(exc)})
                 continue
             try:
+                delivered, reason = self._deliver_to_peer(peer, mtype, payload,
+                                                          identity)
+                if not delivered:
+                    errors.append({"to": peer, "reason": reason})
+                    continue
                 mid = mailbox.send(self.liaison_db,
                                    from_instance=self.self_instance_id,
                                    to_instance=peer, type=mtype,
@@ -699,6 +744,20 @@ class Bindings:
             except Exception:
                 continue          # um cartão ruim não derruba a projeção
 
+    def announce_presence(self) -> None:
+        """Publish the card as soon as the server boots (v4.5.4 C2).
+
+        An agent that only becomes addressable after its FIRST tool call is
+        invisible exactly when a peer tries to reach it first — the "he is not
+        in the directory" that every plug-and-play attempt died on.
+        """
+        if not (self.relay or self.can_create_halls):
+            return
+        try:
+            self._ensure_registered()
+        except Exception as exc:      # boot must survive a broken directory
+            print(f"liaison: presence announce failed: {exc}", file=sys.stderr)
+
     def _ensure_registered(self) -> None:
         """Self-register + refresh presence + publica o cartão (v4.5.4 C2)."""
         if not self.self_instance_id:
@@ -736,10 +795,19 @@ class Bindings:
     def _hall_fail(self, motivo: str) -> dict:
         return {"ok": False, "motivo": motivo}
 
-    def _send_to_peer(self, **kwargs) -> int:
-        """Um ponto de entrega para o fan-out do hall. A Task 6 troca isto por
-        `deliver` (spool/HTTP) sem que `halls.py` saiba de transporte."""
-        return mailbox.send(self.liaison_db, **kwargs)
+    def _send_to_peer(self, *, from_instance: str, to_instance: str, type: str,
+                      payload: dict, identity: dict | None = None,
+                      hall: dict | None = None) -> int:
+        """One delivery point for the hall fan-out — halls.py resolves names
+        and never learns about transport. Raises so the caller's per-peer
+        isolation counts an unreachable member as NOT delivered (R1)."""
+        delivered, reason = self._deliver_to_peer(to_instance, type, payload,
+                                                  identity, hall)
+        if not delivered:
+            raise RuntimeError(reason)
+        return mailbox.send(self.liaison_db, from_instance=from_instance,
+                            to_instance=to_instance, type=type,
+                            payload=payload, identity=identity, hall=hall)
 
     def _halls_ready(self) -> bool:
         """Migração preguiçosa: quem nunca usa hall não paga nada."""
@@ -1293,6 +1361,7 @@ class Bindings:
 def serve(bindings: Bindings, instream, outstream, *,
           max_bytes: int = j.DEFAULT_MAX_FRAME_BYTES) -> None:
     dispatcher = Dispatcher(bindings)
+    bindings.announce_presence()      # addressable from boot, not from use
     for frame in j.read_frames(instream, max_bytes):
         if frame is j.OVERSIZE:
             _write(outstream, j.make_error(None, j.INVALID_REQUEST,
