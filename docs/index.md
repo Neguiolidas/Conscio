@@ -62,12 +62,25 @@ Advocate, Skeptic Engineer, Douche Reviewer — hostile pressure to validate
 premises, deterministic fallback + optional LLM). Each squad is a closed
 namespace with its own EventBus event types; the Council (`engine.council()`)
 is untouched. A new mode tier **high** sits between `balanced` and `ultra`
-(22 tools) and trades determinism vs LLM: high = all voices deterministic with
+(21 tools) and trades determinism vs LLM: high = all voices deterministic with
 minimal LLM opt-in, ultra = all voices with full LLM support. The two squad
 wrappers (`conscio_squad_experts`, `conscio_squad_opositors`) replace what
 would have been 8 individual voice tools — a 75% reduction in MCP tool-list
 token cost. See the [MCP guide](guides/mcp.md#tool-surfaces) for the tier
 matrix.
+
+**v4.5** ("Relay plug-and-play") makes agent-to-agent messaging work without
+hand-edited config. Agents publish a public card to a shared directory and
+discover each other from it, so an empty allowlist now means *no restriction*
+rather than *nobody*; each agent keeps its own private `liaison.db`; a message
+sent to an agent that is down lands in that agent's spool and is ingested on its
+next tool call; and a token-authenticated HTTP bridge carries messages between
+machines over Tailscale. On top of it sits the **Agent's Hall** — named groups
+with per-member functions (leader, reviewer, researcher, security, optimizer,
+architect, executor, observer, devil's advocate), fan-out messaging and
+ownership transfer. `--enable-relay` adds 5 tools and `--can-create-halls` 7
+more, on top of whatever surface the mode serves. See the
+[relay guide](RELAY.md).
 
 ## Install
 

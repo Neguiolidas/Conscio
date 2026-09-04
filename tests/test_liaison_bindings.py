@@ -782,6 +782,39 @@ def test_hall_tools_present_with_flag(tmp_path):
         eng.close()
 
 
+def test_every_advertised_tool_is_dispatchable(tmp_path):
+    """No tool may be listed and then answer 'method not found'.
+
+    Halls delivered through the relay mailbox but were advertised on the halls
+    flag alone, so --can-create-halls without --enable-relay published seven
+    tools that dispatch never registered.
+    """
+    for relay in (True, False):
+        b, eng, seen = _bind(tmp_path, instance_id="A", relay=relay,
+                             can_create_halls=True)
+        try:
+            advertised = {t["name"] for t in b.tool_defs()}
+            assert advertised <= set(b._tools()), (
+                f"advertised but not dispatchable (relay={relay}): "
+                f"{sorted(advertised - set(b._tools()))}")
+        finally:
+            seen.close()
+            eng.close()
+
+
+def test_halls_without_relay_are_off_not_broken(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="A", relay=False,
+                         can_create_halls=True)
+    try:
+        assert b.can_create_halls is False      # derived, not as passed
+        assert b.halls_need_relay is True       # and the reason is legible
+        assert not any(n.startswith("conscio_hall") for n in
+                       {t["name"] for t in b.tool_defs()})
+    finally:
+        seen.close()
+        eng.close()
+
+
 def test_hall_create_and_owner_joins(tmp_path):
     from conscio.liaison import directory
     db = tmp_path / "liaison.db"

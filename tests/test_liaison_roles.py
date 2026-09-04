@@ -112,3 +112,28 @@ def test_heartbeat_does_not_silently_demote_the_orchestrator(tmp_path):
     agents.register_agent(db, instance_id="a", papel="orchestrator")
     agents.register_agent(db, instance_id="a")          # tick de presença
     assert roles.who_is_orchestrator(db) == "a"
+
+
+def test_projection_resolves_rival_claims_by_card_freshness(tmp_path,
+                                                            monkeypatch):
+    """Two peers can each claim the role on their own machine. Projection
+    demotes as it writes, so the winner used to be whoever the directory
+    listed last (id order): 'zz' beat a claim made an hour later."""
+    from conscio.liaison import agents, directory
+    from conscio.mcp.server import Bindings
+
+    stale = {"instance_id": "zz-stale", "papel": "orchestrator",
+             "updated_at": 1000.0, "capabilities": ["relay"]}
+    fresh = {"instance_id": "aa-fresh", "papel": "orchestrator",
+             "updated_at": 9000.0, "capabilities": ["relay"]}
+    # directory order is id order — the shape that produced the bug
+    monkeypatch.setattr(directory, "peers", lambda **kw: [fresh, stale])
+    monkeypatch.setattr(directory, "is_live", lambda card: True)
+
+    b = Bindings.__new__(Bindings)                 # projection needs no engine
+    b.self_instance_id = "me"
+    b.liaison_db = tmp_path / "l.db"
+    agents.register_agent(b.liaison_db, instance_id="me")
+    b._sync_directory_registry()
+
+    assert roles.who_is_orchestrator(b.liaison_db) == "aa-fresh"

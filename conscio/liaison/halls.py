@@ -20,6 +20,7 @@ o fan-out. `sqlite3` sobrevive só dentro de `migrate_from_db`.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import time
@@ -97,6 +98,28 @@ def _write_doc(doc: dict) -> None:
                            json.dumps(doc, ensure_ascii=False))
 
 
+def _write_doc_new(doc: dict) -> bool:
+    """Create the doc, or return False if it already exists.
+
+    exists()-then-write is a check-then-act: two of the owner's own processes
+    (an MCP call and a daemon tick) could both see nothing and the second
+    replace would drop whoever had already joined. The filesystem decides,
+    once, with O_EXCL.
+    """
+    halls_dir().mkdir(parents=True, exist_ok=True)
+    body = json.dumps(doc, ensure_ascii=False).encode("utf-8")
+    try:
+        fd = os.open(hall_doc_path(doc["hall_id"]),
+                     os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return False
+    try:
+        os.write(fd, body)
+    finally:
+        os.close(fd)
+    return True
+
+
 def create_hall(*, owner: str, name: str, policy: str = "open",
                 invited: list[str] | None = None) -> dict | None:
     """Doc escrito só pelo dono (I9). None = duplicata; id inválido levanta."""
@@ -105,13 +128,12 @@ def create_hall(*, owner: str, name: str, policy: str = "open",
         # sem cartão do dono o hall nasceria sem dono dentro: falha alto em vez
         # de devolver um doc que ninguém habita
         raise ValueError(f"owner card not published: {owner!r}")
-    if hall_doc_path(hall_id).exists():
-        return None
     doc = {"hall_id": hall_id, "name": name, "owner": owner,
            "created_at": time.time(), "policy": policy,
            "invited": list(invited or []), "members": [],
            "functions": {owner: "leader"}}
-    _write_doc(doc)
+    if not _write_doc_new(doc):
+        return None                      # already exists: not mine to replace
     join(instance_id=owner, hall_id=hall_id)
     return doc
 
@@ -202,7 +224,20 @@ def transfer_owner(*, hall_id: str, current_owner: str,
     """Liderança muda; `hall_id` não. O prefixo `owner--` é namespace do id de
     criação, não declaração de quem manda — renomear quebraria todo cartão que
     já aponta para o hall."""
+    if not directory.valid_id(new_owner):
+        raise ValueError(f"invalid new owner id: {new_owner!r}")
     doc = _require_owner(hall_id, current_owner)
+    if new_owner == current_owner:
+        return True                           # idempotent, nothing to write
+    # You hand leadership to someone who is in the room. A typo used to be
+    # accepted and left the hall permanently unowned: nobody can pass
+    # _require_owner again, so nobody can ever transfer it back.
+    known = {m["instance_id"] for m in members_of(hall_id)}
+    known |= {str(i) for i in (doc.get("members") or [])}
+    if new_owner not in known:
+        raise ValueError(
+            f"new owner {new_owner} is not a member of {hall_id}; "
+            "import or wait for them to join before transferring")
     doc["owner"] = new_owner
     doc.setdefault("functions", {})[new_owner] = "leader"
     _write_doc(doc)

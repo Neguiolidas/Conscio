@@ -57,6 +57,26 @@ configuration at all, and a message survives a receiver that is not running.
   now per-instance instead of class-level.
 - **Agent status was a stored string** that stayed `alive` for an agent that had
   been gone for days. It is now derived from `last_heartbeat` at read time.
+- **Seven hall tools were advertised and none could be called.** Halls were
+  announced on `--can-create-halls` alone but only registered for dispatch when
+  relay was also on, so `--can-create-halls` without `--enable-relay` published
+  tools that answered "method not found". Halls now derive from relay in one
+  place, the installer emits the dependency, and a test asserts every advertised
+  tool is dispatchable.
+- **Ownership could be transferred to nobody.** `transfer_owner` accepted any
+  string, so a typo named an owner who was not in the hall — after which nobody
+  could satisfy the owner check and the hall was permanently unownable. The new
+  owner must be a member.
+- **Rival orchestrator claims resolved by id order.** Projection demotes the
+  incumbent as it writes, so the winner was whichever card the directory listed
+  last: an alphabetically later id beat a claim made an hour later. Cards are
+  now projected oldest-first, so the freshest claim wins.
+- **Replayed messages landed twice.** A spool id is minted per deposit, so
+  re-POSTing a captured message to the bridge (or a network retry) created a
+  second row. The sender's own message id is now stored in `origin_id` and
+  `(from_instance, origin_id)` is unique — re-delivery is a no-op.
+- **Re-creating a hall could wipe its roster**: the duplicate check was
+  exists()-then-write; creation is now exclusive at the filesystem.
 
 ### Changed
 
@@ -64,6 +84,10 @@ configuration at all, and a message survives a receiver that is not running.
   `ultra` 37; `--enable-relay` adds 5 and `--can-create-halls` 7 on top, for a
   maximum of 49. The docs were carrying `balanced` 18 / `high` 22 / `ultra` 35.
 - **Code and documentation are English-only** (recorded as a project rule).
+- **`conscio relay service` binds to loopback by default** (was `0.0.0.0`,
+  which contradicted the documented "bind to the tailnet address"). A unit
+  generated before this change keeps working; regenerate it with
+  `--bind <tailscale-ip>` to keep accepting remote peers.
 
 ---
 

@@ -342,3 +342,33 @@ def test_migrate_legacy_preserves_read_state(tmp_path):
     assert mailbox.migrate_legacy(new, legacy, "me") == 1
     assert mailbox.inbox(new, "me") == []      # lida continua lida
     assert len(mailbox.inbox(new, "me", unread_only=False)) == 1
+
+
+def _spool_in(db, *, frm="peer", mid=None, spool_id="s", text="oi"):
+    meta = {"from": frm}
+    if mid is not None:
+        meta["id"] = mid
+    return mailbox.insert_from_spool(db, from_instance=frm, to_instance="me",
+                                     type="chat", spool_id=spool_id,
+                                     payload={"text": text, "_meta": meta})
+
+
+def test_replayed_envelope_lands_once(tmp_path):
+    """A spool_id is minted per deposit, so re-POSTing a captured message to
+    the bridge used to create a second file and a second inbox row. The
+    sender's baked id is stable, so the second copy must be dropped."""
+    db = tmp_path / "l.db"
+    assert _spool_in(db, mid=42, spool_id="s1") is True
+    assert _spool_in(db, mid=42, spool_id="s2") is False      # replay
+    assert _spool_in(db, mid=42, spool_id="s3", text="tampered") is False
+    assert len(mailbox.inbox(db, "me")) == 1
+
+
+def test_dedupe_never_swallows_distinct_traffic(tmp_path):
+    db = tmp_path / "l.db"
+    _spool_in(db, mid=1, spool_id="a1")
+    _spool_in(db, mid=2, spool_id="a2")               # next message, same peer
+    _spool_in(db, frm="other", mid=1, spool_id="a3")  # id 1 of ANOTHER sender
+    _spool_in(db, frm="old", mid=None, spool_id="a4")  # legacy, no _meta.id
+    _spool_in(db, frm="old", mid=None, spool_id="a5")  # ...never deduped
+    assert len(mailbox.inbox(db, "me")) == 5

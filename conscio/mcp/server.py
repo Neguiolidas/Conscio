@@ -107,7 +107,11 @@ class Bindings:
         self.identity_familia = identity_familia
         self.identity_runtime = identity_runtime
         self.identity_papel = identity_papel
-        self.can_create_halls = can_create_halls  # v4.5: Agent's Hall tools
+        # v4.5: Agent's Hall tools. A hall delivers through the relay mailbox,
+        # so halls without relay would be a way around the relay flag. One
+        # invariant, derived once: advertisement and dispatch can never drift.
+        self.can_create_halls = bool(can_create_halls and relay)
+        self.halls_need_relay = bool(can_create_halls and not relay)
         # v4.5.4: cartão público no diretório (C2). Erro fica visível em vez
         # de virar agente invisível que se acha publicado.
         self.card_error: str = ""
@@ -770,7 +774,13 @@ class Bindings:
         por agente, ninguém mais escreve no meu banco — sem esta projeção, o
         observatory e `conscio_agents` param de enxergar a sociedade."""
         from ..liaison import agents, directory
-        for card in directory.peers(exclude=self.self_instance_id):
+        # Oldest card first. register_agent enforces one orchestrator by
+        # demoting the incumbent, so the LAST claim projected is the one that
+        # survives — in directory order that was whoever sorted last by id.
+        # Ordering by the card's own timestamp makes the freshest claim win.
+        cards = sorted(directory.peers(exclude=self.self_instance_id),
+                       key=lambda c: float(c.get("updated_at") or 0.0))
+        for card in cards:
             cid = card.get("instance_id")
             if not cid:
                 continue
@@ -1769,11 +1779,20 @@ def main(argv: list[str] | None = None) -> int:
             mode += "+hermes-review(reviewers=0; no publish targets)"
     if args.enable_relay:
         if args.relay_peer:
-            mode += f"+relay(peers={len(args.relay_peer)})"
-        else:                              # active but no send/recv targets
-            mode += "+relay(peers=0; no send/recv targets)"
+            # v4.5.4: an allowlist is now a restriction, not the peer list.
+            mode += f"+relay(restricted to {len(args.relay_peer)} peers)"
+        else:
+            mode += "+relay(peers from directory)"
     if args.auto_review:
         mode += "+auto-review"
+    if bindings.can_create_halls:
+        mode += "+halls"
+    elif bindings.halls_need_relay:
+        # Asked for halls without relay: say so instead of serving seven tools
+        # that answer "method not found".
+        print("[conscio-mcp] --can-create-halls needs --enable-relay "
+              "(a hall delivers through the relay); halls are off.",
+              file=sys.stderr)
     print(f"conscio-mcp {__version__} ready "
           f"(workspace={workspace.id}, mode={mode}, "
           f"surface={tool_mode}, "        # v4.0: qual superfície venceu a precedência

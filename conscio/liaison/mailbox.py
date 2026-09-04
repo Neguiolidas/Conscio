@@ -133,6 +133,22 @@ def _ensure_spool_column(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE messages ADD COLUMN spool_id TEXT")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_spool_id"
                  " ON messages(spool_id) WHERE spool_id IS NOT NULL")
+    # v4.5.4: a spool_id is minted per deposit, so replaying the same POST at
+    # the bridge produced a second file and a second row. The sender's own row
+    # id, baked into the envelope, is stable across replays and network
+    # retries: (sender, their id) may land at most once. UNIQUE and not a
+    # check-then-insert because the reactor and the MCP server ingest the same
+    # spool concurrently. The id is extracted in Python and stored in a plain
+    # column: indexing json_extract(payload) instead would make every write of
+    # a malformed payload raise, and those are meant to reach quarantine.
+    if "origin_id" not in cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN origin_id TEXT")
+    try:
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_origin"
+                     " ON messages(from_instance, origin_id)"
+                     " WHERE origin_id IS NOT NULL")
+    except sqlite3.Error:
+        pass          # pre-existing duplicates on an old db: leave unindexed
 
 
 def _clamp(n: int) -> int:
@@ -252,6 +268,22 @@ def send(db: Path, *, from_instance: str, to_instance: str, type: str,
         conn.close()
 
 
+def _origin_id(payload) -> str | None:
+    """The sender's own message id, when the envelope carries one.
+
+    None (never a fabricated value) for legacy or hand-made payloads: the
+    unique index skips NULLs, so those keep the pre-v4.5.4 behaviour instead
+    of being deduped against each other.
+    """
+    if not isinstance(payload, dict):
+        return None
+    meta = payload.get("_meta")
+    if not isinstance(meta, dict):
+        return None
+    mid = meta.get("id")
+    return str(mid) if isinstance(mid, (int, str)) and str(mid) else None
+
+
 def insert_from_spool(db: Path, *, from_instance: str, to_instance: str,
                       type: str, payload, spool_id: str) -> bool:
     """Insert a message that came from the spool. True only when the row was
@@ -267,9 +299,10 @@ def insert_from_spool(db: Path, *, from_instance: str, to_instance: str,
     try:
         cur = conn.execute(
             "INSERT OR IGNORE INTO messages (from_instance, to_instance, type,"
-            " payload, ts, read_ts, spool_id) VALUES (?,?,?,?,?,NULL,?)",
+            " payload, ts, read_ts, spool_id, origin_id)"
+            " VALUES (?,?,?,?,?,NULL,?,?)",
             (from_instance, to_instance, type, json.dumps(payload),
-             time.time(), spool_id))
+             time.time(), spool_id, _origin_id(payload)))
         conn.commit()
         return cur.rowcount == 1
     finally:

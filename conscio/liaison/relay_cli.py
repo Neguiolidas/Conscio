@@ -171,7 +171,12 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=_cmd_doctor)
 
     p = sub.add_parser("service", help="print the bridge systemd user unit")
-    p.add_argument("--bind", default="0.0.0.0")
+    # Loopback by default, like relay_net's own --bind. A generated unit that
+    # silently listens on every interface is not the doc's "bind to the
+    # tailnet address": pass the tailscale IP to accept remote peers.
+    p.add_argument("--bind", default="127.0.0.1",
+                   help="address the unit listens on (default 127.0.0.1; "
+                        "pass the tailscale IP to accept remote peers)")
     p.add_argument("--port", type=int, default=8789)
     p.set_defaults(fn=_cmd_service)
 

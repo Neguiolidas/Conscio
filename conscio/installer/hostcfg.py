@@ -20,6 +20,10 @@ from . import spaces
 _FLAG_ARG = {"act": "--enable-act", "awake": "--awake",
              "relay": "--enable-relay", "hermes": "--enable-hermes-review",
              "halls": "--can-create-halls"}
+# a flag that is inert without another one. A hall delivers through the relay
+# mailbox, so --can-create-halls alone would launch a server that advertises
+# hall tools and serves none. Emit the dependency instead of the broken pair.
+_FLAG_REQUIRES = {"halls": "relay"}
 # args older installers emitted into the MCP entry: recovered as consents on
 # --repair, but NEVER re-emitted (mcp_server_entry only knows _FLAG_ARG)
 _LEGACY_ARG_FLAG = {"--initiate": "initiate"}
@@ -59,9 +63,12 @@ def mcp_server_entry(slug: str, *, flags: dict, model: str | None) -> dict:
     args = ["--storage", str(spaces.space_dir(slug))]
     if model:
         args += ["--model", model]
-    for key, on in flags.items():
-        if on and key in _FLAG_ARG:
+    on = {k for k, v in flags.items() if v}
+    on |= {_FLAG_REQUIRES[k] for k in on if k in _FLAG_REQUIRES}
+    for key in list(flags) + sorted(on - set(flags)):   # asked first, then deps
+        if key in on and key in _FLAG_ARG:
             args.append(_FLAG_ARG[key])
+            on.discard(key)
     return {"command": mcp_command(), "args": args,
             "env": {"CONSCIO_VAULT_DIR": str(spaces.vault_dir(slug))}}
 

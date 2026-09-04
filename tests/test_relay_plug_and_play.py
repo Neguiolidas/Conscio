@@ -417,3 +417,36 @@ def test_peers_tool_reports_reactor_state(tmp_path, monkeypatch):
     srv.reactor_thread = _Fake()
     r = srv._relay_peers_tool({})["reactor"]
     assert r == {"running": True, "ticks": 7, "last_error": "boom"}
+
+
+# ── v4.5.4: the banner must not claim isolation the relay no longer has ──
+def test_banner_says_directory_not_zero_peers():
+    """No --relay-peer means "discover from the directory", not "no targets".
+
+    Pre-4.5.4 an empty allowlist really was a dead relay, and the banner said
+    so. Now it means "no restriction" — a banner still saying "no send/recv
+    targets" tells the operator the opposite of the truth.
+    """
+    import os
+    import pathlib
+    import subprocess
+    import sys
+    import tempfile
+    root = pathlib.Path(tempfile.mkdtemp())
+    p = subprocess.Popen(
+        [sys.executable, "-m", "conscio.mcp.server", "--storage", str(root/"s"),
+         "--enable-relay", "--model", "claude-opus-5",
+         "--liaison-db", str(root/"liaison.db")],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, env={**os.environ, "CONSCIO_RELAY_ROOT": str(root/"relay"),
+                        "CONSCIO_HOME": str(root/"s")})
+    try:
+        while True:                     # skip runpy's warning about -m
+            banner = p.stderr.readline()
+            if not banner or banner.startswith("conscio-mcp"):
+                break
+    finally:
+        p.stdin.close()
+        p.wait(timeout=15)
+    assert "no send/recv targets" not in banner, banner
+    assert "directory" in banner, banner

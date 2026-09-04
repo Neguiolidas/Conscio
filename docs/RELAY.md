@@ -123,6 +123,12 @@ the peer's side beyond having the bridge up, and the port is a default
 (`8789`), not a requirement — pass a different `--port` to `conscio relay
 service` and use it in the URL.
 
+**Pairing points one way.** It tells *your* side where that peer lives; it
+teaches the peer nothing about you. For a reply to come back, the other
+machine runs its own `pair` aimed at your bridge. An address is never learned
+from an incoming message: a sender that could name its own return address
+could point your replies anywhere. So: two machines, one `pair` each.
+
 The remote agent does **not** need to be running when you send: the bridge
 deposits into its spool, and its next tool call ingests.
 

@@ -56,7 +56,15 @@ def get_role(db: Path, instance_id: str) -> str:
 
 
 def who_is_orchestrator(db: Path) -> str:
-    """instance_id of the current orchestrator, or ''."""
+    """instance_id of the current orchestrator, or ''.
+
+    set_role keeps one orchestrator per database, but since v4.5.4 each agent
+    projects the peers' own cards into its `agents` table, and two agents that
+    never talked can both claim the role. Resolve it where it is read: the
+    freshest claim wins (last_heartbeat is the card's updated_at, not local
+    clock), with the id as a deterministic tiebreak. Projection stays honest —
+    it still stores what the card said.
+    """
     db = Path(db)
     if not db.exists():
         return ""
@@ -65,6 +73,7 @@ def who_is_orchestrator(db: Path) -> str:
         try:
             row = conn.execute(
                 "SELECT instance_id FROM agents WHERE papel='orchestrator'"
+                " ORDER BY last_heartbeat DESC, instance_id ASC"
                 " LIMIT 1").fetchone()
             return row[0] if row else ""
         finally:

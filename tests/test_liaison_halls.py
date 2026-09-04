@@ -161,6 +161,38 @@ def test_transfer_moves_authority_but_never_the_id():
                              new_owner="boss")                    # não manda mais
 
 
+def test_recreating_a_hall_never_wipes_its_members():
+    """The duplicate check was exists()-then-write: a second create (two of
+    the owner's own processes) replaced the doc and dropped the roster."""
+    _card("boss"); _card("guest")
+    halls.create_hall(owner="boss", name="Team")
+    halls.join(instance_id="guest", hall_id="boss--team")
+    halls.set_function(hall_id="boss--team", owner="boss",
+                       instance_id="guest", function="reviewer")
+    assert halls.create_hall(owner="boss", name="Team") is None
+    doc = halls.get_hall("boss--team")
+    assert doc["functions"]["guest"] == "reviewer"      # roster survived
+    assert {m["instance_id"] for m in halls.members_of("boss--team")} == \
+        {"boss", "guest"}
+
+
+def test_transfer_to_a_non_member_is_refused():
+    """A typo used to orphan the hall: the doc named an owner who was never
+    there, so no one could satisfy _require_owner and take it back."""
+    _card("boss"); _card("stranger")
+    halls.create_hall(owner="boss", name="Team")
+    with pytest.raises(ValueError):           # exists, but not in this hall
+        halls.transfer_owner(hall_id="boss--team", current_owner="boss",
+                             new_owner="stranger")
+    with pytest.raises(ValueError):           # plain typo
+        halls.transfer_owner(hall_id="boss--team", current_owner="boss",
+                             new_owner="hier")
+    with pytest.raises(ValueError):
+        halls.transfer_owner(hall_id="boss--team", current_owner="boss",
+                             new_owner="")
+    assert halls.get_hall("boss--team")["owner"] == "boss"   # still ownable
+
+
 def test_fanout_reaches_every_member_but_the_sender():
     for cid in ("a1", "a2", "a3"):
         _card(cid); halls.join(instance_id=cid, hall_id="d--h")

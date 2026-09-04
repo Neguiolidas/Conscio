@@ -67,12 +67,15 @@ independent of act and hermes-review.
 conscio-mcp --enable-relay --relay-peer <hermes_instance_id>
 ```
 
-Three tools (registered only with `--enable-relay`):
+Five tools (registered only with `--enable-relay`):
 
 - `conscio_relay_send {to, type, payload}` → `{ok, id}` — send a directed message
-  to a trusted peer. `to` must be in the `--relay-peer` allowlist; `type` is
-  free-form but the two review types (`review_request`/`review_verdict`) are
-  reserved; `payload` is a JSON object capped at 64 KB.
+  to a trusted peer. `to` must be an allowed peer: any agent when the
+  `--relay-peer` roster is empty, or a listed one when it is not (see
+  *Discovery* below); `type` is free-form but the two review types
+  (`review_request`/`review_verdict`) are reserved; `payload` is a JSON object
+  capped at 64 KB. A message for an agent that is currently down is deposited in
+  that agent's spool and ingested on its next tool call.
 - `conscio_relay_inbox {limit?}` → `{messages: [{id, from_instance, type, payload, ts}]}`
   — peek unread messages from trusted peers. Review-channel rows are excluded;
   rows from non-peers (or oversized) are skipped.
