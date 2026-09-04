@@ -44,6 +44,7 @@ from .watcher import ExitCode
 
 log = logging.getLogger("conscio.liaison.reactor")
 NOTIFY_ENV = "CONSCIO_NOTIFY_CMD"
+CARD_REFRESH_S = 60.0   # republish my address card at most once per minute
 
 
 def acquire_lock(db: Path, self_id: str) -> int | None:
@@ -127,14 +128,36 @@ def dispatch(db: Path, *, self_id: str, peers: Iterable[str],
         spool.ingest(db, self_id)   # brand-new agent the spool CREATES the db
     except Exception as exc:
         log.warning("spool ingest failed: %s", exc)
+    from . import agents, relay
+
+    # Stay findable BEFORE the db guard: a brand-new agent has no db yet, and
+    # it is exactly that agent who needs a card — without one, nobody can send
+    # it the first message, so the db would never come to exist. Presence in my
+    # own db is what I see; the card is what THEY read to reach me.
+    me = agents.get_agent(db, self_id) or {} if db.exists() else {}
+    try:
+        directory.publish_self(
+            self_id,
+            modelo=str(me.get("model") or ""),
+            familia=str(me.get("familia") or ""),
+            runtime=str(me.get("runtime") or ""),
+            papel=str(me.get("papel") or ""),
+            min_interval=CARD_REFRESH_S)
+    except Exception as exc:                  # invisible is bad, fatal is worse
+        log.warning("card publish failed: %s", exc)
+
     if not db.exists():
         return 0
 
     # Renew self presence every tick (heartbeat) — the reactor is the live
     # process, so IT keeps the agent visible as live to peers/observatory.
-    from . import agents, relay
+    # Capabilities are UNIONed, never replaced: the reactor knows it speaks
+    # relay, it knows nothing about the others (the Hermes' `audit` was being
+    # wiped every 5s by a fixed ("relay",) here).
+    caps = {str(c) for c in (me.get("capabilities") or ()) if str(c).strip()}
+    caps.add("relay")
     agents.register_agent(db, instance_id=self_id,
-                          capabilities=("relay",), status="alive")
+                          capabilities=tuple(sorted(caps)), status="alive")
 
     def _default(cmd: str, msg: dict) -> bool:
         return run_notify_hook(cmd, msg)

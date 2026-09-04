@@ -147,11 +147,16 @@ def register_agent(db: Path, *, instance_id: str, model: str = "",
     try:
         # Busca identidade prévia p/ preservar nos campos vazios
         prev = conn.execute(
-            f"SELECT nome, familia, runtime, papel FROM {TABLE} WHERE instance_id=?",
+            f"SELECT model, nome, familia, runtime, papel FROM {TABLE} WHERE instance_id=?",
             (instance_id,),
         ).fetchone()
         p = {c: (prev[c] if prev is not None else "")
-             for c in ("nome", "familia", "runtime", "papel")}
+             for c in ("model", "nome", "familia", "runtime", "papel")}
+        # v4.5.4: `model` segue a mesma regra dos demais. Ele era o único campo
+        # sobrescrito por vazio, contra o que esta docstring promete — e o
+        # reactor re-registra a cada tick sem identidade, então um agente com
+        # reactor armado perdia o modelo de 5 em 5 segundos.
+        new_model = model if model else (p["model"] or "")
         new_nome = nome if nome else p["nome"]
         new_fam = familia if familia else p["familia"]
         new_run = runtime if runtime else p["runtime"]
@@ -170,7 +175,7 @@ def register_agent(db: Path, *, instance_id: str, model: str = "",
             "   familia=excluded.familia,"
             "   runtime=excluded.runtime,"
             "   papel=excluded.papel",
-            (instance_id, model or "", status, _normalize_caps(capabilities), ts,
+            (instance_id, new_model, status, _normalize_caps(capabilities), ts,
              new_nome, new_fam, new_run, new_papel),
         )
         conn.commit()

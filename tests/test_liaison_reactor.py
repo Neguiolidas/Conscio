@@ -2,16 +2,16 @@
 """Tests for conscio.liaison.reactor — the agnostic reactive dispatcher.
 
 The reactor is the "delegate every inbound message to the agent" layer:
-it reads new messages past the watcher cursor, runs a notify hook (a
-subprocess command configured by the environment) for each non-silent one,
-and ONLY advances the cursor past messages whose hook succeeded (at-least-
-once — a failed hook retries next tick). Universal across agent
-environments: `CONSCIO_NOTIFY_CMD` points at whatever wakes YOUR agent.
+it reads new inbound messages, runs a notify hook (a subprocess command
+configured by the environment) for EVERY one of them, and ONLY marks a
+message read once its hook succeeded (at-least-once — a failed hook retries
+next tick). Universal across agent environments: `CONSCIO_NOTIFY_CMD` points
+at whatever wakes YOUR agent.
 """
 import json
 import time
 
-from conscio.liaison import mailbox, reactor
+from conscio.liaison import agents, directory, mailbox, reactor
 
 
 def _bind(tmp_path):
@@ -260,3 +260,75 @@ def test_thread_idles_while_another_reactor_holds_the_lock(tmp_path):
     finally:
         reactor.dispatch = orig
         reactor.release_lock(outsider)
+
+
+class TestReactorPublishesItsCard:
+    """An agent whose only persistent process is the reactor must still be
+    findable: it reads the directory, so it has to appear in it too."""
+
+    def _root(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+
+    def test_tick_publishes_a_card_for_an_agent_with_no_mcp_server(
+            self, tmp_path, monkeypatch):
+        self._root(tmp_path, monkeypatch)
+        db = tmp_path / "liaison.db"
+        me = "agent-solo"
+        assert directory.get(me) is None          # invisible before the tick
+        reactor.dispatch(db, self_id=me, peers=[], notify_cmd="true")
+        card = directory.get(me)
+        assert card is not None
+        assert card["instance_id"] == me
+        assert card["spool"] == str(directory.spool_dir(me))
+
+    def test_card_carries_the_identity_the_agent_registered(
+            self, tmp_path, monkeypatch):
+        self._root(tmp_path, monkeypatch)
+        db = tmp_path / "liaison.db"
+        me = "agent-ident"
+        agents.register_agent(db, instance_id=me, model="opus",
+                              familia="claude", runtime="claude-code",
+                              papel="executor")
+        reactor.dispatch(db, self_id=me, peers=[], notify_cmd="true")
+        card = directory.get(me)
+        assert (card["modelo"], card["familia"]) == ("opus", "claude")
+        assert (card["runtime"], card["papel"]) == ("claude-code", "executor")
+
+    def test_republish_is_throttled_so_a_5s_loop_is_not_a_write_storm(
+            self, tmp_path, monkeypatch):
+        self._root(tmp_path, monkeypatch)
+        db = tmp_path / "liaison.db"
+        me = "agent-throttle"
+        reactor.dispatch(db, self_id=me, peers=[], notify_cmd="true")
+        first = directory.get(me)["updated_at"]
+        reactor.dispatch(db, self_id=me, peers=[], notify_cmd="true")
+        assert directory.get(me)["updated_at"] == first    # not rewritten
+
+    def test_hall_membership_survives_the_refresh(self, tmp_path, monkeypatch):
+        """halls belong to the agent, not to the process that republishes."""
+        self._root(tmp_path, monkeypatch)
+        db = tmp_path / "liaison.db"
+        me = "agent-halls"
+        # updated_at antigo: o throttle NÃO pode mascarar o teste — o tick
+        # precisa mesmo reescrever o cartão para a preservação valer algo.
+        directory.publish({"instance_id": me, "halls": ["h1"],
+                           "updated_at": 0.0})
+        reactor.dispatch(db, self_id=me, peers=[], notify_cmd="true")
+        card = directory.get(me)
+        assert card["updated_at"] > 0.0          # foi mesmo republicado
+        assert card["halls"] == ["h1"]
+
+    def test_reactor_does_not_wipe_identity_or_capabilities(
+            self, tmp_path, monkeypatch):
+        """O tick de presença não é dono da identidade: re-registrar sem
+        identity apagava `model`, e um ("relay",) fixo apagava as demais
+        capabilities a cada 5s."""
+        self._root(tmp_path, monkeypatch)
+        db = tmp_path / "liaison.db"
+        me = "agent-keep"
+        agents.register_agent(db, instance_id=me, model="opus",
+                              familia="claude", capabilities=("audit", "relay"))
+        reactor.dispatch(db, self_id=me, peers=[], notify_cmd="true")
+        row = agents.get_agent(db, me)
+        assert row["model"] == "opus"
+        assert set(row["capabilities"]) == {"audit", "relay"}

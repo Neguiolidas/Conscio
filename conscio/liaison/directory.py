@@ -33,6 +33,7 @@ __all__ = [
     "peers_dir",
     "prune",
     "publish",
+    "publish_self",
     "relay_root",
     "spool_dir",
     "valid_id",
@@ -96,6 +97,46 @@ def publish(card: dict) -> None:
     payload["instance_id"] = cid
     payload.setdefault("updated_at", time.time())
     write_atomic(_card_path(cid), json.dumps(payload, ensure_ascii=False))
+
+
+def publish_self(instance_id: str, *, modelo: str = "", familia: str = "",
+                 runtime: str = "", papel: str = "",
+                 capabilities: tuple[str, ...] = ("relay",),
+                 url: str = "", min_interval: float = 0.0) -> bool:
+    """Publica/refresca MEU cartão. Devolve True se escreveu.
+
+    Um agente é alcançável porque seu cartão existe, não porque ele está numa
+    sessão. Por isso qualquer processo persistente do agente (MCP server OU
+    reactor) mantém o cartão vivo — quem só roda o reactor descobre os outros
+    e, sem isto, ficaria invisível para eles.
+
+    `min_interval` pula a escrita se o cartão atual for mais novo que isso; o
+    throttle sai do próprio cartão (e não de estado em memória) para que um
+    restart não vire uma rajada de republicações.
+
+    Chaves DO AGENTE (halls) sobrevivem ao refresh: são dele, não do processo
+    que republica.
+    """
+    old = get(instance_id) or {}
+    if min_interval > 0:
+        age = time.time() - float(old.get("updated_at") or 0.0)
+        if 0 <= age < min_interval:
+            return False
+    card = {
+        "instance_id": instance_id,
+        "spool": str(spool_dir(instance_id)),
+        # cartão local nunca leva url: quem me alcança de fora usa o
+        # remotes.json do lado dele (conscio relay pair).
+        "url": url,
+        "modelo": modelo, "familia": familia,
+        "runtime": runtime, "papel": papel,
+        "capabilities": list(capabilities), "updated_at": time.time(),
+    }
+    for key in ("halls", "halls_declined"):
+        if old.get(key):
+            card[key] = old[key]
+    publish(card)
+    return True
 
 
 def get(instance_id: str) -> dict | None:

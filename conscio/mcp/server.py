@@ -748,23 +748,12 @@ class Bindings:
         if self._card_ts and now - self._card_ts < CARD_REPUBLISH_S:
             return
         self._card_ts = now
-        card = {
-            "instance_id": self.self_instance_id,
-            "spool": str(directory.spool_dir(self.self_instance_id)),
-            # meu cartão local nunca tem url: quem me alcança de fora usa o
-            # remotes.json do lado dele (conscio relay pair).
-            "url": "",
-            "modelo": self.identity_model, "familia": self.identity_familia,
-            "runtime": self.identity_runtime, "papel": self.identity_papel,
-            "capabilities": ["relay"], "updated_at": time.time(),
-        }
         try:
-            old = directory.get(self.self_instance_id) or {}
-            # membership é do agente e sobrevive ao republish de 60s (Task 3b)
-            for key in ("halls", "halls_declined"):
-                if old.get(key):
-                    card[key] = old[key]
-            directory.publish(card)
+            # membership (halls) é do agente e sobrevive ao republish (Task 3b)
+            directory.publish_self(
+                self.self_instance_id,
+                modelo=self.identity_model, familia=self.identity_familia,
+                runtime=self.identity_runtime, papel=self.identity_papel)
             self.card_error = ""
         except Exception as exc:
             self.card_error = f"cartão não publicado: {exc}"
