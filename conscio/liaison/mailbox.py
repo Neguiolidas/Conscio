@@ -1,11 +1,12 @@
 # conscio/liaison/mailbox.py
-"""Engine-free shared mailbox — the v2.6.0 Liaison substrate.
+"""Engine-free mailbox — the v2.6.0 Liaison substrate.
 
-A single SQLite table at $CONSCIO_HOME/liaison.db carries directed messages
-between agent instances (review_request / review_verdict). WAL + busy_timeout
-mirror the noosphere catalog so concurrent same-host peers read latest-committed
-rows. Read path tolerates a missing/corrupt/locked db (returns []); the write
-path creates the db + table on first send. Never imports conscio.engine."""
+A single SQLite table carries directed messages between agent instances
+(review_request / review_verdict / relay). Since v4.5.4 the db is PRIVATE to
+one agent (``db_in_space``): agents exchange messages through the relay spool,
+never by writing into each other's db. WAL + busy_timeout mirror the noosphere
+catalog. Read path tolerates a missing/corrupt/locked db (returns []); the
+write path creates the db + table on first send. Never imports conscio.engine."""
 from __future__ import annotations
 
 import json
@@ -118,7 +119,19 @@ def _connect(db: Path) -> sqlite3.Connection:
     conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     tune(conn, durable=True)
     conn.executescript(_SCHEMA)
+    _ensure_spool_column(conn)
     return conn
+
+
+def _ensure_spool_column(conn: sqlite3.Connection) -> None:
+    """Additive migration for dbs created before v4.5.4. The index lives here
+    and NOT in _SCHEMA: on an old db the schema script would try to index a
+    column that does not exist yet and the whole connection would fail."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(messages)")}
+    if "spool_id" not in cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN spool_id TEXT")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_spool_id"
+                 " ON messages(spool_id) WHERE spool_id IS NOT NULL")
 
 
 def _clamp(n: int) -> int:
@@ -221,6 +234,30 @@ def send(db: Path, *, from_instance: str, to_instance: str, type: str,
                          (json.dumps(baked), mid))
             conn.commit()
         return mid
+    finally:
+        conn.close()
+
+
+def insert_from_spool(db: Path, *, from_instance: str, to_instance: str,
+                      type: str, payload, spool_id: str) -> bool:
+    """Insert a message that came from the spool. True only when the row was
+    really written — the unique index on spool_id turns re-ingestion (a crash
+    between INSERT and unlink) into a silent no-op.
+
+    Separate from ``send`` on purpose: send's return contract (row id) already
+    has callers and must not change shape.
+    """
+    db = Path(db)
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = _connect(db)
+    try:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO messages (from_instance, to_instance, type,"
+            " payload, ts, read_ts, spool_id) VALUES (?,?,?,?,?,NULL,?)",
+            (from_instance, to_instance, type, json.dumps(payload),
+             time.time(), spool_id))
+        conn.commit()
+        return cur.rowcount == 1
     finally:
         conn.close()
 
