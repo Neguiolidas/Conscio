@@ -2,7 +2,7 @@
 """agnostic reactive dispatcher (v4.5) — delegate inbound relay msg to agent.
 
 This is the layer that makes the relay *alive*: a persistent loop reads new
-peer messages (past the watcher cursor), and for each NON-silent message
+peer messages (past the watcher cursor), and for each one of them
 runs a notify hook — a subprocess command configured by the environment via
 `CONSCIO_NOTIFY_CMD`. The hook points at whatever wakes YOUR agent (e.g.
 `hermes send telegram` on Hermes, or a native DM bridge on Sonnet/Gemini).
@@ -11,12 +11,15 @@ Universal: the agent is never ignored when a message arrives.
 At-least-once delivery:
 - a message is marked read only when its hook SUCCEEDED (exit 0).
 - a failed hook leaves it unread, so it re-surfaces next tick.
-- a message marked silent (`_meta.silent=True` or payload `silent: True`)
-  is consumed WITHOUT running the hook (opt-out is the explicit exception).
+
+EVERY message notifies. A silent opt-out existed for "trivial A2A traffic the
+human need not see"; in practice it only produced messages that were consumed
+and never surfaced, which is indistinguishable from losing them. Deciding what
+is trivial is not the transport's call.
 
 Pure pipes: engine-free (no conscio.engine import), never raises. The module
-gives `should_notify`, `run_notify_hook`, and `dispatch` (one tick), and a
-`main()` CLI for the persistent `reactor` loop (systemd-friendly).
+gives `run_notify_hook` and `dispatch` (one tick), and a `main()` CLI for the
+persistent `reactor` loop (systemd-friendly).
 
 The command contract is a single shell command; the message JSON is piped
 to its stdin. `CONSCIO_NOTIFY_CMD` may be a full command string or a path.
@@ -41,22 +44,6 @@ from .watcher import ExitCode
 
 log = logging.getLogger("conscio.liaison.reactor")
 NOTIFY_ENV = "CONSCIO_NOTIFY_CMD"
-SILENT_KEYS = ("silent", "_silent")   # top-level payload opt-out (compat)
-
-
-def should_notify(message: dict) -> bool:
-    """True unless the message opts out (silent)."""
-    payload = message.get("payload") if isinstance(message, dict) else None
-    if isinstance(payload, dict):
-        # top-level `silent` in payload
-        for k in SILENT_KEYS:
-            if payload.get(k) is True:
-                return False
-        # envelope-level `_meta.silent`
-        meta = payload.get("_meta")
-        if isinstance(meta, dict) and meta.get("silent") is True:
-            return False
-    return True
 
 
 def acquire_lock(db: Path, self_id: str) -> int | None:
@@ -130,8 +117,8 @@ def dispatch(db: Path, *, self_id: str, peers: Iterable[str],
     message could be "delivered" for the reactor and forever unread for the
     agent (finding A8). `read_ts` is now the only bookkeeping.
 
-    Returns the number of messages newly handed to the notify hook (or
-    consumed silently). Callers run this in a loop.
+    Returns the number of messages newly handed to the notify hook. Callers
+    run this in a loop.
     """
     db = Path(db)
     if not self_id:
@@ -158,11 +145,7 @@ def dispatch(db: Path, *, self_id: str, peers: Iterable[str],
     for row in mailbox.inbox(db, self_id, unread_only=True, limit=200):
         if not relay.is_relay_message(row, allow):
             continue                     # reserved/oversized: left unread for
-        if not should_notify(row):       # the tool that owns it
-            mailbox.mark_read(db, [row["id"]])      # consumed silently
-            delivered += 1
-            continue
-        if not notify(notify_cmd, row):
+        if not notify(notify_cmd, row):  # the tool that owns it
             break            # at-least-once: unmarked, it returns next tick
         mailbox.mark_read(db, [row["id"]])
         delivered += 1

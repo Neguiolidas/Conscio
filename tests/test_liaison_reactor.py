@@ -18,23 +18,13 @@ def _bind(tmp_path):
     return tmp_path / "liaison.db"
 
 
-class TestShouldNotify:
-    def test_default_notifies(self):
-        assert reactor.should_notify({"payload": {"text": "oi"}}) is True
+class TestNoSilentMode:
+    """The opt-out is gone: a consumed-but-never-surfaced message is
+    indistinguishable from a lost one."""
 
-    def test_silent_meta_opts_out(self):
-        msg = {"payload": {"text": "oi", "_meta": {"from": {}, "silent": True}}}
-        assert reactor.should_notify(msg) is False
-
-    def test_silent_at_payload_top_level(self):
-        assert reactor.should_notify({"payload": {"silent": True}}) is False
-
-    def test_silent_false_still_notifies(self):
-        assert reactor.should_notify(
-            {"payload": {"silent": False, "text": "oi"}}) is True
-
-    def test_missing_payload_notifies(self):
-        assert reactor.should_notify({}) is True
+    def test_the_opt_out_helper_no_longer_exists(self):
+        assert not hasattr(reactor, "should_notify")
+        assert not hasattr(reactor, "SILENT_KEYS")
 
 
 class TestRunNotifyHook:
@@ -85,7 +75,8 @@ class TestDispatch:
         assert n == 0
         assert self._unread(db) == 1
 
-    def test_dispatch_skips_silent(self, tmp_path):
+    def test_dispatch_notifies_a_message_marked_silent(self, tmp_path):
+        """The old opt-out key must no longer buy silence."""
         db = _bind(tmp_path)
         self_id, peer = "self", "peer-c"
         mailbox.send(db, from_instance=peer, to_instance=self_id,
@@ -95,8 +86,8 @@ class TestDispatch:
         n = reactor.dispatch(db, self_id=self_id, peers=[peer],
                              notify_cmd="cat",
                              _notify=lambda cmd, m: (calls.append(m) or True))
-        assert n == 1            # consumida (marcada lida) mesmo sem notificar
-        assert calls == []       # o hook NÃO rodou
+        assert n == 1
+        assert len(calls) == 1   # the hook DID run
         assert self._unread(db) == 0
 
     def test_dispatch_ignores_own_messages(self, tmp_path):
