@@ -9,7 +9,7 @@ why is nothing arriving. The subcommands:
   peers       who is in the directory, local or remote, and how fresh
   quarantine  list / purge what the mailbox refused to parse
   doctor      am I published, is anything parked in my spool, is it moving
-  service     print a user systemd unit for the cross-machine bridge
+  service     print a user systemd unit: the bridge, or the reactor
 
 Engine-free and side-effect honest: every command prints what it did and
 returns a non-zero code when the answer is "no".
@@ -18,6 +18,7 @@ returns a non-zero code when the answer is "no".
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -127,13 +128,54 @@ WantedBy=default.target
 """
 
 
+_REACTOR_UNIT = """[Unit]
+Description=Conscio relay reactor (reactive delivery; every message notifies)
+After=network-online.target
+
+[Service]
+ExecStart={python} -u -m conscio.liaison.reactor --liaison-db {db} \
+--self-id {self_id} --interval {interval}
+Restart=always
+RestartSec=5
+Environment=CONSCIO_NOTIFY_CMD={notify_cmd}
+
+[Install]
+WantedBy=default.target
+"""
+
+
 def _cmd_service(args: argparse.Namespace) -> int:
-    """Print the user unit for the bridge.
+    """Print a user unit: `--kind bridge` (transport) or `reactor` (wake-ups).
 
     Deliberately without `RestartPreventExitStatus`/`SuccessExitStatus`: that
     pair is what kept a dead watcher reported as a success for 21 hours. An
     error exit is never declared a success here.
+
+    The reactor unit carries no `--relay-peer`: an empty allowlist means the
+    whole directory, so a peer that re-registers under a new id keeps being
+    heard. A hand-maintained allowlist is the per-agent wiring this release
+    exists to delete.
     """
+    if args.kind == "reactor":
+        if not args.notify_cmd:
+            print("config error: --notify-cmd required (the reactor has no "
+                  "way to wake an agent without one)", file=sys.stderr)
+            return 2
+        self_id = args.id or os.environ.get("CONSCIO_SELF_ID", "").strip()
+        if not self_id:
+            print("config error: --id required (no instance id resolved)",
+                  file=sys.stderr)
+            return 2
+        db = args.liaison_db or mailbox.default_db()
+        print(_REACTOR_UNIT.format(python=sys.executable, db=db,
+                                   self_id=self_id, interval=args.interval,
+                                   notify_cmd=args.notify_cmd), end="")
+        print("# save as ~/.config/systemd/user/conscio-relay-reactor.service",
+              file=sys.stderr)
+        print("# then: systemctl --user daemon-reload && systemctl --user "
+              "enable --now conscio-relay-reactor", file=sys.stderr)
+        return 0
+
     print(_UNIT.format(bind=args.bind, port=args.port,
                        root=directory.relay_root()), end="")
     print("# save as ~/.config/systemd/user/conscio-relay-bridge.service",
@@ -170,7 +212,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--id", default="", help="my instance id")
     p.set_defaults(fn=_cmd_doctor)
 
-    p = sub.add_parser("service", help="print the bridge systemd user unit")
+    p = sub.add_parser("service", help="print a systemd user unit")
+    p.add_argument("--kind", choices=("bridge", "reactor"), default="bridge",
+                   help="bridge = cross-machine transport; reactor = the "
+                        "reactive loop that wakes this agent (default bridge)")
+    p.add_argument("--notify-cmd", default="",
+                   help="[reactor] command run per message, JSON on stdin")
+    p.add_argument("--id", default="",
+                   help="[reactor] my instance id (default $CONSCIO_SELF_ID)")
+    p.add_argument("--liaison-db", default="",
+                   help="[reactor] path to liaison.db (default: resolved)")
+    p.add_argument("--interval", type=float, default=5.0,
+                   help="[reactor] poll every N seconds (default 5)")
     # Loopback by default, like relay_net's own --bind. A generated unit that
     # silently listens on every interface is not the doc's "bind to the
     # tailnet address": pass the tailscale IP to accept remote peers.

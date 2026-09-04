@@ -218,3 +218,54 @@ def test_no_second_bookkeeping_survives():
     src = inspect.getsource(reactor)
     for dead in ("_load_state", "_save_state", "last_seen_id"):
         assert dead not in src
+
+
+# ── single-reactor lock (v4.5.4): two reactors notified everything twice ──
+
+def test_second_reactor_is_refused_the_lock(tmp_path):
+    from conscio.liaison import reactor
+    db = tmp_path / "liaison.db"
+    first = reactor.acquire_lock(db, "agent-a")
+    assert first is not None
+    assert reactor.acquire_lock(db, "agent-a") is None   # would double-notify
+    reactor.release_lock(first)
+
+
+def test_lock_is_inherited_once_the_holder_lets_go(tmp_path):
+    """A dropped service must not leave the mailbox unattended."""
+    from conscio.liaison import reactor
+    db = tmp_path / "liaison.db"
+    held = reactor.acquire_lock(db, "agent-a")
+    reactor.release_lock(held)
+    second = reactor.acquire_lock(db, "agent-a")
+    assert second is not None
+    reactor.release_lock(second)
+
+
+def test_lock_is_per_agent_not_per_mailbox_file(tmp_path):
+    from conscio.liaison import reactor
+    db = tmp_path / "liaison.db"
+    a = reactor.acquire_lock(db, "agent-a")
+    b = reactor.acquire_lock(db, "agent-b")
+    assert a is not None and b is not None      # different agents, no contention
+    reactor.release_lock(a)
+    reactor.release_lock(b)
+
+
+def test_thread_idles_while_another_reactor_holds_the_lock(tmp_path):
+    """The in-session thread must not race a running service."""
+    from conscio.liaison import reactor
+    db = tmp_path / "liaison.db"
+    outsider = reactor.acquire_lock(db, "agent-a")
+    calls = []
+    th = reactor.ReactorThread(db, "agent-a", notify_cmd="true", interval=0.01)
+    monkey = lambda *a, **k: calls.append(1)
+    orig, reactor.dispatch = reactor.dispatch, monkey
+    try:
+        th.start()
+        time.sleep(0.15)
+        th.stop()
+        assert calls == []                          # idled, did not dispatch
+    finally:
+        reactor.dispatch = orig
+        reactor.release_lock(outsider)

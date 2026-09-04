@@ -101,3 +101,57 @@ def test_is_relay_message_oversize():
     row = {"from_instance": "B", "type": "note",
            "payload": {"x": "a" * (relay.MAX_PAYLOAD_BYTES + 1)}}
     assert relay.is_relay_message(row, {"B"}) is False
+
+
+# ── `conscio relay service --kind reactor` (v4.5.4) ────────────────────
+
+def _service(argv, monkeypatch, env=None):
+    """Run the subcommand, returning (rc, stdout)."""
+    import contextlib
+    import io
+
+    from conscio.liaison import relay_cli
+    for k, v in (env or {}).items():
+        monkeypatch.setenv(k, v)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(
+            io.StringIO()):
+        rc = relay_cli.main(argv)
+    return rc, out.getvalue()
+
+
+def test_reactor_unit_never_declares_an_error_a_success(monkeypatch):
+    """RestartPreventExitStatus is what kept a dead watcher green for 21h."""
+    rc, unit = _service(["service", "--kind", "reactor", "--notify-cmd", "n"],
+                        monkeypatch, {"CONSCIO_SELF_ID": "me"})
+    assert rc == 0
+    assert "RestartPreventExitStatus" not in unit
+    assert "SuccessExitStatus" not in unit
+    assert "Restart=always" in unit
+
+
+def test_reactor_unit_carries_no_hand_kept_allowlist(monkeypatch):
+    """Empty allowlist = whole directory: a peer that re-registers is heard."""
+    _, unit = _service(["service", "--kind", "reactor", "--notify-cmd", "n"],
+                       monkeypatch, {"CONSCIO_SELF_ID": "me"})
+    assert "--relay-peer" not in unit
+
+
+def test_reactor_unit_wires_the_notify_hook(monkeypatch):
+    _, unit = _service(["service", "--kind", "reactor",
+                        "--notify-cmd", "/opt/wake.sh"], monkeypatch,
+                       {"CONSCIO_SELF_ID": "me"})
+    assert "Environment=CONSCIO_NOTIFY_CMD=/opt/wake.sh" in unit
+    assert "--self-id me" in unit
+
+
+def test_reactor_unit_refuses_without_a_way_to_wake(monkeypatch):
+    """No hook = a loop that consumes messages and tells nobody."""
+    rc, out = _service(["service", "--kind", "reactor"], monkeypatch,
+                       {"CONSCIO_SELF_ID": "me"})
+    assert rc == 2 and out == ""
+
+
+def test_service_still_defaults_to_the_bridge(monkeypatch):
+    rc, unit = _service(["service"], monkeypatch)
+    assert rc == 0 and "conscio-relay-bridge" in unit

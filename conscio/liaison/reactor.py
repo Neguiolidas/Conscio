@@ -25,6 +25,7 @@ to its stdin. `CONSCIO_NOTIFY_CMD` may be a full command string or a path.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import logging
 import os
@@ -56,6 +57,47 @@ def should_notify(message: dict) -> bool:
         if isinstance(meta, dict) and meta.get("silent") is True:
             return False
     return True
+
+
+def acquire_lock(db: Path, self_id: str) -> int | None:
+    """Take the single-reactor lock for this agent; None if someone holds it.
+
+    Two reactors on one mailbox notify every message twice — measured: a
+    systemd unit and an in-session thread each delivered all 5 messages of a
+    test batch. The window between reading the unread inbox and marking
+    `read_ts` is wide enough for both to walk through it.
+
+    flock is the right primitive here: the kernel drops it when the holder
+    dies, so an in-session reactor takes over the instant the service stops
+    (and hands it back when the service returns). There is no stale lock file
+    to reap, which a pid file would have required.
+    """
+    path = Path(db).parent / f".reactor-{self_id}.lock"
+    fd = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return fd
+    except OSError:                  # held elsewhere, or the path is unusable
+        if fd is not None:
+            os.close(fd)
+        return None
+
+
+def release_lock(fd: int | None) -> None:
+    """Hand the lock back so another reactor can pick it up immediately."""
+    if fd is None:
+        return
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    except OSError:
+        pass
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
 
 
 def run_notify_hook(cmd: str, message: dict, *, timeout: float = 15.0) -> bool:
@@ -140,6 +182,7 @@ class ReactorThread:
         self.last_error, self.ticks = "", 0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._lock: int | None = None
 
     def start(self) -> None:
         if self._thread:
@@ -153,6 +196,8 @@ class ReactorThread:
         if self._thread:
             self._thread.join(timeout=timeout)
             self._thread = None
+        release_lock(self._lock)          # the service can take over at once
+        self._lock = None
 
     def is_alive(self) -> bool:
         return bool(self._thread and self._thread.is_alive())
@@ -168,10 +213,14 @@ class ReactorThread:
         backoff = self.interval
         while not self._stop.is_set():
             try:
-                dispatch(self.db, self_id=self.self_id, peers=self._peers(),
-                         notify_cmd=self.notify_cmd)
-                self.ticks += 1
-                self.last_error = ""
+                if self._lock is None:    # a service may already be reacting;
+                    self._lock = acquire_lock(self.db, self.self_id)
+                if self._lock is not None:
+                    dispatch(self.db, self_id=self.self_id,
+                             peers=self._peers(),
+                             notify_cmd=self.notify_cmd)
+                self.ticks += 1           # keep retrying: we inherit the lock
+                self.last_error = ""      # the moment that reactor stops
                 backoff = self.interval
             except Exception as exc:      # keep looping, but say what broke
                 self.last_error = f"{exc}"
@@ -223,12 +272,21 @@ def main(argv: list[str] | None = None) -> int:
                              ensure_ascii=False))
         return n
 
+    # One reactor per agent notifies; the others idle until it lets go.
+    lock = acquire_lock(db, self_id)
     if args.once:
+        if lock is None:
+            print("another reactor holds this mailbox", file=sys.stderr)
+            return 0
         tick()
+        release_lock(lock)
         return 0
     while True:
         try:
-            tick()
+            if lock is None:
+                lock = acquire_lock(db, self_id)
+            if lock is not None:
+                tick()
         except Exception as exc:
             log.error("tick failed: %s", exc)
         time.sleep(max(args.interval, 0.5))
