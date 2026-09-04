@@ -167,6 +167,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("noosphere", add_help=False,
                    help="share skills across same-host instances "
                         "(see: conscio noosphere --help)")
+    sub.add_parser("relay", add_help=False,
+                   help="operate the relay: pair/peers/quarantine/doctor "
+                        "(see: conscio relay --help)")
 
     p_ingest = sub.add_parser(
         "ingest",
@@ -1034,6 +1037,9 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "noosphere":
         from .noosphere import cli as noosphere_cli
         return noosphere_cli.main(argv[1:])
+    if argv and argv[0] == "relay":
+        from .liaison import relay_cli
+        return relay_cli.main(argv[1:])
     if argv and argv[0] == "init":
         from .installer import cli as installer_cli
         return installer_cli.main(argv[1:])

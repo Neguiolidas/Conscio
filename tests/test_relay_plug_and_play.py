@@ -246,7 +246,7 @@ def test_mcp_server_starts_reactor_when_hook_is_set(tmp_path, monkeypatch):
                       {"from": "b", "to": srv.self_instance_id,
                        "type": "relay", "payload": {"text": "acorda"}})
         for _ in range(100):                       # <= 5s
-            if got.exists():
+            if got.exists() and got.read_text():    # criado != escrito
                 break
             time.sleep(0.05)
         assert got.exists(), "a sessão não reagiu à mensagem depositada"
@@ -265,3 +265,84 @@ def test_no_hook_no_thread(tmp_path, monkeypatch):
     finally:
         seen.close()
         eng.close()
+
+
+# ── v4.5.4 Task 10: CLI de operação (pair/peers/quarantine/doctor) ────────
+
+def test_pair_writes_remote_card_and_secret_mode(tmp_path, monkeypatch):
+    import stat
+
+    from conscio.liaison import relay_cli, relay_transport
+    monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+    rc = relay_cli.main(["pair", "--id", "peer-x", "--url", "http://h:8789",
+                         "--token", "tk"])
+    assert rc == 0
+    card = directory.get("peer-x")
+    assert card["url"] == "http://h:8789" and not card.get("spool")
+    assert relay_transport.load_remotes()["peer-x"]["token"] == "tk"
+    mode = stat.S_IMODE(relay_transport.remotes_path().stat().st_mode)
+    assert mode == 0o600, "token de peer não pode nascer legível pra máquina"
+
+
+def test_pair_rejects_invalid_id(tmp_path, monkeypatch):
+    from conscio.liaison import relay_cli
+    monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+    assert relay_cli.main(["pair", "--id", "../evil", "--url", "http://h:1",
+                           "--token", "t"]) != 0
+    assert not (tmp_path / "evil").exists()
+
+
+def test_quarantine_list_and_purge(tmp_path, monkeypatch):
+    from conscio.liaison import mailbox, relay_cli
+    monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+    db = tmp_path / "q.db"
+    mailbox.quarantine(db, source_row=0, motivo="teste",
+                       payload_raw="{{{")
+    assert relay_cli.main(["quarantine", "--liaison-db", str(db)]) == 0
+    assert relay_cli.main(["quarantine", "--liaison-db", str(db),
+                           "--purge-days", "0"]) == 0
+    assert mailbox.list_quarantine(db) == []
+
+
+def test_doctor_reports_missing_card(tmp_path, monkeypatch, capsys):
+    """R1: as três perguntas respondidas sem abrir journal nenhum."""
+    from conscio.liaison import relay_cli
+    monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+    rc = relay_cli.main(["doctor", "--id", "ausente"])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert "ausente" in (out.out + out.err)
+
+
+def test_doctor_is_happy_when_published(tmp_path, monkeypatch):
+    from conscio.liaison import relay_cli
+    monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+    directory.publish({"instance_id": "eu",
+                       "spool": str(directory.spool_dir("eu")), "url": ""})
+    assert relay_cli.main(["doctor", "--id", "eu"]) == 0
+
+
+def test_peers_lists_local_and_remote(tmp_path, monkeypatch, capsys):
+    from conscio.liaison import relay_cli
+    monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+    directory.publish({"instance_id": "local-1",
+                       "spool": str(directory.spool_dir("local-1")), "url": ""})
+    directory.publish({"instance_id": "remoto-1", "spool": "",
+                       "url": "http://outra:8789"})
+    assert relay_cli.main(["peers"]) == 0
+    out = capsys.readouterr().out
+    assert "local-1" in out and "remoto-1" in out
+    assert "local" in out and "remote" in out
+
+
+def test_service_unit_never_declares_failure_a_success(tmp_path, monkeypatch,
+                                                       capsys):
+    """R1: foi RestartPreventExitStatus/SuccessExitStatus que deixou o watcher
+    fora do ar registrando sucesso. A unit gerada não repete isso."""
+    from conscio.liaison import relay_cli
+    monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+    assert relay_cli.main(["service"]) == 0
+    unit = capsys.readouterr().out
+    assert "Restart=always" in unit
+    assert "RestartPreventExitStatus" not in unit
+    assert "SuccessExitStatus" not in unit
