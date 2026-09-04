@@ -13,13 +13,15 @@ _FLAG_HELP = {
            "High-trust; leave OFF unless you want host-executed acts.",
     "hermes": "hermes-review: require a peer agent to approve acts.",
     "relay": "relay: send/receive free-form messages with peer agents.",
+    "halls": "halls: create and join Agent's Halls (named groups of agents "
+             "with a function per member). Needs relay to be useful.",
     "initiate": "initiate: proactively message peers while Awake (a daemon "
                 "flag — applied when the Awake daemon is started).",
 }
 # every consent the wizard collects; hostcfg._FLAG_ARG decides which of these
 # reach the conscio-mcp entry ("initiate" is daemon-only: conscio-daemon
 # --initiate; conscio-mcp rejects it)
-_CONSENT_KEYS = ("act", "hermes", "relay", "initiate")
+_CONSENT_KEYS = ("act", "hermes", "relay", "halls", "initiate")
 
 # hosts that are plain MCP config files at a known path: pressing Enter writes
 # the entry there instead of printing a snippet to paste by hand. A host absent

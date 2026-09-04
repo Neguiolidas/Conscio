@@ -18,7 +18,8 @@ from . import spaces
 # "awake" stays even though the wizard never offers it: conscio-mcp accepts
 # it and hand-tuned/pre-Reach entries carrying it must survive a --repair.
 _FLAG_ARG = {"act": "--enable-act", "awake": "--awake",
-             "relay": "--enable-relay", "hermes": "--enable-hermes-review"}
+             "relay": "--enable-relay", "hermes": "--enable-hermes-review",
+             "halls": "--can-create-halls"}
 # args older installers emitted into the MCP entry: recovered as consents on
 # --repair, but NEVER re-emitted (mcp_server_entry only knows _FLAG_ARG)
 _LEGACY_ARG_FLAG = {"--initiate": "initiate"}

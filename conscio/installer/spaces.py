@@ -78,10 +78,3 @@ def space_is_cross_agent(space: str, self_instance_id: str) -> bool:
         return True
     return owner_id != self_instance_id
 
-
-def liaison_db_path(slug: str) -> Path:
-    """Cada agente tem seu liaison.db privado DENTRO de instances/<slug>/.
-    Compartilhamento entre agentes é SOMENTE via relay (spool/HTTP), nunca
-    pelo liaison.db partilhado. Delega em mailbox.db_in_space (v4.5.4 A5)."""
-    from ..liaison.mailbox import db_in_space
-    return db_in_space(space_dir(slug))

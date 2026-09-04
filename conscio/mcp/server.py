@@ -713,7 +713,27 @@ class Bindings:
                 "known": bool(card),
             })
         return {"peers": out, "self": self.self_instance_id,
-                "card_error": self.card_error}
+                "card_error": self.card_error,
+                "squad": self._squad_state(),
+                "reactor": self._reactor_state()}
+
+    def _squad_state(self) -> dict:
+        """Who leads, and what am I. The role model shipped in v4.5 with the
+        invariant enforced and nobody asking — an answer nobody reads is the
+        same as no answer (A10)."""
+        from ..liaison import roles
+        return {"orchestrator": roles.who_is_orchestrator(self.liaison_db),
+                "my_role": roles.get_role(self.liaison_db,
+                                          self.self_instance_id)}
+
+    def _reactor_state(self) -> dict:
+        """Reactivity is invisible when it works and, until v4.5.4, also when
+        it broke: the loop kept `last_error` for a `relay_health` that never
+        existed. "Por que não fui notificado?" now has a place to look."""
+        r = self.reactor_thread
+        if r is None or not r.is_alive():
+            return {"running": False}
+        return {"running": True, "ticks": r.ticks, "last_error": r.last_error}
 
     def _publish_card(self) -> None:
         """Publica o endereço público no diretório. Throttled (I6). Falha não

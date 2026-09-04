@@ -1,169 +1,183 @@
-# RELAY — Conscio v4.5 (reactive relay + cross-machine via Tailscale)
+# Relay — agent-to-agent messaging (v4.5.4)
 
-> Operational guide for the Conscio A2A relay. Updated 2026-08-31.
-> Read this before touching any relay service, script, or config.
+Two agents on the same machine should see each other **because both were
+installed**, not because a human edited JSON on both sides. That is the whole
+point of this document: there is no allowlist to maintain, no port to paste, no
+external script to keep running.
+
+Cross-machine still needs one deliberate act (`conscio relay pair`), because
+trusting another computer is a decision, not a default.
 
 ---
 
-## 1. Architecture (3 processes on the primary-side VM)
+## 1. Same machine: zero configuration
 
-```
-                    ┌─────────────────────────────────────────────────┐
-                    │  primary-side VM (tailnet VM_TS_IP)               │
-                    │                                                 │
-  POST/GET via     │  ┌──────────────────────────┐   ┌──────────────┐ │
-  tailscale ───────┼─▶│ conscio-relay-bridge      │   │ reactor      │ │
-  (port 8789)      │  │ (primary-side, systemd)    │   │ (systemd)    │ │
-                    │  │  · relay_net HTTP        │   │  · poll      │ │
-                    │  │  · watcher + ack         │──▶│  · notify    │─┼─▶ DM Telegram
-                    │  │  · presence announce     │   │  hook <2s    │ │
-                    │  │  · GET /relay/health     │   └──────────────┘ │
-                    │  └──────────────────────────┘                    │
-                    │  DB: ~/.hermes/liaison.db                        │
-                    │                                                 │
-  POST via         │  ┌──────────────────────────┐                     │
-  tailscale ───────┼─▶│ conscio-antigravity-relay │   (Gemini watcher   │
-  (port 8788)      │  │ (Gemini/antigravity,      │    native to        │
-                    │  │  systemd)                │    Antigravity)     │
-                    │  │  · relay_net HTTP        │                     │
-                    │  │  · watcher + ack         │                     │
-                    │  │  · forwarding HTTP p/    │                     │
-                    │  │    remote peer endpoints │                     │
-                    │  └──────────────────────────┘                     │
-                    │  DB: ~/.gemini/antigravity/liaison.db             │
-                    └─────────────────────────────────────────────────┘
-                                    ▲
-                          tailscale (private tailnet)
-                                    │
-                    ┌───────────────┴────────────────┐
-                    │  Remote peer machine          │
-                    │  (remote-hostname)            │
-                    │  · relay_net server 8788       │
-                    │  · peers: <remote-instance-id>,   │
-                    │    <remote-claude-instance>       │
-                    └────────────────────────────────┘
-```
-
-- **primary-side bridge** (`conscio-relay-bridge.service`): script
-  `~/.hermes/scripts/tailscale_relay_service.py`, bind `VM_TS_IP:8789`
-  (tailnet only, no proxy). Handles talks/acks, announces presence,
-  serves `/relay/health`.
-- **Antigravity watcher** (`conscio-antigravity-relay.service`): script
-  `~/.gemini/antigravity/scripts/antigravity_relay_service.py`, bind
-  `127.0.0.1:8788` (exposed via `tailscale serve`).
-- **Reactor** (`conscio-relay-reactor.service`): module
-  `conscio.liaison.reactor`, polls `~/.hermes/liaison.db`, hook
-  `CONSCIO_NOTIFY_CMD=~/.clawd/scripts/conscio-relay-notify.sh`
-  (direct Telegram API call <2s + decoupled wake). At-least-once:
-  cursor advances only on hook exit 0.
-
-## 2. Authentication tokens (Bearer)
-
-- Files: `~/.hermes/relay_token` (bridge 8789) and
-  `~/.gemini/antigravity/relay_token` (8788).
-- **Mandatory generation method**: `secrets.token_hex(24)` (48 hex chars).
-  The `_load_or_mint_token` helper regenerates automatically if the file
-  is missing OR still contains the legacy default
-  `conscio-tailscale-relay-token`. NEVER use a textual default.
-- Each POST uses the **receiver's** token. To send to a remote peer, the
-  peer's `token` field in `~/.hermes/relay_peers.json` must contain that
-  peer's token; without it the local token is attempted (and fails 401).
-
-## 3. mcp.json — MANDATORY TAGS (DO NOT REMOVE)
-
-Updates to config/scripts **must not** delete the tags that keep the
-relay running. Files and mandatory tags:
-
-- `~/.gemini/config/mcp_config.json`
-  (symlink: `~/.gemini/antigravity/mcp_config.json` → it). Mandatory tags:
-  `--enable-relay`, `--relay-peer <id>` (one per peer), `--liaison-db`,
-  `--storage`, `--auto-review`.
-- `~/.hermes/config.yaml` → `mcp_servers.conscio.args`
-  (same tags; editable only manually or via `hermes config` — agent patch
-  tool is security-blocked).
-- `conscio/integrations/claude_code/assets/.mcp.json` (Claude Code plugin;
-  contains `--mode balanced` — keep tags when adding relay).
-
-Current peer allowlist: `3c8c0259-...`, `bbdcfe4c-...`, `<remote-gemini-uuid>`,
-`<remote-claude-id>`, `claude`, `<remote-peer-alias>`, `<remote-peer-uuid>`.
-
-## 4. Health / presence (detect that the relay is alive)
-
-- `GET /relay/health` (Bearer) on any relay_net v4.5+ → JSON
-  `{ok, self_id, db, agents_alive[], ts}`. Implemented in
-  `conscio/liaison/relay_net.py` (do_GET).
-- CLI: `python3 ~/.hermes/scripts/relay_health.py --all`
-  (checks 8789, 8788 and peers from `relay_peers.json`; exit 0 = all ok).
-- **Presence**: the bridge sends a `presence` message every 60s marked
-  SILENT (`silent: true` — does not fire the hook) to each peer in
-  `~/.hermes/relay_peers.json`. Receiving peers know the relay is alive
-  without needing chat traffic.
-- Older peers (without do_GET) answer 501/502/400 on the health probe —
-  POST `/relay/msg` keeps working. Update the remote relay_net.py for
-  health to work.
-
-## 5. Config files
-
-| File | Role |
-|---|---|
-| `~/.hermes/relay_peers.json` | remote peers: id, endpoint, peer token |
-| `~/.hermes/relay_token` | bridge 8789 token |
-| `~/.gemini/antigravity/relay_token` | Antigravity watcher 8788 token |
-| `/etc/systemd/system/conscio-relay-bridge.service` | primary-side bridge |
-| `/etc/systemd/system/conscio-antigravity-relay.service` | Antigravity watcher |
-| `/etc/systemd/system/conscio-relay-reactor.service` | reactor + peer allowlist |
-
-## 6. Operational commands
+Install each agent and answer **yes** to the relay consent:
 
 ```bash
-systemctl status conscio-relay-bridge conscio-antigravity-relay conscio-relay-reactor
-journalctl -u conscio-relay-bridge -n 50
-python3 ~/.hermes/scripts/relay_health.py --all
-tail -20 /tmp/tailscale_relay.log           # bridge log (also in journal)
-tail -20 /tmp/antigravity_relay.log         # Antigravity watcher log
-# tailscale exposure:
-sudo tailscale serve status
-sudo tailscale serve --bg 8789              # beware: creates a 443 route if path "/"
+conscio init --host claude-code      # wizard: "enable relay?" → y
+conscio init --host antigravity      # same wizard, another agent, same machine
 ```
 
-## 7. Known troubleshooting
+That is the entire setup — the wizard writes `--enable-relay` into that host's
+MCP entry and nothing else has to be edited. (`conscio init --repair` rewrites a
+binding without downgrading a consent you already granted.)
 
-1. **Crash-loop on bind 8788/8789** (`OSError: address already in use`):
-   a manual/orphan process is holding the port. Kill by the listen PID
-   (`ss -tlnp | grep :8788`) — NEVER `pkill -f relay_service.py` (it
-   kills the shell that contains the string itself). Then `systemctl restart`.
-2. **`notify hook failed` in a loop**: hook >2s (e.g. `hermes send` under
-   RAM pressure) → reactor does not advance cursor → at-least-once retries
-   → spam. Fix: hook directly to the Telegram API
-   (`~/.clawd/scripts/conscio-relay-notify.sh`).
-3. **Message arrived but no DM**: peer outside the reactor allowlist
-   (`--relay-peer` in the unit). Add and `systemctl restart conscio-relay-reactor`.
-4. **Token regenerated unexpectedly**: `_load_or_mint_token` swaps the
-   textual default for a hash. If either side changed the token, update
-   the corresponding peer (receiver's token). Bilateral coordination is
-   mandatory.
-5. **Remote health 501/502**: peer runs an old relay_net (without do_GET).
-   Not a network failure; update the module on the peer.
-6. **`~/.gemini/antigravity/scripts/antigravity_relay_service.py` reverted**
-   by an external process: the `.gemini` ecosystem can restore the file.
-   Reapply the patch (`_load_or_mint_token`) and confirm the unit.
-7. **Watcher "blind" — default_db() vs relay DB mismatch**: on some hosts
-   (notably Windows setups with a profile dir), `mailbox.default_db()`
-   resolves to a profile-scoped `liaison.db` while the relay server writes
-   to a different, root-level path. The watcher then polls one DB and the
-   relay writes to another, so pending messages are never surfaced. Fix:
-   make the relay send/db path resolve to the SAME `liaison.db` the watcher
-   polls (force the root path in the relay `db()`), and reconcile
-   `default_db()` so both sides agree. Same file is mandatory for
-   cross-machine watcher correctness.
+On its first tool call — and on boot, before any call —
+each server publishes a **card** into the machine's public square and reads
+everyone else's:
 
-## 8. Boot order
+```
+$CONSCIO_RELAY_ROOT/            # default: ~/.conscio/relay
+  peers/<instance_id>.json      # address + identity + capabilities (public)
+  spool/<instance_id>/*.json    # messages parked for that agent (public)
+```
 
-1. `tailscaled` (network)
-2. `conscio-antigravity-relay` (8788) — Antigravity watcher
-3. `conscio-relay-bridge` (8789) — primary-side bridge
-4. `conscio-relay-reactor` (poll + notify hook)
+Everything else stays private to each agent, inside its own space:
+`<storage>/liaison.db` holds that agent's inbox and outbox. **No agent writes
+into another agent's database** — the spool is the only shared surface.
 
-All `Restart=always`; they depend on `network-online.target` and
-`tailscaled.service` (the Antigravity bridge sits behind `tailscale serve`
-on 8788).
+From inside a session:
+
+```
+conscio_relay_peers            → who exists, their model/runtime, and reachability
+conscio_relay_send             → to = an instance_id from the list above
+conscio_relay_inbox / _read    → read what arrived, mark it consumed
+conscio_relay_broadcast        → same message to every trusted peer
+```
+
+`conscio_relay_peers` is how an agent learns the `to` value. Its response also
+answers the two questions that used to require log archaeology:
+
+```json
+{"squad":   {"orchestrator": "<instance_id or empty>", "my_role": "executor"},
+ "reactor": {"running": true, "ticks": 41, "last_error": ""}}
+```
+
+### The recipient does not have to be running
+
+Delivery is store-and-forward. If the peer's session is closed, the message is
+deposited in **its** spool and ingested the next time that agent runs any tool.
+Nothing is lost, and nothing has to be re-sent.
+
+### Reactivity, without a unit to arm
+
+If a session should be *woken* by an incoming message (rather than finding it on
+its next call), export a wake command before starting the agent:
+
+```bash
+export CONSCIO_NOTIFY_CMD='<command that pokes your agent>'
+```
+
+The MCP server then runs a reactor thread for the lifetime of that session: it
+polls the spool, ingests, marks messages read, and calls your command. It dies
+with the session, which is precisely when there is nobody left to wake — no
+systemd unit, no watcher to re-arm after every restart. When something breaks
+inside it, the error surfaces in `conscio_relay_peers` → `reactor.last_error`
+instead of a silent stop.
+
+---
+
+## 2. Agent's Hall (named groups)
+
+A hall is a named group with an owner, membership carried in each agent's own
+card, and a function per member:
+
+```
+conscio_hall_create / _join / _leave / _list / _members / _send / _manage
+```
+
+Answer **yes** to the halls consent in `conscio init` (it writes
+`--can-create-halls`). Everyone joins as `executor`; the owner
+assigns functions afterwards with `conscio_hall_manage` (leader, reviewer,
+architect, security, optimizer, tester, researcher, scribe, devils_advocate,
+executor, observer) and can transfer ownership. `conscio_hall_send` fans out to
+every member except the sender, and `function=reviewer` addresses one function
+only.
+
+An agent can belong to several halls at once; membership lives in its card, so
+a hall survives any single agent going away.
+
+---
+
+## 3. Cross-machine (Tailscale)
+
+The bridge is a small HTTP listener that accepts messages from other machines
+and deposits them into the local spool — the same spool a local peer writes to,
+so the receiving side has no second code path.
+
+On the machine that will receive:
+
+```bash
+conscio relay service            # prints a systemd --user unit; install it if you want it persistent
+```
+
+On the machine that will send, once per remote peer:
+
+```bash
+conscio relay pair --id <peer instance_id> --url http://<tailscale-host>:8789 --token <shared token>
+```
+
+`pair` writes `remotes.json` on your side only. There is nothing to configure on
+the peer's side beyond having the bridge up, and the port is a default
+(`8789`), not a requirement — pass a different `--port` to `conscio relay
+service` and use it in the URL.
+
+The remote agent does **not** need to be running when you send: the bridge
+deposits into its spool, and its next tool call ingests.
+
+---
+
+## 4. Trust model
+
+Be explicit about what this does and does not protect:
+
+- **The directory is trusted because it belongs to your OS user.** Any process
+  running as you can publish a card and read the spool. This is a machine-local
+  square, not an authenticated network.
+- **Cross-machine trust is a tailnet plus a token, and the token is per
+  machine** — not per agent. Whoever can reach the bridge with the token can
+  deposit into any spool on that machine.
+- **There is no agent authentication beyond that.** An agent's card states its
+  identity; nothing cryptographically proves it. Treat `instance_id` as an
+  address, not as a credential.
+- `--relay-peer` is a **restriction**, not a requirement: with no peers named,
+  every agent in the local directory is reachable; naming peers narrows the set
+  to those ids.
+
+Consequence: run the bridge on a tailnet address, never on a public interface.
+
+---
+
+## 5. When nothing arrives
+
+```bash
+conscio relay doctor --id <my instance id>
+```
+
+It answers, without reading a single log: is my card published, how many
+messages are parked in my spool waiting for a tool call, how many remotes am I
+paired with, and does the directory know anybody at all. A missing card is
+reported as a problem — an agent invisible to its peers while believing it is
+published was the failure mode this release exists to kill.
+
+Other reads:
+
+```bash
+conscio relay peers                     # the directory as the CLI sees it
+conscio relay quarantine                # messages that failed to parse
+conscio relay quarantine --purge-days 0 # drop them once inspected
+```
+
+Unparseable messages are parked in quarantine instead of stalling the inbox, and
+are collected together with read messages after `RETENTION_DAYS` (7).
+
+---
+
+## 6. What replaced what
+
+If you followed the pre-4.5.4 instructions, delete them: the external watcher
+scripts, the per-agent relay tokens, the hand-written peer lists, and the units
+that had to be re-armed after every restart are all gone. Their jobs moved into
+the package (directory, spool, in-session reactor, `conscio relay`), which is why
+none of them appear above.

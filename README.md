@@ -14,7 +14,7 @@ nothing else). It is built to make small, local models and frontier models punch
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v4.5.3` "Neutral home + fixes":** Conscio no longer defaults to the Hermes agent's `~/.hermes` — it resolves a neutral `CONSCIO_HOME` (`~/.conscio`) with `HERMES_HOME` kept only as a legacy override that preserves older installs; Windows `cp1252` crash on `--awake` state writes fixed (explicit UTF-8 everywhere + plugin `PYTHONUTF8` env); `conscio_cognitive_cycle` restored to the balanced/high surfaces; and mode resolution now distinguishes a fresh install (balanced) from an upgrade (keeps the existing surface).
+**Latest release — `v4.5.4` "Relay plug-and-play + Agent's Hall":** two agents on the same machine now find each other with no configuration — every agent publishes a public card into a directory and peers are read from there, never from another agent's database. A message to an agent that is not running is deposited in its store-and-forward spool instead of being lost; the sender's outbox is only written after delivery is accepted. Reactivity is a thread inside the MCP session (no systemd watcher to re-arm), each agent owns its `liaison.db`, and an empty allowlist no longer silently eats every message. Adds Agent's Hall — named groups whose membership lives in each agent's own card, with owner-assigned functions and ownership transfer — plus `conscio relay {pair,peers,quarantine,doctor,service}`.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 

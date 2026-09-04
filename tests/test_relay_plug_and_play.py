@@ -25,6 +25,7 @@ def _server(tmp_path, self_id="agent-a", relay_peers=()):
     srv.identity_papel = "executor"
     srv.card_error = ""
     srv._card_ts = 0.0
+    srv.reactor_thread = None
     return srv
 
 
@@ -383,3 +384,36 @@ def test_retention_tick_survives_a_broken_db(tmp_path):
     srv = _server(tmp_path)
     srv.liaison_db = tmp_path / "nao-existe" / "x.db"
     srv._retention_tick()          # não levanta
+
+
+# ── v4.5.4 A10: o que a whitelist escondia agora tem consumidor ───────────
+
+def test_peers_tool_reports_the_squad(tmp_path, monkeypatch):
+    """`quem lidera?` é pergunta de relay, e a resposta já estava no banco —
+    faltava alguém perguntar (roles ficou 3 releases sem consumidor)."""
+    from conscio.liaison import agents, roles
+    srv = _server(tmp_path)
+    monkeypatch.setattr(srv, "_resolve_peers", list)
+    agents.register_agent(srv.liaison_db, instance_id="agent-a")
+    agents.register_agent(srv.liaison_db, instance_id="b", papel="orquestrador")
+    out = srv._relay_peers_tool({})
+    assert out["squad"]["orchestrator"] == "b"
+    assert out["squad"]["my_role"] == roles.EXECUTOR
+
+
+def test_peers_tool_reports_reactor_state(tmp_path, monkeypatch):
+    """O erro do reactor era prometido a `relay_health` e não chegava a
+    ninguém: `por que não fui notificado?` ficava sem resposta."""
+    srv = _server(tmp_path)
+    monkeypatch.setattr(srv, "_resolve_peers", list)
+    assert srv._relay_peers_tool({})["reactor"] == {"running": False}
+
+    class _Fake:
+        ticks, last_error = 7, "boom"
+
+        def is_alive(self):
+            return True
+
+    srv.reactor_thread = _Fake()
+    r = srv._relay_peers_tool({})["reactor"]
+    assert r == {"running": True, "ticks": 7, "last_error": "boom"}

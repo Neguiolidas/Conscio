@@ -296,12 +296,7 @@ def test_purge_quarantine_removes_old(tmp_path):
 # ── v4.5.4: liaison.db por agente + migração do legado ──────────────────
 
 def test_db_in_space_is_single_source_of_path(tmp_path):
-    from conscio.installer import spaces
     assert mailbox.db_in_space(tmp_path) == tmp_path / "liaison.db"
-    # spaces delega — uma única forma de computar o caminho (A5)
-    import inspect
-    src = inspect.getsource(spaces.liaison_db_path)
-    assert "db_in_space" in src
 
 
 def test_migrate_legacy_imports_only_my_threads(tmp_path):

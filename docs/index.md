@@ -49,9 +49,9 @@ sqlite-vec and numpy — auto-detected at startup, with a one-command
 [migration](MIGRATION.md).
 
 **v4.0** makes Conscio installable as a Claude Code plugin and sizes the MCP
-surface to the model: `lite` (10 tools), `balanced` (18) or `ultra` (35),
+surface to the model: `lite` (10 tools), `balanced` (19) or `ultra` (37),
 switchable at runtime. A tool list is context the host pays for before the first
-prompt — a small model drowns in 35 tools, a large one is crippled by 10. See the
+prompt — a small model drowns in 37 tools, a large one is crippled by 10. See the
 [MCP guide](guides/mcp.md#tool-surfaces) and the
 [changelog](https://github.com/Neguiolidas/Conscio/blob/main/CHANGELOG.md).
 

@@ -49,7 +49,8 @@ def default_db() -> Path:
 
 def db_in_space(storage: Path) -> Path:
     """Caminho canônico do liaison.db privado de um espaço (v4.5.4 C1/A5).
-    Única forma de computar isso no pacote — spaces.liaison_db_path delega."""
+    Única forma de computar isso no pacote: o instalador e o servidor
+    chamam esta função, e não há um segundo acessor para divergir dela."""
     return Path(storage) / "liaison.db"
 
 

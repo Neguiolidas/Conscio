@@ -49,13 +49,20 @@ class TestSpaceIsCrossAgent:
 
 
 class TestLiaisonDbPath:
+    """A invariante (um liaison.db por space) vale; o acessor duplicado em
+    spaces morreu na v4.5.4 (A10) — quem responde é o mailbox, que é quem
+    o servidor de fato chama."""
+
     def test_liaison_lives_inside_the_space(self):
-        p = spaces.liaison_db_path("hermet")
+        from conscio.liaison.mailbox import db_in_space
+        p = db_in_space(spaces.space_dir("hermet"))
         assert p.name == "liaison.db"
         assert p.parent == spaces.space_dir("hermet")
 
     def test_different_slugs_get_different_liaison(self):
-        assert spaces.liaison_db_path("a") != spaces.liaison_db_path("b")
+        from conscio.liaison.mailbox import db_in_space
+        assert (db_in_space(spaces.space_dir("a"))
+                != db_in_space(spaces.space_dir("b")))
 
 
 class TestUpsertCrossAgentGuard:

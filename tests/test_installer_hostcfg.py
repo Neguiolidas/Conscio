@@ -244,3 +244,20 @@ def test_existing_slug_from_storage_arg(tmp_path):
                               config_path=cfgp, ts="T8")
     assert hostcfg.existing_slug(cfgp) == "old-space"
     assert hostcfg.existing_slug(tmp_path / "nope.json") is None
+
+
+def test_halls_flag_maps_to_can_create_halls():
+    """v4.5.4: Agent's Hall is a consent the installer can grant — before this
+    the flag existed only as a hand-typed server arg."""
+    e = hostcfg.mcp_server_entry("h", flags={"halls": True}, model=None)
+    assert "--can-create-halls" in e["args"]
+
+
+def test_repair_recovers_hand_added_halls_flag(tmp_path):
+    """A user who typed --can-create-halls by hand must not lose it to a
+    --repair rewrite (args are owned by the flags)."""
+    cfgp = tmp_path / "claude.json"
+    cfgp.write_text(json.dumps({"mcpServers": {"conscio": {
+        "command": "conscio-mcp",
+        "args": ["--storage", "/s", "--can-create-halls"]}}}))
+    assert hostcfg.existing_flags(cfgp).get("halls") is True

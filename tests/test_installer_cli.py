@@ -41,8 +41,8 @@ def test_top_cli_routes_init(monkeypatch):
 
 def test_generic_host_writes_space_and_prints_snippet(tmp_path):
     io = ScriptIO(answers=["antigravity-test"],          # label
-                  confirms=[False, False, False, False,  # act/hermes/relay/initiate
-                            False, False])                # graphify / awake
+                  confirms=[False] * 5 +                 # every consent
+                           [False, False])                # graphify / awake
     rc = wizard.run_with(io, host="antigravity", repair=False,
                          model="glm-5.1", ts="T1")
     assert rc == 0
@@ -103,7 +103,8 @@ def test_hermes_consent_reaches_launch_config(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
     monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
     io = ScriptIO(answers=["cc"],
-                  confirms=[False, True, False, False,   # act/hermes/relay/init
+                  confirms=[False, True, False, False,   # act/hermes/relay/halls
+                            False,                       # initiate
                             False, False])               # graphify / awake
     assert wizard.run_with(io, host="claude-code", repair=False,
                            model=None, ts="T3") == 0
@@ -139,7 +140,8 @@ def test_initiate_consent_goes_to_daemon_not_mcp(tmp_path, monkeypatch):
     monkeypatch.setattr(daemonctl, "start",
                         lambda slug, extra_args: seen.update(a=extra_args) or 99)
     io = ScriptIO(answers=["cc"],
-                  confirms=[False, False, False, True,   # act/hermes/relay/init
+                  confirms=[False, False, False, False,  # act/hermes/relay/halls
+                            True,                        # initiate
                             False, True])                # graphify / awake=YES
     assert wizard.run_with(io, host="claude-code", repair=False,
                            model=None, ts="T5") == 0
@@ -159,7 +161,7 @@ def test_daemon_start_failure_is_reported_not_fatal(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
     monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
     io = ScriptIO(answers=["cc"],
-                  confirms=[False, False, False, False, False, True])  # awake
+                  confirms=[False] * 5 + [False, True])  # consents/graphify/awake
     assert wizard.run_with(io, host="claude-code", repair=False,
                            model=None, ts="T6") == 0     # wizard survives
     assert any("FAILED" in o for o in io.out)            # and says so
@@ -223,3 +225,19 @@ def test_repair_recovers_legacy_initiate_consent(tmp_path, monkeypatch):
                       )["mcpServers"]["conscio"]["args"]
     assert "--initiate" not in args                      # never in MCP args
     assert any("--initiate" in o for o in io.out)        # told how to re-arm
+
+
+def test_halls_consent_reaches_launch_config(tmp_path, monkeypatch):
+    """v4.5.4: the wizard can grant Agent's Hall. Before this the tools were
+    unreachable to anyone who installed through `conscio init`."""
+    import json
+    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
+    io = ScriptIO(answers=["cc"],
+                  confirms=[False, False, True, True,    # act/hermes/relay/halls
+                            False, False, False])        # initiate/graphify/awake
+    assert wizard.run_with(io, host="claude-code", repair=False,
+                           model=None, ts="T7") == 0
+    args = json.loads((tmp_path / "claude.json").read_text()
+                      )["mcpServers"]["conscio"]["args"]
+    assert "--can-create-halls" in args and "--enable-relay" in args

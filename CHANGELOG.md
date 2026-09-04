@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.5.4] - 2026-09-03 — Relay plug-and-play + Agent's Hall
+
+The relay used to need a hand-written peer list, a shared `liaison.db` path, a
+systemd watcher re-armed after every restart, and an allowlist edited by hand on
+both sides. Two agents on the same machine now find each other with no
+configuration at all, and a message survives a receiver that is not running.
+
+### Added
+
+- **Directory of public peer cards.** Every agent publishes a card
+  (`instance_id`, model, family, runtime, role, capabilities, reachability) into
+  a shared directory on each tick and on boot. Peers are read from the
+  directory, never from another agent's database — the card is the only thing an
+  agent writes about itself, and the only thing others read.
+- **`conscio_relay_peers`** — discovery without manual config: who is out there,
+  which are alive, how to reach them.
+- **Store-and-forward spool.** A message to an agent that is not running is
+  deposited in the recipient's spool (crash-safe, deduped) and ingested on its
+  next `relay_inbox`. Delivery is local-spool or remote-HTTP; the sender's outbox
+  is only written *after* delivery is accepted, so a failed send never looks sent.
+- **Per-agent `liaison.db`** inside each agent's own space, with a one-shot
+  migration of the legacy shared database. No more shared path to agree on.
+- **In-session reactor.** Reactivity is a thread inside the MCP session that has
+  an agent to wake, not a systemd unit: nothing to arm, nothing to re-arm after a
+  restart, and it dies with the session that owns it. It marks `read_ts` on the
+  message it delivered (the watcher only moved a cursor) and never exits on idle.
+- **Agent's Hall** — named groups of agents. Membership lives in each agent's own
+  card, so there is no shared roster to corrupt: `conscio_hall_create`, `join`,
+  `leave`, `list`, `members`, `send`, `manage`. The owner assigns functions
+  (leader, reviewer, researcher, security, optimizer, architect, observer,
+  devil's advocate, executor) and can transfer ownership. Everyone joins as
+  `executor`; only the owner promotes. Halls are visible in the observatory.
+- **`conscio relay {pair,peers,quarantine,doctor,service}`** — pair machines,
+  list the directory, purge unparseable messages, diagnose why nothing arrives,
+  print the bridge systemd unit.
+- **Consent for relay and halls in `conscio init`** — the wizard writes
+  `--enable-relay` / `--can-create-halls` into the host's MCP entry; `--repair`
+  no longer downgrades a consent already granted.
+
+### Fixed
+
+- **An empty allowlist ate every message.** `relay_peers=()` meant "trust
+  nobody" on the receiving side while the sender saw a successful send — the
+  message was consumed and dropped. An empty allowlist now means "no restriction".
+- **Cross-machine delivery landed in the bridge's own mailbox.** The bridge
+  deposited into the local instance instead of the recipient's spool, so a
+  message crossing Tailscale was delivered to the wrong agent; handler state is
+  now per-instance instead of class-level.
+- **Agent status was a stored string** that stayed `alive` for an agent that had
+  been gone for days. It is now derived from `last_heartbeat` at read time.
+
+### Changed
+
+- **Tool surfaces measured, not asserted**: `lite` 10, `balanced` 19, `high` 21,
+  `ultra` 37; `--enable-relay` adds 5 and `--can-create-halls` 7 on top, for a
+  maximum of 49. The docs were carrying `balanced` 18 / `high` 22 / `ultra` 35.
+- **Code and documentation are English-only** (recorded as a project rule).
+
+---
+
 ## [4.5.3] - 2026-09-03 — Neutral home (un-couple from Hermes) + three fixes
 
 ### Fixed
