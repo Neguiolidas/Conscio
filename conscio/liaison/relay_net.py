@@ -1,46 +1,50 @@
 # conscio/liaison/relay_net.py
-"""Cross-machine relay transport (v4.5) — bridge peers over HTTP.
+"""Cross-machine relay bridge (v4.5.4) — one postman per machine.
 
-The relay normally shares a single liaison.db (same filesystem). When the
-agent runs on ANOTHER machine (local network / tailscale), this module
-provides the bridge between the shared-MB model and a remote peer:
+The relay is a shared filesystem between agents on the same box. When a peer
+lives on ANOTHER machine (LAN / tailscale), this module carries the message
+across:
 
-  make_server(...)         → HTTP listener on a host/port (tailscale IP or
-                             LAN). Receives `POST /relay/msg` from peer
-                             machines and writes the message into the LOCAL
-                             liaison.db via mailbox.send (same row shape as a
-                             same-filesystem relay send).
-  transport_send(url, msg) → POSTs a message dict to a peer's endpoint.
-                             Tailscale just makes the peer reachable at a
-                             100.x / MagicDNS address — the transport is
-                             plain HTTP (token-protected).
+  make_server(host, port, token) -> HTTP listener. Receives
+                                    `POST /relay/msg` from remote machines
+                                    and deposits each message into the
+                                    RECIPIENT's spool.
+  transport_send(url, msg)       -> POSTs a message dict to a peer bridge.
 
-Auth: a shared token is required on POST via
-`Authorization: Bearer <token>`. The tailnet is already a private network;
-the token keeps /api-layer safety minimal and stops accidental LAN writes.
+Until v4.5.3 the bridge wrote every inbound message into the mailbox of the
+agent that happened to own the bridge (finding A11): a second local agent
+could never be reached from outside, and the bridge owner received mail
+addressed to somebody else. The bridge now owns no database at all — it is a
+postman. Delivery is `spool.deposit(to, msg)`, and the recipient ingests it
+on its own next tick, with the same code path as a local delivery.
 
-Agnostic & universal: the message shape is the same `{from,to,type,payload}`
-used everywhere in liaison, so any agent environment can both produce and
-consume it. Engine-free, never raises — transport failures return False /
-401 without crashing the caller loop.
+Auth: a shared token on every request via `Authorization: Bearer <token>`.
+The tailnet is already private; the token stops accidental LAN writes.
+
+Engine-free, never raises: transport failures return False, malformed input
+returns an HTTP status, nothing crashes the caller loop.
 """
 
 from __future__ import annotations
 
+import argparse
 import hmac
 import json
 import logging
-import sqlite3
+import os
+import secrets
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib import error as urlerror
 from urllib import request
 
-from . import mailbox, relay
+from . import directory, relay, spool
 
 log = logging.getLogger("conscio.liaison.relay_net")
 MAX_BODY_BYTES = 64 * 1024                    # hard wall, above relay cap
+DEFAULT_BRIDGE_PORT = 8789     # stable on purpose: the peer stored this URL
 _AUTH_HEADER = "Authorization"
 
 
@@ -49,10 +53,9 @@ _AUTH_HEADER = "Authorization"
 def validate_msg(msg: dict) -> None:
     """Raise ValueError on any violation (mirrors relay.validate_send).
 
-    Deliberately does NOT enforce the local `--relay-peer` allowlist on `to`:
-    remote peers are machines, not the local address allowlist. The network
-    transport trusts the sender (auth by shared token), exactly as a
-    shared-filesystem relay write would.
+    Deliberately does NOT enforce a peer allowlist: an allowlist is about
+    which agents I read, and this is the machine boundary. Auth here is the
+    shared token; the recipient still applies its own rules on ingest.
     """
     if not isinstance(msg, dict):
         raise ValueError("msg must be a dict")
@@ -71,133 +74,106 @@ def validate_msg(msg: dict) -> None:
         raise ValueError(f"payload exceeds {relay.MAX_PAYLOAD_BYTES} bytes")
 
 
-# ── inbound: write a remote message into the local mailbox ─────────────
+# ── inbound: deposit into the recipient's spool ────────────────────────
 
-def handle_inbound(db: Path, self_id: str, msg: dict) -> bool:
-    """Persist a remote relay message into the local liaison.db.
+def handle_inbound(msg: dict) -> tuple[int, str]:
+    """Deposit a remote message into the RECIPIENT's spool.
 
-    The receiver (this node) is the mailbox owner, so a message whose `to`
-    isn't this node is still filed to `self_id` (mailbox is per-instance,
-    not per-address). Returns True on success (or False on any malformed/
-    oversized input — never raises).
+    Returns `(http_status, reason)`. The bridge serves every agent on this
+    machine, so `to` decides the destination — not who started the bridge.
     """
     try:
         validate_msg(msg)
-    except ValueError:
-        log.warning("relay_net: dropped malformed inbound")
-        return False
-    if relay.payload_size(msg["payload"]) > relay.MAX_PAYLOAD_BYTES:
-        log.warning("relay_net: inbound payload over relay cap — dropped")
-        return False
+    except ValueError as exc:
+        return 400, str(exc)
+    to = str(msg.get("to", ""))
+    if not directory.valid_id(to):     # `to` arrives from the NETWORK: without
+        return 400, "invalid recipient"    # this it can escape the spool root
+    if directory.get(to) is None:
+        return 404, "unknown recipient on this machine"
     try:
-        # identity do remetente (envelope) — vem do corpo, o runtime local
-        # não conhece o remetente de outra máquina; usamos a identidade MAC
-        # declarada (a mesma que relayer gravaria num share-fs).
-        identity = {"id": msg["from"], "modelo": "", "familia": "",
-                    "runtime": "relay-net", "papel": "peer"}
-        meta = msg.get("payload", {}).get("_meta", {}).get("from")
-        if isinstance(meta, dict) and meta.get("id"):
-            identity.update({k: meta.get(k, "") for k in
-                             ("modelo", "familia", "runtime", "papel")})
-            identity["id"] = meta["id"]
-        mailbox.send(db, from_instance=identity["id"],
-                     to_instance=self_id,
-                     type=msg["type"], payload=msg["payload"],
-                     identity=identity)
-        return True
-    except (sqlite3.Error, OSError, TypeError, ValueError):
-        log.exception("relay_net: inbound write failed")
-        return False
+        spool.deposit(to, msg)
+    except (OSError, ValueError) as exc:
+        log.warning("relay_net: spool deposit failed: %s", exc)
+        return 500, f"spool unavailable: {exc}"
+    return 200, "ok"
 
 
 # ── HTTP server ────────────────────────────────────────────────────────
 
 class RelayHandler(BaseHTTPRequestHandler):
-    _db_path: Path | None = None
-    _self_id: str = ""
-    _token: str | None = None
+    """Per-server state only. Two bridges in one process used to share class
+    attributes, so starting the second one silently retargeted the first
+    (finding A12) — the token now lives on the server object."""
 
     def log_message(self, format: str, *args):        # no token leak in logs
         pass
 
-    def _unauthorized(self):
-        self.send_response(401)
-        self.end_headers()
-        self.wfile.write(b"unauthorized")
+    @property
+    def _token(self) -> str:
+        return getattr(self.server, "relay_token", "") or ""
 
-    def do_POST(self):
-        if self.path.rstrip("/") != "/relay/msg":
-            self.send_response(404); self.end_headers(); return
-        if self._db_path is None or not self._self_id:
-            self.send_response(503); self.end_headers(); return
+    def _authorized(self) -> bool:
         expected = f"Bearer {self._token}"
         auth = self.headers.get(_AUTH_HEADER, "")
-        if not (expected and hmac.compare_digest(auth, expected)):
-            self._unauthorized(); return
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            if length <= 0 or length > MAX_BODY_BYTES:
-                raise ValueError("bad content length")
-            raw = self.rfile.read(length)
-            msg = json.loads(raw)
-        except (ValueError, json.JSONDecodeError):
-            self.send_response(400); self.end_headers()
-            self.wfile.write(b"bad request")
-            return
-        ok = handle_inbound(self._db_path, self._self_id, msg)
-        self.send_response(200 if ok else 400)
-        self.end_headers()
-        self.wfile.write(b"ok" if ok else b"rejected")
+        return bool(self._token and hmac.compare_digest(auth, expected))
 
-    def do_GET(self):
-        """Liveness/activity probe for peers — `GET /relay/health`.
-
-        Lets any peer on the tailnet detect that this relay node is alive
-        BEFORE sending (no hook side effects, no mailbox write). Same Bearer
-        auth as POST. Returns node identity + which agents are registered
-        alive (drives the 'relay is active' indicator).
-        """
-        if self.path.rstrip("/") != "/relay/health":
-            self.send_response(404); self.end_headers(); return
-        expected = f"Bearer {self._token}"
-        auth = self.headers.get(_AUTH_HEADER, "")
-        if not (expected and hmac.compare_digest(auth, expected)):
-            self._unauthorized(); return
-        try:
-            from . import agents
-            alive = agents.list_agents(
-                self._db_path, include_stale=False) if self._db_path else []
-            body = json.dumps({
-                "ok": True,
-                "self_id": self._self_id,
-                "db": str(self._db_path) if self._db_path else None,
-                "agents_alive": [a.get("instance_id") for a in alive],
-                "ts": time.time(),
-            }, ensure_ascii=False).encode("utf-8")
-        except (sqlite3.Error, OSError, ValueError):
-            self.send_response(500); self.end_headers()
-            self.wfile.write(b"error")
-            return
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+    def _reply(self, status: int, body: bytes,
+               content_type: str = "text/plain") -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self):
+        if self.path.rstrip("/") != "/relay/msg":
+            self._reply(404, b"not found"); return
+        if not self._authorized():
+            self._reply(401, b"unauthorized"); return
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            if length <= 0 or length > MAX_BODY_BYTES:
+                raise ValueError("bad content length")
+            msg = json.loads(self.rfile.read(length))
+        except (ValueError, json.JSONDecodeError):
+            self._reply(400, b"bad request"); return
+        status, reason = handle_inbound(msg)
+        self._reply(status, reason.encode("utf-8"))
 
-def make_server(host: str, port: int, token: str, db: Path,
-                self_id: str) -> ThreadingHTTPServer:
-    RelayHandler._db_path = Path(db)
-    RelayHandler._self_id = self_id
-    RelayHandler._token = token or ""
-    return ThreadingHTTPServer((host, port), RelayHandler)
+    def do_GET(self):
+        """Liveness probe — `GET /relay/health`.
+
+        Lets a peer check the bridge before sending (no side effects). Also
+        lists the agents this machine can deliver to, which is what makes
+        `conscio relay pair` able to say who is on the other side.
+        """
+        if self.path.rstrip("/") != "/relay/health":
+            self._reply(404, b"not found"); return
+        if not self._authorized():
+            self._reply(401, b"unauthorized"); return
+        try:
+            local = [c["instance_id"] for c in directory.peers(exclude="")]
+        except Exception:                    # a broken directory is still a
+            local = []                       # live bridge — say so
+        body = json.dumps({"ok": True, "role": "bridge", "agents": local,
+                           "ts": time.time()},
+                          ensure_ascii=False).encode("utf-8")
+        self._reply(200, body, "application/json")
+
+
+def make_server(host: str, port: int, token: str) -> ThreadingHTTPServer:
+    """A bridge with no database: it only knows how to hand mail over."""
+    srv = ThreadingHTTPServer((host, port), RelayHandler)
+    srv.relay_token = token or ""            # per-instance, never class state
+    return srv
 
 
 # ── client ─────────────────────────────────────────────────────────────
 
 def transport_send(base_url: str, msg: dict, *, token: str,
                    timeout: float = 5.0) -> bool:
-    """POST a relay message dict to a peer's endpoint. True on 2xx."""
+    """POST a relay message dict to a peer's bridge. True on 2xx."""
     try:
         data = json.dumps(msg, ensure_ascii=False).encode("utf-8")
         req = request.Request(
@@ -210,3 +186,57 @@ def transport_send(base_url: str, msg: dict, *, token: str,
     except (urlerror.URLError, OSError, ValueError, json.JSONDecodeError):
         log.warning("relay_net: transport_send failed to %s", base_url)
         return False
+
+
+# ── CLI ────────────────────────────────────────────────────────────────
+
+def read_or_create_token(path: Path) -> str:
+    """The bridge token, generated on first run. 0600, never printed."""
+    path = Path(path)
+    try:
+        tok = path.read_text(encoding="utf-8").strip()
+        if tok:
+            return tok
+    except OSError:
+        pass
+    tok = secrets.token_urlsafe(32)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(tok, encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return tok
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="conscio-relay-bridge",
+        description="HTTP bridge: cross-machine delivery into the "
+                    "recipient's spool")
+    ap.add_argument("--bind", default="127.0.0.1",
+                    help="address to listen on (default 127.0.0.1; use the "
+                         "tailscale IP to accept remote peers)")
+    ap.add_argument("--port", type=int, default=DEFAULT_BRIDGE_PORT,
+                    help=f"port (default {DEFAULT_BRIDGE_PORT}; 0 = ephemeral,"
+                         " tests only — peers store this URL)")
+    ap.add_argument("--token-file", default="",
+                    help="token path (default: <relay root>/bridge.token)")
+    args = ap.parse_args(argv)
+
+    token_path = (Path(args.token_file) if args.token_file
+                  else directory.relay_root() / "bridge.token")
+    srv = make_server(args.bind, args.port, read_or_create_token(token_path))
+    print(f"conscio-relay-bridge on {args.bind}:{srv.server_address[1]} "
+          f"(token: {token_path})", file=sys.stderr)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        srv.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

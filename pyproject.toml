@@ -58,6 +58,7 @@ conscio-mcp = "conscio.mcp.server:main"
 conscio-hub = "conscio.hub.server:main"
 conscio-observatory = "conscio.observatory.server:main"
 conscio-reactor = "conscio.liaison.reactor:main"
+conscio-relay-bridge = "conscio.liaison.relay_net:main"
 
 [project.entry-points."conscio.sensors"]
 host = "conscio.perception.host_sensor:HostSensor"
