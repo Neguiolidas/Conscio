@@ -617,10 +617,13 @@ class Bindings:
         return {"ok": True, "sent": sent, "errors": errors}
 
     def _relay_inbox(self, args: dict) -> dict:
+        # Reception is symmetric with sending: the same peer source on both
+        # sides, and the spool is drained first — nobody writes into my db.
+        self._ensure_registered()
         limit = self._int_arg(args, "limit", 50)
         rows = mailbox.inbox(self.liaison_db, self.self_instance_id,
                              types=None, unread_only=True, limit=limit)
-        peers = set(self.relay_peers)
+        peers = self._resolve_peers()
         out: list[dict] = []
         junk: list[int] = []
         for r in rows:
@@ -763,6 +766,12 @@ class Bindings:
         if not self.self_instance_id:
             return
         self._publish_card()
+        try:                                   # drain my spool into my db
+            from ..liaison import spool
+            spool.ingest(self.liaison_db, self.self_instance_id)
+        except Exception as exc:               # a stuck spool is not fatal,
+            print(f"liaison: spool ingest failed: {exc}",   # but never silent
+                  file=sys.stderr)
         try:
             from ..liaison import agents
             agents.register_agent(

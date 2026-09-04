@@ -161,3 +161,56 @@ def test_relay_peers_tool_surfaces_card_error(tmp_path):
     srv = _server(tmp_path)
     srv.card_error = "cartão não publicado: read-only fs"
     assert "read-only" in srv._relay_peers_tool({})["card_error"]
+
+
+# ── Task 7: recepção simétrica ────────────────────────────────────────────
+
+def test_inbox_ingests_spool_first(tmp_path):
+    """Ninguém escreve no meu banco: o que chega, chega pelo meu spool."""
+    from conscio.liaison import spool
+    directory.publish({"instance_id": "agent-b", "spool": "s", "url": "",
+                       "updated_at": time.time()})
+    srv = _server(tmp_path)
+    spool.deposit("agent-a", {"from": "agent-b", "to": "agent-a",
+                              "type": "relay", "payload": {"oi": 1}})
+    out = srv._relay_inbox({})
+    assert [m["payload"] for m in out["messages"]] == [{"oi": 1}]
+
+
+def test_empty_allowlist_no_longer_eats_messages(tmp_path):
+    """A1: allowlist vazia era nega-tudo e a mensagem sumia marcada como lida."""
+    from conscio.liaison import spool
+    directory.publish({"instance_id": "agent-b", "spool": "s", "url": "",
+                       "updated_at": time.time()})
+    srv = _server(tmp_path, relay_peers=())
+    spool.deposit("agent-a", {"from": "agent-b", "to": "agent-a",
+                              "type": "relay", "payload": {"x": 1}})
+    assert len(srv._relay_inbox({})["messages"]) == 1
+
+
+def test_named_peers_still_restrict_who_is_surfaced(tmp_path):
+    """Vazio = sem restrição, mas quem nomeia peers continua restringindo."""
+    from conscio.liaison import spool
+    srv = _server(tmp_path, relay_peers=("agent-b",))
+    spool.deposit("agent-a", {"from": "stranger", "to": "agent-a",
+                              "type": "relay", "payload": {"x": 1}})
+    assert srv._relay_inbox({})["messages"] == []
+
+
+def test_inbox_and_send_share_one_peer_source(tmp_path):
+    """A2: mesma função dos dois lados — não dá para mandar e não receber."""
+    import inspect
+
+    from conscio.mcp.server import Bindings
+    src = inspect.getsource(Bindings._relay_inbox)
+    assert "self.relay_peers" not in src
+    assert "_resolve_peers" in src
+
+
+def test_own_outbox_copy_never_shows_in_inbox(tmp_path):
+    """I5: a cópia de outbox (to_instance=peer) mora no MESMO db agora."""
+    from conscio.liaison import mailbox
+    srv = _server(tmp_path)
+    mailbox.send(srv.liaison_db, from_instance="agent-a", to_instance="agent-b",
+                 type="relay", payload={"mine": 1})
+    assert srv._relay_inbox({})["messages"] == []

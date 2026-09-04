@@ -77,6 +77,21 @@ def test_is_relay_message_non_peer():
     assert relay.is_relay_message(row, {"B"}) is False
 
 
+def test_empty_peers_accepts_everyone_by_design():
+    """A1 closed: no allowlist means no restriction. It used to mean deny-all,
+    so a clean install ate every message it received."""
+    row = {"from_instance": "x", "type": "relay", "payload": {}}
+    assert relay.is_relay_message(row, set()) is True
+    assert relay.is_relay_message(row, {"y"}) is False     # naming still binds
+
+
+def test_empty_peers_still_refuses_reserved_type():
+    """No restriction on WHO, never a free pass on WHAT: the review channel
+    keeps its own types even with an empty allowlist."""
+    row = {"from_instance": "x", "type": "review_request", "payload": {}}
+    assert relay.is_relay_message(row, set()) is False
+
+
 def test_is_relay_message_reserved_type():
     row = {"from_instance": "B", "type": "review_request", "payload": {}}
     assert relay.is_relay_message(row, {"B"}) is False

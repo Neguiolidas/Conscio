@@ -36,11 +36,17 @@ def validate_send(*, to: str, type: str, payload: object,
 
 
 def is_relay_message(row: dict, peers: set[str]) -> bool:
-    """True iff a mailbox row is a surfaceable relay message: from an
-    allowlisted peer, non-reserved type, within the size cap."""
-    if row.get("from_instance") not in peers:
-        return False
+    """True iff a mailbox row is a surfaceable relay message: non-reserved
+    type, within the size cap, and from an accepted sender.
+
+    An EMPTY `peers` means "no restriction", not "trust nobody" (finding A1 of
+    the 2026-09-03 audit): a clean install has no allowlist, and deny-all made
+    every incoming message vanish — silently marked read by the inbox. Naming
+    peers still restricts; that is the opt-in, not the default.
+    """
     if row.get("type") in RESERVED_TYPES:
+        return False
+    if peers and row.get("from_instance") not in peers:
         return False
     return payload_size(row.get("payload")) <= MAX_PAYLOAD_BYTES
 
