@@ -384,6 +384,7 @@ General cross-agent messaging. Requires `--relay-peer <id>` allowlist.
 - `conscio_relay_inbox(limit?)` — read inbox
 - `conscio_relay_read(ids)` — mark messages read
 - `conscio_relay_broadcast(type, payload)` — fan-out to all peers
+- `conscio_relay_peers()` — list reachable peers (id, identity, liveness)
 
 Reserved-type isolation: `review_request` / `review_verdict` never sent or
 surfaced by relay. Payload cap: 64KB. Retention: 7 days after read.

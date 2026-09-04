@@ -98,8 +98,9 @@ Cross-agent review channel: `conscio_reviews`, `conscio_review_approve`,
 ### Relay (opt-in `--enable-relay --relay-peer <id>`)
 
 Cross-agent messaging: `conscio_relay_send`, `conscio_relay_inbox`,
-`conscio_relay_read`, `conscio_relay_broadcast`. Reserved-type isolation from
-review channel. Payload cap 64KB, retention 7 days after read.
+`conscio_relay_read`, `conscio_relay_broadcast`, `conscio_relay_peers`.
+Reserved-type isolation from review channel. Payload cap 64KB, retention
+7 days after read.
 
 ### Resources (read-only URIs)
 

@@ -77,6 +77,12 @@ Three tools (registered only with `--enable-relay`):
   — peek unread messages from trusted peers. Review-channel rows are excluded;
   rows from non-peers (or oversized) are skipped.
 - `conscio_relay_read {ids}` → `{ok, marked}` — mark messages consumed.
+- `conscio_relay_peers {}` → `{peers: [{instance_id, model, family, runtime,
+  role, alive, reachability, known}], self, card_error}` (v4.5.4) — list the
+  reachable peers so an agent can pick a `to` without a human pasting ids.
+  `known: false` is a peer named on the command line that never published a
+  card here (addressable, but nothing is known about it); `reachability` is
+  `local` (shared spool), `remote` (published a URL) or `unknown`.
 - `conscio_relay_broadcast {type, payload}` → `{ok, sent: [{to, id}], errors: [{to, reason}]}`
   (v2.8.2) — fan a message out to **every** `--relay-peer`. Same contract as
   `relay_send` applied per peer (reserved types / oversized payloads rejected);

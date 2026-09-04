@@ -498,6 +498,12 @@ RELAY_TOOL_DEFS: list[dict] = [
      "description": "Send a free-form message to ALL trusted relay peers "
                     "(fan-out; review types excluded).",
      "inputSchema": _RELAY_BROADCAST_INPUT},
+    {"name": "conscio_relay_peers",
+     "description": "List reachable relay peers (id + identity + liveness). "
+                    "Use the returned instance_id as `to` in "
+                    "conscio_relay_send.",
+     "inputSchema": {"type": "object", "properties": {},
+                     "additionalProperties": False}},
 ]
 
 # ── Agent's Hall tools (v4.5) ─────────────────────────────────────────

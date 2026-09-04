@@ -127,3 +127,37 @@ def test_projection_survives_a_broken_card(tmp_path):
     ids = {a["instance_id"] for a in agents.list_agents(srv.liaison_db,
                                                         include_stale=True)}
     assert ids == {"agent-a", "agent-b"}
+
+
+def test_relay_peers_tool_lists_directory(tmp_path):
+    directory.publish({"instance_id": "agent-b", "spool": "s", "url": "",
+                       "modelo": "opus", "papel": "executor",
+                       "updated_at": time.time()})
+    directory.publish({"instance_id": "agent-r", "spool": "", "url": "http://h:1",
+                       "updated_at": time.time() - 10 * 3600})
+    out = _server(tmp_path)._relay_peers_tool({})
+    by_id = {p["instance_id"]: p for p in out["peers"]}
+    assert by_id["agent-b"]["reachability"] == "local"
+    assert by_id["agent-b"]["alive"] is True
+    assert by_id["agent-b"]["model"] == "opus"      # v4.5.4: superfície em inglês
+    assert by_id["agent-b"]["role"] == "executor"
+    assert by_id["agent-r"]["reachability"] == "remote"
+    assert by_id["agent-r"]["alive"] is False
+    assert out["self"] == "agent-a"
+
+
+def test_relay_peers_tool_flags_a_peer_it_knows_nothing_about(tmp_path):
+    """Peer nomeado à mão que nunca publicou cartão: continua endereçável, mas
+    dizer `local` mandaria o humano procurar um spool que não existe."""
+    out = _server(tmp_path, relay_peers=("ghost",))._relay_peers_tool({})
+    ghost = next(p for p in out["peers"] if p["instance_id"] == "ghost")
+    assert ghost["known"] is False
+    assert ghost["reachability"] == "unknown"
+    assert ghost["alive"] is False
+    assert ghost["model"] == ""
+
+
+def test_relay_peers_tool_surfaces_card_error(tmp_path):
+    srv = _server(tmp_path)
+    srv.card_error = "cartão não publicado: read-only fs"
+    assert "read-only" in srv._relay_peers_tool({})["card_error"]

@@ -337,6 +337,7 @@ class Bindings:
             tools["conscio_relay_inbox"] = self._relay_inbox
             tools["conscio_relay_read"] = self._relay_read
             tools["conscio_relay_broadcast"] = self._relay_broadcast
+            tools["conscio_relay_peers"] = self._relay_peers_tool
             if self.can_create_halls:      # v4.5: Agent's Hall tools
                 tools["conscio_hall_create"] = self._hall_create
                 tools["conscio_hall_list"] = self._hall_list
@@ -607,6 +608,42 @@ class Bindings:
             "runtime": self.identity_runtime,
             "papel": self.identity_papel,
         }
+
+    def _relay_peers_tool(self, args: dict) -> dict:
+        """Contrapartida obrigatória de tirar a allowlist manual: se o humano
+        não configura mais peer na mão, o agente precisa descobrir o `to`.
+
+        Chaves de saída em inglês (regra do projeto); o cartão em disco mantém
+        os nomes legados `modelo/familia/papel` — a tradução é aqui, na borda,
+        e não numa migração de formato no meio da v4.5.4."""
+        from ..liaison import directory
+        allowed = self._resolve_peers()
+        cards = {c.get("instance_id", ""): c
+                 for c in directory.peers(exclude=self.self_instance_id)}
+        out = []
+        for cid in sorted(allowed):
+            card = cards.get(cid, {})
+            if not card:
+                # nomeado à mão e sem cartão local: alcançável por remotes.json,
+                # mas mentir "local" mandaria o doctor procurar spool que não há
+                reach = "unknown"
+            else:
+                reach = "remote" if card.get("url") else "local"
+            out.append({
+                "instance_id": cid,
+                "model": card.get("modelo", ""),
+                "family": card.get("familia", ""),
+                "runtime": card.get("runtime", ""),
+                "role": card.get("papel", ""),
+                "alive": directory.is_live(card) if card else False,
+                "reachability": reach,
+                # peer nomeado em --relay-peer que nunca publicou cartão aqui:
+                # continua endereçável (remotes.json), mas o agente precisa ver
+                # que não sabemos nada sobre ele.
+                "known": bool(card),
+            })
+        return {"peers": out, "self": self.self_instance_id,
+                "card_error": self.card_error}
 
     def _publish_card(self) -> None:
         """Publica o endereço público no diretório. Throttled (I6). Falha não

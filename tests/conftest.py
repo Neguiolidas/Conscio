@@ -16,3 +16,17 @@ def _isolate_conscio_config(monkeypatch, tmp_path_factory):
     import conscio.models as _m
     monkeypatch.setattr(_m.ModelRegistry, "_CONFIG_PATHS", [nowhere], raising=False)
     monkeypatch.setattr(_ac, "_CONFIG_PATHS", [nowhere], raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_relay_root(monkeypatch, tmp_path_factory):
+    """Same doctrine for the relay directory, which is a *write*.
+
+    The directory root defaults to ~/.conscio/relay, so a test that builds
+    relay-enabled bindings published cards named `A`/`X` into the developer's
+    live directory — where a real agent would then see them as peers. A test
+    must never be able to hand production a ghost peer.
+    """
+    from conscio.liaison import directory
+    monkeypatch.setenv(directory.RELAY_ROOT_ENV,
+                       str(tmp_path_factory.mktemp("relay_root")))

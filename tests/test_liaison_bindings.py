@@ -1,4 +1,5 @@
 # tests/test_liaison_bindings.py
+import time
 from types import SimpleNamespace
 
 from conscio.agency import MockAdapter
@@ -642,25 +643,40 @@ def test_resolve_peers_falls_back_to_static(tmp_path):
         eng.close()
 
 
-def test_resolve_peers_uses_registry_and_excludes_self(tmp_path):
-    from conscio.liaison import agents
+def test_resolve_peers_uses_the_directory_and_excludes_self(tmp_path):
+    """v4.5.4: a fonte é o diretório compartilhado, não o registro local — que
+    só conhece quem já escreveu no MEU banco, ou seja, nunca um estreante. Sem
+    filtro de vivacidade: o spool é arquivo, peer parado segue endereçável."""
+    from conscio.liaison import directory
     b, eng, seen = _bind(tmp_path, instance_id="X", relay=True,
-                         relay_peers=("STALE",),
                          liaison_db=tmp_path / "liaison.db")
     try:
-        db = b.liaison_db
-        agents.register_agent(db, instance_id="X", capabilities=("relay",))
-        agents.register_agent(db, instance_id="alive-1",
-                              capabilities=("relay",))
-        agents.register_agent(db, instance_id="alive-2",
-                              capabilities=("relay",))
-        agents.register_agent(db, instance_id="stale-peer",
-                              heartbeat=1.0)   # velho → offiline
+        for cid, age in (("X", 0), ("alive-1", 0), ("alive-2", 0),
+                         ("quiet-peer", 10 * 3600)):
+            directory.publish({"instance_id": cid, "spool": f"s/{cid}",
+                               "url": "", "updated_at": time.time() - age})
         peers = b._resolve_peers()
         assert "X" not in peers                 # exclui o próprio
-        assert "alive-1" in peers and "alive-2" in peers
-        assert "stale-peer" not in peers        # sem heartbeat recente
-        assert "STALE" not in peers             # registro vence a fallback
+        assert {"alive-1", "alive-2"} <= peers
+        assert "quiet-peer" in peers            # calado ≠ inalcançável
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_peer_flag_wins_over_the_directory(tmp_path):
+    """Nomear peers vira restrição deliberada: o humano que digitou --relay-peer
+    quer aquele conjunto, mesmo com o diretório cheio."""
+    from conscio.liaison import directory
+    b, eng, seen = _bind(tmp_path, instance_id="X", relay=True,
+                         relay_peers=("B", "X"),
+                         liaison_db=tmp_path / "liaison.db")
+    try:
+        directory.publish({"instance_id": "outsider", "spool": "s",
+                           "url": "", "updated_at": time.time()})
+        peers = b._resolve_peers()
+        assert peers == {"B"}                   # "X" é o próprio; sai
+        assert "outsider" not in peers
     finally:
         seen.close()
         eng.close()
