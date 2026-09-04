@@ -201,7 +201,9 @@ class TestIdentity:
         assert row["nome"] == ""
         assert row["familia"] == ""
         assert row["runtime"] == ""
-        assert row["papel"] == ""
+        # v4.5.4 A6: papel não é identidade livre — é um enum com default.
+        # Quem não declara nasce executor (o líder promove depois).
+        assert row["papel"] == "executor"
 
     def test_identity_survives_upsert(self, db):
         agents.register_agent(db, instance_id="a", model="m1", nome="A",
@@ -269,3 +271,25 @@ class TestIdentity:
         assert rows[0]["nome"] == "" and rows[0]["familia"] == ""
         assert agents.get_agent(legacy, "a1") is not None
         assert agents.is_alive(legacy, "a1") is True
+
+
+# ── v4.5.4 A9: status é derivado do heartbeat, não uma segunda verdade ────
+
+def test_status_is_derived_from_heartbeat(tmp_path):
+    db = tmp_path / "a.db"
+    agents.register_agent(db, instance_id="a", status="alive")
+    import sqlite3
+    conn = sqlite3.connect(str(db))
+    conn.execute("UPDATE agents SET last_heartbeat=? WHERE instance_id=?",
+                 (time.time() - agents.STALE_AFTER_S - 10, "a"))
+    conn.commit()
+    conn.close()
+    assert agents.get_agent(db, "a")["status"] == "stale"
+    assert [r["status"]
+            for r in agents.list_agents(db, include_stale=True)] == ["stale"]
+
+
+def test_fresh_heartbeat_reads_alive_even_if_the_column_lies(tmp_path):
+    db = tmp_path / "a.db"
+    agents.register_agent(db, instance_id="a", status="dead")
+    assert agents.get_agent(db, "a")["status"] == "alive"

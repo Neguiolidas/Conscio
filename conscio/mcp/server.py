@@ -545,11 +545,22 @@ class Bindings:
         mid = mailbox.send(self.liaison_db, from_instance=self.self_instance_id,
                            to_instance=to, type=mtype, payload=payload,
                            identity=identity)
-        try:                                      # R2 best-effort retention
+        self._retention_tick()
+        return {"ok": True, "id": mid, "to": to}
+
+    def _retention_tick(self) -> None:
+        """R2 best-effort retention, on the send path.
+
+        Two tables age, not one: read messages AND quarantine. The quarantine
+        had no collector until v4.5.4 (A7) — a malformed sender could grow it
+        without bound, and nobody would notice because nothing reads it on the
+        happy path. Never raises: retention must not break delivery."""
+        try:
             mailbox.purge_read(self.liaison_db, relay.RETENTION_DAYS)
+            mailbox.purge_quarantine(self.liaison_db,
+                                     older_than_days=relay.RETENTION_DAYS)
         except Exception as exc:
             print(f"liaison: relay purge failed: {exc}", file=sys.stderr)
-        return {"ok": True, "id": mid, "to": to}
 
     def _deliver_to_peer(self, to: str, mtype: str, payload: dict,
                          identity: dict | None,
@@ -622,10 +633,7 @@ class Bindings:
                 continue
             sent.append({"to": peer, "id": mid})
         if sent:                                  # best-effort retention, once
-            try:
-                mailbox.purge_read(self.liaison_db, relay.RETENTION_DAYS)
-            except Exception as exc:
-                print(f"liaison: relay purge failed: {exc}", file=sys.stderr)
+            self._retention_tick()
         return {"ok": True, "sent": sent, "errors": errors}
 
     def _relay_inbox(self, args: dict) -> dict:

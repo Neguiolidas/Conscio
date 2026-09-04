@@ -76,3 +76,39 @@ class TestUnknown:
         import tempfile
         db = _db(__import__("pathlib").Path(tempfile.mkdtemp()))
         assert roles.set_role(db, "ghost", "orchestrator") is False
+
+# ── v4.5.4 A6: a invariante deixa de morar num módulo sem chamador ────────
+
+def test_register_agent_demotes_previous_orchestrator(tmp_path):
+    from conscio.liaison import agents
+    db = tmp_path / "a.db"
+    agents.register_agent(db, instance_id="a", papel="orquestrador")
+    agents.register_agent(db, instance_id="b", papel="orquestrador")
+    assert roles.who_is_orchestrator(db) == "b"
+    assert roles.get_role(db, "a") == roles.EXECUTOR
+
+
+def test_register_agent_normalizes_papel(tmp_path):
+    from conscio.liaison import agents
+    db = tmp_path / "a.db"
+    agents.register_agent(db, instance_id="a", papel="  ORQUESTRADOR ")
+    assert roles.get_role(db, "a") == roles.ORCHESTRATOR
+    assert agents.get_agent(db, "a")["papel"] == roles.ORCHESTRATOR
+
+
+def test_new_agent_is_always_an_executor(tmp_path):
+    """Regra do dono: todo mundo entra como executor; o papel muda depois."""
+    from conscio.liaison import agents
+    db = tmp_path / "a.db"
+    agents.register_agent(db, instance_id="a")
+    assert roles.get_role(db, "a") == roles.EXECUTOR
+
+
+def test_heartbeat_does_not_silently_demote_the_orchestrator(tmp_path):
+    """Re-registro sem papel preserva o papel — senão o líder perde o posto
+    no próximo tick do próprio heartbeat."""
+    from conscio.liaison import agents
+    db = tmp_path / "a.db"
+    agents.register_agent(db, instance_id="a", papel="orchestrator")
+    agents.register_agent(db, instance_id="a")          # tick de presença
+    assert roles.who_is_orchestrator(db) == "a"

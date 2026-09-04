@@ -25,6 +25,7 @@ import time
 from collections.abc import Iterable
 from pathlib import Path
 
+from . import roles
 from .mailbox import _connect
 
 BUSY_TIMEOUT_MS = 3000
@@ -154,7 +155,9 @@ def register_agent(db: Path, *, instance_id: str, model: str = "",
         new_nome = nome if nome else p["nome"]
         new_fam = familia if familia else p["familia"]
         new_run = runtime if runtime else p["runtime"]
-        new_papel = papel if papel else p["papel"]
+        # v4.5.4 A6: papel entra normalizado. Vazio vira executor — a regra
+        # é "todo agente nasce membro/executor"; o líder promove depois.
+        new_papel = roles.normalize(papel if papel else p["papel"])
         conn.execute(
             f"INSERT INTO {TABLE}(instance_id,model,status,capabilities,last_heartbeat,nome,familia,runtime,papel)"
             " VALUES(?,?,?,?,?,?,?,?,?)"
@@ -171,11 +174,16 @@ def register_agent(db: Path, *, instance_id: str, model: str = "",
              new_nome, new_fam, new_run, new_papel),
         )
         conn.commit()
-        return True
     except sqlite3.Error:
         return False
     finally:
         conn.close()
+    # v4.5.4 A6: a invariante "um orquestrador por diretório" mora no roles,
+    # e este é o único caminho por onde um papel entra no banco. Fora do
+    # `with conn` de propósito: set_role abre a própria conexão.
+    if new_papel == roles.ORCHESTRATOR:
+        roles.set_role(db, instance_id, roles.ORCHESTRATOR)
+    return True
 
 
 def heartbeat(db: Path, instance_id: str, *,
@@ -258,6 +266,21 @@ def _identity_select(conn: sqlite3.Connection) -> str:
     return ", ".join(parts)
 
 
+def _derived_status(last_heartbeat, *, now: float | None = None) -> str:
+    """v4.5.4 A9: `status` is a reading of the heartbeat, not a second truth.
+
+    The column still exists (schema is additive, old writers set it), but a
+    row that says "alive" while its heartbeat rotted is a lie the observatory
+    used to repeat. One clock, one answer: fresh → alive, else → stale.
+    """
+    try:
+        hb = float(last_heartbeat or 0)
+    except (TypeError, ValueError):
+        hb = 0.0
+    ref = time.time() if now is None else now
+    return "alive" if (ref - hb) <= STALE_AFTER_S else "stale"
+
+
 def get_agent(db: Path, instance_id: str) -> dict | None:
     """A single agent's row as a plain dict, or None if absent / db bad."""
     conn = _conn(db, read_only=True)
@@ -276,6 +299,7 @@ def get_agent(db: Path, instance_id: str) -> dict | None:
         d["capabilities"] = _parse_caps(d.get("capabilities", ""))
         for c in _IDENTITY_COLS:          # garante presença mesmo sem migração
             d.setdefault(c, "")
+        d["status"] = _derived_status(d.get("last_heartbeat"))
         return d
     except sqlite3.Error:
         return None
@@ -309,8 +333,8 @@ def list_agents(db: Path, *, capability: str | None = None,
         d["capabilities"] = caps
         for c in _IDENTITY_COLS:
             d.setdefault(c, "")
-        if not include_stale and (now - float(d.get("last_heartbeat", 0)
-                                             or 0)) > STALE_AFTER_S:
+        d["status"] = _derived_status(d.get("last_heartbeat"), now=now)
+        if not include_stale and d["status"] != "alive":
             continue
         if cap and cap not in caps:
             continue

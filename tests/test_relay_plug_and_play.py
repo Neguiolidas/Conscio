@@ -346,3 +346,40 @@ def test_service_unit_never_declares_failure_a_success(tmp_path, monkeypatch,
     assert "Restart=always" in unit
     assert "RestartPreventExitStatus" not in unit
     assert "SuccessExitStatus" not in unit
+
+
+# ── v4.5.4 A7: quarentena tem coletor, senão cresce para sempre ───────────
+
+def test_retention_tick_purges_old_quarantine(tmp_path):
+    from conscio.liaison import mailbox, relay
+    srv = _server(tmp_path)
+    db = srv.liaison_db
+    mailbox.send(db, from_instance="x", to_instance="agent-a",
+                 type="relay", payload={"text": "oi"})
+    mailbox.quarantine(db, source_row=1, motivo="teste", payload_raw="{")
+    import sqlite3
+    conn = sqlite3.connect(str(db))
+    old = time.time() - (relay.RETENTION_DAYS + 1) * 86400
+    conn.execute("UPDATE quarantine SET ts=?", (old,))
+    conn.commit()
+    conn.close()
+    assert len(mailbox.list_quarantine(db)) == 1
+    srv._retention_tick()
+    assert mailbox.list_quarantine(db) == []
+
+
+def test_retention_tick_keeps_recent_quarantine(tmp_path):
+    """O coletor não pode apagar a evidência que ainda serve p/ diagnóstico."""
+    from conscio.liaison import mailbox
+    srv = _server(tmp_path)
+    mailbox.quarantine(srv.liaison_db, source_row=1, motivo="teste",
+                       payload_raw="{")
+    srv._retention_tick()
+    assert len(mailbox.list_quarantine(srv.liaison_db)) == 1
+
+
+def test_retention_tick_survives_a_broken_db(tmp_path):
+    """Retenção é best-effort: nunca derruba o caminho de envio."""
+    srv = _server(tmp_path)
+    srv.liaison_db = tmp_path / "nao-existe" / "x.db"
+    srv._retention_tick()          # não levanta
