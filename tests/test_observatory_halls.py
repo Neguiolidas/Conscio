@@ -1,28 +1,45 @@
 # tests/test_observatory_halls.py
-"""Tests for conscio.observatory.halls_view — read-only projection of agents + halls."""
+"""Tests for conscio.observatory.halls_view — read-only projection of agents + halls.
+
+O registro de agentes continua no liaison.db privado; o roster do hall mora no
+diretório público (v4.5.4), então o seed monta cartão, não linha de tabela.
+"""
 import time
 
-from conscio.liaison import agents, halls, mailbox
+import pytest
+
+from conscio.liaison import agents, directory, halls, mailbox
 from conscio.observatory.halls_view import HallsProjection
+
+
+@pytest.fixture(autouse=True)
+def _relay_root(tmp_path, monkeypatch):
+    monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
 
 
 def _db(tmp_path):
     return tmp_path / "liaison.db"
 
 
+def _card(cid, **kw):
+    directory.publish({"instance_id": cid, "spool": cid, "url": "",
+                       "updated_at": time.time(), **kw})
+
+
 def _seed(db):
-    """agents + halls + mailbox, read-only-safe."""
+    """agents (db privado) + halls (diretório) + mailbox, read-only-safe."""
     agents.register_agent(db, instance_id="a1", model="opus-5",
                           familia="claude", capabilities=("code", "review"))
     agents.register_agent(db, instance_id="a2", model="gemini-2.5",
                           familia="gemini", capabilities=("chat",))
     agents.register_agent(db, instance_id="stale", model="old",
                           heartbeat=time.time() - 1000.0)
-    h = halls.create_hall(db, dono="a1", nome="Squad QA")
+    _card("a1", modelo="opus-5", familia="claude")
+    _card("a2", modelo="gemini-2.5", familia="gemini")
+    _card("stale", modelo="old")
+    h = halls.create_hall(owner="a1", name="Squad QA")
     assert h is not None
-    halls.add_member(db, hall_id=h["hall_id"], instance_id="a1", papel="dono")
-    halls.add_member(db, hall_id=h["hall_id"], instance_id="a2",
-                     papel="executor")
+    halls.join(instance_id="a2", hall_id=h["hall_id"])
     mailbox.send(db, from_instance="a2", to_instance="a1", type="chat",
                  payload={"text": "oi"})
     return h["hall_id"]
@@ -80,28 +97,46 @@ class TestHalls:
         assert hs[0]["hall_id"] == hid
         assert hs[0]["member_count"] == 2
 
-    def test_halls_filter_by_dono(self, tmp_path):
+    def test_member_count_takes_one_directory_sweep(self, tmp_path,
+                                                    monkeypatch):
+        db = _db(tmp_path); _seed(db)
+        halls.create_hall(owner="a1", name="Squad B")
+        halls.create_hall(owner="a1", name="Squad C")
+        calls = []
+        real = directory.peers
+        monkeypatch.setattr(directory, "peers",
+                            lambda *a, **k: (calls.append(1), real(*a, **k))[1])
+        hs = HallsProjection(db).halls()
+        assert len(hs) == 3
+        assert len(calls) == 1        # uma varredura para todos os halls
+
+    def test_halls_filter_by_owner(self, tmp_path):
         db = _db(tmp_path); _seed(db)
         p = HallsProjection(db)
-        assert len(p.halls(dono="a1")) == 1
-        assert p.halls(dono="ghost") == []
+        assert len(p.halls(owner="a1")) == 1
+        assert p.halls(owner="ghost") == []
 
     def test_hall_members_with_identity(self, tmp_path):
         db = _db(tmp_path); hid = _seed(db)
         p = HallsProjection(db)
         members = p.hall_members(hid)
         m = {x["instance_id"]: x for x in members}
-        assert m["a1"]["modelo"] == "opus-5"
-        assert m["a2"]["familia"] == "gemini"
+        assert m["a1"]["model"] == "opus-5"
+        assert m["a2"]["family"] == "gemini"
+        assert m["a1"]["function"] == "leader"    # o criador nasce líder
+        assert m["a2"]["function"] == "executor"
         assert "stale" not in m   # não está no hall
 
     def test_hall_members_alive_only_excludes_stale(self, tmp_path):
         db = _db(tmp_path); hid = _seed(db)
-        # adiciona membro stale no hall
-        halls.add_member(db, hall_id=hid, instance_id="stale")
+        halls.join(instance_id="stale", hall_id=hid)
+        stale = directory.get("stale")             # envelhece o cartão
+        stale["updated_at"] = time.time() - 10 * 3600
+        directory.publish(stale)
         p = HallsProjection(db)
         alive = p.hall_members(hid, alive_only=True)
         assert all(not x["offline"] for x in alive)
+        assert "stale" not in {x["instance_id"] for x in alive}
         allm = p.hall_members(hid, alive_only=False)
         ids = {x["instance_id"] for x in allm}
         assert "stale" in ids

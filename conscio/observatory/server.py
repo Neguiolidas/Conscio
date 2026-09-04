@@ -133,7 +133,12 @@ def route(method: str, path: str, query: dict, *, projection: Projection,
             limit=_int(query, "limit", 200)))
     if path == "/api/halls":
         return Resp(200, halls.halls(
-            dono=query.get("dono") or None))
+            owner=query.get("owner") or None))
+    if path == "/api/hall_members":
+        return Resp(200, halls.hall_members(
+            str(query.get("hall_id") or ""),
+            alive_only=not _bool(query, "stale"),
+            limit=_int(query, "limit", 100)))
     if path == "/api/mailboxes":
         self_id = str(projection.identity().get("instance_id") or "")
         return Resp(200, halls.mailboxes(self_id,

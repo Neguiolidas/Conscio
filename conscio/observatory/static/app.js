@@ -235,12 +235,12 @@
 					: `<div class="grid grid-3">${lv.halls.map(h => `
 						<div class="entity">
 							<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-								<span class="entity-id">${esc(h.nome)}</span>
+								<span class="entity-id">${esc(h.name)}</span>
 								<span class="badge is-live">${h.member_count} membro${h.member_count !== 1 ? 's' : ''}</span>
 							</div>
 							<div class="entity-meta">
 								<span><b>id</b> ${esc(truncate(h.hall_id, 32))}</span>
-								<span><b>dono</b> ${esc(truncate(h.dono, 18))}</span>
+								<span><b>owner</b> ${esc(truncate(h.owner, 18))}</span>
 							</div>
 						</div>`).join('')}</div>`
 				}
@@ -301,15 +301,15 @@
 		return `<div class="grid grid-2">${lv.halls.map(h => `
 			<div class="entity">
 				<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-					<span class="entity-id">${esc(h.nome)}</span>
+					<span class="entity-id">${esc(h.name)}</span>
 					<span class="badge is-live">${h.member_count} membro${h.member_count !== 1 ? 's' : ''}</span>
 				</div>
 				<div class="entity-meta">
 					<span><b>id</b> ${esc(truncate(h.hall_id, 40))}</span>
 				</div>
 				<div class="entity-meta">
-					<span><b>dono</b> ${esc(truncate(h.dono, 24))}</span>
-					<span><b>criado</b> ${ago(h.criado_em)}</span>
+					<span><b>owner</b> ${esc(truncate(h.owner, 24))}</span>
+					<span><b>criado</b> ${ago(h.created_at)}</span>
 				</div>
 			</div>`).join('')}</div>`;
 	}

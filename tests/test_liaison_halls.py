@@ -1,140 +1,270 @@
 # tests/test_liaison_halls.py
-"""Tests for conscio.liaison.halls — Agent's Hall: named groups over mailbox."""
+"""Agent's Hall sem roster: membership mora no cartão do próprio agente e o
+doc do hall (escrito só pelo dono) carrega as funções. Nenhum sqlite aqui —
+exceto o teste da migração do legado."""
 import time
 
 import pytest
 
-from conscio.liaison import agents, halls, mailbox
+from conscio.liaison import directory, halls
 
 
-@pytest.fixture
-def db(tmp_path):
-    return tmp_path / "liaison.db"
+@pytest.fixture(autouse=True)
+def _root(tmp_path, monkeypatch):
+    monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
 
 
-def _now():
-    return time.time()
+def _card(cid, **kw):
+    directory.publish({"instance_id": cid, "spool": cid, "url": "",
+                       "updated_at": time.time(), **kw})
 
 
-class TestCreateHall:
-    def test_create_hall_generates_id_and_owner(self, db):
-        h = halls.create_hall(db, dono="agent-a", nome="Squad QA")
-        assert h is not None
-        assert h["dono"] == "agent-a"
-        assert h["hall_id"] == "agent-a--squad-qa"
-        assert isinstance(h["criado_em"], float)
-
-    def test_create_hall_id_normalized(self, db):
-        h = halls.create_hall(db, dono="agent-a", nome="  Team  Alpha!  ")
-        assert h["hall_id"] == "agent-a--team-alpha"
-
-    def test_create_duplicate_returns_none(self, db):
-        assert halls.create_hall(db, dono="a", nome="team") is not None
-        assert halls.create_hall(db, dono="a", nome="team") is None
-
-    def test_create_on_broken_db_returns_none(self, tmp_path):
-        blocker = tmp_path / "blocker"
-        blocker.write_text("not a dir")
-        assert halls.create_hall(blocker / "x.db", dono="a", nome="t") is None
+def test_join_writes_only_my_own_card():
+    _card("agent-a"); _card("agent-b")
+    assert halls.join(instance_id="agent-a", hall_id="owner--team") is True
+    assert directory.get("agent-a")["halls"] == ["owner--team"]
+    assert "halls" not in directory.get("agent-b")      # não toco em cartão alheio
 
 
-class TestMembership:
-    def test_add_remove_member_roundtrip(self, db):
-        h = halls.create_hall(db, dono="d", nome="hall")
-        assert halls.add_member(db, hall_id=h["hall_id"], instance_id="m")
-        assert halls.is_member(db, hall_id=h["hall_id"], instance_id="m")
-        assert halls.remove_member(db, hall_id=h["hall_id"], instance_id="m")
-        assert not halls.is_member(db, hall_id=h["hall_id"], instance_id="m")
-
-    def test_members_of_lists_with_paper(self, db):
-        h = halls.create_hall(db, dono="d", nome="hall")
-        halls.add_member(db, hall_id=h["hall_id"], instance_id="m",
-                         papel="executor")
-        members = halls.members_of(db, h["hall_id"])
-        assert len(members) == 1
-        assert members[0]["instance_id"] == "m"
-        assert members[0]["papel"] == "executor"
-
-    def test_halls_of_returns_memberships(self, db):
-        h1 = halls.create_hall(db, dono="a", nome="h1")
-        h2 = halls.create_hall(db, dono="b", nome="h2")
-        halls.add_member(db, hall_id=h1["hall_id"], instance_id="me")
-        halls.add_member(db, hall_id=h2["hall_id"], instance_id="me")
-        mine = halls.halls_of(db, "me")
-        assert {x["hall_id"] for x in mine} == {h1["hall_id"], h2["hall_id"]}
+def test_concurrent_joins_never_lose_a_member():
+    for cid in ("a1", "a2", "a3"):
+        _card(cid)
+        halls.join(instance_id=cid, hall_id="owner--team")
+    got = {m["instance_id"] for m in halls.members_of("owner--team")}
+    assert got == {"a1", "a2", "a3"}     # sem roster compartilhado, sem last-writer-wins
 
 
-class TestPresenceAware:
-    def test_members_alive_only_filters_stale(self, db):
-        h = halls.create_hall(db, dono="d", nome="hall")
-        halls.add_member(db, hall_id=h["hall_id"], instance_id="fresh")
-        halls.add_member(db, hall_id=h["hall_id"], instance_id="stale")
-        agents.register_agent(db, instance_id="fresh", capabilities=("relay",))
-        agents.register_agent(db, instance_id="stale", capabilities=("relay",),
-                              heartbeat=_now() - 1000.0)
-        alive = halls.members_of(db, h["hall_id"], alive_only=True)
-        ids = {m["instance_id"] for m in alive}
-        assert "fresh" in ids and "stale" not in ids
-
-    def test_members_alive_only_all_when_no_registry(self, db):
-        h = halls.create_hall(db, dono="d", nome="hall")
-        halls.add_member(db, hall_id=h["hall_id"], instance_id="m")
-        # sem registro → alive_only=True não consegue filtrar: inclui todos
-        assert len(halls.members_of(db, h["hall_id"], alive_only=True)) == 1
-
-    def test_members_alive_only_single_connection(self, db):
-        # REGRESSÃO perf v4.5: alive_only resolve liveness num único JOIN —
-        # antes abria ~2 conexões por membro (get_agent + is_alive).
-        h = halls.create_hall(db, dono="d", nome="hall")
-        for i in range(20):
-            halls.add_member(db, hall_id=h["hall_id"], instance_id=f"m{i}")
-            agents.register_agent(db, instance_id=f"m{i}", capabilities=("relay",))
-        import sqlite3 as _s
-        _raw, _calls = _s.connect, {"n": 0}
-        def _spy(*a, **k):
-            _calls["n"] += 1
-            return _raw(*a, **k)
-        _s.connect = _spy
-        try:
-            alive = halls.members_of(db, h["hall_id"], alive_only=True)
-        finally:
-            _s.connect = _raw
-        assert len(alive) == 20
-        assert _calls["n"] <= 1   # uma única conexão pra tudo
+def test_everyone_enters_as_executor():
+    _card("a1")
+    halls.join(instance_id="a1", hall_id="owner--team")
+    assert halls.members_of("owner--team")[0]["function"] == "executor"
 
 
-class TestSendToHall:
-    def test_fanout_excludes_sender(self, db):
-        h = halls.create_hall(db, dono="d", nome="hall")
-        halls.add_member(db, hall_id=h["hall_id"], instance_id="d")
-        halls.add_member(db, hall_id=h["hall_id"], instance_id="m1")
-        halls.add_member(db, hall_id=h["hall_id"], instance_id="m2")
-        n = halls.send_to_hall(db, from_instance="d", hall_id=h["hall_id"],
-                               type="chat", payload={"text": "oi"})
-        assert n == 2                      # m1, m2 (d excluído)
-        assert len(mailbox.inbox(db, "m1")) == 1
-        assert len(mailbox.inbox(db, "m2")) == 1
-        assert mailbox.inbox(db, "d") == []  # remetente não recebeu
-
-    def test_fanout_isolates_failure(self, db):
-        h = halls.create_hall(db, dono="d", nome="hall")
-        halls.add_member(db, hall_id=h["hall_id"], instance_id="keep")
-        n = halls.send_to_hall(db, from_instance="d", hall_id=h["hall_id"],
-                               type="chat", payload={"text": "x"})
-        assert n == 1
+def test_leave_removes_only_the_membership():
+    _card("a1", modelo="opus")
+    halls.join(instance_id="a1", hall_id="d--h")
+    assert halls.leave(instance_id="a1", hall_id="d--h") is True
+    assert halls.members_of("d--h") == []
+    assert directory.get("a1")["modelo"] == "opus"      # RMW não come o resto do cartão
 
 
-class TestNeverRaises:
-    def test_all_degrades_on_unwritable_db(self, tmp_path):
-        # caminho cujo pai é um arquivo → sqlite não abre, degrada (NÃO cria)
-        blocker = tmp_path / "blocker"
-        blocker.write_text("not a dir")
-        no = blocker / "nope.db"
-        assert halls.create_hall(no, dono="a", nome="t") is None
-        assert halls.get_hall(no, "x") is None
-        assert halls.list_halls(no) == []
-        assert halls.members_of(no, "x") == []
-        assert halls.halls_of(no, "a") == []
-        assert halls.send_to_hall(no, from_instance="a", hall_id="x",
-                                  type="chat", payload={}) == 0
-        assert halls.is_member(no, "x", "a") is False
+def test_dead_member_only_disappears_when_asked():
+    _card("alive-one"); _card("dead-one")
+    halls.join(instance_id="alive-one", hall_id="d--h")
+    halls.join(instance_id="dead-one", hall_id="d--h")
+    # envelhecer DEPOIS de entrar: join republica o cartão e é, ele próprio,
+    # sinal de vivacidade — quem entra está vivo naquele instante
+    dead = directory.get("dead-one")
+    dead["updated_at"] = time.time() - 10 * 3600
+    directory.publish(dead)
+    assert len(halls.members_of("d--h")) == 2
+    alive = halls.members_of("d--h", alive_only=True)
+    assert [m["instance_id"] for m in alive] == ["alive-one"]
+
+
+def test_create_hall_is_owner_written_and_dedups():
+    _card("boss")
+    h = halls.create_hall(owner="boss", name="Team A")
+    assert h["hall_id"] == "boss--team-a"
+    assert halls.create_hall(owner="boss", name="Team A") is None
+    members = halls.members_of("boss--team-a")
+    assert [m["instance_id"] for m in members] == ["boss"]
+    assert members[0]["function"] == "leader"          # o criador nasce líder
+
+
+def test_hall_id_too_long_fails_loud():
+    _card("boss")
+    with pytest.raises(ValueError):        # I1: 64 chars, não None calado
+        halls.create_hall(owner="o" * 40, name="n" * 40)
+
+
+def test_create_hall_without_a_published_card_fails_loud():
+    with pytest.raises(ValueError):        # dono invisível = hall sem dono
+        halls.create_hall(owner="ghost", name="Team")
+
+
+def test_leader_assigns_function_without_touching_anyone_card():
+    _card("boss"); _card("other")
+    halls.create_hall(owner="boss", name="Council")
+    halls.join(instance_id="other", hall_id="boss--council")
+    halls.set_function(hall_id="boss--council", owner="boss",
+                       instance_id="other", function="reviewer")
+    m = {x["instance_id"]: x for x in halls.members_of("boss--council")}
+    assert m["other"]["function"] == "reviewer"
+    assert directory.get("other")["halls"] == ["boss--council"]   # cartão intacto
+    assert halls.get_hall("boss--council")["functions"]["other"] == "reviewer"
+
+
+def test_only_the_owner_assigns():
+    _card("boss"); _card("intruder")
+    halls.create_hall(owner="boss", name="Council")
+    with pytest.raises(PermissionError):
+        halls.set_function(hall_id="boss--council", owner="intruder",
+                           instance_id="intruder", function="leader")
+
+
+def test_unknown_function_fails_loud():
+    _card("boss"); _card("other")
+    halls.create_hall(owner="boss", name="Council")
+    with pytest.raises(ValueError):        # NÃO vira "executor" em silêncio
+        halls.set_function(hall_id="boss--council", owner="boss",
+                           instance_id="other", function="reviewerr")
+    assert halls.normalize_function("Reviewer") == "reviewer"     # caixa e acento
+
+
+def test_imported_member_never_published_anything():
+    _card("boss"); _card("recruit")
+    halls.create_hall(owner="boss", name="Council")
+    assert halls.import_members(hall_id="boss--council", owner="boss",
+                                instance_ids=["recruit"]) == 1
+    got = {m["instance_id"]: m for m in halls.members_of("boss--council")}
+    assert sorted(got) == ["boss", "recruit"]
+    assert got["recruit"]["imported"] is True
+    assert "halls" not in directory.get("recruit")   # ninguém escreveu no cartão dele
+
+
+def test_declining_beats_being_imported():
+    _card("boss"); _card("recruit")
+    halls.create_hall(owner="boss", name="Council")
+    halls.import_members(hall_id="boss--council", owner="boss",
+                         instance_ids=["recruit"])
+    assert halls.leave(instance_id="recruit", hall_id="boss--council") is True
+    ids = [m["instance_id"] for m in halls.members_of("boss--council")]
+    assert ids == ["boss"]                           # autonomia: recusa é minha
+
+
+def test_rejoining_clears_the_refusal():
+    _card("boss"); _card("recruit")
+    halls.create_hall(owner="boss", name="Council")
+    halls.import_members(hall_id="boss--council", owner="boss",
+                         instance_ids=["recruit"])
+    halls.leave(instance_id="recruit", hall_id="boss--council")
+    halls.join(instance_id="recruit", hall_id="boss--council")
+    card = directory.get("recruit")
+    assert card["halls"] == ["boss--council"] and card["halls_declined"] == []
+    ids = [m["instance_id"] for m in halls.members_of("boss--council")]
+    assert ids == ["boss", "recruit"]
+
+
+def test_transfer_moves_authority_but_never_the_id():
+    _card("boss"); _card("heir")
+    halls.create_hall(owner="boss", name="Council")
+    halls.join(instance_id="heir", hall_id="boss--council")
+    assert halls.transfer_owner(hall_id="boss--council", current_owner="boss",
+                                new_owner="heir") is True
+    doc = halls.get_hall("boss--council")
+    assert doc["owner"] == "heir" and doc["hall_id"] == "boss--council"
+    halls.set_function(hall_id="boss--council", owner="heir",
+                       instance_id="boss", function="reviewer")   # já manda
+    with pytest.raises(PermissionError):
+        halls.transfer_owner(hall_id="boss--council", current_owner="boss",
+                             new_owner="boss")                    # não manda mais
+
+
+def test_fanout_reaches_every_member_but_the_sender():
+    for cid in ("a1", "a2", "a3"):
+        _card(cid); halls.join(instance_id=cid, hall_id="d--h")
+    sent = []
+    n = halls.send_to_hall(from_instance="a1", hall_id="d--h", type="relay",
+                           payload={"x": 1},
+                           send=lambda **kw: sent.append(kw["to_instance"]))
+    assert n == 2 and set(sent) == {"a2", "a3"}
+
+
+def test_one_broken_member_never_aborts_the_rest():
+    for cid in ("a1", "a2", "a3"):
+        _card(cid); halls.join(instance_id=cid, hall_id="d--h")
+
+    def _flaky(**kw):
+        if kw["to_instance"] == "a2":
+            raise OSError("spool cheio")
+
+    n = halls.send_to_hall(from_instance="a1", hall_id="d--h", type="relay",
+                           payload={}, send=_flaky)
+    assert n == 1                          # a3 recebe mesmo com a2 quebrado
+
+
+def test_fanout_can_address_a_single_function():
+    _card("boss")
+    halls.create_hall(owner="boss", name="Council")
+    for cid, fn in (("r1", "reviewer"), ("r2", "reviewer"), ("p1", "researcher")):
+        _card(cid)
+        halls.join(instance_id=cid, hall_id="boss--council")
+        halls.set_function(hall_id="boss--council", owner="boss",
+                           instance_id=cid, function=fn)
+    sent = []
+    n = halls.send_to_hall(from_instance="boss", hall_id="boss--council",
+                           type="relay", payload={}, function="reviewer",
+                           send=lambda **kw: sent.append(kw["to_instance"]))
+    assert n == 2 and set(sent) == {"r1", "r2"}
+
+
+def test_invite_only_hall_never_delivers_to_an_outsider():
+    _card("boss"); _card("guest"); _card("stranger")
+    halls.create_hall(owner="boss", name="Closed", policy="invite",
+                      invited=["guest"])
+    for cid in ("guest", "stranger"):
+        halls.join(instance_id=cid, hall_id="boss--closed")
+    sent = []
+    n = halls.send_to_hall(from_instance="boss", hall_id="boss--closed",
+                           type="relay", payload={},
+                           send=lambda **kw: sent.append(kw["to_instance"]))
+    assert n == 1 and sent == ["guest"]
+
+
+def test_message_says_which_hall_it_came_from():
+    _card("a1"); _card("a2")
+    for cid in ("a1", "a2"):
+        halls.join(instance_id=cid, hall_id="d--h")
+    got = []
+    halls.send_to_hall(from_instance="a1", hall_id="d--h", type="relay",
+                       payload={}, send=lambda **kw: got.append(kw["hall"]))
+    assert got == [{"id": "d--h", "function": "executor"}]
+
+
+def test_one_agent_in_many_halls_never_mixes_them():
+    _card("a1"); _card("a2")
+    for h in ("d--sec", "d--review"):
+        for cid in ("a1", "a2"):
+            halls.join(instance_id=cid, hall_id=h)
+    assert directory.get("a1")["halls"] == ["d--review", "d--sec"]
+    halls.leave(instance_id="a1", hall_id="d--sec")
+    assert [m["instance_id"] for m in halls.members_of("d--sec")] == ["a2"]
+    assert [m["instance_id"] for m in halls.members_of("d--review")] == ["a1", "a2"]
+
+
+def test_list_halls_filters_by_owner():
+    _card("boss"); _card("other")
+    halls.create_hall(owner="boss", name="One")
+    halls.create_hall(owner="other", name="Two")
+    assert [d["hall_id"] for d in halls.list_halls(owner="boss")] == ["boss--one"]
+    assert len(halls.list_halls()) == 2
+
+
+def test_migrate_from_db_only_takes_what_is_mine(tmp_path):
+    import sqlite3
+    legacy = tmp_path / "legacy.db"
+    conn = sqlite3.connect(legacy)
+    conn.execute("CREATE TABLE halls (hall_id TEXT PRIMARY KEY, nome TEXT,"
+                 " dono TEXT, criado_em REAL)")
+    conn.execute("CREATE TABLE hall_members (hall_id TEXT, instance_id TEXT,"
+                 " papel TEXT, entrou_em REAL)")
+    conn.execute("INSERT INTO halls VALUES ('me--team','Team','me',1.0)")
+    conn.execute("INSERT INTO hall_members VALUES ('me--team','me','dono',1.0)")
+    conn.execute("INSERT INTO hall_members VALUES ('me--team','other','membro',1.0)")
+    conn.commit(); conn.close()
+    _card("me")
+    assert halls.migrate_from_db(legacy, "me") == 1     # a linha do outro é do outro
+    assert directory.get("me")["halls"] == ["me--team"]
+    doc = halls.get_hall("me--team")
+    assert doc["name"] == "Team" and doc["functions"]["me"] == "leader"
+    assert halls.migrate_from_db(legacy, "me") == 0     # idempotente
+
+
+def test_migrate_survives_a_missing_db_and_a_missing_schema(tmp_path):
+    import sqlite3
+    _card("me")
+    assert halls.migrate_from_db(tmp_path / "does-not-exist.db", "me") == 0
+    empty = tmp_path / "empty.db"
+    sqlite3.connect(empty).close()
+    assert halls.migrate_from_db(empty, "me") == 0     # sem schema, sem crash

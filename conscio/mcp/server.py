@@ -111,6 +111,7 @@ class Bindings:
         # de virar agente invisível que se acha publicado.
         self.card_error: str = ""
         self._card_ts: float = 0.0
+        self._halls_migrated = False     # migração preguiçosa do roster legado
         self._pending_notifications: list[dict] = []
 
         # v3.7: ModeRouter — chunkifica output conforme prompt_complexity
@@ -345,6 +346,7 @@ class Bindings:
                 tools["conscio_hall_leave"] = self._hall_leave
                 tools["conscio_hall_members"] = self._hall_members
                 tools["conscio_hall_send"] = self._hall_send
+                tools["conscio_hall_manage"] = self._hall_manage
         tools["conscio_mode"] = self._mode_toggler   # existe em todo modo
         return tools
 
@@ -734,76 +736,97 @@ class Bindings:
     def _hall_fail(self, motivo: str) -> dict:
         return {"ok": False, "motivo": motivo}
 
+    def _send_to_peer(self, **kwargs) -> int:
+        """Um ponto de entrega para o fan-out do hall. A Task 6 troca isto por
+        `deliver` (spool/HTTP) sem que `halls.py` saiba de transporte."""
+        return mailbox.send(self.liaison_db, **kwargs)
+
+    def _halls_ready(self) -> bool:
+        """Migração preguiçosa: quem nunca usa hall não paga nada."""
+        if not self.self_instance_id:
+            return False
+        if not self._halls_migrated:
+            self._halls_migrated = True
+            try:
+                from ..liaison import halls
+                halls.migrate_from_db(self.liaison_db, self.self_instance_id)
+            except Exception:
+                pass                     # legado ilegível nunca trava a sessão
+        return True
+
     def _hall_create(self, args: dict) -> dict:
         from ..liaison import halls
-        if not self.self_instance_id:
+        if not self._halls_ready():
             return self._hall_fail("sem self_instance_id")
         if not self.can_create_halls:
             return self._hall_fail("agente sem permissao de criar hall")
-        nome = str(args.get("nome", "")).strip()
-        if not nome:
-            return self._hall_fail("nome vazio")
-        self._ensure_registered()
-        h = halls.create_hall(self.liaison_db, dono=self.self_instance_id,
-                              nome=nome)
+        name = str(args.get("name", "")).strip()
+        if not name:
+            return self._hall_fail("name vazio")
+        self._ensure_registered()        # publica o cartão: create exige dono visível
+        invited = [str(i) for i in (args.get("invited") or [])]
+        try:
+            h = halls.create_hall(owner=self.self_instance_id, name=name,
+                                  policy=str(args.get("policy", "open")),
+                                  invited=invited)
+        except (ValueError, PermissionError) as exc:
+            return self._hall_fail(str(exc))
         if h is None:
-            return self._hall_fail("hall duplicado ou db indisponivel")
-        # dono entra como membro automaticamente
-        halls.add_member(self.liaison_db, hall_id=h["hall_id"],
-                         instance_id=self.self_instance_id, papel="dono")
+            return self._hall_fail("hall duplicado")
         return {"ok": True, "hall": h}
 
     def _hall_list(self, args: dict) -> dict:
-        from ..liaison import halls
-        if not self.self_instance_id:
+        from ..liaison import directory, halls
+        if not self._halls_ready():
             return self._hall_fail("sem self_instance_id")
-        mine = halls.halls_of(self.liaison_db, self.self_instance_id)
-        owned = halls.list_halls(self.liaison_db,
-                                 dono=self.self_instance_id)
-        # junta sem duplicar (halls_of cobre ownership via membership)
-        seen = {h["hall_id"] for h in mine}
-        for h in owned:
-            if h["hall_id"] not in seen:
-                mine.append(h)
-        return {"ok": True, "halls": mine}
+        card = directory.get(self.self_instance_id) or {}
+        joined = list(card.get("halls") or [])
+        out = [d for d in halls.list_halls()
+               if d["hall_id"] in joined or d.get("owner") == self.self_instance_id]
+        # hall sem doc (id combinado, dono ainda não criou) continua listado:
+        # o cartão é a verdade sobre a MINHA participação
+        seen = {d["hall_id"] for d in out}
+        out += [{"hall_id": h, "name": h, "owner": "", "members": []}
+                for h in joined if h not in seen]
+        return {"ok": True, "halls": out}
 
     def _hall_join(self, args: dict) -> dict:
         from ..liaison import halls
-        if not self.self_instance_id:
+        if not self._halls_ready():
             return self._hall_fail("sem self_instance_id")
         hall_id = str(args.get("hall_id", "")).strip()
-        if not hall_id:
-            return self._hall_fail("hall_id vazio")
-        OK = halls.add_member(self.liaison_db, hall_id=hall_id,
-                              instance_id=self.self_instance_id)
-        return {"ok": OK, "hall_id": hall_id}
+        self._ensure_registered()        # sem cartão publicado não há o que declarar
+        try:
+            ok = halls.join(instance_id=self.self_instance_id, hall_id=hall_id)
+        except ValueError as exc:
+            return self._hall_fail(str(exc))
+        return {"ok": ok, "hall_id": hall_id}
 
     def _hall_leave(self, args: dict) -> dict:
         from ..liaison import halls
-        if not self.self_instance_id:
+        if not self._halls_ready():
             return self._hall_fail("sem self_instance_id")
         hall_id = str(args.get("hall_id", "")).strip()
-        halls.remove_member(self.liaison_db, hall_id=hall_id,
-                            instance_id=self.self_instance_id)
-        return {"ok": True, "hall_id": hall_id}
+        try:
+            ok = halls.leave(instance_id=self.self_instance_id, hall_id=hall_id)
+        except ValueError as exc:
+            return self._hall_fail(str(exc))
+        return {"ok": ok, "hall_id": hall_id}
 
     def _hall_members(self, args: dict) -> dict:
         from ..liaison import halls
+        if not self._halls_ready():
+            return self._hall_fail("sem self_instance_id")
         hall_id = str(args.get("hall_id", "")).strip()
         if not hall_id:
             return self._hall_fail("hall_id vazio")
-        members = halls.members_of(self.liaison_db, hall_id, alive_only=True)
-        # enriquece com modelo do registro (v4.5: auditoria/roteamento)
-        from ..liaison import agents
-        for m in members:
-            reg = agents.get_agent(self.liaison_db, m["instance_id"]) or {}
-            m["modelo"] = reg.get("model", "")
-            m["familia"] = reg.get("familia", "")
+        alive_only = bool(args.get("alive_only", True))
+        members = halls.members_of(hall_id, alive_only=alive_only)
         return {"ok": True, "hall_id": hall_id, "members": members}
 
     def _hall_send(self, args: dict) -> dict:
         from ..liaison import halls
-        if not self.self_instance_id:
+        if not self._halls_ready():
             return self._hall_fail("sem self_instance_id")
         hall_id = str(args.get("hall_id", "")).strip()
         mtype = str(args.get("type", ""))
@@ -812,10 +835,44 @@ class Bindings:
             return self._hall_fail("hall_id/type/payload invalidos")
         self._ensure_registered()
         identity = self._identity() or None
-        n = halls.send_to_hall(self.liaison_db, from_instance=self.self_instance_id,
-                               hall_id=hall_id, type=mtype, payload=payload,
-                               identity=identity)
+        try:
+            n = halls.send_to_hall(from_instance=self.self_instance_id,
+                                   hall_id=hall_id, type=mtype, payload=payload,
+                                   identity=identity,
+                                   function=args.get("function") or None,
+                                   send=self._send_to_peer)
+        except ValueError as exc:        # função desconhecida chega ao agente
+            return self._hall_fail(str(exc))
         return {"ok": True, "delivered": n}
+
+    def _hall_manage(self, args: dict) -> dict:
+        """As três ações do dono são a mesma operação — ele reescrevendo o doc
+        dele — com a mesma checagem e o mesmo modo de falha."""
+        from ..liaison import halls
+        if not self._halls_ready():
+            return self._hall_fail("sem self_instance_id")
+        action = str(args.get("action", "")).strip()
+        hall_id = str(args.get("hall_id", "")).strip()
+        me = self.self_instance_id
+        try:
+            if action == "set_function":
+                halls.set_function(hall_id=hall_id, owner=me,
+                                   instance_id=str(args.get("instance_id", "")),
+                                   function=str(args.get("function", "")))
+                return {"ok": True, "hall": halls.get_hall(hall_id)}
+            if action == "import":
+                ids = [str(i) for i in (args.get("instance_ids") or [])]
+                n = halls.import_members(hall_id=hall_id, owner=me,
+                                         instance_ids=ids)
+                return {"ok": True, "imported": n,
+                        "hall": halls.get_hall(hall_id)}
+            if action == "transfer":
+                halls.transfer_owner(hall_id=hall_id, current_owner=me,
+                                     new_owner=str(args.get("new_owner", "")))
+                return {"ok": True, "hall": halls.get_hall(hall_id)}
+        except (ValueError, PermissionError) as exc:
+            return self._hall_fail(str(exc))
+        return self._hall_fail(f"action invalida: {action!r}")
 
     def _intercept(self, args: dict) -> dict:
         """Evaluate a safe expression via the Intercepter AST evaluator.

@@ -736,25 +736,27 @@ def test_hall_tools_present_with_flag(tmp_path):
     try:
         names = {t["name"] for t in b.tool_defs()}
         assert {"conscio_hall_create", "conscio_hall_list", "conscio_hall_join",
-                "conscio_hall_leave", "conscio_hall_members", "conscio_hall_send"} \
-            <= names
+                "conscio_hall_leave", "conscio_hall_members",
+                "conscio_hall_send", "conscio_hall_manage"} <= names
     finally:
         seen.close()
         eng.close()
 
 
 def test_hall_create_and_owner_joins(tmp_path):
-    from conscio.liaison import halls
+    from conscio.liaison import directory
     db = tmp_path / "liaison.db"
     b, eng, seen = _bind(tmp_path, instance_id="A", relay=True,
                          can_create_halls=True, liaison_db=db)
     try:
-        r = b._hall_create({"nome": "Squad QA"})
+        r = b._hall_create({"name": "Squad QA"})
         assert r["ok"] is True
         hid = r["hall"]["hall_id"]
         assert hid == "a--squad-qa"
-        # dono virou membro automaticamente
-        assert halls.is_member(db, hid, "A")
+        # dono virou membro pelo cartão dele, não por linha em roster
+        assert directory.get("A")["halls"] == [hid]
+        assert b._hall_members({"hall_id": hid})["members"][0]["function"] \
+            == "leader"
     finally:
         seen.close()
         eng.close()
@@ -764,8 +766,22 @@ def test_hall_create_requires_flag(tmp_path):
     b, eng, seen = _bind(tmp_path, instance_id="A", relay=True,
                          can_create_halls=False, liaison_db=tmp_path / "l.db")
     try:
-        r = b._hall_create({"nome": "squad"})
+        r = b._hall_create({"name": "squad"})
         assert r["ok"] is False
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_hall_create_duplicate_and_bad_name_are_explained(tmp_path):
+    b, eng, seen = _bind(tmp_path, instance_id="A", relay=True,
+                         can_create_halls=True, liaison_db=tmp_path / "l.db")
+    try:
+        assert b._hall_create({"name": "team"})["ok"] is True
+        dup = b._hall_create({"name": "team"})
+        assert dup["ok"] is False and "duplicado" in dup["motivo"]
+        long = b._hall_create({"name": "n" * 90})
+        assert long["ok"] is False and "hall_id" in long["motivo"]
     finally:
         seen.close()
         eng.close()
@@ -780,7 +796,7 @@ def test_hall_send_fanout(tmp_path):
                            can_create_halls=True, liaison_db=db,
                            storage=tmp_path / "B")
     try:
-        r = A._hall_create({"nome": "team"})
+        r = A._hall_create({"name": "team"})
         hid = r["hall"]["hall_id"]
         A._hall_join({"hall_id": hid})       # A já está (dono)
         # B entra no mesmo hall (via _hall_join — precisa saber o hid)
@@ -792,5 +808,110 @@ def test_hall_send_fanout(tmp_path):
         inbox_B = mailbox.inbox(db, "B")
         assert len(inbox_B) == 1
         assert inbox_B[0]["payload"].get("text") == "oi elenco"
+        # a mensagem diz de qual hall veio (agente em vários halls)
+        assert inbox_B[0]["payload"]["_meta"]["hall"]["id"] == hid
+    finally:
+        seenA.close(); engA.close(); seenB.close(); engB.close()
+
+
+def test_hall_manage_assigns_function_and_addresses_it(tmp_path):
+    db = tmp_path / "liaison.db"
+    A, engA, seenA = _bind(tmp_path, instance_id="A", relay=True,
+                           can_create_halls=True, liaison_db=db,
+                           storage=tmp_path / "A")
+    B, engB, seenB = _bind(tmp_path, instance_id="B", relay=True,
+                           can_create_halls=True, liaison_db=db,
+                           storage=tmp_path / "B")
+    try:
+        hid = A._hall_create({"name": "council"})["hall"]["hall_id"]
+        B._hall_join({"hall_id": hid})
+        assert A._hall_manage({"action": "set_function", "hall_id": hid,
+                               "instance_id": "B",
+                               "function": "reviewer"})["ok"] is True
+        # convocar só o revisor entrega ao revisor
+        assert A._hall_send({"hall_id": hid, "type": "chat", "payload": {},
+                             "function": "reviewer"})["delivered"] == 1
+        assert A._hall_send({"hall_id": hid, "type": "chat", "payload": {},
+                             "function": "security"})["delivered"] == 0
+        # função desconhecida não vira executor calado
+        bad = A._hall_manage({"action": "set_function", "hall_id": hid,
+                              "instance_id": "B", "function": "reviewerr"})
+        assert bad["ok"] is False and "unknown hall function" in bad["motivo"]
+        # quem não é dono não manda
+        denied = B._hall_manage({"action": "set_function", "hall_id": hid,
+                                 "instance_id": "A", "function": "executor"})
+        assert denied["ok"] is False and "owner" in denied["motivo"]
+    finally:
+        seenA.close(); engA.close(); seenB.close(); engB.close()
+
+
+def test_hall_manage_imports_and_transfers(tmp_path):
+    db = tmp_path / "liaison.db"
+    A, engA, seenA = _bind(tmp_path, instance_id="A", relay=True,
+                           can_create_halls=True, liaison_db=db,
+                           storage=tmp_path / "A")
+    B, engB, seenB = _bind(tmp_path, instance_id="B", relay=True,
+                           can_create_halls=True, liaison_db=db,
+                           storage=tmp_path / "B")
+    try:
+        B._ensure_registered()               # B publica o cartão, sem entrar
+        hid = A._hall_create({"name": "team"})["hall"]["hall_id"]
+        imp = A._hall_manage({"action": "import", "hall_id": hid,
+                              "instance_ids": ["B"]})
+        assert imp["ok"] is True and imp["imported"] == 1
+        ids = [m["instance_id"]
+               for m in A._hall_members({"hall_id": hid})["members"]]
+        assert ids == ["A", "B"]             # entrou sem configurar nada
+        assert A._hall_manage({"action": "transfer", "hall_id": hid,
+                               "new_owner": "B"})["ok"] is True
+        # agora quem manda é B
+        assert B._hall_manage({"action": "set_function", "hall_id": hid,
+                               "instance_id": "A",
+                               "function": "tester"})["ok"] is True
+        assert A._hall_manage({"action": "transfer", "hall_id": hid,
+                               "new_owner": "A"})["ok"] is False
+        assert A._hall_manage({"action": "nope", "hall_id": hid})["ok"] is False
+    finally:
+        seenA.close(); engA.close(); seenB.close(); engB.close()
+
+
+def test_hall_leave_refuses_an_import(tmp_path):
+    db = tmp_path / "liaison.db"
+    A, engA, seenA = _bind(tmp_path, instance_id="A", relay=True,
+                           can_create_halls=True, liaison_db=db,
+                           storage=tmp_path / "A")
+    B, engB, seenB = _bind(tmp_path, instance_id="B", relay=True,
+                           can_create_halls=True, liaison_db=db,
+                           storage=tmp_path / "B")
+    try:
+        B._ensure_registered()
+        hid = A._hall_create({"name": "team"})["hall"]["hall_id"]
+        A._hall_manage({"action": "import", "hall_id": hid,
+                        "instance_ids": ["B"]})
+        assert B._hall_leave({"hall_id": hid})["ok"] is True
+        ids = [m["instance_id"]
+               for m in A._hall_members({"hall_id": hid})["members"]]
+        assert ids == ["A"]                  # recusa é do agente
+        assert A._hall_send({"hall_id": hid, "type": "chat",
+                             "payload": {}})["delivered"] == 0
+    finally:
+        seenA.close(); engA.close(); seenB.close(); engB.close()
+
+
+def test_hall_list_shows_mine_and_owned(tmp_path):
+    db = tmp_path / "liaison.db"
+    A, engA, seenA = _bind(tmp_path, instance_id="A", relay=True,
+                           can_create_halls=True, liaison_db=db,
+                           storage=tmp_path / "A")
+    B, engB, seenB = _bind(tmp_path, instance_id="B", relay=True,
+                           can_create_halls=True, liaison_db=db,
+                           storage=tmp_path / "B")
+    try:
+        hid = A._hall_create({"name": "team"})["hall"]["hall_id"]
+        B._hall_create({"name": "other"})
+        assert [h["hall_id"] for h in A._hall_list({})["halls"]] == [hid]
+        B._hall_join({"hall_id": hid})
+        assert {h["hall_id"] for h in B._hall_list({})["halls"]} == \
+            {hid, "b--other"}
     finally:
         seenA.close(); engA.close(); seenB.close(); engB.close()

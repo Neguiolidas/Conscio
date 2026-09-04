@@ -509,38 +509,67 @@ RELAY_TOOL_DEFS: list[dict] = [
 # ── Agent's Hall tools (v4.5) ─────────────────────────────────────────
 
 _HALL_CREATE_INPUT = {"type": "object",
-                      "properties": {"nome": {"type": "string"}},
-                      "required": ["nome"]}
+                      "properties": {
+                          "name": {"type": "string"},
+                          "policy": {"type": "string",
+                                     "enum": ["open", "invite"]},
+                          "invited": {"type": "array",
+                                      "items": {"type": "string"}}},
+                      "required": ["name"]}
 _HALL_ID_REQUIRED = {"type": "object",
                      "properties": {"hall_id": {"type": "string"}},
                      "required": ["hall_id"]}
 _HALL_MEMBERS_INPUT = {"type": "object",
-                       "properties": {"hall_id": {"type": "string"}},
+                       "properties": {"hall_id": {"type": "string"},
+                                      "alive_only": {"type": "boolean"}},
                        "required": ["hall_id"]}
 _HALL_SEND_INPUT = {"type": "object",
                     "properties": {"hall_id": {"type": "string"},
                                    "type": {"type": "string"},
-                                   "payload": {"type": "object"}},
+                                   "payload": {"type": "object"},
+                                   "function": {"type": "string"}},
                     "required": ["hall_id", "type", "payload"]}
+_HALL_MANAGE_INPUT = {"type": "object",
+                      "properties": {
+                          "action": {"type": "string",
+                                     "enum": ["set_function", "import",
+                                              "transfer"]},
+                          "hall_id": {"type": "string"},
+                          "instance_id": {"type": "string"},
+                          "instance_ids": {"type": "array",
+                                           "items": {"type": "string"}},
+                          "function": {"type": "string"},
+                          "new_owner": {"type": "string"}},
+                      "required": ["action", "hall_id"]}
 
 HALL_TOOL_DEFS: list[dict] = [
     {"name": "conscio_hall_create",
      "description": "Create an Agent's Hall (named group of agents) as owner. "
-                    "The owner auto-joins as member.",
+                    "The owner auto-joins as leader. policy=invite restricts "
+                    "fan-out to the invited list.",
      "inputSchema": _HALL_CREATE_INPUT},
     {"name": "conscio_hall_list",
      "description": "List halls this agent is a member of or owns.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "conscio_hall_join",
-     "description": "Join an existing hall as a member.",
+     "description": "Join an existing hall. Everyone enters as executor; the "
+                    "owner assigns functions afterwards.",
      "inputSchema": _HALL_ID_REQUIRED},
     {"name": "conscio_hall_leave",
-     "description": "Leave a hall.",
+     "description": "Leave a hall (also refuses an owner's import).",
      "inputSchema": _HALL_ID_REQUIRED},
     {"name": "conscio_hall_members",
-     "description": "List a hall's members with their model attribution.",
+     "description": "List a hall's members with their function and model.",
      "inputSchema": _HALL_MEMBERS_INPUT},
     {"name": "conscio_hall_send",
-     "description": "Fan-out a message to every member of a hall except the sender.",
+     "description": "Fan-out a message to every member of a hall except the "
+                    "sender. `function` addresses one function only "
+                    "(e.g. reviewer).",
      "inputSchema": _HALL_SEND_INPUT},
+    {"name": "conscio_hall_manage",
+     "description": "Owner-only: assign a member's function, import members "
+                    "or transfer ownership. Functions: leader, reviewer, "
+                    "architect, security, optimizer, tester, researcher, "
+                    "scribe, devils_advocate, executor, observer.",
+     "inputSchema": _HALL_MANAGE_INPUT},
 ]

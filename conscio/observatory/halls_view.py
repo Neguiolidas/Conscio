@@ -3,11 +3,13 @@
 
 Mirror of `society.py` / `liaison_view.py`: opens liaison.db with mode=ro
 (NO PRAGMA, SELECT only), never marks anything read, never writes. Reads the
-latest committed WAL rows. See the agents registry (`agents` table) and the
-Agent's Hall (`halls` + `hall_members` tables) side by side.
+latest committed WAL rows. Two sources, on purpose: the agents registry and the
+mailboxes come from the private `liaison.db`; halls and their membership come
+from the public relay directory (v4.5.4 — there is no shared roster table).
 
 Read-only contract: `_ro` uses mode=ro; a missing/corrupt db or absent table
-degrades to [] (never raises). No write path here.
+degrades to [] (never raises). The directory side is equally read-only: it
+only calls `directory.peers` / `halls.list_halls` / `halls.members_of`.
 """
 
 from __future__ import annotations
@@ -65,44 +67,38 @@ class HallsProjection:
                 out.append(r)
         return out
 
-    def halls(self, *, dono: str | None = None) -> list[dict]:
-        """Halls with member counts, newest first."""
-        if dono:
-            rows = self._select(
-                "SELECT hall_id, nome, dono, criado_em,"
-                " (SELECT COUNT(*) FROM hall_members m WHERE m.hall_id=h.hall_id)"
-                " AS member_count FROM halls h WHERE dono=? ORDER BY criado_em DESC",
-                [dono])
-        else:
-            rows = self._select(
-                "SELECT hall_id, nome, dono, criado_em,"
-                " (SELECT COUNT(*) FROM hall_members m WHERE m.hall_id=h.hall_id)"
-                " AS member_count FROM halls h ORDER BY criado_em DESC", [])
-        return rows
+    def halls(self, *, owner: str | None = None) -> list[dict]:
+        """Halls with member counts, newest first. Roster mora no diretório
+        (v4.5.4): uma varredura só para todos os halls, não uma por hall."""
+        from ..liaison import directory
+        from ..liaison import halls as _halls
+        counts: dict[str, int] = {}
+        for card in directory.peers():
+            declined = set(card.get("halls_declined") or [])
+            for hid in (card.get("halls") or []):
+                if hid not in declined:
+                    counts[hid] = counts.get(hid, 0) + 1
+        out = []
+        for doc in _halls.list_halls(owner=owner):
+            doc = dict(doc)
+            # quem o diretório enxerga; importado sem cartão não entra na conta
+            doc["member_count"] = counts.get(doc["hall_id"], 0)
+            out.append(doc)
+        return out
 
     def hall_members(self, hall_id: str, *,
                      alive_only: bool = True,
                      limit: int = 100) -> list[dict]:
-        """Members of a hall, joined with registry identity (modelo/familia)."""
-        rows = self._select(
-            "SELECT m.hall_id, m.instance_id, m.papel, m.entrou_em,"
-            " a.model, a.familia, a.status, a.last_heartbeat"
-            " FROM hall_members m LEFT JOIN agents a"
-            " ON a.instance_id = m.instance_id WHERE m.hall_id=?"
-            f" ORDER BY m.entrou_em DESC LIMIT {clamp_int(limit, 1, 200)}",
-            [hall_id])
-        from ..liaison import agents as _agents
-        now = time.time()
+        """Members of a hall, straight from the public directory."""
+        from ..liaison import halls as _halls
         out: list[dict] = []
-        for r in rows:
-            hb = float(r.get("last_heartbeat") or 0)
-            offline = hb and (now - hb) > _agents.STALE_AFTER_S
-            r["modelo"] = r.pop("model", "") or ""
-            r["offline"] = offline
-            if alive_only and offline:
+        for m in _halls.members_of(hall_id):
+            m = dict(m)
+            m["offline"] = not m.pop("alive", False)
+            if alive_only and m["offline"]:
                 continue
-            out.append(r)
-        return out
+            out.append(m)
+        return out[:clamp_int(limit, 1, 200)]
 
     def mailboxes(self, self_id: str, *, limit: int = 200) -> list[dict]:
         """Per-peer unread directed counts addressed to `self_id`."""

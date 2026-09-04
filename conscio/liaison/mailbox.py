@@ -123,16 +123,21 @@ def purge_quarantine(db: Path, *, older_than_days: float = 7.0) -> int:
 
 def send(db: Path, *, from_instance: str, to_instance: str, type: str,
          payload: dict, ts: float | None = None,
-         identity: dict | None = None) -> int:
+         identity: dict | None = None, hall: dict | None = None) -> int:
     db = Path(db)
     db.parent.mkdir(parents=True, exist_ok=True)
     # v4.5 envelope: identidade do RUNTIME (não do corpo) é o `_meta.from`.
     # Se o payload já carregava _meta (auto-declaração), o runtime vence —
     # nunca deixar identidade do corpo prevalecer sobre a do runtime.
     final_payload = dict(payload)
+    meta: dict = {}
     if identity:
-        final_payload["_meta"] = {"from": identity}
-    # identity ausente: preserva qualquer _meta já presente no corpo (compat)
+        meta["from"] = identity
+    if hall:
+        meta["hall"] = hall      # {"id": …, "function": …} — sem isso, agente
+    if meta:                     # em vários halls não sabe de onde veio nada
+        final_payload["_meta"] = meta
+    # sem identity nem hall: preserva qualquer _meta já no corpo (compat)
     conn = _connect(db)
     try:
         cur = conn.execute(
@@ -143,9 +148,9 @@ def send(db: Path, *, from_instance: str, to_instance: str, type: str,
         conn.commit()
         mid = cur.lastrowid or 0
         # Bake o id da mensagem no envelope (imutável pós-insert)
-        if identity and mid:
+        if meta and mid:
             baked = dict(final_payload)
-            baked["_meta"] = {"from": identity, "id": mid}
+            baked["_meta"] = {**meta, "id": mid}
             conn.execute("UPDATE messages SET payload=? WHERE id=?",
                          (json.dumps(baked), mid))
             conn.commit()

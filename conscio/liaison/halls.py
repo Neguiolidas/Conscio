@@ -1,313 +1,313 @@
 # conscio/liaison/halls.py
-"""Agent's Hall — named groups of agents over the shared liaison mailbox (v4.5).
+"""Agent's Hall — named groups of agents over the public relay directory (v4.5.4).
 
-A Hall is a logical grouping the OWNER creates and other agents join. It resolves
-the "same install, many agents" confusion: agents may share one physical
-`liaison.db`, but a Hall gives each a named, owner-routed sub-context (squads).
+No shared roster. Two facts, two owners — and no file with two writers:
 
-Two tables in the same liaison.db:
-  halls(hall_id, nome, dono, slug, criado_em)
-  hall_members(hall_id, instance_id, papel, entrou_em)
+  "eu participo deste hall"   -> `halls` no cartão do agente      (o agente)
+  "eu recuso este hall"       -> `halls_declined` no cartão       (o agente)
+  "fulano está no hall"       -> `members` no doc do hall         (o dono)
+  "fulano é o revisor"        -> `functions` no doc do hall       (o dono)
 
-Pure plumbing (like `agents`):
-- Never raises: missing/corrupt/locked db degrades to None / [] / 0 / False.
-- Engine-free: no conscio.engine import. send_to_hall uses mailbox.send only.
-- fan-out to N members; a failing peer never aborts the rest.
+Membership efetiva = (declarados ∪ importados) − recusados. Entrada é plana:
+todo agente entra como `executor` e o líder atribui a função depois, escrevendo
+o doc dele — nunca o cartão alheio. `<relay_root>/halls/<hall_id>.json`.
 
-Slug is `dono--nome` (deterministic, avoids two owners colliding on "team").
+Pure plumbing (like `directory`): engine-free, sem transporte próprio — quem
+entrega é o `send` injetado em `send_to_hall`. Um peer quebrado nunca aborta
+o fan-out. `sqlite3` sobrevive só dentro de `migrate_from_db`.
 """
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import time
+import unicodedata
 from pathlib import Path
 
-from . import mailbox
-from .mailbox import _connect
+from . import directory
 
-BUSY_TIMEOUT_MS = 3000
-HALLS_TABLE = "halls"
-MEMBERS_TABLE = "hall_members"
-
-_HALLS_DDL = f"""
-CREATE TABLE IF NOT EXISTS {HALLS_TABLE} (
-    hall_id     TEXT PRIMARY KEY,
-    nome        TEXT NOT NULL,
-    dono        TEXT NOT NULL,
-    criado_em   REAL NOT NULL
-);
-"""
-_MEMBERS_DDL = f"""
-CREATE TABLE IF NOT EXISTS {MEMBERS_TABLE} (
-    hall_id     TEXT NOT NULL,
-    instance_id TEXT NOT NULL,
-    papel       TEXT NOT NULL DEFAULT 'membro',
-    entrou_em   REAL NOT NULL,
-    PRIMARY KEY (hall_id, instance_id)
-);
-"""
+# Vocabulário de FUNÇÃO dentro do hall — o que o agente faz ali. Não confundir
+# com o `papel` do cartão (executor/orchestrator), que é governança da
+# sociedade e passa por roles.normalize. Este conjunto NUNCA passa por lá.
+FUNCTIONS = {
+    "leader",           # convoca, atribui função, consolida o veredito
+    "reviewer",         # procura o que passou despercebido, adversarialmente
+    "architect",        # fronteiras, invariantes, acoplamento
+    "security",         # superfície de ataque, segredos, permissões
+    "optimizer",        # custo, latência, complexidade
+    "tester",           # casos-limite, o que o teste verde não prova
+    "researcher",       # busca fato e fonte fora do contexto de todo mundo
+    "scribe",           # registra a decisão e fecha a deliberação
+    "devils_advocate",  # dissenso obrigatório, mesmo quando todos concordam
+    "executor",         # faz a mudança (padrão de entrada)
+    "observer",         # recebe e não delibera (monitoramento, agente remoto)
+}
+DEFAULT_FUNCTION = "executor"
+_LEGACY_FUNCTIONS = {"dono": "leader", "membro": DEFAULT_FUNCTION}
 
 
-def _slugify(nome: str) -> str:
+def _slugify(name: str) -> str:
     """ASCII, lowercase, alnum + hyphen. Non-word chars collapse to '-'.
-    Returns '' for an empty/whitespace nome."""
-    s = nome.strip().lower()
+    Returns '' for an empty/whitespace name."""
+    s = name.strip().lower()
     s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
     return s
 
 
-def _full_slug(dono: str, nome: str) -> str:
-    """dono--nome: the owner namespaces the slug so two owners can both have
+def _full_slug(owner: str, name: str) -> str:
+    """owner--name: the owner namespaces the slug so two owners can both have
     a "team" without colliding (D6)."""
-    d = _slugify(dono)
-    n = _slugify(nome)
+    d = _slugify(owner)
+    n = _slugify(name)
     if not n:
         return ""
     return f"{d}--{n}" if d else n
 
 
-def _conn(db: Path, *, read_only: bool = False) -> sqlite3.Connection | None:
-    db = Path(db)
-    if read_only:
-        try:
-            conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        except sqlite3.Error:
-            return None
-    else:
-        try:
-            conn = _connect(db)          # reuses mailbox schema bootstrap
-            conn.execute(_HALLS_DDL)
-            conn.execute(_MEMBERS_DDL)
-            conn.commit()
-        except sqlite3.Error:
-            return None
-    try:
-        conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
-        conn.row_factory = sqlite3.Row
-    except sqlite3.Error:
-        return None
-    return conn
+def normalize_function(function: str | None) -> str:
+    """Desconhecida LEVANTA. `roles.normalize` devolveria 'executor' calado e
+    o conselho inteiro viraria uma fila de executores sem ninguém notar."""
+    raw = (function or DEFAULT_FUNCTION).strip().lower().replace("-", "_")
+    f = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode()
+    if f not in FUNCTIONS:
+        raise ValueError(f"unknown hall function: {function!r}; "
+                         f"known: {sorted(FUNCTIONS)}")
+    return f
 
 
-# ── Halls CRUD ─────────────────────────────────────────────────────────
-
-def create_hall(db: Path, *, dono: str, nome: str) -> dict | None:
-    """Create a hall (owner-only). Returns the hall dict, or None on a dup/
-    broken db. hall_id IS the slug (dono--nome, deterministic)."""
-    if not dono or not nome:
-        return None
-    hall_id = _full_slug(dono, nome)
-    if not hall_id:
-        return None
-    conn = _conn(db)
-    if conn is None:
-        return None
-    try:
-        dup = conn.execute(
-            f"SELECT 1 FROM {HALLS_TABLE} WHERE hall_id=?", (hall_id,)).fetchone()
-        if dup is not None:
-            return None
-        ts = time.time()
-        conn.execute(
-            f"INSERT INTO {HALLS_TABLE}(hall_id,nome,dono,criado_em)"
-            " VALUES(?,?,?,?)", (hall_id, nome, dono, ts))
-        conn.commit()
-        return {"hall_id": hall_id, "nome": nome, "dono": dono,
-                "criado_em": ts}
-    except sqlite3.Error:
-        return None
-    finally:
-        conn.close()
+def halls_dir() -> Path:
+    return directory.relay_root() / "halls"
 
 
-def get_hall(db: Path, hall_id: str) -> dict | None:
-    conn = _conn(db, read_only=True)
-    if conn is None:
+def _require_hall_id(hall_id: str) -> str:
+    if not directory.valid_id(hall_id):          # I1: valida ANTES do filesystem
+        raise ValueError(f"invalid hall_id (empty or >64 chars): {hall_id!r}")
+    return hall_id
+
+
+def hall_doc_path(hall_id: str) -> Path:
+    return halls_dir() / f"{_require_hall_id(hall_id)}.json"
+
+
+def _write_doc(doc: dict) -> None:
+    halls_dir().mkdir(parents=True, exist_ok=True)
+    directory.write_atomic(hall_doc_path(doc["hall_id"]),
+                           json.dumps(doc, ensure_ascii=False))
+
+
+def create_hall(*, owner: str, name: str, policy: str = "open",
+                invited: list[str] | None = None) -> dict | None:
+    """Doc escrito só pelo dono (I9). None = duplicata; id inválido levanta."""
+    hall_id = _require_hall_id(_full_slug(owner, name))
+    if directory.get(owner) is None:
+        # sem cartão do dono o hall nasceria sem dono dentro: falha alto em vez
+        # de devolver um doc que ninguém habita
+        raise ValueError(f"owner card not published: {owner!r}")
+    if hall_doc_path(hall_id).exists():
+        return None
+    doc = {"hall_id": hall_id, "name": name, "owner": owner,
+           "created_at": time.time(), "policy": policy,
+           "invited": list(invited or []), "members": [],
+           "functions": {owner: "leader"}}
+    _write_doc(doc)
+    join(instance_id=owner, hall_id=hall_id)
+    return doc
+
+
+def get_hall(hall_id: str) -> dict | None:
+    if not directory.valid_id(hall_id):
         return None
     try:
-        row = conn.execute(
-            f"SELECT hall_id, nome, dono, criado_em FROM {HALLS_TABLE}"
-            " WHERE hall_id=?", (hall_id,)).fetchone()
-        if row is None:
-            return None
-        return dict(row)
-    except sqlite3.Error:
-        return None
-    finally:
-        conn.close()
+        doc = json.loads(hall_doc_path(hall_id).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None                      # doc ausente = hall aberto, não erro
+    return doc if isinstance(doc, dict) else None
 
 
-def list_halls(db: Path, *, dono: str | None = None) -> list[dict]:
-    conn = _conn(db, read_only=True)
-    if conn is None:
+def list_halls(owner: str | None = None) -> list[dict]:
+    try:
+        paths = sorted(halls_dir().glob("*.json"))
+    except OSError:
         return []
-    try:
-        if dono:
-            rows = conn.execute(
-                f"SELECT hall_id, nome, dono, criado_em FROM {HALLS_TABLE}"
-                " WHERE dono=? ORDER BY criado_em DESC", (dono,)).fetchall()
-        else:
-            rows = conn.execute(
-                f"SELECT hall_id, nome, dono, criado_em FROM {HALLS_TABLE}"
-                " ORDER BY criado_em DESC").fetchall()
-    except sqlite3.Error:
+    out = [d for p in paths if (d := get_hall(p.stem)) is not None]
+    if owner:
+        out = [d for d in out if d.get("owner") == owner]
+    return sorted(out, key=lambda d: d.get("created_at", 0), reverse=True)
+
+
+def _set_membership(instance_id: str, hall_id: str, *, joining: bool) -> bool:
+    """Read-modify-write do MEU cartão. Um escritor, sem lock (I9).
+    Sair grava recusa explícita: ela vence a importação do líder — ele monta o
+    hall, mas não me obriga a ficar nele."""
+    _require_hall_id(hall_id)
+    card = directory.get(instance_id)
+    if card is None:
+        return False                     # sem cartão não há o que declarar
+    joined = [h for h in (card.get("halls") or []) if h != hall_id]
+    declined = [h for h in (card.get("halls_declined") or []) if h != hall_id]
+    (joined if joining else declined).append(hall_id)
+    card["halls"] = sorted(joined)
+    card["halls_declined"] = sorted(declined)
+    card["updated_at"] = time.time()
+    directory.publish(card)
+    return True
+
+
+def join(*, instance_id: str, hall_id: str) -> bool:
+    """Sem função: todo mundo entra como executor. Quem promove é o líder."""
+    return _set_membership(instance_id, hall_id, joining=True)
+
+
+def leave(*, instance_id: str, hall_id: str) -> bool:
+    return _set_membership(instance_id, hall_id, joining=False)
+
+
+def _require_owner(hall_id: str, owner: str) -> dict:
+    doc = get_hall(hall_id)
+    if doc is None:
+        raise ValueError(f"no such hall: {hall_id!r}")
+    if doc.get("owner") != owner:
+        raise PermissionError(f"only the owner writes the hall doc (I9): "
+                              f"{doc.get('owner')!r} != {owner!r}")
+    return doc
+
+
+def set_function(*, hall_id: str, owner: str, instance_id: str,
+                 function: str) -> bool:
+    """O líder atribui função escrevendo o doc DELE, nunca o cartão alheio."""
+    doc = _require_owner(hall_id, owner)
+    doc.setdefault("functions", {})[instance_id] = normalize_function(function)
+    _write_doc(doc)
+    return True
+
+
+def import_members(*, hall_id: str, owner: str,
+                   instance_ids: list[str]) -> int:
+    """Monta o hall sem ninguém configurar nada — o membro nem precisa estar
+    vivo. Quem não quiser fica de fora com `leave` (recusa no cartão dele)."""
+    doc = _require_owner(hall_id, owner)
+    members = list(doc.get("members") or [])
+    fresh = [i for i in instance_ids
+             if directory.valid_id(i) and i not in members]
+    if fresh:
+        doc["members"] = members + fresh
+        _write_doc(doc)
+    return len(fresh)
+
+
+def transfer_owner(*, hall_id: str, current_owner: str,
+                   new_owner: str) -> bool:
+    """Liderança muda; `hall_id` não. O prefixo `owner--` é namespace do id de
+    criação, não declaração de quem manda — renomear quebraria todo cartão que
+    já aponta para o hall."""
+    doc = _require_owner(hall_id, current_owner)
+    doc["owner"] = new_owner
+    doc.setdefault("functions", {})[new_owner] = "leader"
+    _write_doc(doc)
+    return True
+
+
+def members_of(hall_id: str, *, alive_only: bool = False) -> list[dict]:
+    """Uma varredura do diretório. Sem sqlite, sem JOIN, sem roster.
+    Membros = (declarados ∪ importados) − recusados.
+    Função = o que o doc do líder disser; executor na ausência."""
+    if not directory.valid_id(hall_id):
         return []
-    finally:
-        conn.close()
-    return [dict(r) for r in rows]
-
-
-# ── Membership ─────────────────────────────────────────────────────────
-
-def add_member(db: Path, *, hall_id: str, instance_id: str,
-               papel: str = "membro") -> bool:
-    if not hall_id or not instance_id:
-        return False
-    conn = _conn(db)
-    if conn is None:
-        return False
-    try:
-        conn.execute(
-            f"INSERT INTO {MEMBERS_TABLE}(hall_id,instance_id,papel,entrou_em)"
-            " VALUES(?,?,?,?)"
-            " ON CONFLICT(hall_id,instance_id) DO UPDATE SET"
-            "   papel=excluded.papel, entrou_em=excluded.entrou_em",
-            (hall_id, instance_id, papel, time.time()))
-        conn.commit()
-        return True
-    except sqlite3.Error:
-        return False
-    finally:
-        conn.close()
-
-
-def remove_member(db: Path, *, hall_id: str, instance_id: str) -> bool:
-    if not hall_id or not instance_id:
-        return False
-    conn = _conn(db)
-    if conn is None:
-        return False
-    try:
-        conn.execute(f"DELETE FROM {MEMBERS_TABLE} WHERE hall_id=? AND"
-                     " instance_id=?", (hall_id, instance_id))
-        conn.commit()
-        return True
-    except sqlite3.Error:
-        return False
-    finally:
-        conn.close()
-
-
-def is_member(db: Path, hall_id: str, instance_id: str) -> bool:
-    conn = _conn(db, read_only=True)
-    if conn is None:
-        return False
-    try:
-        row = conn.execute(
-            f"SELECT 1 FROM {MEMBERS_TABLE} WHERE hall_id=? AND instance_id=?",
-            (hall_id, instance_id)).fetchone()
-        return row is not None
-    except sqlite3.Error:
-        return False
-    finally:
-        conn.close()
-
-
-def members_of(db: Path, hall_id: str, *,
-               alive_only: bool = False) -> list[dict]:
-    """All members of a hall. `alive_only` crosses with `agents.is_alive` when
-    a registry row exists — but a member with NO registry row is still returned
-    (absence of registry ≠ death; presence IS the signal, not absence).
-
-    Perf: single JOIN read (one connection + one query), not N×get_agent — a
-    hall with M members used to open ~2M connections (one per get_agent +
-    one per is_alive)."""
-    conn = _conn(db, read_only=True)
-    if conn is None:
-        return []
-    try:
-        if alive_only:
-            # v4.5 perf: resolve liveness in ONE join instead of per-member
-            # get_agent+is_alive (2 queries each). A member without a registry
-            # row stays visible (absence != death); only a stale row drops it.
-            try:
-                rows = conn.execute(
-                    f"SELECT m.hall_id, m.instance_id, m.papel, m.entrou_em,"
-                    f" a.last_heartbeat FROM {MEMBERS_TABLE} m"
-                    f" LEFT JOIN agents a ON a.instance_id = m.instance_id"
-                    " WHERE m.hall_id=?",
-                    (hall_id,)).fetchall()
-            except sqlite3.OperationalError:
-                # agents table may not exist yet (created on first register);
-                # no liveness data then, so every member counts as alive.
-                rows = conn.execute(
-                    f"SELECT hall_id, instance_id, papel, entrou_em FROM"
-                    f" {MEMBERS_TABLE} WHERE hall_id=?",
-                    (hall_id,)).fetchall()
-        else:
-            rows = conn.execute(
-                f"SELECT hall_id, instance_id, papel, entrou_em FROM"
-                f" {MEMBERS_TABLE} WHERE hall_id=?", (hall_id,)).fetchall()
-    except sqlite3.Error:
-        return []
-    finally:
-        conn.close()
-    from . import agents as _agents
+    doc = get_hall(hall_id) or {}
+    imported = {str(i) for i in (doc.get("members") or [])}
+    assigned = doc.get("functions") or {}
     out: list[dict] = []
-    for r in rows:
-        d = dict(r)
-        if alive_only:
-            hb = d.pop("last_heartbeat", None)
-            # drop only when a registry row exists AND it is stale; absence
-            # of registry keeps the member visible (no false death).
-            if hb is not None and \
-               (time.time() - float(hb)) > _agents.STALE_AFTER_S:
-                continue
-        out.append(d)
-    return out
+    for card in directory.peers():            # peers() inclui o próprio agente
+        cid = card["instance_id"]
+        if hall_id in (card.get("halls_declined") or []):
+            continue                          # autonomia vence importação
+        declared = hall_id in (card.get("halls") or [])
+        if not declared and cid not in imported:
+            continue
+        alive = directory.is_live(card)
+        if alive_only and not alive:
+            continue
+        out.append({"hall_id": hall_id, "instance_id": cid,
+                    "function": assigned.get(cid, DEFAULT_FUNCTION),
+                    "imported": not declared,
+                    # fronteira do legado pt-BR: lê `modelo`, entrega `model`
+                    "model": card.get("modelo", ""),
+                    "family": card.get("familia", ""), "alive": alive,
+                    "updated_at": card.get("updated_at", 0)})
+    return sorted(out, key=lambda m: m["instance_id"])
 
 
-def halls_of(db: Path, instance_id: str) -> list[dict]:
-    """Halls the agent is a member of (or owns)."""
-    conn = _conn(db, read_only=True)
-    if conn is None:
-        return []
-    try:
-        rows = conn.execute(
-            f"SELECT h.hall_id, h.nome, h.dono, h.criado_em"
-            f" FROM {HALLS_TABLE} h JOIN {MEMBERS_TABLE} m"
-            " ON h.hall_id = m.hall_id WHERE m.instance_id=?"
-            " ORDER BY h.criado_em DESC", (instance_id,)).fetchall()
-    except sqlite3.Error:
-        return []
-    finally:
-        conn.close()
-    return [dict(r) for r in rows]
-
-
-# ── Fan-out ───────────────────────────────────────────────────────────
-
-def send_to_hall(db: Path, *, from_instance: str, hall_id: str, type: str,
-                 payload: dict, identity: dict | None = None) -> int:
-    """Fan-out a message to every member except the sender. Returns the number
-    delivered (0 on resolution failure/broken db). Per-peer isolation: a failing
-    member never aborts the rest."""
-    if not hall_id or not from_instance:
-        return 0
-    members = members_of(db, hall_id, alive_only=False)
-    if not members:
-        return 0
+def send_to_hall(*, from_instance: str, hall_id: str, type: str, payload: dict,
+                 send, identity: dict | None = None,
+                 function: str | None = None) -> int:
+    """Fan-out para todo membro menos o remetente. `send` é injetado — o hall
+    resolve nome, nunca transporta (Task 6 troca só o que é passado aqui).
+    `function` endereça um subconjunto: convocar só os revisores é uma mensagem
+    para os revisores, não uma para todos que os outros aprendem a ignorar."""
+    target_fn = normalize_function(function) if function else None
+    doc = get_hall(hall_id)
+    allowed: set[str] | None = None
+    if doc and doc.get("policy") == "invite":
+        allowed = set(doc.get("invited") or []) | {doc.get("owner", "")}
     delivered = 0
-    for m in members:
+    for m in members_of(hall_id):
         target = m["instance_id"]
         if target == from_instance:
             continue
+        if target_fn is not None and m["function"] != target_fn:
+            continue
+        if allowed is not None and target not in allowed:
+            continue
         try:
-            mailbox.send(db, from_instance=from_instance, to_instance=target,
-                         type=type, payload=payload, identity=identity)
+            send(from_instance=from_instance, to_instance=target, type=type,
+                 payload=payload, identity=identity,
+                 hall={"id": hall_id, "function": m["function"]})
             delivered += 1
         except Exception:
-            continue
+            continue                      # isolamento por peer: um ruim não aborta
     return delivered
+
+
+def migrate_from_db(db: Path, self_id: str) -> int:
+    """Uma vez, idempotente. Migro a MINHA membership e os halls que EU dono —
+    a linha do outro agente é ele que carrega quando rodar isto."""
+    if not Path(db).exists():
+        return 0
+    try:
+        conn = sqlite3.connect(f"file:{Path(db)}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return 0
+    try:
+        rows = conn.execute("SELECT hall_id FROM hall_members"
+                            " WHERE instance_id=?", (self_id,)).fetchall()
+        mine = conn.execute("SELECT hall_id, nome, dono, criado_em FROM halls"
+                            " WHERE dono=?", (self_id,)).fetchall()
+        assigns = conn.execute("SELECT hall_id, instance_id, papel FROM"
+                               " hall_members").fetchall()
+    except sqlite3.Error:
+        return 0                          # schema antigo ausente = nada a migrar
+    finally:
+        conn.close()
+    # Única exceção ao "desconhecido levanta": dado legado que não controlamos
+    # não pode travar o startup. Mapeia o que conhece, o resto vira padrão.
+    for hall_id, name, owner, created_at in mine:
+        if not directory.valid_id(hall_id) or hall_doc_path(hall_id).exists():
+            continue
+        fns = {i: _LEGACY_FUNCTIONS.get(p or "", DEFAULT_FUNCTION)
+               for h, i, p in assigns if h == hall_id}
+        fns[owner] = "leader"
+        _write_doc({"hall_id": hall_id, "name": name, "owner": owner,
+                    "created_at": created_at, "policy": "open",
+                    "invited": [], "members": sorted(fns), "functions": fns})
+    card = directory.get(self_id)
+    if card is None:
+        return 0
+    joined = list(card.get("halls") or [])
+    fresh = [h for (h,) in rows if directory.valid_id(h) and h not in joined]
+    if fresh:
+        card["halls"] = sorted(joined + fresh)
+        card["updated_at"] = time.time()
+        directory.publish(card)
+    return len(fresh)

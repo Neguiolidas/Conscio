@@ -66,9 +66,11 @@ class FakeHalls:
     def agents(self, **k):
         return [{"instance_id": "a1", "model": "opus-5", "offline": False}]
     def halls(self, **k):
-        return [{"hall_id": "a1--squad", "nome": "Squad", "member_count": 2}]
+        return [{"hall_id": "a1--squad", "name": "Squad", "owner": "a1",
+                 "member_count": 2}]
     def hall_members(self, hall_id, **k):
-        return [{"instance_id": "a1", "modelo": "opus-5"}]
+        return [{"instance_id": "a1", "model": "opus-5",
+                 "function": "leader"}]
     def mailboxes(self, self_id, **k):
         return [{"from_instance": "peer", "unread": 1}]
 
@@ -197,6 +199,12 @@ def test_halls_route():
     assert r.payload[0]["hall_id"] == "a1--squad"
 
 
+def test_hall_members_route():
+    r = _route("GET", "/api/hall_members", {"hall_id": "a1--squad"})
+    assert r.status == 200
+    assert r.payload[0]["function"] == "leader"
+
+
 def test_mailboxes_route():
     r = _route("GET", "/api/mailboxes")
     assert r.status == 200
@@ -204,6 +212,7 @@ def test_mailboxes_route():
 
 
 def test_halls_routes_405_on_mutation():
-    for path in ("/api/agents", "/api/halls", "/api/mailboxes"):
+    for path in ("/api/agents", "/api/halls", "/api/hall_members",
+                 "/api/mailboxes"):
         for m in ("POST", "PUT", "PATCH", "DELETE"):
             assert _route(m, path).status == 405

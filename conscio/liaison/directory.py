@@ -36,6 +36,7 @@ __all__ = [
     "relay_root",
     "spool_dir",
     "valid_id",
+    "write_atomic",
 ]
 
 
@@ -74,7 +75,7 @@ def _card_path(instance_id: str) -> Path:
     return peers_dir() / f"{_require_id(instance_id)}.json"
 
 
-def _write_atomic(path: Path, text: str, *, mode: int | None = None) -> None:
+def write_atomic(path: Path, text: str, *, mode: int | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     tmp.write_text(text, encoding="utf-8")
@@ -94,7 +95,7 @@ def publish(card: dict) -> None:
     payload = dict(card)
     payload["instance_id"] = cid
     payload.setdefault("updated_at", time.time())
-    _write_atomic(_card_path(cid), json.dumps(payload, ensure_ascii=False))
+    write_atomic(_card_path(cid), json.dumps(payload, ensure_ascii=False))
 
 
 def get(instance_id: str) -> dict | None:
