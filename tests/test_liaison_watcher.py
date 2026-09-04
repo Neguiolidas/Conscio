@@ -345,3 +345,102 @@ class TestPresenca:
         tick_summary(db, self_id=SELF, peers=[PEER_A], outbox=None)
         hb2 = agents.get_agent(db, SELF)["last_heartbeat"]
         assert hb2 > hb1
+
+# ── Ato 3b (v4.5.4): --persistent — nada além de um sinal encerra ─────────
+
+class TestPersistentWatcher:
+    """The watcher used to end its own run on the first delivery and again
+    on a 600s deadline, which is why every exchange between agents needed a
+    re-arm (and why the field units carried RELAY_INACTIVITY=31536000).
+    Under --persistent neither happens."""
+
+    @staticmethod
+    def _stop_after(monkeypatch, ticks: int) -> list[float]:
+        """Let the loop run `ticks` iterations, then signal it. Records the
+        interval each iteration slept for."""
+        slept: list[float] = []
+
+        def fake_sleep(seconds):
+            slept.append(seconds)
+            if len(slept) >= ticks:
+                raise KeyboardInterrupt
+        monkeypatch.setattr("time.sleep", fake_sleep)
+        return slept
+
+    def test_delivery_does_not_end_the_run(self, mailbox_db, monkeypatch,
+                                           capsys):
+        from conscio.liaison.watcher import main as wmain
+        slept = self._stop_after(monkeypatch, 3)
+
+        rc = wmain(["--liaison-db", str(mailbox_db), "--self-id", SELF,
+                    "--relay-peer", PEER_A, "--persistent"])
+
+        assert rc == int(ExitCode.OK)          # signal exits clean
+        assert len(slept) == 3                 # kept polling past the delivery
+        lines = capsys.readouterr().out.splitlines()
+        # it delivered on the first tick...
+        assert any('"messages"' in ln for ln in lines)
+        # ...then went on beating instead of returning, which is the whole
+        # point: no re-arm between two exchanges.
+        first_delivery = next(i for i, ln in enumerate(lines)
+                              if '"messages"' in ln)
+        assert any('"estado": "nada_novo"' in ln
+                   for ln in lines[first_delivery + 1:])
+
+    def test_empty_peers_is_awaited_not_fatal(self, tmp_path, monkeypatch,
+                                              capsys):
+        """No peers yet reads as `config` inside the tick — for a supervised
+        watcher armed before the other agents publish their cards that is
+        'nobody has shown up yet', not a reason to die. (A missing db is not
+        even that: the presence heartbeat creates it on the first tick.)"""
+        from conscio.liaison.watcher import main as wmain
+        slept = self._stop_after(monkeypatch, 2)
+
+        rc = wmain(["--liaison-db", str(tmp_path / "nope.db"),
+                    "--self-id", SELF, "--persistent"])
+
+        assert rc == int(ExitCode.OK)
+        assert len(slept) == 2                 # did not bail out on config
+        out = capsys.readouterr().out
+        assert '"motivo": "config' in out      # but says why, every tick
+
+    def test_defaults_to_2s_and_honours_interval(self, mailbox_db,
+                                                 monkeypatch):
+        from conscio.liaison.watcher import PERSISTENT_INTERVAL
+        from conscio.liaison.watcher import main as wmain
+        args = ["--liaison-db", str(mailbox_db), "--self-id", SELF,
+                "--relay-peer", PEER_A, "--persistent"]
+
+        slept = self._stop_after(monkeypatch, 1)
+        wmain(args)
+        assert slept == [PERSISTENT_INTERVAL] == [2.0]
+
+        slept = self._stop_after(monkeypatch, 1)
+        wmain([*args, "--interval", "0.5"])
+        assert slept == [0.5]
+
+    def test_timeout_is_ignored_when_persistent(self, mailbox_db,
+                                                monkeypatch):
+        """A deadline is an exit of one's own accord: --persistent has none,
+        even if a stale unit file still passes --timeout."""
+        from conscio.liaison.watcher import main as wmain
+        slept = self._stop_after(monkeypatch, 4)
+
+        rc = wmain(["--liaison-db", str(mailbox_db), "--self-id", SELF,
+                    "--relay-peer", PEER_A, "--persistent",
+                    "--timeout", "0"])
+
+        assert rc == int(ExitCode.OK)
+        assert len(slept) == 4                 # 0s deadline did not apply
+
+    def test_legacy_interval_still_exits_on_delivery(self, mailbox_db,
+                                                     monkeypatch, capsys):
+        """Regression: without --persistent the old contract is untouched."""
+        from conscio.liaison.watcher import main as wmain
+        self._stop_after(monkeypatch, 5)       # loop must end before this
+
+        rc = wmain(["--liaison-db", str(mailbox_db), "--self-id", SELF,
+                    "--relay-peer", PEER_A, "--interval", "0.1"])
+
+        assert rc == int(ExitCode.OK)
+        assert '"messages"' in capsys.readouterr().out

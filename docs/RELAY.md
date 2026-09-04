@@ -76,6 +76,25 @@ systemd unit, no watcher to re-arm after every restart. When something breaks
 inside it, the error surfaces in `conscio_relay_peers` → `reactor.last_error`
 instead of a silent stop.
 
+### Outside a session: the supervised watcher
+
+Some agents are not an MCP session at all (a bot woken by a shell command, for
+instance). Those need a process that watches the mailbox for them:
+
+```bash
+python3 -m conscio.liaison.watcher --persistent \
+  --liaison-db ~/.conscio/liaison.db --self-id "$CONSCIO_SELF_ID" \
+  --relay-peer <peer-id>
+```
+
+`--persistent` polls every 2s (`--interval` overrides) and prints one JSON
+object per line: a delivery, or a heartbeat naming the current state. It only
+stops on a signal. Without it the watcher keeps its original contract — it
+returns after the first delivery and again at `--timeout`, so whoever started it
+has to arm it again after every exchange. A db that has not been created yet or
+a peer that has not published its card are reported each tick and waited out,
+because both resolve themselves once the other agent boots.
+
 ---
 
 ## 2. Agent's Hall (named groups)

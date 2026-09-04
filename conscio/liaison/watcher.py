@@ -31,6 +31,7 @@ BUSY_TIMEOUT_MS = 3000  # mirror relay_watch_hermes.py
 STATE_TABLE = "watcher_state"
 OUTBOX_NAME = "relay_inbox.json"
 SELF_ID_ENV = "CONSCIO_SELF_ID"
+PERSISTENT_INTERVAL = 2.0   # --persistent poll cadence, seconds
 
 
 class ExitCode(IntEnum):
@@ -329,6 +330,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--timeout", type=float, default=600.0,
                    help="with --interval, max seconds the loop may run before"
                         " exiting (default 600; defaults to one-shot otherwise)")
+    p.add_argument("--persistent", action="store_true",
+                   help="never exit on its own: keep polling (every"
+                        f" {PERSISTENT_INTERVAL}s unless --interval says"
+                        " otherwise), stream every delivery instead of exiting"
+                        " on the first, and treat a missing db or an"
+                        " unpublished peer as something that will show up."
+                        " Only a signal stops it. Use for a supervised"
+                        " watcher that must not need re-arming.")
     args = p.parse_args(argv)
 
     db = Path(args.liaison_db) if args.liaison_db else default_db()
@@ -353,29 +362,49 @@ def main(argv: list[str] | None = None) -> int:
         })
         _save_state(db, _app_state)
 
-    # Persistent loop (legacy blocking-watcher parity + v4.5 reativo):
-    # polls every --interval calling tick_summary (3-state, renova presença).
-    # Emite heartbeat "vivo" mesmo sem msgs novas — transforma "não recebi
-    # nada" de ambíguo em diagnóstico. Exits OK when a message surfaces or
-    # the deadline elapses (silent-idle contract preserved).
-    if not args.once and args.interval > 0:
+    # Polling loop, in one of two contracts:
+    #
+    # default (--interval): the legacy blocking watcher. A delivery or the
+    #   deadline ends the run, and the caller re-arms it.
+    # --persistent: nothing ends the run but a signal. Every exit the loop
+    #   could take on its own is the reason the old watcher had to be
+    #   re-armed after each exchange between agents; a deadline of a year
+    #   (RELAY_INACTIVITY=31536000) only hid the first one.
+    if not args.once and (args.interval > 0 or args.persistent):
         import time as _time
-        deadline = _time.time() + max(args.timeout, 0.0)
+        interval = args.interval if args.interval > 0 else PERSISTENT_INTERVAL
+        deadline = (None if args.persistent
+                    else _time.time() + max(args.timeout, 0.0))
         outbox = Path(args.outbox) if args.outbox else None
-        while _time.time() < deadline:
-            s = tick_summary(db, self_id=self_id, peers=peers, outbox=outbox)
-            if s["estado"] == "entregue" and s["messages"]:
-                # surfaced — print (stdout contract) and exit OK
-                print(json.dumps({"messages": s["messages"]}, ensure_ascii=False))
-                return int(ExitCode.OK)
-            if s["estado"] == "não_entregue" and s["motivo"].startswith("config"):
-                # db/peers/self_id inválido de verdade — honest config error,
-                # retry-able invocação, não spin forever
-                return int(ExitCode.CONFIG_ERROR)
-            # heartbeat "vivo" (supervisor/systemd pode ler o diagnóstico)
-            print(json.dumps({"estado": s["estado"], "cursor": s["cursor"],
-                              "par": self_id, "ts": s["ts"]}, ensure_ascii=False))
-            _time.sleep(args.interval)
+        try:
+            while deadline is None or _time.time() < deadline:
+                s = tick_summary(db, self_id=self_id, peers=peers,
+                                 outbox=outbox)
+                if s["estado"] == "entregue" and s["messages"]:
+                    # stdout contract: one JSON object per delivery. flush,
+                    # or a supervised watcher's pipe holds the mail hostage
+                    # until the buffer fills.
+                    print(json.dumps({"messages": s["messages"]},
+                                     ensure_ascii=False), flush=True)
+                    if not args.persistent:
+                        return int(ExitCode.OK)
+                    _time.sleep(interval)
+                    continue
+                if (not args.persistent and s["estado"] == "não_entregue"
+                        and s["motivo"].startswith("config")):
+                    # An unusable config is not worth spinning on — but under
+                    # --persistent "config" means the db or the peer's card
+                    # has not appeared YET, which time fixes on its own.
+                    return int(ExitCode.CONFIG_ERROR)
+                # heartbeat "vivo" (supervisor/systemd pode ler o diagnóstico)
+                beat = {"estado": s["estado"], "cursor": s["cursor"],
+                        "par": self_id, "ts": s["ts"]}
+                if s["motivo"]:
+                    beat["motivo"] = s["motivo"]   # say why, keep polling
+                print(json.dumps(beat, ensure_ascii=False), flush=True)
+                _time.sleep(interval)
+        except KeyboardInterrupt:
+            pass                      # a signal is the only way out: exit clean
         # deadline reached: silent (watchdog) exit OK
         return int(ExitCode.OK)
 

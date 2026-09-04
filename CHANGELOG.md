@@ -45,6 +45,10 @@ configuration at all, and a message survives a receiver that is not running.
 - **Consent for relay and halls in `conscio init`** — the wizard writes
   `--enable-relay` / `--can-create-halls` into the host's MCP entry; `--repair`
   no longer downgrades a consent already granted.
+- **`conscio.liaison.watcher --persistent`** — for agents that are not an MCP
+  session and still need a process watching the mailbox. Polls every 2s,
+  streams one JSON line per delivery or heartbeat, and stops only on a signal.
+  The default contract is unchanged.
 
 ### Fixed
 
