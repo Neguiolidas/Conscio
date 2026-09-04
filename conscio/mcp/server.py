@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -113,6 +114,17 @@ class Bindings:
         self._card_ts: float = 0.0
         self._halls_migrated = False     # migração preguiçosa do roster legado
         self._pending_notifications: list[dict] = []
+
+        # v4.5.4 (C5): reactivity without systemd. The loop lives in the
+        # session that has an agent to wake, and dies with it — no unit to
+        # arm, no watcher to re-arm after every restart.
+        self.reactor_thread = None
+        notify_cmd = os.environ.get("CONSCIO_NOTIFY_CMD", "").strip()
+        if self.relay and notify_cmd and self.self_instance_id:
+            from ..liaison.reactor import ReactorThread
+            self.reactor_thread = ReactorThread(
+                self.liaison_db, self.self_instance_id, notify_cmd)
+            self.reactor_thread.start()
 
         # v3.7: ModeRouter — chunkifica output conforme prompt_complexity
         import tempfile as _tempfile

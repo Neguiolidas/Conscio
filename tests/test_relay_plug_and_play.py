@@ -214,3 +214,54 @@ def test_own_outbox_copy_never_shows_in_inbox(tmp_path):
     mailbox.send(srv.liaison_db, from_instance="agent-a", to_instance="agent-b",
                  type="relay", payload={"mine": 1})
     assert srv._relay_inbox({})["messages"] == []
+
+
+# ── v4.5.4 C5: reatividade nasce com a sessão MCP, sem systemd ────────────
+
+def _real_server(tmp_path, instance_id="live-a", relay=True):
+    """Servidor de verdade (passa pelo __init__), que é onde a thread nasce."""
+    from conscio.engine import ConsciousnessEngine
+    from conscio.mcp.seen import SeenStore
+    from conscio.mcp.server import Bindings
+    eng = ConsciousnessEngine("glm-5.1", storage_path=tmp_path)
+    seen = SeenStore(tmp_path / "mcp_seen.db")
+    b = Bindings(eng, seen, adapter_name=None, workspace_id="ws",
+                 self_instance_id=instance_id,
+                 liaison_db=tmp_path / f"{instance_id}.db", relay=relay)
+    return b, eng, seen
+
+
+def test_mcp_server_starts_reactor_when_hook_is_set(tmp_path, monkeypatch):
+    """Ninguém arma nada: existe hook + relay ligado, existe reatividade."""
+    import time
+
+    from conscio.liaison import spool
+    monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+    got = tmp_path / "woken.json"
+    monkeypatch.setenv("CONSCIO_NOTIFY_CMD", f"cat > {got}")
+    srv, eng, seen = _real_server(tmp_path)
+    try:
+        assert srv.reactor_thread is not None
+        spool.deposit(srv.self_instance_id,
+                      {"from": "b", "to": srv.self_instance_id,
+                       "type": "relay", "payload": {"text": "acorda"}})
+        for _ in range(100):                       # <= 5s
+            if got.exists():
+                break
+            time.sleep(0.05)
+        assert got.exists(), "a sessão não reagiu à mensagem depositada"
+        assert "acorda" in got.read_text()
+    finally:
+        srv.reactor_thread.stop()
+        seen.close()
+        eng.close()
+
+
+def test_no_hook_no_thread(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSCIO_NOTIFY_CMD", raising=False)
+    srv, eng, seen = _real_server(tmp_path, instance_id="live-b")
+    try:
+        assert srv.reactor_thread is None
+    finally:
+        seen.close()
+        eng.close()

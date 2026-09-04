@@ -9,8 +9,8 @@ runs a notify hook — a subprocess command configured by the environment via
 Universal: the agent is never ignored when a message arrives.
 
 At-least-once delivery:
-- cursor only advances past a message whose hook SUCCEEDED (exit 0).
-- a failed hook keeps the cursor, so the message re-surfaces next tick.
+- a message is marked read only when its hook SUCCEEDED (exit 0).
+- a failed hook leaves it unread, so it re-surfaces next tick.
 - a message marked silent (`_meta.silent=True` or payload `silent: True`)
   is consumed WITHOUT running the hook (opt-out is the explicit exception).
 
@@ -30,12 +30,13 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from . import mailbox
-from .watcher import ExitCode, _load_state, _save_state, poll_digest
+from . import directory, mailbox, spool
+from .watcher import ExitCode
 
 log = logging.getLogger("conscio.liaison.reactor")
 NOTIFY_ENV = "CONSCIO_NOTIFY_CMD"
@@ -79,19 +80,30 @@ def run_notify_hook(cmd: str, message: dict, *, timeout: float = 15.0) -> bool:
 def dispatch(db: Path, *, self_id: str, peers: Iterable[str],
              notify_cmd: str,
              _notify: Callable[[str, dict], bool] | None = None) -> int:
-    """One reactive tick: surface & notify new peer messages (at-least-once).
+    """One reactive tick: ingest the spool, notify what is still unread, and
+    MARK read_ts on success (at-least-once).
 
-    Returns the number of messages newly delivered to the agent's notify
-    hook (or consumed silently). Callers run this in a loop.
+    v4.5.4 killed the per-peer cursor in `watcher_state`. It was a second set
+    of books for the same fact — the inbox and `purge_read` never saw it, so a
+    message could be "delivered" for the reactor and forever unread for the
+    agent (finding A8). `read_ts` is now the only bookkeeping.
+
+    Returns the number of messages newly handed to the notify hook (or
+    consumed silently). Callers run this in a loop.
     """
-    peers = [p for p in peers if p]      # drop empties
     db = Path(db)
-    if not self_id or not peers or not db.exists():
+    if not self_id:
+        return 0
+    try:                        # before the existence guard on purpose: for a
+        spool.ingest(db, self_id)   # brand-new agent the spool CREATES the db
+    except Exception as exc:
+        log.warning("spool ingest failed: %s", exc)
+    if not db.exists():
         return 0
 
     # Renew self presence every tick (heartbeat) — the reactor is the live
     # process, so IT keeps the agent visible as live to peers/observatory.
-    from . import agents
+    from . import agents, relay
     agents.register_agent(db, instance_id=self_id,
                           capabilities=("relay",), status="alive")
 
@@ -99,38 +111,72 @@ def dispatch(db: Path, *, self_id: str, peers: Iterable[str],
         return run_notify_hook(cmd, msg)
     notify = _notify or _default
 
-    state = _load_state(db)
-    new_cursors: dict[str, int] = {}
+    allow = {p for p in peers if p}      # empty = no restriction (A1)
     delivered = 0
-
-    for peer in peers:
-        since = int(state.get(peer, {}).get("last_seen_id", 0))
-        msgs = poll_digest(db, since, self_id, [peer])
-        if not msgs:
+    for row in mailbox.inbox(db, self_id, unread_only=True, limit=200):
+        if not relay.is_relay_message(row, allow):
+            continue                     # reserved/oversized: left unread for
+        if not should_notify(row):       # the tool that owns it
+            mailbox.mark_read(db, [row["id"]])      # consumed silently
+            delivered += 1
             continue
-        cursor = since
-        for m in msgs:                 # id order (ASC) per peer
-            if not should_notify(m):
-                cursor = m["id"]       # consumed silently
-                delivered += 1
-                continue
-            ok = notify(notify_cmd, m)
-            if ok:
-                cursor = m["id"]       # delivered → claim this id
-                delivered += 1
-            else:
-                # at-least-once: stop advancing here, cursor holds at the
-                # last successfully handled id → the failed one re-surfaces.
-                break
-        if cursor > since:
-            new_cursors[peer] = cursor
-    if not new_cursors:
-        return 0
-    _save_state(db, {
-        peer: {"last_seen_id": new_cursors[peer], "status": "delivered"}
-        for peer in new_cursors
-    })
+        if not notify(notify_cmd, row):
+            break            # at-least-once: unmarked, it returns next tick
+        mailbox.mark_read(db, [row["id"]])
+        delivered += 1
     return delivered
+
+
+class ReactorThread:
+    """Reactivity without systemd (C5): it lives inside the MCP server and
+    dies with the session — which is exactly when there is nobody left to
+    wake. An exception never kills the loop (I8); the last error stays
+    visible for `relay_health`."""
+
+    def __init__(self, db: Path, self_id: str, notify_cmd: str,
+                 interval: float = 3.0) -> None:
+        self.db, self.self_id = Path(db), self_id
+        self.notify_cmd, self.interval = notify_cmd, interval
+        self.last_error, self.ticks = "", 0
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread:
+            return
+        self._thread = threading.Thread(target=self._run,
+                                        name="conscio-reactor", daemon=True)
+        self._thread.start()
+
+    def stop(self, timeout: float = 2.0) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=timeout)
+            self._thread = None
+
+    def is_alive(self) -> bool:
+        return bool(self._thread and self._thread.is_alive())
+
+    def _peers(self) -> list[str]:
+        try:
+            return [c["instance_id"]
+                    for c in directory.peers(exclude=self.self_id)]
+        except Exception:                 # a broken directory is not a reason
+            return []                     # to stop reacting — empty = accept all
+
+    def _run(self) -> None:
+        backoff = self.interval
+        while not self._stop.is_set():
+            try:
+                dispatch(self.db, self_id=self.self_id, peers=self._peers(),
+                         notify_cmd=self.notify_cmd)
+                self.ticks += 1
+                self.last_error = ""
+                backoff = self.interval
+            except Exception as exc:      # keep looping, but say what broke
+                self.last_error = f"{exc}"
+                backoff = min(max(backoff * 2, 0.01), 60.0)
+            self._stop.wait(backoff)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -144,7 +190,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--self-id", default="",
                    help="our provider instance id (or env CONSCIO_SELF_ID)")
     p.add_argument("--relay-peer", action="append", default=[],
-                   help="trusted peer id (repeatable)")
+                   help="restrict to these peer ids (repeatable; default: "
+                        "every peer in the directory)")
     p.add_argument("--interval", type=float, default=5.0,
                    help="poll every N seconds (default 5)")
     p.add_argument("--notify-cmd", default=None,
@@ -168,7 +215,9 @@ def main(argv: list[str] | None = None) -> int:
         return int(ExitCode.CONFIG_ERROR)
 
     def tick() -> int:
-        n = dispatch(db, self_id=self_id, peers=peers, notify_cmd=notify_cmd)
+        allow = peers or [c["instance_id"]
+                          for c in directory.peers(exclude=self_id)]
+        n = dispatch(db, self_id=self_id, peers=allow, notify_cmd=notify_cmd)
         if n:
             print(json.dumps({"delivered": n, "ts": time.time()},
                              ensure_ascii=False))

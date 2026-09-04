@@ -9,6 +9,7 @@ once — a failed hook retries next tick). Universal across agent
 environments: `CONSCIO_NOTIFY_CMD` points at whatever wakes YOUR agent.
 """
 import json
+import time
 
 from conscio.liaison import mailbox, reactor
 
@@ -55,8 +56,8 @@ class TestRunNotifyHook:
 
 
 class TestDispatch:
-    def _cursor(self, db, peer):
-        return int(reactor._load_state(db).get(peer, {}).get("last_seen_id", 0))
+    def _unread(self, db, self_id="self"):
+        return len(mailbox.inbox(db, self_id, unread_only=True))
 
     def test_dispatch_notifies_and_advances(self, tmp_path):
         db = _bind(tmp_path)
@@ -70,8 +71,8 @@ class TestDispatch:
         assert n == 1
         assert len(calls) == 1
         assert calls[0]["payload"]["text"] == "oi"
-        # cursor avançou → próximo tick não re-entrega
-        assert self._cursor(db, peer) > 0
+        # marcada como lida → próximo tick não re-entrega
+        assert self._unread(db) == 0
 
     def test_failed_hook_does_not_advance(self, tmp_path):
         db = _bind(tmp_path)
@@ -82,7 +83,7 @@ class TestDispatch:
         n = reactor.dispatch(db, self_id=self_id, peers=[peer],
                              notify_cmd="exit 7")
         assert n == 0
-        assert self._cursor(db, peer) == 0
+        assert self._unread(db) == 1
 
     def test_dispatch_skips_silent(self, tmp_path):
         db = _bind(tmp_path)
@@ -94,9 +95,9 @@ class TestDispatch:
         n = reactor.dispatch(db, self_id=self_id, peers=[peer],
                              notify_cmd="cat",
                              _notify=lambda cmd, m: (calls.append(m) or True))
-        assert n == 1            # "consumida" (cursor avança) mesmo sem notificar
+        assert n == 1            # consumida (marcada lida) mesmo sem notificar
         assert calls == []       # o hook NÃO rodou
-        assert self._cursor(db, peer) > 0
+        assert self._unread(db) == 0
 
     def test_dispatch_ignores_own_messages(self, tmp_path):
         db = _bind(tmp_path)
@@ -109,7 +110,7 @@ class TestDispatch:
                              _notify=lambda cmd, m: (calls.append(m) or True))
         assert n == 0
         assert calls == []
-        assert self._cursor(db, peer) == 0
+        assert self._unread(db) == 0     # nada endereçado a mim
 
 
 class TestNeverRaises:
@@ -126,3 +127,94 @@ class TestNeverRaises:
         db = _bind(tmp_path)
         assert reactor.dispatch(db, self_id="", peers=["p"],
                                 notify_cmd="x") == 0
+
+# ── v4.5.4 Task 8: read_ts é a contabilidade única; thread em sessão ──────
+
+def test_dispatch_marks_read_ts(tmp_path, monkeypatch):
+    db = tmp_path / "r.db"
+    mailbox.send(db, from_instance="b", to_instance="me", type="relay",
+                 payload={"x": 1})
+    monkeypatch.setattr(reactor, "run_notify_hook", lambda *a, **k: True)
+    assert reactor.dispatch(db, self_id="me", peers=["b"], notify_cmd="true") == 1
+    rows = mailbox.inbox(db, "me", unread_only=False)
+    assert rows[0]["read_ts"] is not None
+    # segunda passada não reentrega (A8)
+    assert reactor.dispatch(db, self_id="me", peers=["b"], notify_cmd="true") == 0
+
+
+def test_failed_notify_does_not_mark_read(tmp_path, monkeypatch):
+    db = tmp_path / "r.db"
+    mailbox.send(db, from_instance="b", to_instance="me", type="relay",
+                 payload={})
+    monkeypatch.setattr(reactor, "run_notify_hook", lambda *a, **k: False)
+    reactor.dispatch(db, self_id="me", peers=["b"], notify_cmd="true")
+    assert mailbox.inbox(db, "me", unread_only=True) != []
+
+
+def test_dispatch_ingests_the_spool(tmp_path, monkeypatch):
+    """O db do agente novo nem existe: quem o cria é o spool (A8/C5)."""
+    from conscio.liaison import directory, spool
+    monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+    db = tmp_path / "fresh.db"
+    spool.deposit("me", {"from": "b", "to": "me", "type": "relay",
+                         "payload": {"z": 9}})
+    got = []
+    n = reactor.dispatch(db, self_id="me", peers=[], notify_cmd="true",
+                         _notify=lambda cmd, m: (got.append(m) or True))
+    assert n == 1
+    assert got[0]["payload"]["z"] == 9
+
+
+def test_empty_peers_dispatches_everything(tmp_path):
+    """A1 no reactor: sem allowlist não é sem entrega."""
+    db = tmp_path / "r.db"
+    mailbox.send(db, from_instance="whoever", to_instance="me", type="relay",
+                 payload={"x": 1})
+    got = []
+    n = reactor.dispatch(db, self_id="me", peers=[], notify_cmd="true",
+                         _notify=lambda cmd, m: (got.append(m) or True))
+    assert (n, len(got)) == (1, 1)
+
+
+def test_reactor_thread_survives_exception(tmp_path, monkeypatch):
+    calls = []
+
+    def boom(*a, **k):
+        calls.append(1)
+        raise RuntimeError("db locked")
+
+    monkeypatch.setattr(reactor, "dispatch", boom)
+    th = reactor.ReactorThread(tmp_path / "x.db", "me", "true", interval=0.01)
+    th.start()
+    time.sleep(0.3)
+    th.stop()
+    assert len(calls) >= 2                  # não morreu na primeira exceção
+    assert "db locked" in th.last_error     # I8: erro visível, não engolido
+
+
+def test_reactor_thread_ticks_and_stops(tmp_path, monkeypatch):
+    monkeypatch.setattr(reactor, "dispatch", lambda *a, **k: 0)
+    th = reactor.ReactorThread(tmp_path / "x.db", "me", "true", interval=0.01)
+    th.start()
+    time.sleep(0.1)
+    th.stop()
+    assert th.ticks >= 1
+    assert th.last_error == ""
+    assert not th.is_alive()                # stop() realmente encerra
+
+
+def test_reactor_has_no_idle_shutdown():
+    """R1: ocioso é o estado normal de um canal A2A, não condição de término."""
+    import inspect
+    src = inspect.getsource(reactor)
+    assert "INACTIVITY" not in src.upper()
+    assert "sys.exit(2)" not in src
+
+
+def test_no_second_bookkeeping_survives():
+    """R2: cursor por peer + read_ts seriam duas contabilidades da mesma coisa
+    (classe do bug A9). read_ts é a única — é a que o inbox também enxerga."""
+    import inspect
+    src = inspect.getsource(reactor)
+    for dead in ("_load_state", "_save_state", "last_seen_id"):
+        assert dead not in src
