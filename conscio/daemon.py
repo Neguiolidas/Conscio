@@ -440,7 +440,7 @@ def _arg_parser() -> argparse.ArgumentParser:
                              "machine via the process list")
     parser.add_argument("--liaison-db", default=None,
                         help="mailbox db for the relay sensor "
-                             "(default $CONSCIO_HOME/liaison.db)")
+                             "(default <storage>/liaison.db)")
     parser.add_argument("--relay-peer", action="append", default=[],
                         metavar="INSTANCE_ID",
                         help="trusted relay peer for the relay sensor (repeatable)")
@@ -560,7 +560,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .liaison import mailbox
         from .noosphere.identity import load_or_create
         self_id = load_or_create(engine.storage).instance_id
-        liaison_db = args.liaison_db or mailbox.default_db()
+        liaison_db = mailbox.resolve_db(engine.storage, args.liaison_db,
+                                        self_id=self_id)
     sensors = _build_sensors(sensors_spec, agent_source=args.agent_source,
                              liaison_db=liaison_db, self_id=self_id,
                              relay_peers=tuple(args.relay_peer))

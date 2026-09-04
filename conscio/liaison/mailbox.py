@@ -46,6 +46,72 @@ def default_db() -> Path:
     return conscio_home() / "liaison.db"
 
 
+def db_in_space(storage: Path) -> Path:
+    """Caminho canônico do liaison.db privado de um espaço (v4.5.4 C1/A5).
+    Única forma de computar isso no pacote — spaces.liaison_db_path delega."""
+    return Path(storage) / "liaison.db"
+
+
+def migrate_legacy(new_db: Path, legacy_db: Path, self_id: str) -> int:
+    """Importa do db compartilhado só as linhas deste agente. Idempotente:
+    no-op se new_db já existe. A CHECAGEM DE EXISTÊNCIA VEM ANTES DE QUALQUER
+    CONEXÃO (I4) — _connect cria o arquivo e a migração nunca mais dispararia.
+
+    A própria existência do novo db é a marca de "já migrei": nenhuma linha de
+    estado extra, nenhuma tabela de outro módulo escrita daqui.
+    """
+    new_db = Path(new_db)
+    if new_db.exists() or not Path(legacy_db).exists():
+        return 0
+    try:
+        src = _connect(legacy_db)
+    except sqlite3.Error:
+        return 0
+    try:
+        rows = src.execute(
+            "SELECT from_instance, to_instance, type, payload, ts, read_ts"
+            " FROM messages WHERE to_instance=? OR from_instance=?",
+            (self_id, self_id)).fetchall()
+    except sqlite3.Error:
+        return 0
+    finally:
+        src.close()
+    if not rows:
+        return 0
+    new_db.parent.mkdir(parents=True, exist_ok=True)
+    dst = _connect(new_db)
+    try:
+        dst.executemany(
+            "INSERT INTO messages (from_instance, to_instance, type, payload,"
+            " ts, read_ts) VALUES (?,?,?,?,?,?)",
+            [tuple(r) for r in rows])
+        dst.commit()
+    finally:
+        dst.close()
+    return len(rows)
+
+
+def resolve_db(storage: Path, explicit: str | Path | None = None, *,
+               self_id: str = "") -> Path:
+    """Onde ESTE agente lê e escreve mensagens (v4.5.4 C1).
+
+    Um só resolvedor para servidor MCP, daemon e observatory: três resoluções
+    independentes é como um lado passa a escrever num db que o outro não lê.
+    A migração do legado vai junto porque só quem resolve o caminho sabe que
+    o db novo acabou de nascer — e ela é anunciada, nunca silenciosa (R1).
+    """
+    if explicit:
+        return Path(explicit).expanduser()
+    db = db_in_space(Path(storage))
+    if self_id:
+        moved = migrate_legacy(db, default_db(), self_id)
+        if moved:
+            import sys
+            print(f"[conscio] liaison: migrated {moved} legacy rows to {db}",
+                  file=sys.stderr)
+    return db
+
+
 def _connect(db: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db))
     conn.row_factory = sqlite3.Row

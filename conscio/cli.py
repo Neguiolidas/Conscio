@@ -223,7 +223,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_obs.add_argument("--noosphere", default="",
                        help="noosphere.db path (default: ~/.conscio/noosphere.db)")
     p_obs.add_argument("--liaison-db", default="",
-                       help="liaison.db path (default: ~/.conscio/liaison.db)")
+                       help="liaison.db path (default: <storage>/liaison.db)")
     return parser
 
 
@@ -1113,14 +1113,17 @@ def _cmd_observatory(*, host: str, port: int, root: str,
     """Start the read-only Observatory web UI (loopback only)."""
     from pathlib import Path
 
-    from .observatory.server import _DEFAULT_LIAISON, _DEFAULT_NOOSPHERE, make_server
+    from .observatory.server import _DEFAULT_NOOSPHERE, make_server
     if storage:
         storage_path = Path(storage).expanduser()
     else:
         from .noosphere.paths import default_storage
         storage_path = default_storage()
     noo = Path(noosphere).expanduser() if noosphere else _DEFAULT_NOOSPHERE
-    liai = Path(liaison_db).expanduser() if liaison_db else _DEFAULT_LIAISON
+    # v4.5.4 C1: o db é do espaço do agente — o mesmo resolvedor do servidor
+    # MCP e do daemon, senão o Observatory olha um db que ninguém escreve.
+    from .liaison.mailbox import resolve_db
+    liai = resolve_db(storage_path, liaison_db)
     root_abs = str(Path(root).expanduser().resolve())
     srv = make_server(host, port, token, storage_path, noo, liai,
                       workspace_root=root_abs)

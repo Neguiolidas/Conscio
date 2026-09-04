@@ -291,3 +291,59 @@ def test_purge_quarantine_removes_old(tmp_path):
     n = mailbox.purge_quarantine(db, older_than_days=0.0001)  # cutoff 8.64s; row 100s velho > cutoff → remove
     assert n == 1
     assert mailbox.list_quarantine(db) == []
+
+
+# ── v4.5.4: liaison.db por agente + migração do legado ──────────────────
+
+def test_db_in_space_is_single_source_of_path(tmp_path):
+    from conscio.installer import spaces
+    assert mailbox.db_in_space(tmp_path) == tmp_path / "liaison.db"
+    # spaces delega — uma única forma de computar o caminho (A5)
+    import inspect
+    src = inspect.getsource(spaces.liaison_db_path)
+    assert "db_in_space" in src
+
+
+def test_migrate_legacy_imports_only_my_threads(tmp_path):
+    legacy = tmp_path / "legacy.db"
+    mailbox.send(legacy, from_instance="a", to_instance="me", type="relay",
+                 payload={"t": 1})
+    mailbox.send(legacy, from_instance="me", to_instance="b", type="relay",
+                 payload={"t": 2})
+    mailbox.send(legacy, from_instance="x", to_instance="y", type="relay",
+                 payload={"t": 3})
+    new = tmp_path / "space" / "liaison.db"
+    assert mailbox.migrate_legacy(new, legacy, "me") == 2
+    got = {r["payload"]["t"] for r in mailbox.inbox(new, "me", unread_only=False)}
+    assert got == {1}
+    assert mailbox.thread(new, "me", "b") != []      # outbox veio junto
+    # a linha alheia ficou no legado, não veio junto
+    assert mailbox.inbox(new, "y", unread_only=False) == []
+
+
+def test_migrate_legacy_is_noop_when_db_exists(tmp_path):
+    legacy = tmp_path / "legacy.db"
+    mailbox.send(legacy, from_instance="a", to_instance="me", type="relay",
+                 payload={})
+    new = tmp_path / "liaison.db"
+    mailbox.send(new, from_instance="z", to_instance="me", type="relay",
+                 payload={})           # db já existe
+    assert mailbox.migrate_legacy(new, legacy, "me") == 0
+    assert len(mailbox.inbox(new, "me", unread_only=False)) == 1
+
+
+def test_migrate_legacy_survives_missing_legacy(tmp_path):
+    assert mailbox.migrate_legacy(tmp_path / "n.db", tmp_path / "nope.db",
+                                  "me") == 0
+    assert not (tmp_path / "n.db").exists()   # não cria db por engano
+
+
+def test_migrate_legacy_preserves_read_state(tmp_path):
+    legacy = tmp_path / "legacy.db"
+    mid = mailbox.send(legacy, from_instance="a", to_instance="me",
+                       type="relay", payload={"t": 1})
+    mailbox.mark_read(legacy, [mid])
+    new = tmp_path / "space" / "liaison.db"
+    assert mailbox.migrate_legacy(new, legacy, "me") == 1
+    assert mailbox.inbox(new, "me") == []      # lida continua lida
+    assert len(mailbox.inbox(new, "me", unread_only=False)) == 1

@@ -114,8 +114,8 @@ _HERMES_SITES = [
      "_storage", ("",), "CONSCIO_HOME", "consciousness"),
     ("observatory._DEFAULT_NOOSPHERE", "conscio.observatory.server",
      "_DEFAULT_NOOSPHERE", None, "CONSCIO_HOME", "noosphere.db"),
-    ("observatory._DEFAULT_LIAISON", "conscio.observatory.server",
-     "_DEFAULT_LIAISON", None, "CONSCIO_HOME", "liaison.db"),
+    ("liaison.mailbox.default_db", "conscio.liaison.mailbox",
+     "default_db", (), "CONSCIO_HOME", "liaison.db"),
 ]
 
 # Each extension site is tested in isolation — only its env var is set, so

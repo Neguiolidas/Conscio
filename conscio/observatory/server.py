@@ -41,7 +41,6 @@ def _workspace_id(root: Path) -> str:
 # Reference: conscio/noosphere/paths.py:conscio_home — keep in sync.
 _HOME = conscio_home()
 _DEFAULT_NOOSPHERE = _HOME / "noosphere.db"
-_DEFAULT_LIAISON = _HOME / "liaison.db"
 
 
 @dataclass
@@ -392,8 +391,8 @@ def _arg_parser() -> argparse.ArgumentParser:
                    help="instance storage dir (default: ~/.conscio/consciousness)")
     p.add_argument("--noosphere", default=str(_DEFAULT_NOOSPHERE),
                    help="host-shared noosphere.db (default: $CONSCIO_HOME/noosphere.db)")
-    p.add_argument("--liaison-db", default=str(_DEFAULT_LIAISON),
-                   help="host-shared liaison.db (default: $CONSCIO_HOME/liaison.db)")
+    p.add_argument("--liaison-db", default="",
+                   help="agent liaison.db (default: <storage>/liaison.db)")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8788)
     p.add_argument("--token",
@@ -403,10 +402,14 @@ def _arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
+    # v4.5.4 C1: mesmo resolvedor do servidor MCP e do daemon — o Observatory
+    # nunca deve olhar um db que ninguém escreve.
+    from ..liaison.mailbox import resolve_db
+    liaison_db = resolve_db(Path(args.storage), args.liaison_db)
     try:
         server = make_server(args.host, args.port, args.token,
                              Path(args.storage), Path(args.noosphere),
-                             Path(args.liaison_db))
+                             liaison_db)
     except ValueError as exc:
         print(f"conscio-observatory: {exc}")
         return 2

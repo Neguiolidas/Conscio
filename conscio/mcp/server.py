@@ -1623,8 +1623,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.enable_hermes_review or args.enable_relay:
         from conscio.noosphere.identity import load_or_create
         self_instance_id = load_or_create(engine.storage).instance_id
-        liaison_db = (Path(args.liaison_db) if args.liaison_db
-                      else mailbox.default_db())
+        # v4.5.4 C1: db privado dentro do espaço do agente; o db compartilhado
+        # do legado migra uma vez, só as linhas deste id.
+        liaison_db = mailbox.resolve_db(engine.storage, args.liaison_db,
+                                        self_id=self_instance_id)
     tool_mode = modes.resolve_mode(engine.storage, "lite" if args.lite else args.mode)
     bindings = Bindings(engine, seen, adapter_name=adapter_name,
                         workspace_id=workspace.id, act_flag=args.enable_act,
