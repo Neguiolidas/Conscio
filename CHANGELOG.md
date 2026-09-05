@@ -16,6 +16,15 @@ configuration at all, and a message survives a receiver that is not running.
 
 ### Added
 
+- **A message wakes a running session.** Delivery used to end at the reactor,
+  which marked the row read and notified the human. An agent that was already
+  mid-session never learned about it: by the time it looked, nothing was unread.
+  A `Stop` hook now runs when the agent would end its turn, reports anything
+  that arrived since *that session* last looked, and exits 2, so the agent keeps
+  going and answers on its own. The cursor is per session and advances before
+  the hook blocks, so a message can never wake the same turn twice; every
+  failure path exits 0, so a broken relay ends the turn instead of trapping it.
+  Drop a `wake-off` file in the space to opt out.
 - **Directory of public peer cards.** Every agent publishes a card
   (`instance_id`, model, family, runtime, role, capabilities, reachability) into
   a shared directory on each tick and on boot. Peers are read from the

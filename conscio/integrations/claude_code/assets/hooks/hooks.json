@@ -16,6 +16,11 @@
         {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_deepminer.py\" post-tool-use-failure --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""}
       ]}
     ],
+    "Stop": [
+      {"hooks": [
+        {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_wake.py\" stop --storage \"${CLAUDE_PLUGIN_DATA}/space\""}
+      ]}
+    ],
     "PreCompact": [
       {"hooks": [
         {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_deepminer.py\" pre-compact --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""}

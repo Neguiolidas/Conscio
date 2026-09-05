@@ -14,6 +14,9 @@ from ...installer import hostcfg, spaces
 
 _HOOK_NAME = "conscio_awareness.py"
 _CAPTURE_HOOK = "conscio_deepminer.py"
+# Runs on Stop: a message that arrived mid-turn wakes the session instead of
+# waiting for the next human prompt.
+_WAKE_HOOK = "conscio_wake.py"
 _CAPTURE_SIDECAR = "conscio_deepminer.json"
 # obsstore is copied next to the hook rather than referenced inside the install
 # tree. A path into site-packages dangles on every pipx upgrade, editable
@@ -107,6 +110,9 @@ def materialize(slug: str, *, flags: dict, model, ts: str, io=None,
 
     capture_dst = cdir / "hooks" / _CAPTURE_HOOK
     shutil.copy2(a / "hooks" / _CAPTURE_HOOK, capture_dst)
+
+    wake_dst = cdir / "hooks" / _WAKE_HOOK
+    shutil.copy2(a / "hooks" / _WAKE_HOOK, wake_dst)
     # The hook loads obsstore by absolute path so it never imports the conscio
     # package (~0.28s) on a path that runs once per tool call.
     obsstore_dst = cdir / "hooks" / _OBSSTORE_COPY
@@ -148,16 +154,23 @@ def materialize(slug: str, *, flags: dict, model, ts: str, io=None,
                       if _CAPTURE_HOOK not in json.dumps(g)]
             groups.append({"hooks": [{"type": "command", "command": ccmd}]})
             hooks[event] = groups
+        wcmd = (f"python3 {shlex.quote(str(wake_dst))} stop "
+                f"--storage {shlex.quote(str(spaces.space_dir(slug)))}")
+        stops = [g for g in hooks.get("Stop", []) if _WAKE_HOOK not in json.dumps(g)]
+        stops.append({"hooks": [{"type": "command", "command": wcmd}]})
+        hooks["Stop"] = stops
     b2 = hostcfg.backup_then_write_json(
         settings, mutate=mut_hook,
         verify=lambda o: _HOOK_NAME in json.dumps(o.get("hooks", {})) and all(
             _CAPTURE_HOOK in json.dumps(o.get("hooks", {}).get(e, []))
-            for e in _CAPTURE_EVENTS), ts=ts)
+            for e in _CAPTURE_EVENTS) and _WAKE_HOOK in json.dumps(
+            o.get("hooks", {}).get("Stop", [])), ts=ts)
     if b2:
         backups.append(str(b2))
 
     summary = {"commands": n_cmds, "skill": True, "hook": True,
-               "capture_hook": True, "mcp": "conscio", "backups": backups}
+               "capture_hook": True, "wake_hook": True, "mcp": "conscio",
+               "backups": backups}
     if io is not None:
         io.echo(f"materialized Claude Code bundle: {n_cmds} commands, skill, "
                 f"hook, MCP entry (storage bound to space {slug}).")
