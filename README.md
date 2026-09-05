@@ -10,7 +10,7 @@ layer that lets a model act on its own conclusions under hard safety gates.</b>
 > *"The first step toward consciousness is knowing what you are and what limits you."*
 
 Conscio runs **local-first** and **zero-dep at the core** (`numpy` + stdlib `sqlite3`,
-nothing else). It is built to make small, local models punch above their size — by
+nothing else). It is built to make small, local models and frontier models punch above their size — by
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
