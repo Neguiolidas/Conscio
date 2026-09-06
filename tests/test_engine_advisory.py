@@ -112,7 +112,7 @@ class TestAdvisoryIsCheap:
 
 class TestAdvisoryNeverRaises:
     """I-C1/I-C2: advisory() returns the documented shape and NEVER raises across
-    degraded states. Offline twin of Hermet's live §9 probe 1 (they converge)."""
+    degraded states. Offline twin of the reviewer's live §9 probe 1 (they converge)."""
 
     def test_try_keep_fresh_engine(self, engine):
         adv = _assert_advisory_contract(engine)

@@ -1,7 +1,7 @@
 # tests/test_durable_guards.py
 """v1.9 durable guards — stop the recurring bug CLASSES (tz, narrow-except,
 sentinel-as-unbounded) from resurfacing in NEW modules. The Wave-1/2 fixes solved
-'now'; these guard 'next' (Hermet's systemic-risk note).
+'now'; these guard 'next' (reviewer's systemic-risk note).
 """
 import ast
 import pathlib

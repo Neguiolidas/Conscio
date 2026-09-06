@@ -268,7 +268,7 @@ def test_put_awake_requires_bool(tmp_path):
 
 
 def test_put_awake_missing_storage_dir_500(tmp_path):
-    # Hermet reserva: refuse to write into a non-existent storage dir
+    # review finding: refuse to write into a non-existent storage dir
     ghost = tmp_path / "does-not-exist"
     r = server.route("PUT", "/api/daemon/awake", {}, {"awake": True},
                      token=None, auth=None,

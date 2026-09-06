@@ -162,9 +162,20 @@ class RelayHandler(BaseHTTPRequestHandler):
         self._reply(200, body, "application/json")
 
 
+class _RelayServer(ThreadingHTTPServer):
+    """Declares the token the handler reads off ``self.server``.
+
+    Hanging the attribute on a plain ``ThreadingHTTPServer`` typechecks as an
+    unknown-attribute write; declaring it here is the same runtime behaviour
+    with the contract written down.
+    """
+
+    relay_token: str = ""
+
+
 def make_server(host: str, port: int, token: str) -> ThreadingHTTPServer:
     """A bridge with no database: it only knows how to hand mail over."""
-    srv = ThreadingHTTPServer((host, port), RelayHandler)
+    srv = _RelayServer((host, port), RelayHandler)
     srv.relay_token = token or ""            # per-instance, never class state
     return srv
 

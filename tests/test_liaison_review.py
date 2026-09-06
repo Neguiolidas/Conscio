@@ -13,7 +13,7 @@ def test_fingerprint_deterministic():
 def test_distinct_proposers_distinct_fp():
     a = review.fingerprint("P1", "g", "echo", {"x": 1}, 7)
     b = review.fingerprint("P2", "g", "echo", {"x": 1}, 7)
-    assert a != b                                     # Hermet anchor
+    assert a != b                                     # review anchor
 
 
 def test_distinct_ledger_id_distinct_fp():

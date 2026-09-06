@@ -67,10 +67,3 @@ After this, no secrets are needed — the `publish` job authenticates via OIDC.
 
 The **Docs** workflow builds `mkdocs build --strict` and deploys to GitHub Pages
 on every push to `main`. No tag needed.
-
-## Notes
-
-- The core stays zero-dependency; `build`, `twine`, and `mkdocs-material` are
-  CI/dev-only and never enter the runtime import graph.
-- `conscio-daemon` is a reserved console-script name for a future release; it is
-  intentionally not shipped yet.

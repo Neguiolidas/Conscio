@@ -145,7 +145,7 @@ def cognize_respond(engine, adapter, liaison_db, self_id, peers, *,
             text = adapter.generate(prompt, max_tokens=max_reply_tokens).text
         except Exception:                                # fork 4: leave UNREAD
             continue
-        if len(text) > max_reply_chars:                  # ressalva: cap pre-_fit
+        if len(text) > max_reply_chars:                  # caveat: cap pre-_fit
             text = text[:max_reply_chars]
         reply = _fit({"text": text, "auto_reply": True,
                       "in_reply_to": m["id"]})

@@ -1,7 +1,7 @@
 # tests/test_observatory_society.py
 """SocietyProjection: engine-free read-only mode=ro reader over noosphere.db.
 
-WAL regression (Hermet ressalva): the honest scenario is committed-but-
+WAL regression (review finding): the honest scenario is committed-but-
 uncheckpointed visibility — a writer (WAL) does INSERT+COMMIT, does NOT
 checkpoint, stays OPEN; a mode=ro reader opened afterward sees the committed
 row. We do NOT assert uncommitted-WAL visibility (uncommitted rows are

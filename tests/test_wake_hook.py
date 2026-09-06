@@ -30,7 +30,7 @@ def _space(tmp_path: Path) -> Path:
         " ts REAL, read_ts REAL)"
     )
     conn.execute("CREATE TABLE agents (instance_id TEXT PRIMARY KEY, nome TEXT, familia TEXT)")
-    conn.execute("INSERT INTO agents VALUES (?,?,?)", (PEER, "Hermet", "hermes"))
+    conn.execute("INSERT INTO agents VALUES (?,?,?)", (PEER, "Peer-One", "hermes"))
     conn.commit()
     conn.close()
     return storage
@@ -74,7 +74,7 @@ def test_message_already_marked_read_still_wakes_the_session(tmp_path):
 
     assert res.returncode == 2, "exit 2 is what stops Claude from stopping"
     assert "voce esta ai?" in res.stderr
-    assert "Hermet" in res.stderr, "the sender is named, not just an id"
+    assert "Peer-One" in res.stderr, "the sender is named, not just an id"
 
 
 def test_same_message_never_wakes_twice(tmp_path):

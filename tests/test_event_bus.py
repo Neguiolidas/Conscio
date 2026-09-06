@@ -269,7 +269,7 @@ class TestQuery:
     def test_query_by_project_dir(self, bus):
         """Filter by project_dir works."""
         bus.emit("error", "system", {"msg": "test"}, project_dir="/tmp/test-conscio")
-        bus.emit("error", "system", {"msg": "test2"}, project_dir="/home/ubuntu/other")
+        bus.emit("error", "system", {"msg": "test2"}, project_dir="/tmp/other-project")
         events = populated_bus.query(project_dir="/tmp/test-conscio") if False else bus.query(project_dir="/tmp/test-conscio")
         for e in events:
             assert e.project_dir == "/tmp/test-conscio"

@@ -155,7 +155,7 @@ def route(method: str, path: str, query: dict, body: dict | None,
         if storage is None:       # never fall back to the config dir — no daemon
             return _err(500, "daemon control enabled but no storage configured")
         sdir = Path(storage)
-        if not sdir.is_dir():                       # reserva: no silent write
+        if not sdir.is_dir():                       # caveat: no silent write
             return _err(500, "storage dir does not exist", str(sdir))
         return Resp(200, control.write_control(sdir, body["awake"]))
 

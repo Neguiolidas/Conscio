@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [4.5.4] - 2026-09-03 — Relay plug-and-play + Agent's Hall
+## [4.5.4] - 2026-09-05 — Relay plug-and-play + Agent's Hall
 
 The relay used to need a hand-written peer list, a shared `liaison.db` path, a
 systemd watcher re-armed after every restart, and an allowlist edited by hand on
@@ -138,12 +138,6 @@ configuration at all, and a message survives a receiver that is not running.
   (engine, CLI, mailbox, observatory, hub, session lifecycle/RAG) now point at
   the neutral home.
 
-### Notes
-
-- Internal account docs (design, plans, decisions) are NOT committed — they
-  stay local + Conscio/Neurata. PII sanitization checked before every release.
-- PyPI: pending the owner's authorization.
-
 ## [4.5.2] - 2026-09-01 — Per-agent isolation (cross-agent hard-block + own liaison)
 
 ### Added
@@ -170,13 +164,6 @@ configuration at all, and a message survives a receiver that is not running.
 - `hostcfg.upsert_conscio_entry`: new `self_instance_id` parameter — when set,
   invokes the cross-agent guard and raises `HostConfigError` on conflict.
 
-### Notes
-
-- Internal account docs (design, plans, decisions) are NOT committed — they
-  stay local + Conscio/Neurata. PII sanitization is checked before every
-  release (IPs, hostnames, emails, instance UUIDs).
-- PyPI: build validated; publish pending the owner.
-
 ## [4.5.1] - 2026-08-31 — Relay: health endpoint + presence announce + cross-machine hardening
 
 ### Added
@@ -197,7 +184,7 @@ configuration at all, and a message survives a receiver that is not running.
 
 ### Changed
 
-- **`conscio-relay-bridge.service`** (new): Hermet-side bridge under
+- **`conscio-relay-bridge.service`** (new): peer-side bridge under
   systemd, bind `VM_TS_IP:8789` (tailnet only), replaces the manual
   process. Includes direct HTTP forwarding to remote endpoints.
 - **`conscio-antigravity-relay.service`** (new): Antigravity watcher
@@ -215,16 +202,6 @@ configuration at all, and a message survives a receiver that is not running.
 - `docs/RELAY.md` (new): operational guide with the explicit rule to
   never remove mandatory tags (`--enable-relay`, `--relay-peer`,
   `--liaison-db`, `--storage`) from `mcp_config.json`.
-
-### Notes
-
-- `~/.gemini/config/mcp_config.json` was restored from empty → complete
-  (had been stripped of tags since 2026-07-26).
-- Remote peer token still pending to fill `relay_peers.json` —
-  bilateral coordination required.
-- The `/v1/models` catalog at `logfare.ai` lists `glm-5.3` and
-  `glm-5.3-flash`, but both currently return 503. Not promoted to the
-  fallback chain yet (awaiting stabilization).
 
 ## [4.5.0] - 2026-08-29 — Reactive relay + Agent's Hall
 
@@ -360,7 +337,7 @@ configuration at all, and a message survives a receiver that is not running.
   per-peer cursor in the **shared** `watcher_state` table that any mailbox
   writer may also read/advance, `tick.sweep()` uses an **opt-in private cursor
   file** so multiple agents polling the same `liaison.db` never clobber each
-  other's read position. This is the fix for the Gemini↔Hermet relay race
+  other's read position. This is the fix for the cross-agent relay race
   where one agent's watcher consumed the other's unread boundary.
 - **`tick.classify_important()`** — heuristic that tags a surfaced relay
   message as IMPORTANT (direction/action requested: `direcionamento`, `acao`,
@@ -372,7 +349,7 @@ configuration at all, and a message survives a receiver that is not running.
 
 ### Fixed
 
-- **Multi-agent cursor race** — two agents (Gemini + Hermet) polling the same
+- **Multi-agent cursor race** — two agents polling the same
   mailbox previously advanced a single shared per-peer cursor, so one agent's
   poll consumed (and hid) messages addressed to the other. `tick.sweep` with a
   private cursor file separates each agent's read position.
@@ -2022,7 +1999,7 @@ No API is shipped that production code doesn't call.
   suggest `conscio init --repair`) when `--storage` points at a missing/blank space
   instead of silently creating one.
 
-### Fixed / Hardened (Hermet gate ressalvas)
+### Fixed / Hardened (review gate findings)
 - Daemon background launch uses `start_new_session=True` so Awake survives logout
   SIGHUP (R4); PID liveness matches the real `conscio-daemon` cmdline.
 - Host-config writes are backed up and read-back-verified — never fail silently.
@@ -2248,7 +2225,7 @@ No API is shipped that production code doesn't call.
 
 ## [2.6.3] - 2026-06-25 — "Ressalvas"
 
-Post-ship hardening of v2.6.2, addressing reviewer ressalvas.
+Post-ship hardening of v2.6.2, addressing reviewer findings.
 
 ### Changed
 - **Auto-review SQL is throttled.** `--auto-review` previously opened a liaison `SELECT` on every tool call; it now polls at most once per `AUTO_APPLY_THROTTLE_S` (5 s) per `Bindings`. The `host_act` gate remains the authority — this only paces the opportunistic poll.

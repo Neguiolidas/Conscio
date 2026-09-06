@@ -4,7 +4,7 @@ construction (the power-loss-mid-write restart case). It must quarantine the
 corrupt file, recreate fresh, and NEVER crash the host. The corrupt file is
 preserved on disk for forensics (policy: quarantine + recreate + preserve).
 
-Origin: Hermet §9 Probe A reproducer, promoted to a regression test.
+Origin: review §9 Probe A reproducer, promoted to a regression test.
 """
 import sqlite3
 from pathlib import Path

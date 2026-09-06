@@ -80,7 +80,7 @@ class LiaisonProjection:
             return []
         finally:
             conn.close()
-        # reserva: filtra types do canal de review
+        # caveat: filter the review channel's types
         from ..liaison import relay as _relay
         groups: dict[str, list[dict]] = {}
         for r in rows:

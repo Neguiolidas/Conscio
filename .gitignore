@@ -65,6 +65,12 @@ docs/superpowers/
 # reference dumps. They stay on disk and out of the repo and the docs site
 # (mkdocs `exclude_docs` keeps a local build from picking them up).
 AUDIT_FINDINGS.md
+# Cross-agent relay notes are written by the peers themselves against a live
+# machine: they carry absolute home paths and peer uuids by construction.
+RELAY_*.md
+# Product idea banks are brainstorm material: they leak unshipped direction and
+# are drafted in pt-BR. v4.6-ideas.md was swept in by a broad `git add`.
+docs/v*-ideas.md
 docs/AUDIT-*.md
 docs/REPORT_*.md
 docs/Report-*.md

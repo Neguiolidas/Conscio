@@ -48,10 +48,10 @@ class TestExtractEntities:
         assert "v3.3.1" in names
 
     def test_filepath_extraction(self):
-        text = "Config file at /home/ubuntu/.config/conscio/config.json"
+        text = "Config file at /home/user/.config/conscio/config.json"
         ents = extract_entities(text)
         names = [e.name for e in ents]
-        assert any("/home/ubuntu" in n for n in names)
+        assert any("/home/user" in n for n in names)
 
     def test_capitalized_concept(self):
         text = "The Knowledge Graph Builder extracts entities from ContentStore"

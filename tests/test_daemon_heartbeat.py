@@ -85,7 +85,7 @@ def test_shutdown_heartbeat_has_advisory_without_a_cycle(tmp_path):
 
 
 def test_try_break_heartbeat_well_formed_when_sensor_raises(tmp_path):
-    """Probe C / I-C3 (run for Hermet): a sensor that raises mid-cycle must not
+    """Probe C / I-C3 (external review run): a sensor that raises mid-cycle must not
     corrupt the heartbeat — daemon_heartbeat.json stays parseable with its liveness
     + advisory keys, so a tailing host never reads a truncated/partial file."""
     from conscio.perception import SensorAdapter

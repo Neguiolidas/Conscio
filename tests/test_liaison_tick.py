@@ -49,7 +49,7 @@ class TestClassify:
 class TestClassifyPeer:
     def test_short_form(self):
         assert tickmod.classify_peer(
-            "3c8c0259-fa34-4294-9d41-00bb8bb6741e") == "3c8c0259"
+            "a1b2c3d4-5e6f-4071-8234-56789abcdef0") == "a1b2c3d4"
 
     def test_fallback_token(self):
         assert tickmod.classify_peer("gemini") == "gemini"
