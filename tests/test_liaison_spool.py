@@ -82,6 +82,20 @@ def test_ingest_ignores_message_addressed_elsewhere(tmp_path):
     assert mailbox.list_quarantine(db) != []
 
 
+def test_ingest_quarantines_message_without_sender(tmp_path):
+    """No sender, no delivery: the reactor can never match it against an
+    allowlist and nobody can answer it, so it must not sit unread forever."""
+    d = directory.spool_dir("me")
+    d.mkdir(parents=True, exist_ok=True)
+    msg = _msg()
+    msg["from"] = ""
+    (d / "nosender.json").write_text(json.dumps(msg), encoding="utf-8")
+    db = tmp_path / "me.db"
+    assert spool.ingest(db, "me") == 0
+    assert mailbox.inbox(db, "me", unread_only=False) == []
+    assert mailbox.list_quarantine(db) != []
+
+
 def test_partial_file_is_never_ingested(tmp_path):
     """A writer still streaming its temp file must not be picked up: the
     deposit is only visible under its final name (atomic rename)."""

@@ -79,6 +79,11 @@ def _ingest_one(db: Path, self_id: str, raw: str, spool_id: str) -> bool:
     to = msg.get("to")
     if to not in ("", None, self_id):
         raise ValueError(f"wrong recipient: {to!r}")
+    # A message with no sender is not deliverable: the reactor skips it (it
+    # cannot be in any allowlist) and nobody can answer it, so accepting one
+    # would leave a row that stays unread in the inbox forever.
+    if not str(msg.get("from", "")).strip():
+        raise ValueError("message has no sender")
     return mailbox.insert_from_spool(
         db, from_instance=str(msg.get("from", "")), to_instance=self_id,
         type=str(msg.get("type", "relay")), payload=msg.get("payload"),
