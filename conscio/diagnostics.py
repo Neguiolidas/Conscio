@@ -59,8 +59,11 @@ def context_budget(
         context_tokens = gain.get("total_raw", 0)
 
     if context_window <= 0:
-        state = engine.state
-        context_window = state.total_tokens_approx() if hasattr(state, "total_tokens_approx") else 200000
+        # A janela é a do MODELO (model_info.context_window), não o total de
+        # tokens do estado atual — usar total_tokens_approx() aqui reportava a
+        # pressão contra ~400 tokens em vez da janela real, zerando o sentido
+        # de token_pressure.
+        context_window = getattr(engine.model_info, "context_window", 0) or 200000
 
     token_pressure = round(context_tokens / context_window, 4) if context_window > 0 else 0.0
 

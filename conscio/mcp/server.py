@@ -1359,7 +1359,15 @@ class Bindings:
 
     # ── read-only state payloads (shared by resources + tools, v2.4) ──
     def _state_payload(self) -> dict:
-        return self.engine.advisory().get("state", {})
+        import dataclasses
+        st = self.engine.state
+        payload = dataclasses.asdict(st)
+        # context_mode é um enum; asdict o deixa cru (não-serializável e inútil
+        # pro host). Normaliza pra .value em vez de vazar o enum.
+        cm = payload.get("context_mode")
+        if cm is not None and hasattr(cm, "value"):
+            payload["context_mode"] = cm.value
+        return payload
 
     def _events_payload(self, params: dict) -> list[dict]:
         def s(key: str) -> str | None:
