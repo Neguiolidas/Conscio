@@ -49,6 +49,21 @@ def test_materialize_copies_the_relay_skill_beside_the_memory_skill(tmp_path):
     assert dst.is_file()
     assert dst.read_bytes() == relay_src.read_bytes()
 
+    # materialize reads the WORKING TREE, so a green run here proves the local
+    # disk, not the shipped artifact: an untracked skill copies fine on this
+    # machine and vanishes from every clean clone and from the CI wheel.
+    import subprocess
+    repo = Path(materialize.__file__).resolve().parents[3]
+    tracked = subprocess.run(
+        ["git", "ls-files", "--error-unmatch",
+         str(relay_src.relative_to(repo))],
+        cwd=repo, capture_output=True, text=True)
+    assert tracked.returncode == 0, (
+        "assets/skills/conscio-relay/SKILL.md is not versioned: materialize "
+        "copies it from the working tree, so it ships in NO clone and NO "
+        "wheel — a green materialize test on the author's machine is the "
+        "environment passing for the artifact.")
+
 
 def test_materialize_registers_mcp_with_storage_and_vault(tmp_path):
     _run(tmp_path)
