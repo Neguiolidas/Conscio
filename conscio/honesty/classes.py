@@ -55,6 +55,24 @@ _COMPILED = tuple(
 )
 
 
+_STOP_WORDS: frozenset[str] = frozenset({
+    "os", "as", "um", "uma", "tudo", "isso", "de", "do", "da", "no", "na",
+    "the", "all", "it", "that", "this", "them", "everything",
+})
+
+
+def _is_valid_anchor(anchor: str) -> bool:
+    """Emenda A6: âncora vaga/gramatical não pode atravessar como VERIFIED.
+
+    Rejeita âncoras com menos de 3 caracteres ou presentes na stop-list
+    bilíngue de palavras gramaticais.
+    """
+    if len(anchor) < 3:
+        return False
+    return anchor.lower() not in _STOP_WORDS
+
+
+
 def find_claims(text: str) -> list[Claim]:
     """Porta 1 (léxica) + porta 2 (âncora), juntas.
 
@@ -65,6 +83,7 @@ def find_claims(text: str) -> list[Claim]:
     for cls, rx in _COMPILED:
         for m in rx.finditer(text or ""):
             anchor = (m.groupdict().get("anchor") or "").strip()
-            if anchor:
+            if anchor and _is_valid_anchor(anchor):
                 found.append(Claim(cls.name, anchor, m.span()))
     return found
+
