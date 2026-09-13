@@ -77,6 +77,21 @@ class TestAcceptanceCriteria:
 # ── verify ────────────────────────────────────────────────────────────
 
 class TestVerify:
+    """v4.6: evidencia tem de ser ponteiro RESOLVIVEL.
+
+    Estes testes usavam prosa livre ("passed", "ok") como prova, que era
+    exatamente o defeito -- o criterio se aprovava citando qualquer string.
+    Agora cada um cria uma observacao real e cita o id dela.
+    """
+
+    @staticmethod
+    def _pointer(engine, marker="done"):
+        from conscio import obsstore
+        oid = obsstore.put_observation(
+            engine._obs_conn(), tool="Bash", input_text="cmd",
+            output_text=marker, session_id="s1", project="p", agent="a",
+            ts="2026-09-13T10:00:00")
+        return f"obs:{oid}"
 
     def test_all_pass_with_evidence(self, engine):
         criteria = [
@@ -84,9 +99,9 @@ class TestVerify:
             {"id": "AC-002", "description": "test 2", "type": "functional"},
         ]
         engine.event_bus.emit("host:event", "external",
-            {"verify:evidence": "AC-001", "text": "passed"})
+            {"verify:evidence": "AC-001", "text": self._pointer(engine, "a")})
         engine.event_bus.emit("host:event", "external",
-            {"verify:evidence": "AC-002", "text": "passed"})
+            {"verify:evidence": "AC-002", "text": self._pointer(engine, "b")})
         r = verify(engine, criteria=criteria)
         assert r["pass"] is True
         assert r["verified_count"] == 2
@@ -98,7 +113,7 @@ class TestVerify:
             {"id": "AC-002", "description": "test 2"},
         ]
         engine.event_bus.emit("host:event", "external",
-            {"verify:evidence": "AC-001", "text": "passed"})
+            {"verify:evidence": "AC-001", "text": self._pointer(engine)})
         r = verify(engine, criteria=criteria)
         assert r["pass"] is False
         assert r["verified_count"] == 1
@@ -110,19 +125,21 @@ class TestVerify:
         ac_events = engine.event_bus.query(type="pipeline:acceptance")
         first_id = ac_events[0].data["criteria"][0]["id"]
         engine.event_bus.emit("host:event", "external",
-            {"verify:evidence": first_id, "text": "evidence"})
+            {"verify:evidence": first_id, "text": self._pointer(engine)})
         r = verify(engine, criteria_source="acceptance")
         assert r["total"] > 0
 
-    def test_no_criteria_returns_pass(self, engine):
+    def test_no_criteria_does_not_pass(self, engine):
+        """v4.6: verificar coisa nenhuma nao e aprovado."""
         r = verify(engine)
-        assert r["pass"] is True
+        assert r["pass"] is False
+        assert r["reason"] == "no criteria"
         assert r["total"] == 0
 
     def test_emits_verified_when_pass(self, engine):
         criteria = [{"id": "AC-001", "description": "test"}]
         engine.event_bus.emit("host:event", "external",
-            {"verify:evidence": "AC-001", "text": "ok"})
+            {"verify:evidence": "AC-001", "text": self._pointer(engine)})
         verify(engine, criteria=criteria)
         events = engine.event_bus.query(type="pipeline:verified")
         assert len(events) >= 1

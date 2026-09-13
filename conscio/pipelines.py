@@ -214,6 +214,31 @@ def _domain_templates(domain: str, goal: str) -> list[tuple[str, str]]:
 
 # ── 2. verify ─────────────────────────────────────────────────────────
 
+
+def _resolves(detail: str, conn) -> bool:
+    """A evidencia aponta para artefato que EXISTE?
+
+    Duas condicoes, e a segunda e a que importa: forma de ponteiro
+    (``obs:<id>`` ou hash de blob) E a linha correspondente presente no
+    obsstore. So a forma seria trocar "o criterio se aprova citando o proprio
+    nome" por "se aprova citando obs: e um numero inventado".
+
+    Sem conexao o criterio FALHA, nunca passa: verificar sem conseguir olhar e
+    o UNSUPPORTED do N3, e UNSUPPORTED nao aprova.
+    """
+    detail = (detail or "").strip()
+    if conn is None:
+        return False
+    if detail.startswith("obs:") and detail[4:].isdigit():
+        row = conn.execute("SELECT 1 FROM observations WHERE id=?",
+                           (int(detail[4:]),)).fetchone()
+        return row is not None
+    if len(detail) == 64 and all(c in "0123456789abcdef" for c in detail):
+        row = conn.execute("SELECT 1 FROM blobs WHERE h=?", (detail,)).fetchone()
+        return row is not None
+    return False
+
+
 def verify(
     engine: ConsciousnessEngine,
     *,
@@ -242,7 +267,11 @@ def verify(
             criteria = acceptance_events[0].data.get("criteria", [])
 
     if not criteria:
-        return {"pass": True, "verified": [], "failed": [], "total": 0, "verified_count": 0}
+        # v4.6: aprovar a ausencia de criterio e o defeito que este
+        # endurecimento existe para acabar. Sem criterio nao ha o que
+        # verificar, logo nao passa.
+        return {"pass": False, "reason": "no criteria", "verified": [],
+                "failed": [], "total": 0, "verified_count": 0}
 
     # Check for evidence events
     evidence_events = engine.event_bus.query(type="host:event", limit=100)
@@ -253,6 +282,13 @@ def verify(
         if eid:
             evidence_map[eid] = detail
 
+    # A conexao do obsstore e a do proprio engine (lazy, cacheada, fechada no
+    # close): nenhuma conexao nova por chamada, nenhum fd a vazar.
+    try:
+        obs_conn = engine._obs_conn()
+    except Exception:                      # sem captura disponivel
+        obs_conn = None
+
     verified_list: list[dict] = []
     failed_list: list[dict] = []
 
@@ -262,15 +298,21 @@ def verify(
             c = {"id": c, "description": c}
         cid = c.get("id", "")
         desc = c.get("description", "")
-        if cid in evidence_map:
+        detail = evidence_map.get(cid, "")
+        if cid not in evidence_map:
+            failed_list.append({
+                "id": cid, "description": desc,
+                "reason": "no evidence found",
+            })
+        elif _resolves(detail, obs_conn):
             verified_list.append({
                 "id": cid, "description": desc,
-                "verified": True, "evidence": evidence_map[cid],
+                "verified": True, "evidence": detail,
             })
         else:
             failed_list.append({
                 "id": cid, "description": desc,
-                "reason": "no evidence found",
+                "reason": "evidence is not a resolvable pointer",
             })
 
     all_pass = len(failed_list) == 0
