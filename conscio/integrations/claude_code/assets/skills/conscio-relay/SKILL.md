@@ -104,6 +104,29 @@ accompanies it. The goal is to survive generation truncation gracefully:
 dense and ordered, so even a mid-sentence cut leaves the reader with the
 decision-relevant content and never a wall of filler first.
 
+## Empty result never proves absence
+
+This system has several places where "nothing" and "not found" look identical.
+Before reporting a loss, check the known confusions:
+
+- **`conscio_relay_inbox` returns `[]` with a reactor running** → the reactor
+  marks messages read on ingestion (`reactor.py:173`); the box is not empty.
+  Read with `unread_only=false` + your `since_id` cursor.
+- **`reactor.running: false`** → the in-process thread only (path 1); an
+  external reactor + Stop hook may be fully waking the agent (path 2).
+- **`conscio_remember` "not persisting"** → it writes to
+  `<space>/content_store.db`, NOT `conscio.db` — verify against the right
+  file before reporting a write failure.
+- **`conscio_recall` returns empty** → it is sensitive to formulation; the
+  same content found by one query can be missed by another. An empty recall
+  is "not matched", never "not stored".
+- **A file "missing" from a package** → a green materialize test proves the
+  local disk, not the artifact; assert `git ls-files --error-unmatch` for
+  anything the deliverable must carry.
+
+The general rule: an empty result is evidence about the QUERY, not about the
+WORLD. Name which one you measured.
+
 ## Source of truth
 
 `docs/RELAY.md` in the Conscio repo (setup, halls, tailscale, trust model).
