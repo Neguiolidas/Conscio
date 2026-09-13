@@ -645,8 +645,19 @@ class Bindings:
         # sides, and the spool is drained first — nobody writes into my db.
         self._ensure_registered()
         limit = self._int_arg(args, "limit", 50)
+        # v4.6 fix (a): the reactor marks messages read on INGESTION
+        # (reactor.py:173) before the agent ever looks. Default legibility
+        # stays unread_only=True, but a host that runs a reactor needs
+        # unread_only=False + since_id to read its own inbox by tool instead
+        # of going to SQLite directly.
+        unread_only = not (args.get("unread_only") is False)
+        since_id = args.get("since_id")
+        if since_id is not None and (isinstance(since_id, bool)
+                                     or not isinstance(since_id, int)):
+            raise j.InvalidParams("'since_id' must be an integer")
         rows = mailbox.inbox(self.liaison_db, self.self_instance_id,
-                             types=None, unread_only=True, limit=limit)
+                             types=None, unread_only=unread_only,
+                             since_id=since_id, limit=limit)
         peers = self._resolve_peers()
         out: list[dict] = []
         junk: list[int] = []

@@ -310,7 +310,8 @@ def insert_from_spool(db: Path, *, from_instance: str, to_instance: str,
 
 
 def inbox(db: Path, to_instance: str, *, types: list[str] | None = None,
-          unread_only: bool = True, limit: int = 50) -> list[dict]:
+          unread_only: bool = True, limit: int = 50,
+          since_id: int | None = None) -> list[dict]:
     db = Path(db)
     if not db.exists():
         return []
@@ -327,6 +328,9 @@ def inbox(db: Path, to_instance: str, *, types: list[str] | None = None,
             params += list(types)
         if unread_only:
             sql.append(" AND read_ts IS NULL")
+        if since_id is not None:
+            sql.append(" AND id > ?")
+            params.append(since_id)
         sql.append(" ORDER BY id DESC LIMIT ?")
         params.append(_clamp(limit))
         rows = conn.execute("".join(sql), params).fetchall()

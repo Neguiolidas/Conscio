@@ -474,6 +474,12 @@ _RELAY_SEND_INPUT = {"type": "object",
                                     "type": {"type": "string"},
                                     "payload": {"type": "object"}},
                      "required": ["to", "type", "payload"]}
+# v4.6 fix (a): inbox gains unread_only + since_id so a host running a reactor
+# (which marks everything read on ingestion) can still read its own box.
+_RELAY_INBOX_INPUT = {"type": "object",
+                      "properties": {"limit": {"type": "integer"},
+                                     "unread_only": {"type": "boolean"},
+                                     "since_id": {"type": "integer"}}}
 _IDS_INPUT = {"type": "object",
               "properties": {"ids": {"type": "array",
                                      "items": {"type": "integer"}}},
@@ -488,9 +494,10 @@ RELAY_TOOL_DEFS: list[dict] = [
      "description": "Send a directed free-form message to a trusted relay peer.",
      "inputSchema": _RELAY_SEND_INPUT},
     {"name": "conscio_relay_inbox",
-     "description": "Peek unread relay messages from trusted peers (review "
-                    "types excluded).",
-     "inputSchema": _LIMIT_ONLY},
+     "description": "Peek relay messages from trusted peers (review types "
+                    "excluded). unread_only=false exposes messages the reactor "
+                    "already ingested; since_id returns only id > that cursor.",
+     "inputSchema": _RELAY_INBOX_INPUT},
     {"name": "conscio_relay_read",
      "description": "Mark relay messages consumed by id.",
      "inputSchema": _IDS_INPUT},

@@ -988,3 +988,48 @@ def test_hall_list_shows_mine_and_owned(tmp_path):
             {hid, "b--other"}
     finally:
         seenA.close(); engA.close(); seenB.close(); engB.close()
+
+
+def test_relay_inbox_exposes_read_messages_when_unread_only_false(tmp_path):
+    """Correcao (a): com o reactor rodando, tudo ja esta marcado lido na
+    ingestao (reactor.py:173). O agente precisa poder enxergar as lidas por
+    parametro — unread_only=False destrava a leitura que hoje devolve vazio."""
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",), liaison_db=db)
+    _publish("B")
+    try:
+        mailbox.send(db, from_instance="B", to_instance="A",
+                     type="note", payload={"n": 1})
+        rid = mailbox.inbox(db, "A", unread_only=True)[0]["id"]
+        mailbox.mark_read(db, [rid])          # simula o reactor na ingestao
+        # default: unread_only=True -> vazio (comportamento atual)
+        assert b._relay_inbox({})["messages"] == []
+        # novo: unread_only=False -> expoe a lida
+        msgs = b._relay_inbox({"unread_only": False})["messages"]
+        assert [m["id"] for m in msgs] == [rid]
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_inbox_since_id_filters_newer_only(tmp_path):
+    """Correcao (a): since_id=N retorna apenas id > N — o executor le o
+    incremento desde o seu cursor, sem reprocessar o que ja viu."""
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",), liaison_db=db)
+    _publish("B")
+    try:
+        mailbox.send(db, from_instance="B", to_instance="A",
+                     type="note", payload={"n": 1})
+        first = mailbox.inbox(db, "A", unread_only=True)[0]["id"]
+        mailbox.send(db, from_instance="B", to_instance="A",
+                     type="note", payload={"n": 2})
+        second = next(m for m in mailbox.inbox(db, "A", unread_only=True)
+                      if m["id"] > first)["id"]
+        got = b._relay_inbox({"since_id": first})["messages"]
+        assert [m["id"] for m in got] == [second]
+    finally:
+        seen.close()
+        eng.close()
