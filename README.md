@@ -212,7 +212,7 @@ for a human (R6).
 
 ### Gates, pipelines and diagnostics
 
-Thirteen deterministic, EventBus-backed tools — no LLM calls:
+Fifteen deterministic, EventBus-backed tools — no LLM calls:
 
 | Group | Tools |
 |---|---|
@@ -273,19 +273,28 @@ figure to compare against, rather than a zero that would render as a 100% saving
 JSON-RPC 2.0), so any MCP host can plug into a Conscio instance and consume its
 cognition live. Zero new dependency; nothing opens a socket.
 
-The tool surface is sized to the model. Three nested surfaces, so raising one never
+The tool surface is sized to the model. Four nested surfaces, so raising one never
 removes a tool:
 
 | Surface | Tools served | Advertised schema |
 |---|---|---|
-| `lite` | 10 | ~570 tokens — descriptions flattened to ≤120 chars |
-| `balanced` | 18 | ~1520 tokens |
-| `ultra` (default) | 35 | ~3100 tokens |
+| `lite` | 10 | 3.1 KB — descriptions flattened to ≤120 chars |
+| `balanced` | 19 | 6.2 KB |
+| `high` | 27 | 9.5 KB |
+| `ultra` (default) | 37 | 12.7 KB |
+
+Counts and sizes are **measured** off the served surface — the server is started per
+mode and its `tools/list` counted, not read off a constant. Sizes are compact-JSON
+bytes, not tokens: a tokenized baseline has not been measured yet, and schema JSON
+tokenizes worse than prose, so dividing by four would understate it.
 
 Precedence is `--mode` on the CLI, then the persisted choice, then the default.
 `conscio_mode` switches at runtime and is present in every surface — in `lite` it is the
 only way back out. An unadvertised tool stays callable through `tools/call`, and tools
-enabled by flag (act, review, relay) are never filtered — 42 with every flag on.
+enabled by flag are never filtered. Relay, review and Agent's Hall each advertise a
+single lifecycle dispatcher (`op=` as an argument) rather than one tool per operation,
+so the widest surface measured is **40** — `ultra` plus those three — with the act
+surface added on top by `--enable-act`.
 
 The base surface is **propose-only** (perceive / reflect / recall / audit); opt-in
 `--enable-act` adds host-executed, ledgered, gated `act` — Conscio signs and audits the
