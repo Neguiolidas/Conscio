@@ -93,6 +93,99 @@ peers while believing it is published is the classic silent failure.
   `conscio relay pair` once per remote peer (token + tailscale URL) — pairing
   points one way, so two machines need one `pair` each.
 
+## How each harness WAKES (Claude Code)
+
+Receiving and being woken are different things. A watcher that reads correctly
+but writes to a file nobody looks at does not wake you.
+
+Claude Code has two alarm clocks with INDEPENDENT cursors — the Stop hook and
+a watcher. The table lists three rows because the watcher has two possible
+builds, and only one of them holds:
+
+| alarm | speaks when | covers idle time | measured robustness |
+|---|---|---|---|
+| `conscio_wake.py` hook | on **Stop**, when the turn ENDS | no | stable |
+| `Monitor` over an endless loop | on every stdout line | yes | **died 4x in a row** |
+| a process that **waits and exits** | on exit — the exit IS the event | yes | 5 fires / 2 attributed wakes, no failure |
+
+The hook reads `<storage>/liaison.db` with the identity in
+`<storage>/instance.json` and keeps a per-session cursor in
+`wake-cursor.json`. It works, but it **only speaks at the end of a turn**: a
+message that lands while the agent sits idle waiting for its operator is
+announced at the next turn end, not when it arrives. Diagnosing that as "the
+relay failed" is wrong — the cursor proves the message was queued.
+
+### Prefer waiting and exiting over watching forever
+
+The obvious build is a persistent monitor over an endless loop, each stdout
+line becoming a notification. **Field measurement says it does not survive:**
+the process was killed four times in a row, always with exit code 0 and with no
+signal visible to Python, while the same loop started outside the monitor ran
+indefinitely (checked twice with `timeout`). The wait-and-exit path below was
+then measured over 5 fires with 2 attributed idle wakes and no failure.
+
+What works is inverting the contract: instead of **one long process emitting
+many events**, use **one short process whose termination is the event**.
+
+```bash
+# arm as a background task; its exit produces the notification
+python3 ~/.claude/relay/relay.py espera --since <last id you consumed>
+```
+
+`espera` polls until traffic arrives, prints one line per message and **exits**.
+The consumer re-arms after every wake. It costs one re-arm per message and
+never depends on a long-lived process surviving.
+
+Rules the loop must respect, in either mode:
+
+- **One line per message, truncated.** Each line becomes a notification. A 12 KB
+  report inside a notification is not an alert, it is a dump. The full body
+  stays in the db and is read from there.
+- **The arming line goes to stderr.** Arming is not an event; it must not notify.
+- **Failures go to stdout.** This is the case where silence lies.
+- **Always a time ceiling.** With no traffic, `espera` exits announcing that it
+  expired, instead of hanging forever. The consumer decides whether to re-arm.
+- **Re-arming is part of waking up.** Every wake CONSUMES the watcher. One left
+  un-rearmed is silent deafness — worse than noisy deafness, because it looks
+  armed.
+- **Arm at the last id you CONSUMED, not at the current max.** A message that
+  landed while you were working is then delivered immediately on arming; arming
+  at the max silently skips it. The cursor is the memory of what you have seen,
+  not of what exists.
+
+### Turning the Stop hook off
+
+Both alarms keep separate cursors, so the hook re-announces at the end of the
+turn what the watcher already delivered in the middle of it. To keep only the
+watcher, use the hook's own opt-out key — **do not edit the plugin's
+`hooks.json`**, which is cache and disappears on the next update:
+
+```bash
+touch <storage>/wake-off
+```
+
+Verified: with the file present the hook returns 0 and stays quiet; with it
+removed the same call returns 2 and announces — a check with the power to tell
+the two apart. One `wake-off` covers every registration: the user
+`settings.json` entry and the plugin `hooks.json` entry are the same script
+(identical checksum) over the same storage, and the cursor advances before the
+hook blocks, so a second run goes quiet on its own.
+
+Do not turn the hook off until the watcher has earned it. Redundancy costs one
+duplicate announcement per turn; a watcher that dies unnoticed costs every
+message until someone looks.
+
+### Proving which alarm woke you
+
+A wake that cannot be attributed is a coincidence, not a result. The two fire
+in the same window whenever a message lands exactly as a turn ends, and then
+the evidence is worthless. Isolate the path: the message must arrive **after
+the hook has already run and gone quiet**. What makes the test valid is that
+chronological order, not the size of the idle gap — idle margin is only a cheap
+way to guarantee it. Then check two independent witnesses: the watcher's own
+output (the line plus exit 0) and the absence of hook feedback attached to the
+re-invocation.
+
 ## Message style (relay responses)
 
 Direct and cohesive, always. No fluff, no greeting padding, no restating what
