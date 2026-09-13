@@ -19,7 +19,16 @@ from pathlib import Path
 
 
 def _load_module(path: Path, name: str):
+    """Carrega um modulo vendorizado por caminho.
+
+    ``spec`` e ``spec.loader`` sao None quando o arquivo nao existe ou nao e
+    carregavel -- exatamente o caso em que a vendorizacao falhou. Falhar aqui
+    com ImportError nomeando o caminho e melhor que um AttributeError sobre
+    None tres linhas adiante.
+    """
     spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"vendored module not loadable: {name} at {path}")
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
     spec.loader.exec_module(mod)

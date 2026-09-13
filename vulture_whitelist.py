@@ -348,3 +348,34 @@ LiaisonProjection.relay_inbox # used by /api/relay/inbox route
 from conscio.noosphere.paths import hermes_home  # noqa: F401
 
 hermes_home
+
+# ── v4.6 honestidade verificável ────────────────────────────────────────
+# Estes NÃO são falso-positivo de vulture: eles realmente não têm chamador de
+# produção nesta versão, e isso é a entrega declarada, não um esquecimento. O
+# CHANGELOG diz o mesmo na seção "O que esta versão NÃO entrega". Entram aqui
+# com o motivo à mão, um a um, para que remover a linha seja a pergunta certa
+# quando o produtor do desfecho for escrito.
+from conscio.agency import outcome as _outcome
+from conscio.agency.act import apply_outcome_to_trust
+from conscio.agency.ledger import ActionLedger
+from conscio.honesty import reaction as _reaction
+
+apply_outcome_to_trust      # espera o reconhecedor produzir desfecho de AÇÃO
+ActionLedger.set_outcome    # idem: quem resolve a pendência ainda não existe
+ActionLedger.pending_outcomes  # leitura da fila, consumida quando o laço fechar
+_outcome.OUT_OF_SCOPE       # vocabulário: linha anterior à v4.6, lido no ledger
+_outcome.TERMINAL           # vocabulário: conjunto dos desfechos terminais
+_reaction.read_reaction     # γ com PESO ZERO até o portão de corpus (C5b)
+_reaction.attribute         # idem — ligar sem o portão violaria o próprio PRD
+
+# ── v4.6 E3: despachantes ───────────────────────────────────────────────
+# Os defs individuais deixaram de ser ANUNCIADOS quando o despachante assumiu,
+# mas não viraram código morto: são a documentação de cada op e, por
+# tests/test_mcp_dispatch_contract.py, o contrato contra o qual o enum do
+# despachante é conferido. Vulture não enxerga tests/, daí a linha aqui. Se
+# aquele teste for removido, estes viram dead code de verdade e a resposta
+# certa passa a ser apagá-los, não manter esta entrada.
+from conscio.mcp.schemas import HALL_TOOL_DEFS, RELAY_TOOL_DEFS
+
+HALL_TOOL_DEFS
+RELAY_TOOL_DEFS
