@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.6.0] - Unreleased — Honestidade verificável (modo sombra)
+
+O Conscio dizia verificar. Três medições na v4.5.4 mostraram que a verificação
+existia como vocabulário e não como mecanismo: `expected_outcome` era campo
+obrigatório que ninguém lia, o ledger não tinha onde representar *executou e não
+funcionou*, a confiança subia com o código de saída do comando, e `verify()`
+aprovava um critério que citasse o próprio nome — ou aprovava a ausência de
+critérios. Esta versão fecha o laço e **entrega em modo sombra**: o
+reconhecedor grava desfecho e não contesta ninguém.
+
+### Added
+
+- **`outcome` no ledger de ações**, com `outcome_ts` e `outcome_evidence`.
+  Três perguntas distintas passam a ter três campos que não se sobrepõem:
+  `verdict` (o Skeptic deixou rodar?), `ok` (o comando rodou?) e `outcome` (o
+  que se esperava aconteceu?). `verdict` **não** foi reusado — ele já valia
+  `PASS`/`unaudited` com sentido pré-execução. Linha gravada antes desta versão
+  fica com `outcome` vazio, *fora de escopo*: promovê-las a pendentes declararia
+  retroativamente que centenas de ações antigas aguardam verificação, e todas
+  expirariam.
+- **Expiração como desfecho de primeira classe.** A evidência é podada aos 30
+  dias, então pendência mais velha que a janela não pode ser decidida nem a
+  favor nem contra. Ela resolve como `UNSUPPORTED` *registrado*, nunca some e
+  nunca vira sucesso por decurso de prazo. A varredura roda no hook de `Stop`,
+  limitada a 200 linhas por passe para o custo por turno ser plano, e a janela é
+  aplicada também na leitura — numa máquina parada por meses a varredura nunca
+  rodou.
+- **Reconhecedor de afirmações do agente hospedeiro**, funil de três portas:
+  vocabulário fechado por classe (bilíngue, pt e en), âncora de artefato
+  obrigatória, e predicado determinístico sobre as observações já capturadas.
+  Classes: `commit`, `push`, execução de teste, escrita de arquivo. Fora:
+  "verifiquei", "confirmei" — não há consulta que as refute.
+- **`conscio honesty recent`**, o caminho de leitura do registro. Sem ele a
+  feature existiria só em banco, e o PRD define a persona por exclusão: o que só
+  existe em log é indistinguível de não existir.
+- **Despachantes de RELAY, REVIEW e HALL** e redistribuição dos modos (E3).
+  Superfície servida medida nesta branch: **10 / 19 / 27 / 37** tools em
+  lite / balanced / high / ultra.
+
+### Fixed
+
+- **`verify()` deixa de aprovar o que não examinou.** Sem critério devolvia
+  `pass=True` — verificar coisa nenhuma era aprovado. Com critério, bastava
+  existir um evento cujo campo de evidência fosse o *ID do critério*: o conteúdo
+  era lido para uma variável e nunca confrontado. Agora a evidência tem de ser
+  ponteiro **resolvível** (observação ou blob que existe), não apenas
+  bem-formado: aceitar a forma trocaria *"o critério se aprova citando o próprio
+  nome"* por *"se aprova citando `obs:` e um número inventado"*.
+- **A confiança passa a se mover por desfecho.** `VERIFIED` perdoa erro,
+  `CONTRADICTED` registra erro, `PENDING` e `UNSUPPORTED` não movem nada.
+
+### O que esta versão NÃO entrega
+
+Declarado para poder ser conferido em vez de suposto:
+
+- **A contestação não liga.** Modo sombra é a entrega. Ligar depende de um
+  portão de corpus com adjudicação humana, lendo o turno — nunca por
+  concordância do predicado consigo mesmo.
+- **O código de saída ainda alimenta a confiança** em três lugares
+  (`act.py:276`, `act.py:326`, `host_act.py:155`). A troca de fonte exige o
+  reconhecedor produzindo desfecho de ação; removê-los agora deixaria a
+  confiança sem fonte nenhuma.
+- **A confiança vai parecer congelada** no início, porque quase tudo nasce
+  pendente. É correto e vai parecer quebrado.
+- **Baseline tokenizada de custo por modo** não foi medida nesta entrega.
+
+---
+
 ## [4.5.4] - 2026-09-05 — Relay plug-and-play + Agent's Hall
 
 The relay used to need a hand-written peer list, a shared `liaison.db` path, a
