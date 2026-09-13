@@ -25,7 +25,17 @@ REF = re.compile(r"\bconscio\.[a-z_]\w*")
 # use find_spec() para automatizar isto — falharia aberto, engolindo uma tool
 # fantasma sempre que o nome inventado coincidisse com um módulo real
 # (`conscio.engine`, `conscio.mcp`…).
-MODULE_REFS = {"conscio.timeutil"}
+MODULE_REFS = {"conscio.timeutil", "conscio.liaison"}
+
+# Terceiro namespace que colide com o mesmo padrão: NOME DE ARQUIVO. O banco do
+# espaço chama-se `conscio.db`, e citá-lo é obrigatório em qualquer texto que
+# explique onde uma coisa é gravada — a skill de relay cita justamente para
+# dizer que `conscio_remember` NÃO escreve nele. Separado de MODULE_REFS porque
+# a decisão humana é outra: aqui se pergunta "isto é um arquivo?", lá "isto é um
+# módulo?". Juntar os dois num set só apagaria a pergunta.
+FILE_REFS = {"conscio.db"}
+
+NON_TOOL_REFS = MODULE_REFS | FILE_REFS
 
 
 def _asset_files():
@@ -38,7 +48,7 @@ def test_no_phantom_tool_references():
     phantoms = {}
     for path in _asset_files():
         bad = {ref for ref in REF.findall(path.read_text("utf-8"))
-               if ref not in KNOWN and ref not in MODULE_REFS}
+               if ref not in KNOWN and ref not in NON_TOOL_REFS}
         if bad:
             phantoms[path.name] = sorted(bad)
     assert not phantoms, f"assets cite tools that do not exist: {phantoms}"
@@ -59,5 +69,6 @@ def test_skill_only_cites_tools_available_in_balanced():
     from conscio.mcp import modes
     text = (ASSETS / "skills" / "conscio" / "SKILL.md").read_text("utf-8")
     cited = set(REF.findall(text))
-    outside = cited - modes.BALANCED_TOOLS - {MODE_TOOL_DEF["name"]} - MODULE_REFS
+    outside = (cited - modes.BALANCED_TOOLS - {MODE_TOOL_DEF["name"]}
+               - NON_TOOL_REFS)
     assert not outside, f"SKILL.md cites tools absent from the plugin's default mode: {sorted(outside)}"
