@@ -112,6 +112,12 @@ Before reporting a loss, check the known confusions:
 - **`conscio_relay_inbox` returns `[]` with a reactor running** → the reactor
   marks messages read on ingestion (`reactor.py:173`); the box is not empty.
   Read with `unread_only=false` + your `since_id` cursor.
+- **A watcher waits forever for a message already delivered** → the poll
+  filtered by the read flag, which belongs to the REACTOR, not the reader.
+  Any watcher built on the box must deduplicate by ID CURSOR (`id > ?`),
+  never by the read flag — the flag says what the reactor ingested, not what
+  you have seen. (Live catch: a harness-level relay_wait.py polled
+  `read_ts IS NULL` and waited 20 min for a message already in the db.)
 - **`reactor.running: false`** → the in-process thread only (path 1); an
   external reactor + Stop hook may be fully waking the agent (path 2).
 - **`conscio_remember` "not persisting"** → it writes to
