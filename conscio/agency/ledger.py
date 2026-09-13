@@ -10,10 +10,11 @@ import sqlite3
 import time
 from pathlib import Path
 
+# Fonte unica em honesty/: o hook de Stop roda a mesma varredura e nao pode
+# importar este modulo. Reexportado aqui pelo nome que o resto do pacote usa.
+from ..honesty.sweep import EXPIRY_SWEEP_LIMIT
 from ..sqlite_tuning import tune
 from .outcome import PENDING
-
-EXPIRY_SWEEP_LIMIT = 200  # linhas por passe: custo por turno plano e previsivel
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS actions (
@@ -121,24 +122,13 @@ class ActionLedger:
 
     def expire_stale(self, now: float | None = None,
                      limit: int = EXPIRY_SWEEP_LIMIT) -> int:
-        """Materializa pendencias vencidas como UNSUPPORTED. Limitada por passe:
-        um backlog grande escoa em varios turnos em vez de travar um.
+        """Materializa pendencias vencidas como UNSUPPORTED.
 
-        Ordena por ts ASC para escoar da mais velha: dois passes seguidos
-        avancam a fila em vez de reprocessar as mesmas linhas.
+        Delega em ``honesty.sweep``, que e a implementacao unica: o hook de
+        Stop roda a mesma varredura sem poder importar este modulo.
         """
-        from .outcome import RETENTION_DAYS, UNSUPPORTED
-        now = time.time() if now is None else now
-        cutoff = now - RETENTION_DAYS * 86400
-        rows = self._conn.execute(
-            "SELECT id FROM actions WHERE outcome=? AND ts < ?"
-            " ORDER BY ts ASC LIMIT ?", (PENDING, cutoff, limit)).fetchall()
-        for row in rows:
-            self._conn.execute(
-                "UPDATE actions SET outcome=?, outcome_ts=? WHERE id=?",
-                (UNSUPPORTED, now, row["id"]))
-        self._conn.commit()
-        return len(rows)
+        from ..honesty.sweep import expire_stale as _sweep
+        return _sweep(self._conn, now, limit)
 
     def pending_outcomes(self, limit: int = 50) -> list[dict]:
         """Pendencias ainda decidiveis.

@@ -278,3 +278,35 @@ def test_materialize_registers_the_compaction_bracket(tmp_path):
                        ("PostCompact", "post-compact")):
         blob = json.dumps(settings["hooks"][event])
         assert "conscio_deepminer.py" in blob and arg in blob, event
+
+
+def test_materialize_vendors_the_honesty_hook_and_its_package(tmp_path):
+    """The honesty hook is useless without the package beside it.
+
+    The hook loads honesty/ by path because `conscio` is not installed next to
+    the plugin — it comes from PyPI via uvx. Copying the hook and forgetting
+    the package reproduces the v4.0.0 failure exactly: the hook runs, fails to
+    import, exits 0 by design, and records nothing while looking healthy.
+    """
+    _run(tmp_path)
+    hooks = tmp_path / "claude" / "hooks"
+    assert (hooks / "conscio_honesty.py").is_file()
+    pkg = hooks / "conscio_honesty_pkg"
+    for module in ("verdicts.py", "classes.py", "evidence.py",
+                   "recognizer.py", "store.py", "sweep.py", "__init__.py"):
+        assert (pkg / module).is_file(), f"{module} missing from the bundle"
+
+
+def test_the_honesty_package_never_imports_the_conscio_package(tmp_path):
+    """Structural guard for the vendoring invariant.
+
+    The runtime smoke in test_honesty_hook.py proves today's call path; this
+    catches the import that a future edit adds on a path no test exercises.
+    """
+    src = Path(materialize.__file__).parents[2] / "honesty"
+    offenders = [p.name for p in src.glob("*.py")
+                 if "import conscio" in p.read_text(encoding="utf-8")
+                 or "from conscio" in p.read_text(encoding="utf-8")
+                 or "from .." in p.read_text(encoding="utf-8")]
+    assert offenders == [], (
+        f"honesty/ must not import outside itself: {offenders}")
