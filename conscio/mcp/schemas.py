@@ -377,7 +377,7 @@ BASE_TOOL_DEFS: list[dict] = [
 MODE_TOOL_DEF: dict = {
     "name": "conscio_mode",
     "description": "Read or set the tool surface: lite (10 tools), balanced (19), "
-                   "high (21) or ultra (all 37). The choice persists across restarts.",
+                   "high (27) or ultra (all 37). The choice persists across restarts.",
     "inputSchema": {
         "type": "object",
         "properties": {
@@ -549,6 +549,78 @@ _HALL_MANAGE_INPUT = {"type": "object",
                           "new_owner": {"type": "string"}},
                       "required": ["action", "hall_id"]}
 
+# ── E3 (ADR-20260913133108-1fac9c): dispatchers ──────────────────────
+# One advertised tool per lifecycle group; the op is an argument. The
+# individual defs above stay in the package as schema source of truth for
+# the dispatch-only aliases (each alias serves the same parameters its
+# single tool served — the per-op requireds moved to runtime via _require).
+# Public names: server.py imports these three, not the _private dicts.
+
+_RELAY_DISPATCH_DEF = {
+    "name": "conscio_relay",
+    "description": "Relay dispatch. op=send|inbox|read|broadcast|peers. "
+                   "send(to,type,payload), inbox(limit,unread_only,since_id), "
+                   "read(ids), broadcast(type,payload), peers()",
+    "inputSchema": {"type": "object",
+                    "properties": {
+                        "op": {"type": "string",
+                               "enum": ["send", "inbox", "read",
+                                        "broadcast", "peers"]},
+                        "to": {"type": "string"},
+                        "type": {"type": "string"},
+                        "payload": {"type": "object"},
+                        "ids": {"type": "array",
+                                "items": {"type": "integer"}},
+                        "limit": {"type": "integer"},
+                        "unread_only": {"type": "boolean"},
+                        "since_id": {"type": "integer"}},
+                    "required": ["op"]}}
+
+_REVIEW_DISPATCH_DEF = {
+    "name": "conscio_review",
+    "description": "Cross-agent review dispatch. "
+                   "op=reviews|approve|reject|poll. reviews(limit), "
+                   "approve(fp,reason), reject(fp,reason), poll(limit)",
+    "inputSchema": {"type": "object",
+                    "properties": {
+                        "op": {"type": "string",
+                               "enum": ["reviews", "approve",
+                                        "reject", "poll"]},
+                        "fp": {"type": "string"},
+                        "reason": {"type": "string"},
+                        "limit": {"type": "integer"}},
+                    "required": ["op"]}}
+
+_HALL_DISPATCH_DEF = {
+    "name": "conscio_hall",
+    "description": "Agent's Hall dispatch. "
+                   "op=create|list|join|leave|members|send|manage. "
+                   "create(name,policy,invited), list(), join(hall_id), "
+                   "leave(hall_id), members(hall_id,alive_only), "
+                   "send(hall_id,type,payload,function), "
+                   "manage(action,hall_id,instance_id,new_owner)",
+    "inputSchema": {"type": "object",
+                    "properties": {
+                        "op": {"type": "string",
+                               "enum": ["create", "list", "join", "leave",
+                                        "members", "send", "manage"]},
+                        "name": {"type": "string"},
+                        "policy": {"type": "string",
+                                   "enum": ["open", "invite"]},
+                        "invited": {"type": "array",
+                                    "items": {"type": "string"}},
+                        "hall_id": {"type": "string"},
+                        "type": {"type": "string"},
+                        "payload": {"type": "object"},
+                        "function": {"type": "string"},
+                        "alive_only": {"type": "boolean"},
+                        "action": {"type": "string"},
+                        "instance_id": {"type": "string"},
+                        "instance_ids": {"type": "array",
+                                         "items": {"type": "string"}},
+                        "new_owner": {"type": "string"}},
+                    "required": ["op"]}}
+
 HALL_TOOL_DEFS: list[dict] = [
     {"name": "conscio_hall_create",
      "description": "Create an Agent's Hall (named group of agents) as owner. "
@@ -580,3 +652,8 @@ HALL_TOOL_DEFS: list[dict] = [
                     "scribe, devils_advocate, executor, observer.",
      "inputSchema": _HALL_MANAGE_INPUT},
 ]
+
+# E3 public names (server.py imports these three, not the _private dicts):
+RELAY_DISPATCH_DEF: dict = _RELAY_DISPATCH_DEF
+REVIEW_DISPATCH_DEF: dict = _REVIEW_DISPATCH_DEF
+HALL_DISPATCH_DEF: dict = _HALL_DISPATCH_DEF

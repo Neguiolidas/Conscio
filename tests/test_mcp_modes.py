@@ -229,3 +229,63 @@ def test_mode_schema_is_closed():
     schema = schemas.MODE_TOOL_DEF["inputSchema"]
     assert schema["additionalProperties"] is False
     assert schema["properties"]["set"]["enum"] == list(modes.MODES)
+
+
+# ── E3 (ADR-20260913133108-1fac9c): mode redistribution ──────────────
+
+_REDISTRIBUTED = ("conscio_acceptance_criteria", "conscio_delivery_check",
+                  "conscio_investigate", "conscio_evaluate",
+                  "conscio_eval_harness", "conscio_rules_distill")
+
+
+def test_six_deep_instruments_move_to_high(tmp_path):
+    """v4.6 E3: the six deep instruments leave ultra for high, so a mid-size
+    model gets them without the 36-tool flood."""
+    for name in _REDISTRIBUTED:
+        assert name in modes.HIGH_TOOLS, f"{name} not in high"
+        assert name not in modes.LITE_TOOLS, f"{name} leaked into lite"
+        assert name not in modes.BALANCED_TOOLS, f"{name} leaked into balanced"
+
+
+def test_redistribution_keeps_sets_nested():
+    """The one real invariant of modes.py (set nesting) survives the move."""
+    assert modes.LITE_TOOLS < modes.BALANCED_TOOLS
+    assert modes.BALANCED_TOOLS < modes.HIGH_TOOLS
+
+
+def test_byte_monotonicity_with_dispatchers_and_redistribution(tmp_path):
+    """ADR-20260913133108-1fac9c §6b test 2 — CONDIONAL: so liga com a
+    redistribuicao v4.6 dentro (pre-condicao da spec §4.3). Com ela, o modo +
+    flags despachantes fica ABAIXO do proximo modo puro em todos os degraus.
+    Sem ela, este teste afirmaria coisa falsa contra o high de hoje — por isso
+    o gate e checar se as 6 tools movidas estao no set do high."""
+    import json as _json
+
+    missing = [n for n in _REDISTRIBUTED if n not in modes.HIGH_TOOLS]
+    if missing:
+        import pytest
+        pytest.skip(f"redistribution not landed: {missing} not in high")
+
+    by_name = {d["name"]: d for d in schemas.BASE_TOOL_DEFS}
+
+    def _sz(defs):
+        return sum(len(_json.dumps(d).encode()) for d in defs)
+
+    disp = _sz([schemas.RELAY_DISPATCH_DEF, schemas.REVIEW_DISPATCH_DEF,
+                schemas.HALL_DISPATCH_DEF])
+    act = _sz(schemas.ACT_TOOL_DEFS)
+
+    def mode_bytes(allowed):
+        return _sz([by_name[n] for n in allowed]) + _sz([schemas.MODE_TOOL_DEF])
+
+    lite = mode_bytes(modes.LITE_TOOLS)
+    bal = mode_bytes(modes.BALANCED_TOOLS)
+    high = mode_bytes(modes.HIGH_TOOLS)
+
+    # ADR §3.2: lite+3desp+ACT < balanced puro (folga positiva)
+    assert lite + disp + act < bal, (
+        f"lite rung inverted: {lite + disp + act} >= {bal}")
+    # ADR §3.2b: com a redistribuicao, bal+3desp+ACT < high puro tambem
+    assert bal + disp + act < high, (
+        f"balanced->high inverted even with redistribution: "
+        f"{bal + disp + act} >= {high}")

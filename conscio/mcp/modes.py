@@ -57,6 +57,16 @@ BALANCED_TOOLS = LITE_TOOLS | frozenset({
 HIGH_TOOLS = BALANCED_TOOLS | frozenset({
     "conscio_squad_experts",
     "conscio_squad_opositors",
+    # v4.6 E3 (ADR-20260913133108-1fac9c): the six deep instruments leave
+    # ultra for high, so a mid-size model gets them without the 36-tool
+    # flood. With this move the byte-monotonicity argument of the ADR holds
+    # at the balanced->high rung too (its pre-condition, spec §4.3).
+    "conscio_acceptance_criteria",
+    "conscio_delivery_check",
+    "conscio_investigate",
+    "conscio_evaluate",
+    "conscio_eval_harness",
+    "conscio_rules_distill",
 })
 
 _FILENAME = "mcp_mode"
