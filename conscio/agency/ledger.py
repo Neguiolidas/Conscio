@@ -13,6 +13,8 @@ from pathlib import Path
 from ..sqlite_tuning import tune
 from .outcome import PENDING
 
+EXPIRY_SWEEP_LIMIT = 200  # linhas por passe: custo por turno plano e previsivel
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS actions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,6 +118,42 @@ class ActionLedger:
             " status=? WHERE id=?",
             (int(ok), output, error, duration_ms, status, row_id))
         self._conn.commit()
+
+    def expire_stale(self, now: float | None = None,
+                     limit: int = EXPIRY_SWEEP_LIMIT) -> int:
+        """Materializa pendencias vencidas como UNSUPPORTED. Limitada por passe:
+        um backlog grande escoa em varios turnos em vez de travar um.
+
+        Ordena por ts ASC para escoar da mais velha: dois passes seguidos
+        avancam a fila em vez de reprocessar as mesmas linhas.
+        """
+        from .outcome import RETENTION_DAYS, UNSUPPORTED
+        now = time.time() if now is None else now
+        cutoff = now - RETENTION_DAYS * 86400
+        rows = self._conn.execute(
+            "SELECT id FROM actions WHERE outcome=? AND ts < ?"
+            " ORDER BY ts ASC LIMIT ?", (PENDING, cutoff, limit)).fetchall()
+        for row in rows:
+            self._conn.execute(
+                "UPDATE actions SET outcome=?, outcome_ts=? WHERE id=?",
+                (UNSUPPORTED, now, row["id"]))
+        self._conn.commit()
+        return len(rows)
+
+    def pending_outcomes(self, limit: int = 50) -> list[dict]:
+        """Pendencias ainda decidiveis.
+
+        A janela e aplicada na CONSULTA, nao so pela varredura: numa maquina
+        parada ha meses a varredura nunca rodou e a linha vencida continuaria
+        se apresentando como pendente. Nome distinto de ``pending()``, que ja
+        existe e devolve a fila de aprovacao (status='proposed').
+        """
+        from .outcome import RETENTION_DAYS
+        cutoff = time.time() - RETENTION_DAYS * 86400
+        rows = self._conn.execute(
+            "SELECT * FROM actions WHERE outcome=? AND ts >= ?"
+            " ORDER BY id DESC LIMIT ?", (PENDING, cutoff, limit)).fetchall()
+        return [dict(r) for r in rows]
 
     def set_outcome(self, row_id: int, outcome: str,
                     evidence: str = "") -> None:
