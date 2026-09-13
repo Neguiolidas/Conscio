@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from ..sqlite_tuning import tune
+from .outcome import PENDING
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS actions (
@@ -33,7 +34,10 @@ CREATE TABLE IF NOT EXISTS actions (
     duration_ms INTEGER NOT NULL DEFAULT 0,
     adapter TEXT NOT NULL DEFAULT '',
     model TEXT NOT NULL DEFAULT '',
-    approval_policy TEXT NOT NULL DEFAULT ''   -- v2.0.1: host-act gate
+    approval_policy TEXT NOT NULL DEFAULT '',  -- v2.0.1: host-act gate
+    outcome TEXT NOT NULL DEFAULT '',          -- v4.6: '' = fora de escopo
+    outcome_ts REAL,
+    outcome_evidence TEXT NOT NULL DEFAULT ''  -- ponteiro, nunca texto livre
 );
 CREATE INDEX IF NOT EXISTS idx_actions_goal ON actions(goal_fp, id);
 CREATE INDEX IF NOT EXISTS idx_actions_tool ON actions(tool);
@@ -65,6 +69,22 @@ class ActionLedger:
             self._conn.commit()
         except sqlite3.OperationalError:
             pass                               # already present
+        for column, decl in (("outcome", "TEXT NOT NULL DEFAULT ''"),
+                             ("outcome_ts", "REAL"),
+                             ("outcome_evidence", "TEXT NOT NULL DEFAULT ''")):
+            try:                               # v4.6: bancos anteriores nao tem
+                self._conn.execute(
+                    f"ALTER TABLE actions ADD COLUMN {column} {decl}")
+                self._conn.commit()
+            except sqlite3.OperationalError:
+                pass                           # already present
+        # O indice vem DEPOIS dos ALTER, nunca no _SCHEMA: num banco pre-v4.6 a
+        # tabela ja existe (CREATE IF NOT EXISTS nao faz nada) e o indice
+        # referenciaria uma coluna que so o ALTER acrescenta -- o ledger nao
+        # abriria mais em nenhuma instalacao existente.
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_actions_outcome"
+                           " ON actions(outcome, ts)")
+        self._conn.commit()
 
     def record(self, *, goal_fp: str, tool: str, args_json: str,
                rationale: str, tier: str, status: str, ok: bool | None = None,
@@ -81,11 +101,11 @@ class ActionLedger:
         cur = self._conn.execute(
             "INSERT INTO actions (ts, goal_fp, goal_text, tool, args_json,"
             " rationale, tier, status, ok, tokens_in, tokens_out, adapter,"
-            " model, approval_policy)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " model, approval_policy, outcome)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (time.time(), goal_fp, goal_text, tool, args_json, rationale,
              tier, status, None if ok is None else int(ok), tokens_in,
-             tokens_out, adapter, model, approval_policy))
+             tokens_out, adapter, model, approval_policy, PENDING))
         self._conn.commit()
         return int(cur.lastrowid or 0)
 
@@ -95,6 +115,15 @@ class ActionLedger:
             "UPDATE actions SET ok=?, output=?, error=?, duration_ms=?,"
             " status=? WHERE id=?",
             (int(ok), output, error, duration_ms, status, row_id))
+        self._conn.commit()
+
+    def set_outcome(self, row_id: int, outcome: str,
+                    evidence: str = "") -> None:
+        """Grava o desfecho. ``evidence`` e ponteiro (``obs:<id>`` ou hash de
+        blob), nunca prosa: texto livre reproduziria o defeito do verify()."""
+        self._conn.execute(
+            "UPDATE actions SET outcome=?, outcome_ts=?, outcome_evidence=?"
+            " WHERE id=?", (outcome, time.time(), evidence, row_id))
         self._conn.commit()
 
     def claim(self, row_id: int) -> bool:
