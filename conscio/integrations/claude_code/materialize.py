@@ -104,6 +104,10 @@ def materialize(slug: str, *, flags: dict, model, ts: str, io=None,
 
     n_cmds = _copy_tree(a / "commands", cdir / "commands" / "conscio")
     _copy_tree(a / "skills" / "conscio", cdir / "skills" / "conscio")
+    # v4.5.4: the relay skill ships beside the memory skill — agents that
+    # install the bundle carry the spool+directory rules (and the failure
+    # modes that took three sessions to map) into every host.
+    _copy_tree(a / "skills" / "conscio-relay", cdir / "skills" / "conscio-relay")
     hook_dst = cdir / "hooks" / _HOOK_NAME
     hook_dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(a / "hooks" / _HOOK_NAME, hook_dst)

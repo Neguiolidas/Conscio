@@ -35,6 +35,21 @@ def test_materialize_copies_commands_skill_hook(tmp_path):
     assert summ["commands"] == expected and summ["skill"] and summ["hook"]
 
 
+def test_materialize_copies_the_relay_skill_beside_the_memory_skill(tmp_path):
+    """The relay skill ships beside the memory skill: a bundle that installs
+    conscio without conscio-relay leaves the host improvising mailbox.send()
+    into another agent's database — the failure mode this skill exists to
+    kill. Source-of-truth driven, like the commands count above."""
+    relay_src = (Path(materialize.__file__).parent / "assets" / "skills"
+                 / "conscio-relay" / "SKILL.md")
+    assert relay_src.is_file(), "assets/skills/conscio-relay lost SKILL.md"
+
+    _run(tmp_path)
+    dst = tmp_path / "claude" / "skills" / "conscio-relay" / "SKILL.md"
+    assert dst.is_file()
+    assert dst.read_bytes() == relay_src.read_bytes()
+
+
 def test_materialize_registers_mcp_with_storage_and_vault(tmp_path):
     _run(tmp_path)
     data = json.loads((tmp_path / "claude.json").read_text())
