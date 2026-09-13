@@ -43,6 +43,30 @@ from .tools import Risk, ToolRegistry, tool_doc
 from .trust import TrustMatrix
 
 
+def apply_outcome_to_trust(trust, meta, tool: str, outcome: str) -> None:
+    """Confianca se move por DESFECHO, nunca por codigo de saida (C6).
+
+    ``CONTRADICTED`` entra por ``meta.record_error`` porque a TrustMatrix nao
+    tem caminho negativo proprio: a penalidade ja existe via
+    ``frequent_errors()`` dentro de ``max_action_retries``. Reusar e melhor que
+    inventar um segundo mecanismo de punicao.
+
+    ``PENDING`` e ``UNSUPPORTED`` nao movem nada: enquanto so se sabe o exit
+    code, a confianca fica parada. ``UNSUPPORTED`` em particular significa
+    "nao consegui olhar", e ausencia de prova nunca vira penalidade (N3).
+
+    Funcao de modulo, nao metodo: o caminho de desfecho roda tambem fora de uma
+    instancia de ``Act`` (hook de Stop), onde ``trust``/``meta`` podem faltar.
+    """
+    from . import outcome as o
+    if outcome == o.VERIFIED:
+        if trust is not None:
+            trust.on_success(tool)
+    elif outcome == o.CONTRADICTED:
+        if meta is not None:
+            meta.record_error(f"act:{tool}")
+
+
 class ActStatus(str, Enum):
     PROPOSED = "proposed"
     EXECUTED = "executed"
