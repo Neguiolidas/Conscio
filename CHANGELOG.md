@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.6.1] - 2026-09-14 — O hook da 4.6.0 estava inerte no plugin
+
+### Fixed
+
+- **O laço de honestidade não gravava nada numa instalação de plugin.** A
+  `hooks.json` da 4.6.0 registrava o hook de `Stop` contra
+  `${CLAUDE_PLUGIN_ROOT}/hooks/conscio_honesty_pkg`, um diretório que a
+  distribuição nunca carregou: o pacote era copiado por `materialize.py`, que
+  roda no caminho do `conscio install` e **não** no do marketplace. O hook
+  rodava, falhava ao importar, saía 0 por desenho e não registrava nada —
+  indistinguível de uma instalação saudável, exatamente a falha que a v4.0.0
+  teve com a captura.
+
+  O pacote passa a viajar versionado em `assets/hooks/conscio_honesty_pkg/`,
+  como `conscio_obsstore.py` já fazia. Um guarda novo confere que **todo**
+  caminho `${CLAUDE_PLUGIN_ROOT}` citado numa `hooks.json` existe na árvore que
+  o plugin distribui, que a cópia não divergiu do módulo de origem, e que ela
+  está rastreada pelo git — teste verde contra o disco local prova o disco, não
+  o artefato.
+
+---
+
 ## [4.6.0] - 2026-09-13 — Honestidade verificável (modo sombra)
 
 O Conscio dizia verificar. Três medições na v4.5.4 mostraram que a verificação
