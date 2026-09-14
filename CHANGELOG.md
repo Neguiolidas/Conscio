@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.6.2] - 2026-09-14 — A evidência passa a ser o traço do ato
+
+Descoberto em ambiente real com a 4.6.1 instalada, medido no `obs.db` vivo.
+
+### Fixed
+
+- **O predicado aceitava evidência escrita pelo próprio afirmante.** A busca
+  casava a âncora contra a **entrada** da observação, que é texto que o agente
+  escreveu. Inventar um sha e digitá-lo em qualquer comando produzia
+  `VERIFIED` — auto-certificação, o defeito que esta linha de versões existe
+  para matar, reintroduzido uma camada abaixo. Pior: o registro do próprio laço
+  (`commit | X -> UNSUPPORTED`), impresso na saída de um comando, virava prova
+  textual de que a âncora existe.
+
+  A evidência passa a ser o **traço do ato**: a ferramenta tem de ser uma que
+  executa a classe (casada **antes** de qualquer padrão — medido, 2 de 22
+  observações com `git commit` na entrada eram mensagens *discutindo* commits),
+  a entrada tem de identificar o ato, a âncora só conta do lado que quem a gerou
+  permite (identificador do mundo na **saída**; caminho dado pelo agente nos
+  argumentos, com a identidade da ferramenta como garantia), e a saída não pode
+  denunciar falha.
+
+- **`CONTRADICTED` era inalcançável em sessão real.** Das quatro sessões
+  medidas (1925, 1306, 318, 290 observações), nenhuma cabia na janela de 200, e
+  janela saturada resolve `UNSUPPORTED` por desenho. O teto de linhas virou
+  **teto de tempo**, porque a restrição sempre foi custo: um teto de linhas
+  punia sessão longa mesmo quando barata. Truncar por orçamento resolve
+  `UNSUPPORTED`, nunca acusação.
+
+### Nota de desempenho
+
+O custo do pior caso depende do cache de página: ~809ms frio e ~46-91ms quente
+na sessão de 1466 observações Bash. Em produção o hook nasce num processo novo
+a cada turno, então o número frio é o que importa — com 500ms de orçamento essa
+sessão trunca pela metade e reporta `UNSUPPORTED` em vez de acusar sem ter
+olhado tudo.
+
+---
+
 ## [4.6.1] - 2026-09-14 — O hook da 4.6.0 estava inerte no plugin
 
 ### Fixed
