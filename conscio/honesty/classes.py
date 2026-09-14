@@ -47,15 +47,27 @@ class ActShape:
     anchor_side: str
 
 
-#: Ferramentas medidas no obs.db vivo, nao herdadas de memoria. O harness
-#: registra chamada que falhou sob nome PROPRIO (``Bash!failed``), entao filtrar
-#: por ``Bash`` ja descarta o ato que nao aconteceu.
-_SHELL = frozenset({"Bash"})
+#: Nomes do Claude Code MEDIDOS no obs.db; os dos outros dois runtimes vieram
+#: do agente que roda neles, conferidos no toolsets do proprio repo.
+#:
+#: LIMITE DECLARADO: a marca de falha no nome (``Bash!failed``) nasce do hook
+#: ``conscio_deepminer`` no evento ``PostToolUseFailure``, que e do harness do
+#: Claude Code. O codigo e vendorizado nos tres, mas o EVENTO nao existe nos
+#: outros dois -- la a chamada que falhou chega com o nome puro. Para commit e
+#: push isso nao abre buraco, porque exigir a ancora na SAIDA ja descarta ato
+#: que falhou (um commit que falhou nao imprime sha). Para as classes cuja
+#: ancora vive nos argumentos, a defesa cai nesses runtimes: divida conhecida,
+#: nao esquecimento.
+_SHELL = frozenset({
+    "Bash",          # Claude Code (medido no obs.db)
+    "run_command",   # Antigravity
+    "terminal",      # Hermes
+})
 _WRITERS = frozenset({
-    "Write", "Edit", "NotebookEdit",          # Claude Code (medidos)
+    "Write", "Edit", "NotebookEdit",          # Claude Code (medidos no obs.db)
     "write_to_file", "replace_file_content",  # Antigravity
     "multi_replace_file_content",
-    "write_file", "file_editor",              # Hermes
+    "write_file", "patch",                    # Hermes
 })
 
 
@@ -74,7 +86,15 @@ _CMD = r"(?P<anchor>[\w./-]+)"
 
 #: Redirecao ou heredoc: o caminho pelo qual este projeto de fato escreve
 #: arquivo pelo shell. Sem isto, `cat > arquivo <<EOF` nao contaria como ato.
-_REDIRECT = r"(?:>{1,2}\s*|tee\s+(?:-a\s+)?)"
+_REDIRECT = r"(?:>{1,2}\s*|tee\s+(?:-a\s+)?|touch\s+|sed\s+-i\b|cp\s+)"
+
+#: O runner tem de ser o EXECUTAVEL INVOCADO, nao uma palavra no meio do
+#: comando: sem a ancoragem, `grep pytest` verificava "rodei pytest". Aceita os
+#: prefixos de wrapper que a frota usa de fato.
+_RUNNER = (r"(?:^|[;&|]\s*|\|\s*)"
+           r"(?:uv\s+run\s+|poetry\s+run\s+|python3?\s+-m\s+|npx\s+)?"
+           r"(?:pytest|unittest|cargo\s+test|go\s+test|make\s+test|tox|nox"
+           r"|npm\s+(?:run\s+)?test)\b")
 
 CLASSES: tuple[ClaimClass, ...] = (
     ClaimClass("commit",
@@ -90,10 +110,7 @@ CLASSES: tuple[ClaimClass, ...] = (
     ClaimClass("test_run",
                (rf"(?:rodei|executei)\s+{_CMD}",),
                (rf"(?:ran|executed)\s+{_CMD}",), _CMD,
-               (ActShape(_SHELL,
-                         r"pytest|unittest|npm\s+(?:run\s+)?test"
-                         r"|cargo\s+test|go\s+test|make\s+test|\btox\b",
-                         "input"),)),
+               (ActShape(_SHELL, _RUNNER, "input"),)),
     ClaimClass("file_write",
                (rf"(?:criei|escrevi|atualizei)\s+{_PATH}",),
                (rf"(?:created|wrote|updated)\s+{_PATH}",), _PATH,

@@ -27,15 +27,17 @@ WINDOW = 5000
 #: entao e o custo que se limita: um teto de linhas punia sessao longa mesmo
 #: quando barata e premiava sessao curta e cara.
 #:
-#: Medido no obs.db vivo, pior caso (ancora ausente, scan completo da sessao de
-#: 1466 observacoes Bash) -- e o numero DEPENDE DO CACHE, entao vao os dois:
-#: ~809ms com cache frio, ~46-91ms quente, medido repetindo a mesma varredura.
-#: Em producao o hook nasce num processo novo a cada turno, entao o frio e o
-#: numero que importa e 500ms trunca essa sessao pela metade.
+#: CONDICAO QUE TORNA ISTO DEFENSAVEL, e ela e o desenho inteiro: um veredito
+#: que depende do relogio so pode variar no lado que NAO acusa. Estourar o
+#: orcamento resolve UNSUPPORTED ("nao consegui olhar"), nunca CONTRADICTED.
+#: Maquina carregada perde deteccao; jamais inventa uma.
 #:
-#: Truncar resolve UNSUPPORTED, nunca acusacao: ausencia so e POSITIVA quando
-#: olhamos tudo. Um orcamento apertado perde deteccao; nunca inventa uma.
-BUDGET_MS = 500
+#: Tres numeros medidos na maior sessao real (1925 observacoes, ~15MB de
+#: blobs), e os tres precisam estar aqui porque um so engana: ~123ms e o custo
+#: ESTAVEL do scan completo, ~809ms foi o outlier de cache de pagina frio no
+#: primeiro acesso, e 800ms e o teto -- 6.5x o estavel, cobrindo o outlier
+#: medido.
+BUDGET_MS = 800
 
 
 def _blob_text(conn, h) -> str:

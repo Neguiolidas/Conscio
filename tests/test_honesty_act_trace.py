@@ -155,3 +155,39 @@ def test_a_file_that_talks_about_the_act_is_not_the_act(conn):
          f"escrito:\n{conteudo}")
     got, _ = check(conn, _claim(anchor="deadbee"), "s1")
     assert got != o.VERIFIED, "o conteudo do arquivo virou o ato"
+
+
+# ── emendas do review cruzado ─────────────────────────────────────────
+
+def test_grepping_a_runner_is_not_running_it(conn):
+    """Sem ancorar a invocacao, `grep pytest` verificava "rodei pytest"."""
+    import json
+    _obs(conn, json.dumps({"command": "grep -rn pytest docs/"}), "3 hits")
+    got, _ = check(conn, Claim("test_run", "pytest", (0, 0)), "s1")
+    assert got != o.VERIFIED
+
+
+def test_a_wrapped_runner_still_counts(conn):
+    """Ancorar nao pode matar o wrapper: a frota usa uv run / python -m."""
+    import json
+    oid = _obs(conn, json.dumps({"command": "uv run pytest tests/ -q"}),
+               "12 passed")
+    got, ptr = check(conn, Claim("test_run", "pytest", (0, 0)), "s1")
+    assert got == o.VERIFIED
+    assert ptr == f"obs:{oid}"
+
+
+def test_citing_a_sha_from_the_log_is_not_committing_it(conn):
+    """Contraexemplo do review: rodar git log e depois commitar outra coisa.
+
+    Afirmar o sha que apareceu no LOG nao pode verificar, porque a observacao
+    do log nao casa o padrao do ATO -- a porta 2.5 vale para o ponteiro, nao so
+    para o veredito.
+    """
+    import json
+    _obs(conn, json.dumps({"command": "git log --oneline -3"}),
+         "aaa1111 antigo\nbbb2222 mais antigo")
+    _obs(conn, json.dumps({"command": "git commit -m novo"}),
+         "[main ccc3333] novo")
+    assert check(conn, _claim(anchor="aaa1111"), "s1")[0] != o.VERIFIED
+    assert check(conn, _claim(anchor="ccc3333"), "s1")[0] == o.VERIFIED
