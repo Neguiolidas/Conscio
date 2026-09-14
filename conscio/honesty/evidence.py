@@ -17,7 +17,7 @@ import time
 import zlib
 
 from . import verdicts as o
-from .classes import CLASSES_BY_NAME, Claim
+from .classes import ARGUMENT, CLASSES_BY_NAME, COMMAND_KEYS, PATH_KEYS, Claim
 
 #: Teto de LINHAS: rede de seguranca contra sessao patologica, nao o limite
 #: efetivo. O limite real e o de tempo abaixo.
@@ -79,21 +79,8 @@ def _normalize_tool(raw: str) -> tuple[str, bool]:
 _HEREDOC = re.compile(r"<<-?\s*'?\"?(\w+)'?\"?.*?^\1", re.DOTALL | re.MULTILINE)
 
 
-def _command_only(entrada: str) -> str:
-    """A entrada sem os corpos de heredoc.
-
-    Um ``cat > arquivo <<EOF`` carrega o conteudo INTEIRO do arquivo dentro da
-    entrada, e casar o padrao do ato contra ele faz um arquivo que FALA de um
-    ato parecer o ato. Medido: o comando que escreveu os testes desta emenda
-    casava "git commit" porque um docstring citava a expressao, e a saida
-    trazia a ancora porque mostrava o proprio arquivo -- escrever o teste que
-    prova a afirmacao falsa virava a prova de que ela era verdadeira.
-    """
-    return _HEREDOC.sub("", _decoded(entrada))
-
-
-def _decoded(entrada: str) -> str:
-    """O comando de fato, fora do envelope JSON da chamada.
+def _payload(entrada: str) -> dict | None:
+    """O envelope JSON da chamada, ou ``None`` quando a entrada nao e um.
 
     A entrada e gravada como o payload JSON da ferramenta, onde a quebra de
     linha e a sequencia ``\\n`` e nao um caractere -- casar heredoc sobre o
@@ -103,12 +90,91 @@ def _decoded(entrada: str) -> str:
     try:
         payload = json.loads(entrada or "")
     except (ValueError, TypeError):
-        return entrada or ""
-    if isinstance(payload, dict):
-        campo = payload.get("command")
-        if isinstance(campo, str):
-            return campo
-    return entrada or ""
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _field(payload: dict, keys: tuple[str, ...]) -> str | None:
+    for k in keys:
+        valor = payload.get(k)
+        if isinstance(valor, str) and valor:
+            return valor
+    return None
+
+
+def _command(entrada: str) -> str | None:
+    """O comando de fato, sem os corpos de heredoc. ``None`` = nao sei ler.
+
+    Um ``cat > arquivo <<EOF`` carrega o conteudo INTEIRO do arquivo dentro da
+    entrada, e casar o padrao do ato contra ele faz um arquivo que FALA de um
+    ato parecer o ato. Medido: o comando que escreveu os testes de uma emenda
+    anterior casava "git commit" porque um docstring citava a expressao.
+
+    Um payload que nao traz nenhuma chave de comando conhecida devolve
+    ``None``, e isso vale UNSUPPORTED. Antes cairia no JSON cru, e o padrao do
+    ato voltava a casar contra o blob inteiro -- o A1 entrando por outra porta.
+    """
+    payload = _payload(entrada)
+    if payload is None:
+        return _HEREDOC.sub("", entrada or "")   # o texto ja e o comando
+    bruto = _field(payload, COMMAND_KEYS)
+    return None if bruto is None else _HEREDOC.sub("", bruto)
+
+
+#: Onde a regiao de um ato termina. Cortar aqui so consegue ENCURTAR a regiao:
+#: um ``;`` dentro de aspas trunca e resolve UNSUPPORTED. O erro cai sempre do
+#: lado que nao acusa -- o mesmo invariante que sustenta o teto de tempo.
+_SEPARATOR = re.compile(r"[;&|\n]")
+
+
+def _act_regions(comando: str, act: str):
+    """Cada ocorrencia do ato com seus argumentos, ate o proximo separador.
+
+    TODAS as ocorrencias, nao a primeira: ``touch a.py && touch b.py`` tem dois
+    atos, e olhar so o primeiro perderia o segundo. A regiao comeca no proprio
+    casamento para que o executavel conte como alvo -- e o que mantem "rodei
+    pytest" verificavel sem regra especial.
+    """
+    for m in re.finditer(act, comando, re.IGNORECASE):
+        fim = _SEPARATOR.search(comando, m.end())
+        yield comando[m.start():fim.start() if fim else len(comando)]
+
+
+def _norm(bruto: str | None) -> str:
+    """Forma comparavel de um caminho: sem delimitador de prosa, sem esquema
+    ``file://`` (o Antigravity cita caminho assim) e sem ``./`` redundante."""
+    s = (bruto or "").strip().strip("`\"'.,()[]{}<>")
+    s = s.removeprefix("file://")
+    while s.startswith("./"):
+        s = s[2:]
+    return s
+
+
+def _hits(alvo: str | None, ancora: str) -> bool:
+    """Fronteira de caminho, nunca substring.
+
+    ``--ignore=tests/x.py`` diz o OPOSTO de ter rodado x.py, e substring o
+    transformaria em prova do que ele nega.
+    """
+    a, t = _norm(ancora), _norm(alvo)
+    return bool(a) and (t == a or t.endswith("/" + a))
+
+
+def _targets(shape, entrada: str) -> list[str] | None:
+    """Os alvos do ato nesta observacao, ou ``None`` quando nao sei ler.
+
+    ``None`` nao e "nao casou": e "nao consegui olhar", e poisona o veredito
+    para UNSUPPORTED. Runtime nao medido perde deteccao; nunca ganha acusacao.
+    """
+    if not shape.act:                       # a ferramenta E o ato
+        payload = _payload(entrada)
+        campo = _field(payload, PATH_KEYS) if payload is not None else None
+        return [campo] if campo else None
+    comando = _command(entrada)
+    if comando is None:
+        return None
+    return [tok for regiao in _act_regions(comando, shape.act)
+            for tok in regiao.split()]
 
 
 def check(conn, claim: Claim, session_id: str,
@@ -128,6 +194,10 @@ def check(conn, claim: Claim, session_id: str,
     centenas de leituras inertes de uma sessao (Read, LS, Grep) deixam de
     ocupar a janela, e com isso a ausencia volta a ser POSITIVA em sessao real
     -- era o que tornava CONTRADICTED inalcancavel.
+
+    Na v4.6.3 a ancora de ARGUMENT deixou de valer "em algum lugar da entrada"
+    e passou a exigir a POSICAO DE ARGUMENTO do ato. Sem isso, escrever um
+    arquivo que CITA outro caminho provava ter escrito o caminho citado.
     """
     cls = CLASSES_BY_NAME.get(claim.cls_name)
     if cls is None or not cls.acts:
@@ -149,7 +219,7 @@ def check(conn, claim: Claim, session_id: str,
     if not rows:
         return o.UNSUPPORTED, ""          # nao consegui olhar
 
-    esgotado = False
+    esgotado = ilegivel = False
     for oid, raw_tool, in_h, out_h in rows:
         if time.monotonic() > deadline:
             esgotado = True               # nao vi o resto: nao posso acusar
@@ -163,16 +233,26 @@ def check(conn, claim: Claim, session_id: str,
         entrada = _blob_text(conn, in_h)
         saida = None
         for shape in shapes:
-            if shape.act and not re.search(shape.act, _command_only(entrada),
-                                            re.IGNORECASE):
+            if shape.anchor_in == ARGUMENT:
+                alvos = _targets(shape, entrada)
+                if alvos is None:
+                    ilegivel = True       # payload que nao sei ler
+                elif any(_hits(alvo, claim.anchor) for alvo in alvos):
+                    return o.VERIFIED, f"obs:{oid}"
+                continue
+            # OUTPUT: identificador que nasce no mundo, exigido na saida.
+            comando = _command(entrada)
+            if comando is None:
+                ilegivel = True
+                continue
+            if shape.act and not re.search(shape.act, comando, re.IGNORECASE):
                 continue                  # a ferramenta serve, o ato nao e este
             if saida is None:
                 saida = _blob_text(conn, out_h)
-            campo = saida if shape.anchor_side == "output" else entrada
-            if claim.anchor in campo:
+            if claim.anchor in saida:
                 return o.VERIFIED, f"obs:{oid}"
 
-    if esgotado or len(rows) > limit:
+    if esgotado or ilegivel or len(rows) > limit:
         # A sessao nao coube no orcamento: o que nao foi lido pode conter a
         # prova, e ausencia so e POSITIVA quando olhamos tudo.
         return o.UNSUPPORTED, ""

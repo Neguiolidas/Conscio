@@ -1,3 +1,5 @@
+import json
+
 from conscio import obsstore
 from conscio.honesty import verdicts as o
 from conscio.honesty.classes import Claim
@@ -97,3 +99,151 @@ def test_anchor_outside_a_saturated_window_is_unsupported(tmp_path):
     got, ptr = check(conn, _claim(), "s1", limit=5)
     assert got == o.UNSUPPORTED
     assert ptr == ""
+
+
+# ── v4.6.3: a evidencia e a POSICAO DE ARGUMENTO do ato ────────────────
+#
+# A emenda da 4.6.2 fechou so as classes de ancora na SAIDA (commit, push).
+# As de ancora na ENTRADA seguiam casando a ancora contra o blob inteiro
+# escrito pelo agente -- o A1 vivo na classe mais comum.
+
+
+def _obs_tool(conn, tool, payload, out="", session="s1"):
+    return obsstore.put_observation(conn, tool=tool,
+                                    input_text=json.dumps(payload),
+                                    output_text=out, session_id=session,
+                                    project="p", agent="a",
+                                    ts="2026-09-13T10:00:00")
+
+
+def _fw(anchor):
+    return Claim("file_write", anchor, (0, 0))
+
+
+def test_write_content_is_not_evidence_of_writing_the_paths_it_cites(tmp_path):
+    """Regressao do A1 residual, medida em producao na obs 10295.
+
+    Um ``Write`` do arquivo de PLANO dava VERIFIED para "escrevi
+    conscio/mcp/server.py" porque o plano CITAVA esse caminho no corpo. O que
+    o agente escreve DENTRO do arquivo nao prova qual arquivo ele escreveu.
+    """
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "Write", {
+        "file_path": "/repo/docs/plano.md",
+        "content": "o plano toca conscio/mcp/server.py e tests/test_x.py",
+    })
+    got, _ = check(conn, _fw("conscio/mcp/server.py"), "s1")
+    assert got == o.CONTRADICTED
+
+
+def test_the_path_actually_written_verifies(tmp_path):
+    """A contrapartida: o alvo real do ato conta, e a ancora e sufixo dele."""
+    conn = _conn(tmp_path)
+    oid = _obs_tool(conn, "Write", {"file_path": "/repo/tests/test_x.py",
+                                    "content": "irrelevante"})
+    got, ptr = check(conn, _fw("tests/test_x.py"), "s1")
+    assert (got, ptr) == (o.VERIFIED, f"obs:{oid}")
+
+
+def test_payload_without_a_known_path_field_is_unsupported(tmp_path):
+    """Runtime nao medido perde deteccao; nao ganha auto-certificacao.
+
+    Payload que nao sei ler e "nao consegui olhar", e isso jamais acusa.
+    """
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "Write", {"campo_desconhecido": "/repo/tests/test_x.py"})
+    got, _ = check(conn, _fw("tests/test_x.py"), "s1")
+    assert got == o.UNSUPPORTED
+
+
+def test_antigravity_pascal_case_path_field_is_read(tmp_path):
+    """Medido pelo Gemini no transcript real: o Antigravity usa TargetFile.
+
+    Inferir ``target_file`` faria toda escrita nativa daquele runtime cair em
+    UNSUPPORTED permanente, sem ninguem perceber.
+    """
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "write_to_file", {"TargetFile": "/repo/tests/test_x.py",
+                                      "CodeContent": "..."})
+    got, _ = check(conn, _fw("tests/test_x.py"), "s1")
+    assert got == o.VERIFIED
+
+
+def test_antigravity_command_field_is_decoded(tmp_path):
+    """``_decoded`` so conhecia a chave ``command``; o Antigravity manda
+    ``CommandLine``, e o JSON cru voltava a valer como comando."""
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "run_command",
+              {"CommandLine": "touch /repo/tests/test_x.py"})
+    got, _ = check(conn, _fw("tests/test_x.py"), "s1")
+    assert got == o.VERIFIED
+
+
+def test_path_after_a_command_separator_is_not_the_acts_target(tmp_path):
+    """``touch a.txt; echo b.py`` nao escreve b.py -- a regiao do ato acaba
+    no separador."""
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "Bash", {"command": "touch a.txt; echo tests/fake.py"})
+    got, _ = check(conn, _fw("tests/fake.py"), "s1")
+    assert got == o.CONTRADICTED
+
+
+def test_every_act_of_a_composed_command_is_checked(tmp_path):
+    """Dois atos num comando so: olhar apenas o primeiro perderia o segundo."""
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "Bash", {"command": "touch a.py && touch b.py"})
+    got, _ = check(conn, _fw("b.py"), "s1")
+    assert got == o.VERIFIED
+
+
+def test_an_excluded_test_file_is_not_proof_of_running_it(tmp_path):
+    """``--ignore=tests/x.py`` diz o OPOSTO de ter rodado x.py."""
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "Bash",
+              {"command": "pytest --ignore=tests/x.py tests/y.py"})
+    got, _ = check(conn, Claim("test_run", "tests/x.py", (0, 0)), "s1")
+    assert got == o.CONTRADICTED
+
+
+def test_the_runner_arguments_do_verify(tmp_path):
+    """A contrapartida do anterior: argumento da invocacao conta."""
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "Bash", {"command": "uv run pytest tests/y.py -q"})
+    got, _ = check(conn, Claim("test_run", "tests/y.py", (0, 0)), "s1")
+    assert got == o.VERIFIED
+
+
+def test_a_file_named_in_the_runners_output_counts_as_run(tmp_path):
+    """Rodar um DIRETORIO e afirmar um arquivo dele e verdade, e a prova vem
+    da saida do proprio runner -- identificador gerado pelo MUNDO, nao pelo
+    afirmante. Medido: era falsa acusacao contra afirmacao verdadeira."""
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "Bash", {"command": "uv run pytest tests/ -q"},
+              out="tests/test_liaison_bindings.py .... 54 passed")
+    got, _ = check(conn, Claim("test_run", "tests/test_liaison_bindings.py",
+                               (0, 0)), "s1")
+    assert got == o.VERIFIED
+
+
+def test_a_file_merely_listed_by_another_command_is_not_run(tmp_path):
+    """A contrapartida: so conta na saida de uma INVOCACAO de runner."""
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "Bash", {"command": "ls tests/"},
+              out="test_liaison_bindings.py")
+    got, _ = check(conn, Claim("test_run", "tests/test_liaison_bindings.py",
+                               (0, 0)), "s1")
+    assert got != o.VERIFIED
+
+
+def test_a_runner_on_a_later_line_is_still_the_invocation(tmp_path):
+    """Defeito pre-existente medido em producao (obs 10310): `_RUNNER`
+    ancorava em `^` sem MULTILINE e em `[;&|]`, e quebra de linha nao estava
+    em nenhum dos dois. Comando multilinha e a norma nesta frota, entao um
+    pytest legitimo na segunda linha virava ACUSACAO contra afirmacao
+    verdadeira. `timeout N` idem: a frota envolve quase todo teste nele.
+    """
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "Bash", {"command": "cd /repo\n"
+                             "timeout 240 python3 -m pytest tests/test_x.py -q"})
+    got, _ = check(conn, Claim("test_run", "tests/test_x.py", (0, 0)), "s1")
+    assert got == o.VERIFIED

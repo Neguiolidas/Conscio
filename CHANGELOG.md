@@ -7,6 +7,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.6.3] - 2026-09-14 — O reconhecedor enxerga, e para de acusar quem cita
+
+A 4.6.2 fechou o A1 só nas classes de âncora na **saída**. Esta versão fecha
+nas de âncora na **entrada**, e conserta a cegueira que tornava o portão de
+corpus (C5b) inatingível. **O modo sombra continua**: nada aqui contesta
+ninguém.
+
+### Fixed
+
+- **A âncora de entrada valia "em qualquer lugar do blob", e o blob é escrito
+  pelo afirmante.** Medido na obs 10295 do `obs.db` vivo: um `Write` do arquivo
+  de *plano* provava `escrevi conscio/mcp/server.py`, `escrevi
+  conscio/mcp/schemas.py` e `escrevi docs/.../design.md` — o plano apenas
+  **citava** esses caminhos no corpo. Para as ferramentas de escrita nativa não
+  havia padrão de ato nenhum, então bastava a âncora aparecer dentro de
+  `content`. A âncora passa a exigir a **posição de argumento** do ato: campo
+  de caminho do payload, ou alvo do redirecionamento até o próximo separador de
+  comando. Depois do conserto, as duas primeiras resolvem `CONTRADICTED` e a
+  terceira continua `VERIFIED` apontando para `obs:10268` — um `Edit` real
+  daquele arquivo. O conserto não só remove o falso: re-aponta o verdadeiro
+  para a evidência certa.
+
+- **`_decoded` só conhecia a chave `command`.** No Antigravity o comando vem em
+  `CommandLine`, então o payload caía no JSON cru e o padrão do ato voltava a
+  casar contra o blob inteiro — o A1 entrando por outra porta. Um payload sem
+  chave conhecida agora resolve `UNSUPPORTED`, nunca o permissivo.
+
+- **O reconhecedor estava quase cego.** Em 1225 mensagens de assistente reais,
+  a porta léxica passava 68 e a de âncora passava 4: queda de 94,1%, porque o
+  padrão exigia a âncora colada no verbo com `\s+`. A prosa real escreve
+  ``commitado (`f82e504`)`` e ``criei `x.service` ``. O conector passa a
+  admitir pontuação e markdown mais **no máximo duas** palavras de função —
+  teto que mantém verbo e âncora na mesma oração.
+
+- **Citação não é afirmação.** Alargar o conector sozinho transformava o
+  reconhecedor num gerador de falsa acusação: das 30 claims que o corpus
+  passou a render, **25 resolviam `CONTRADICTED` e todas as amostradas eram a
+  mensagem citando uma afirmação** — exemplo de corpus dentro de bloco de
+  código, saída de sonda, prosa de desenho. Bloco de código e trecho entre
+  aspas passam a ser dado que a mensagem exibe, nunca afirmação dela. É o mesmo
+  raciocínio que tirou o corpo de heredoc do comando na 4.6.2, uma camada
+  acima. O critério é a posição do **verbo**, não a da âncora: quem escreve
+  ``criei `x.py` `` põe a âncora entre crases de propósito.
+
+- **Substantivo não é artefato.** `rodei o hook`, `rodei a checagem`,
+  `controle`, `suíte` produziam âncora e, com ela, acusação, e apareciam
+  repetidamente entre as 25. O
+  critério de admissão do desenho é existir consulta que refute sem
+  interpretação, e nenhuma dessas tem. Âncora de execução passa a exigir
+  caminho ou nome de executável conhecido.
+
+- **Extensão de 7 letras era truncada.** `\w{1,6}` cortava `.service` em
+  `.servic`: a âncora nascia errada, não casava nada e virava **acusação**.
+
+- **`_RUNNER` não ancorava em quebra de linha nem em `timeout` — defeito
+  herdado da 4.6.2.** Medido na obs 10310: `cd /repo\ntimeout 240 python3 -m
+  pytest tests/test_liaison_bindings.py` é uma execução legítima daquele
+  arquivo, e era contestada. Comando multilinha é a norma nesta frota, e
+  `timeout` embrulha quase todo teste daqui.
+
+- **Rodar um diretório e afirmar um arquivo dele.** O nome do arquivo na saída
+  do próprio runner é identificador gerado pelo mundo, e agora conta — sem
+  abrir brecha, porque a observação já teve de ser uma invocação de runner.
+
+### Added
+
+- **Portão de primeira pessoa e afirmativa.** Negação (`não commitei nada`) e
+  atribuição a terceiro (`the Hermet committed f82e504`) deixam de virar
+  afirmação minha. Os dois levam ao mesmo lugar — a claim não nasce — então
+  moram na mesma porta. A janela para no contraste (`mas`, `but`), senão *"não
+  consegui rodar o lint, mas rodei `x.py`"* mataria uma claim verdadeira.
+
+- **Nomes de campo dos três runtimes, medidos e não inferidos:** `file_path` /
+  `notebook_path` (Claude Code), **`TargetFile`** e `AbsolutePath`
+  (Antigravity, PascalCase), `path` (Hermes); comando em `command` e
+  **`CommandLine`**. A inferência `target_file` estava errada e teria posto
+  toda escrita nativa do Antigravity em `UNSUPPORTED` permanente, sem sintoma.
+
+### O que o corpus histórico diz agora
+
+7 claims ancoradas em 1255 mensagens — o corpus cresceu durante a própria
+sessão que o mediu, daí 1255 aqui e 1225 acima: **6 `VERIFIED`, 1
+`CONTRADICTED`**. O
+número não subiu de 4 para 30 — as 30 incluíam as 25 citações e âncoras vagas
+que teriam sido acusação. Subiu de 4 claims, parte delas falsa, para 7 que se
+sustentam contra a telemetria.
+
+### Limites declarados
+
+- **O laço é mono-runtime de fato.** Medido pelos agentes dos outros dois
+  runtimes: nem o Antigravity nem o Hermes tem captura de tool call escrevendo
+  no `obs.db` (no Hermes, `grep` zero em `tools/`), e os dois espaços têm zero
+  linhas em `claims`. Não é cegueira do reconhecedor — o produtor não existe
+  lá. As tabelas de runtime seguem corretas, mas cobertura homogênea seria
+  insinuação falsa. Dar captura ao Hermes é feature nova.
+
+- **A janela é a sessão, e a única contestação restante é disso.** `commitado
+  em 67e1c2c` é afirmação verdadeira feita numa sessão cuja telemetria não
+  contém o ato — o commit nasceu fora dela. Contestar aí é acusar por limite de
+  janela, não por ausência real. É o motivo mais forte para a sombra continuar.
+
+- **O corte por separador ignora aspas.** `pytest -k "a;b" tests/x.py` trunca a
+  região e resolve `UNSUPPORTED`. Cortar só consegue **encurtar** a região,
+  então o erro cai sempre do lado que não acusa — o mesmo invariante que
+  sustenta o teto de tempo.
+
+- **Idioma de teste desta casa lê como `UNSUPPORTED`.** `for f in tests/*.py;
+  do pytest "$f"; done` põe a âncora antes do runner, fora da região da
+  invocação. É assim que rodamos teste aqui, por causa da RAM.
+
+---
+
 ## [4.6.2] - 2026-09-14 — A evidência passa a ser o traço do ato
 
 Descoberto em ambiente real com a 4.6.1 instalada, medido no `obs.db` vivo e
