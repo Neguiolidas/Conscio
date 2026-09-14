@@ -9,40 +9,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.6.2] - 2026-09-14 — A evidência passa a ser o traço do ato
 
-Descoberto em ambiente real com a 4.6.1 instalada, medido no `obs.db` vivo.
+Descoberto em ambiente real com a 4.6.1 instalada, medido no `obs.db` vivo e
+revisado pelos três agentes da frota.
 
 ### Fixed
 
 - **O predicado aceitava evidência escrita pelo próprio afirmante.** A busca
   casava a âncora contra a **entrada** da observação, que é texto que o agente
-  escreveu. Inventar um sha e digitá-lo em qualquer comando produzia
-  `VERIFIED` — auto-certificação, o defeito que esta linha de versões existe
-  para matar, reintroduzido uma camada abaixo. Pior: o registro do próprio laço
-  (`commit | X -> UNSUPPORTED`), impresso na saída de um comando, virava prova
-  textual de que a âncora existe.
+  escreveu: inventar um sha e digitá-lo em qualquer comando produzia
+  `VERIFIED`. Auto-certificação — o defeito que esta linha de versões existe
+  para matar, uma camada abaixo. E o registro do próprio laço, impresso na
+  saída de um comando, virava prova textual de que a âncora existe.
 
-  A evidência passa a ser o **traço do ato**: a ferramenta tem de ser uma que
-  executa a classe (casada **antes** de qualquer padrão — medido, 2 de 22
-  observações com `git commit` na entrada eram mensagens *discutindo* commits),
-  a entrada tem de identificar o ato, a âncora só conta do lado que quem a gerou
-  permite (identificador do mundo na **saída**; caminho dado pelo agente nos
-  argumentos, com a identidade da ferramenta como garantia), e a saída não pode
-  denunciar falha.
+  A evidência passa a ser o **traço do ato**: a ferramenta tem de executar a
+  classe (casada **antes** de qualquer padrão — medido, 2 de 22 observações com
+  `git commit` na entrada eram mensagens *discutindo* commits), a entrada tem
+  de identificar o ato, a âncora só conta do lado que quem a gerou permite
+  (identificador do mundo na **saída**; caminho dado pelo agente nos
+  argumentos, com a identidade da ferramenta como garantia), e a chamada não
+  pode ter falhado.
+
+- **Corpo de heredoc deixou de contar como comando.** O comando que *escreve*
+  um arquivo carrega o conteúdo inteiro dele na entrada — então um arquivo que
+  **fala** de um ato parecia o ato. Medido: o comando que escreveu os testes
+  desta versão era aceito como evidência de commit, porque um docstring citava
+  a expressão e a saída exibia o arquivo. Escrever o teste que prova a
+  afirmação falsa virava a prova de que ela era verdadeira.
+
+- **A falha é lida do nome da ferramenta, não do texto da saída.** Procurar
+  `fatal:` ou `Traceback` na saída era léxico passando por semântico — o mesmo
+  defeito que o `verify()` tinha. Medido em 400 chamadas **bem-sucedidas**, 2%
+  seriam descartadas, entre elas um `git commit` legítimo cuja saída trazia
+  `command not found` de outro trecho do script.
+
+- **`test_run` deixou de ser circular.** O runner tem de ser o executável
+  invocado, com os prefixos de wrapper que a frota usa (`uv run`, `python -m`,
+  `poetry run`, `npx`). Antes, `grep pytest` verificava "rodei pytest".
 
 - **`CONTRADICTED` era inalcançável em sessão real.** Das quatro sessões
   medidas (1925, 1306, 318, 290 observações), nenhuma cabia na janela de 200, e
   janela saturada resolve `UNSUPPORTED` por desenho. O teto de linhas virou
-  **teto de tempo**, porque a restrição sempre foi custo: um teto de linhas
-  punia sessão longa mesmo quando barata. Truncar por orçamento resolve
-  `UNSUPPORTED`, nunca acusação.
+  **teto de tempo**, porque a restrição sempre foi custo.
 
-### Nota de desempenho
+### Added
 
-O custo do pior caso depende do cache de página: ~809ms frio e ~46-91ms quente
-na sessão de 1466 observações Bash. Em produção o hook nasce num processo novo
-a cada turno, então o número frio é o que importa — com 500ms de orçamento essa
-sessão trunca pela metade e reporta `UNSUPPORTED` em vez de acusar sem ter
-olhado tudo.
+- Nomes de ferramenta dos três runtimes: `Bash`/`Write`/`Edit` (Claude Code,
+  medidos), `run_command`/`write_to_file`/`replace_file_content` (Antigravity),
+  `terminal`/`write_file`/`patch` (Hermes). Sem eles a verificação só
+  funcionaria num terço da frota. Escrita por shell cobre redirecionamento,
+  heredoc, `touch`, `sed -i` e `cp`.
+
+### Nota de custo, e a condição que a sustenta
+
+O orçamento é de **800ms** por afirmação. Três números medidos na maior sessão
+real (1925 observações, ~15MB de blobs), e os três importam porque um só
+engana: **~123ms** é o custo estável do scan completo, **~809ms** foi o outlier
+de cache de página frio no primeiro acesso, **800ms** é o teto.
+
+A condição que torna um teto de tempo defensável: um veredito que depende do
+relógio só pode variar no lado que **não acusa**. Estourar o orçamento resolve
+`UNSUPPORTED`, nunca `CONTRADICTED` — máquina carregada perde detecção, jamais
+inventa uma.
+
+### Limite declarado
+
+A marca de falha no nome da ferramenta nasce de um evento do harness do Claude
+Code. O código viaja vendorizado nos três runtimes; o evento, não. Para
+`commit` e `push` isso não abre buraco — exigir a âncora na saída já descarta
+ato que falhou. Para as classes cuja âncora vive nos argumentos, a defesa cai
+nos outros dois runtimes: dívida conhecida, não esquecimento.
 
 ---
 
