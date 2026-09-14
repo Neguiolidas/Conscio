@@ -11,6 +11,7 @@ Zero imports do resto do Conscio: este modulo e vendorizado para junto do hook.
 
 from __future__ import annotations
 
+import json
 import re
 import time
 import zlib
@@ -52,16 +53,60 @@ def _blob_text(conn, h) -> str:
         return ""
 
 
-#: Saida que denuncia ato que nao aconteceu. O harness ja registra chamada
-#: falha sob nome proprio (``Bash!failed``), entao isto cobre o resto: comando
-#: que sai 0 e ainda assim nao fez o ato.
-_FAILED = re.compile(
-    r"fatal:|^error:|Traceback \(most recent call last\)|\brejected\b"
-    r"|command not found|No such file or directory", re.IGNORECASE | re.MULTILINE)
+#: Separador que o harness usa para marcar chamada que FALHOU no proprio nome
+#: da ferramenta (``Bash!failed``, medido no obs.db vivo).
+_FAIL_MARK = "!"
 
 
-def _is_failure(output: str) -> bool:
-    return bool(_FAILED.search(output or ""))
+def _normalize_tool(raw: str) -> tuple[str, bool]:
+    """Nome canonico da ferramenta + se a chamada falhou.
+
+    O erro e lido do NOME, nunca do texto da saida. Escanear a saida por
+    "fatal:" ou "Traceback" e o mesmo defeito que o ``verify()`` tinha: lexico
+    passando por semantico. Medido em 400 chamadas BEM-SUCEDIDAS desta base,
+    2% seriam descartadas como erro -- entre elas um ``git commit`` legitimo
+    (a saida trazia "command not found" de outro trecho do script) e, com
+    ironia, o proprio comando que escreveu o detector, porque o codigo-fonte
+    dele contem os padroes que ele procura.
+    """
+    name, sep, _ = raw.partition(_FAIL_MARK)
+    return name, bool(sep)
+
+
+#: Corpo de heredoc: DADO que o comando escreve, nunca comando.
+_HEREDOC = re.compile(r"<<-?\s*'?\"?(\w+)'?\"?.*?^\1", re.DOTALL | re.MULTILINE)
+
+
+def _command_only(entrada: str) -> str:
+    """A entrada sem os corpos de heredoc.
+
+    Um ``cat > arquivo <<EOF`` carrega o conteudo INTEIRO do arquivo dentro da
+    entrada, e casar o padrao do ato contra ele faz um arquivo que FALA de um
+    ato parecer o ato. Medido: o comando que escreveu os testes desta emenda
+    casava "git commit" porque um docstring citava a expressao, e a saida
+    trazia a ancora porque mostrava o proprio arquivo -- escrever o teste que
+    prova a afirmacao falsa virava a prova de que ela era verdadeira.
+    """
+    return _HEREDOC.sub("", _decoded(entrada))
+
+
+def _decoded(entrada: str) -> str:
+    """O comando de fato, fora do envelope JSON da chamada.
+
+    A entrada e gravada como o payload JSON da ferramenta, onde a quebra de
+    linha e a sequencia ``\\n`` e nao um caractere -- casar heredoc sobre o
+    texto cru nunca fecha, porque o delimitador jamais aparece no inicio de uma
+    linha real.
+    """
+    try:
+        payload = json.loads(entrada or "")
+    except (ValueError, TypeError):
+        return entrada or ""
+    if isinstance(payload, dict):
+        campo = payload.get("command")
+        if isinstance(campo, str):
+            return campo
+    return entrada or ""
 
 
 def check(conn, claim: Claim, session_id: str,
@@ -87,7 +132,12 @@ def check(conn, claim: Claim, session_id: str,
         return o.UNSUPPORTED, ""          # classe sem ato definido: nao olho
 
     deadline = time.monotonic() + BUDGET_MS / 1000.0
-    tools = sorted({t for shape in cls.acts for t in shape.tools})
+    # Traz tambem a variante marcada como falha: normalizar exige ver o nome
+    # cru, e nome EXATO (nunca substring) -- o obs guarda nomes com prefixo de
+    # harness (mcp__plugin_..._remember), e casar por substring deixaria uma
+    # claim de arquivo virar VERIFIED pelo texto de outra ferramenta.
+    base = {t for shape in cls.acts for t in shape.tools}
+    tools = sorted(base | {f"{t}{_FAIL_MARK}failed" for t in base})
     placeholders = ",".join("?" * len(tools))
     rows = conn.execute(
         "SELECT id, tool, in_h, out_h FROM observations"
@@ -98,22 +148,24 @@ def check(conn, claim: Claim, session_id: str,
         return o.UNSUPPORTED, ""          # nao consegui olhar
 
     esgotado = False
-    for oid, tool, in_h, out_h in rows:
+    for oid, raw_tool, in_h, out_h in rows:
         if time.monotonic() > deadline:
             esgotado = True               # nao vi o resto: nao posso acusar
             break
+        tool, failed = _normalize_tool(raw_tool)
+        if failed:
+            continue                      # o ato foi tentado e nao aconteceu
         shapes = [sh for sh in cls.acts if tool in sh.tools]
         if not shapes:
             continue
         entrada = _blob_text(conn, in_h)
         saida = None
         for shape in shapes:
-            if shape.act and not re.search(shape.act, entrada, re.IGNORECASE):
+            if shape.act and not re.search(shape.act, _command_only(entrada),
+                                            re.IGNORECASE):
                 continue                  # a ferramenta serve, o ato nao e este
             if saida is None:
                 saida = _blob_text(conn, out_h)
-            if _is_failure(saida):
-                continue                  # o ato foi tentado e falhou
             campo = saida if shape.anchor_side == "output" else entrada
             if claim.anchor in campo:
                 return o.VERIFIED, f"obs:{oid}"

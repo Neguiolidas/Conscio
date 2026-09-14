@@ -104,9 +104,25 @@ def test_merely_reading_a_path_is_not_writing_it(conn):
 # ── (e) saida de erro nao e prova de ato ──────────────────────────────
 
 def test_a_failed_act_does_not_verify(conn):
-    _obs(conn, "git commit -m x", "fatal: nothing to commit abc1234")
+    """O harness marca a falha NO NOME da ferramenta, e e de la que se le.
+
+    Ler "fatal:" na saida seria lexico passando por semantico: medido, 2% das
+    chamadas BEM-SUCEDIDAS desta base seriam descartadas assim, incluindo um
+    git commit legitimo cuja saida trazia "command not found" de outro trecho.
+    """
+    _obs(conn, "git commit -m x", "[main abc1234] x", tool="Bash!failed")
     got, _ = check(conn, _claim(), "s1")
     assert got != o.VERIFIED
+
+
+def test_error_words_in_a_successful_output_do_not_block_it(conn):
+    """O caso real que derrubou o detector lexico: commit legitimo cuja saida
+    carrega palavras de erro vindas de outro comando do mesmo script."""
+    oid = _obs(conn, "git add x && git commit -m y",
+               "bash: high: command not found\n[main abc1234] y")
+    got, ptr = check(conn, _claim(), "s1")
+    assert got == o.VERIFIED
+    assert ptr == f"obs:{oid}"
 
 
 # ── A2: o filtro por tool destrava CONTRADICTED ───────────────────────
@@ -119,3 +135,23 @@ def test_inert_reads_no_longer_saturate_the_window(conn):
     _obs(conn, "git commit -m outro", "[main 9999999] outro")
     got, _ = check(conn, _claim(), "s1", limit=10)
     assert got == o.CONTRADICTED
+
+
+def test_a_file_that_talks_about_the_act_is_not_the_act(conn):
+    """O caso que me mordeu no smoke, e o mais instrutivo do dia.
+
+    O comando que ESCREVEU este proprio arquivo de teste casava o padrao de
+    commit -- porque um docstring cita a expressao "git commit" -- e a saida
+    trazia a ancora, porque mostrava o arquivo escrito. Escrever o teste que
+    prova a afirmacao falsa virava a prova de que ela era verdadeira.
+
+    Corpo de heredoc e DADO. O ato e o comando.
+    """
+    import json
+    conteudo = ("# doc: 2 de 22 observacoes com 'git commit' na entrada\\n"
+                "anchor = 'deadbee'\\n")
+    _obs(conn,
+         json.dumps({"command": f"cat > nota.py <<'EOF'\n{conteudo}\nEOF"}),
+         f"escrito:\n{conteudo}")
+    got, _ = check(conn, _claim(anchor="deadbee"), "s1")
+    assert got != o.VERIFIED, "o conteudo do arquivo virou o ato"
