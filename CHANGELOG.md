@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [4.6.0] - Unreleased — Honestidade verificável (modo sombra)
+## [4.6.0] - 2026-09-13 — Honestidade verificável (modo sombra)
 
 O Conscio dizia verificar. Três medições na v4.5.4 mostraram que a verificação
 existia como vocabulário e não como mecanismo: `expected_outcome` era campo

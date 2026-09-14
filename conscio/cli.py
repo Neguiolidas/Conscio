@@ -1045,7 +1045,8 @@ def _cmd_honesty(args) -> int:
     fatura de contexto.
     """
     import sqlite3
-    from datetime import datetime
+
+    from .timeutil import naive_utc_from_epoch
 
     if getattr(args, "honesty_command", "") != "recent":
         print("usage: conscio honesty recent [--limit N] [--outcome O]")
@@ -1082,7 +1083,10 @@ def _cmd_honesty(args) -> int:
 
     print(f"{'when':<20} {'outcome':<13} {'class':<11} {'anchor':<22} evidence")
     for ts, _session, cls_name, anchor, outcome, evidence in rows:
-        when = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+        # naive-UTC, nao local: a coluna e epoch e o resto do Conscio persiste
+        # naive-UTC. Misturar os dois enviesa qualquer janela pelo offset da
+        # maquina -- ha um guarda arquitetural sobre isso (test_durable_guards).
+        when = naive_utc_from_epoch(ts).strftime("%Y-%m-%d %H:%M:%S")
         print(f"{when:<20} {outcome:<13} {cls_name:<11} {anchor[:22]:<22}"
               f" {evidence or '-'}")
     return 0
