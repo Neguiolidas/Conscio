@@ -24,6 +24,8 @@ _CAPTURE_SIDECAR = "conscio_deepminer.json"
 # does not raise, it just stops recording, silently and for good. A copy shares
 # the hook's own lifetime, and the installer refreshes it on every run.
 _OBSSTORE_COPY = "conscio_obsstore.py"
+_HONESTY_HOOK = "conscio_honesty.py"
+_HONESTY_PKG = "conscio_honesty_pkg"
 # event name in settings.json -> argv token the hook dispatches on. The harness
 # sends no event name on stdin, so it has to travel in the command line.
 _CAPTURE_EVENTS = {
@@ -104,6 +106,10 @@ def materialize(slug: str, *, flags: dict, model, ts: str, io=None,
 
     n_cmds = _copy_tree(a / "commands", cdir / "commands" / "conscio")
     _copy_tree(a / "skills" / "conscio", cdir / "skills" / "conscio")
+    # v4.5.4: the relay skill ships beside the memory skill — agents that
+    # install the bundle carry the spool+directory rules (and the failure
+    # modes that took three sessions to map) into every host.
+    _copy_tree(a / "skills" / "conscio-relay", cdir / "skills" / "conscio-relay")
     hook_dst = cdir / "hooks" / _HOOK_NAME
     hook_dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(a / "hooks" / _HOOK_NAME, hook_dst)
@@ -113,6 +119,14 @@ def materialize(slug: str, *, flags: dict, model, ts: str, io=None,
 
     wake_dst = cdir / "hooks" / _WAKE_HOOK
     shutil.copy2(a / "hooks" / _WAKE_HOOK, wake_dst)
+
+    # v4.6: o hook de honestidade e o pacote que ele usa. O pacote vai INTEIRO
+    # e nao importa nada de fora justamente para sobreviver a esta copia --
+    # `import conscio` num hook falha em silencio, e foi assim que a captura da
+    # v4.0.0 ficou inerte.
+    shutil.copy2(a / "hooks" / _HONESTY_HOOK, cdir / "hooks" / _HONESTY_HOOK)
+    _copy_tree(Path(__file__).resolve().parents[2] / "honesty",
+               cdir / "hooks" / _HONESTY_PKG)
     # The hook loads obsstore by absolute path so it never imports the conscio
     # package (~0.28s) on a path that runs once per tool call.
     obsstore_dst = cdir / "hooks" / _OBSSTORE_COPY

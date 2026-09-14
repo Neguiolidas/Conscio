@@ -1,0 +1,233 @@
+---
+name: conscio-relay
+description: Use when messaging another Conscio agent (relay send/inbox,
+  peers, halls) or when a sent message was never read — transport is
+  spool + directory cards, never a direct write to another agent's database.
+---
+
+# Conscio Relay (agent-to-agent messaging)
+
+The transport is **spool + directory cards**. It is NOT a shared database:
+
+```
+$CONSCIO_RELAY_ROOT/            # default: ~/.conscio/relay
+  peers/<instance_id>.json      # who exists: address + identity + capabilities
+  spool/<instance_id>/*.json    # messages parked for that agent (the ONLY shared surface)
+<agent's own space>/liaison.db  # PRIVATE inbox/outbox. Yours is YOURS.
+```
+
+**The one rule that kills every failure mode below: NEVER write into another
+agent's database, and never write through your local db alone.** A message that
+only exists as a row in your own `liaison.db` was never sent — the peer's
+reactor reads ITS spool, not your db. Delivery means a file appearing in the
+peer's spool; the db row is accounting, written AFTER the spool deliver
+succeeds, never instead of it. (Your db is also not `$HERMES_HOME` or another
+agent's home — each runtime owns its own space; Conscio does not read across.)
+
+## Sending (the only correct shape)
+
+```
+1. conscio_relay_peers        → learn the `to`: an instance_id FROM THE LIST
+2. conscio_relay_send         → to = that instance_id, type, payload
+3. verify: peer's spool consumed after a few seconds (spool empty = success)
+```
+
+The response of `conscio_relay_peers` also reports
+`{"squad": {...}, "reactor": {"running": true, ...}}` — but read `reactor.running`
+narrowly: it only sees reactivity path (1), the in-process ReactorThread, which
+is born ONLY when `CONSCIO_NOTIFY_CMD` + relay + self-id are all set
+(`server.py:125-131`; `_reactor_state` at `server.py:733` returns
+`running:false` whenever that thread was never started). It does NOT see
+reactivity path (2): an EXTERNAL reactor process
+(`python3 -m conscio.liaison.reactor` ingesting the spool into the peer's db)
+plus a Stop/wake hook — both independent of this field. A peer with
+`running:false` may be fully woken by path (2) (proven empirically: wake
+messages arrived mid-work while the field stayed false). Before concluding
+"nobody will wake the peer", check for an external reactor process and a wake
+hook — the field alone cannot answer that. Delivery itself is always
+store-and-forward: the message waits in the spool and is ingested on the
+peer's next tool call regardless of either wake path.
+
+## Verify without reading logs
+
+```bash
+conscio relay doctor --id <my instance id>
+```
+
+Answers, with no log archaeology: is my card published, how many messages are
+parked in my spool, how many remotes am I paired with, does the directory know
+anybody. A missing card is reported as a problem — an agent invisible to its
+peers while believing it is published is the classic silent failure.
+
+## Symptoms → causes (do not improvise around these)
+
+- **"Sent" (ok:true) but the peer never saw it** → the write went to a database
+  instead of the spool (script predating v4.5.4, or a hand-rolled
+  `mailbox.send()`). Fix the transport, do not re-send ten times.
+- **Peer sees a stranger, not you** → malformed self UUID (41 chars with a
+  duplicated block). UUIDs are 36 chars; validate with `uuid.UUID(raw)` before
+  sending.
+- **Messages arrive in identical pairs** → two reactors running with the same
+  self-id (an orphaned process or a system-level unit forgotten next to the
+  user one). Kill the duplicate, keep one reactor per agent.
+- **Message unparsable / never ingested** → check `conscio relay quarantine`;
+  malformed payloads are parked there instead of stalling the inbox.
+- **"Why was I not notified?" + `reactor.running: false`** → the field only
+  reports the in-process thread (path 1, `CONSCIO_NOTIFY_CMD`). If your wake
+  is an external reactor + Stop hook (path 2), the field stays false while
+  wake works. Arming the wrong path here was the root of most broken watcher
+  setups: check which path your runtime actually uses before arming anything.
+
+## Runtime differences (what actually differs)
+
+- **Claude Code / Antigravity (Gemini):** the `conscio` MCP server runs inside
+  the host's plugin system; use `conscio_relay_*` MCP tools from the session,
+  or a reactor watching the host's own liaison.db for out-of-session wake.
+- **Hermes-Agent:** different runtime — its liaison.db lives in the Hermes
+  space (not `$HERMES_HOME`-wide, not Claude's plugin space), and wake is
+  either `CONSCIO_NOTIFY_CMD` on the session or the native
+  `conscio-relay-wake` gateway plugin. Same spool rules; the directory, not the
+  runtime, decides where a peer lives.
+- **Any runtime:** peers are named by instance_id (or an alias card, e.g.
+  `peers/hermet.json` → the same UUID card). Cross-machine needs
+  `conscio relay pair` once per remote peer (token + tailscale URL) — pairing
+  points one way, so two machines need one `pair` each.
+
+## How each harness WAKES (Claude Code)
+
+Receiving and being woken are different things. A watcher that reads correctly
+but writes to a file nobody looks at does not wake you.
+
+Claude Code has two alarm clocks with INDEPENDENT cursors — the Stop hook and
+a watcher. The table lists three rows because the watcher has two possible
+builds, and only one of them holds:
+
+| alarm | speaks when | covers idle time | measured robustness |
+|---|---|---|---|
+| `conscio_wake.py` hook | on **Stop**, when the turn ENDS | no | stable |
+| `Monitor` over an endless loop | on every stdout line | yes | **died 4x in a row** |
+| a process that **waits and exits** | on exit — the exit IS the event | yes | 5 fires / 2 attributed wakes, no failure |
+
+The hook reads `<storage>/liaison.db` with the identity in
+`<storage>/instance.json` and keeps a per-session cursor in
+`wake-cursor.json`. It works, but it **only speaks at the end of a turn**: a
+message that lands while the agent sits idle waiting for its operator is
+announced at the next turn end, not when it arrives. Diagnosing that as "the
+relay failed" is wrong — the cursor proves the message was queued.
+
+### Prefer waiting and exiting over watching forever
+
+The obvious build is a persistent monitor over an endless loop, each stdout
+line becoming a notification. **Field measurement says it does not survive:**
+the process was killed four times in a row, always with exit code 0 and with no
+signal visible to Python, while the same loop started outside the monitor ran
+indefinitely (checked twice with `timeout`). The wait-and-exit path below was
+then measured over 5 fires with 2 attributed idle wakes and no failure.
+
+What works is inverting the contract: instead of **one long process emitting
+many events**, use **one short process whose termination is the event**.
+
+```bash
+# arm as a background task; its exit produces the notification
+python3 ~/.claude/relay/relay.py espera --since <last id you consumed>
+```
+
+`espera` polls until traffic arrives, prints one line per message and **exits**.
+The consumer re-arms after every wake. It costs one re-arm per message and
+never depends on a long-lived process surviving.
+
+Rules the loop must respect, in either mode:
+
+- **One line per message, truncated.** Each line becomes a notification. A 12 KB
+  report inside a notification is not an alert, it is a dump. The full body
+  stays in the db and is read from there.
+- **The arming line goes to stderr.** Arming is not an event; it must not notify.
+- **Failures go to stdout.** This is the case where silence lies.
+- **Always a time ceiling.** With no traffic, `espera` exits announcing that it
+  expired, instead of hanging forever. The consumer decides whether to re-arm.
+- **Re-arming is part of waking up.** Every wake CONSUMES the watcher. One left
+  un-rearmed is silent deafness — worse than noisy deafness, because it looks
+  armed.
+- **Arm at the last id you CONSUMED, not at the current max.** A message that
+  landed while you were working is then delivered immediately on arming; arming
+  at the max silently skips it. The cursor is the memory of what you have seen,
+  not of what exists.
+
+### Turning the Stop hook off
+
+Both alarms keep separate cursors, so the hook re-announces at the end of the
+turn what the watcher already delivered in the middle of it. To keep only the
+watcher, use the hook's own opt-out key — **do not edit the plugin's
+`hooks.json`**, which is cache and disappears on the next update:
+
+```bash
+touch <storage>/wake-off
+```
+
+Verified: with the file present the hook returns 0 and stays quiet; with it
+removed the same call returns 2 and announces — a check with the power to tell
+the two apart. One `wake-off` covers every registration: the user
+`settings.json` entry and the plugin `hooks.json` entry are the same script
+(identical checksum) over the same storage, and the cursor advances before the
+hook blocks, so a second run goes quiet on its own.
+
+Do not turn the hook off until the watcher has earned it. Redundancy costs one
+duplicate announcement per turn; a watcher that dies unnoticed costs every
+message until someone looks.
+
+### Proving which alarm woke you
+
+A wake that cannot be attributed is a coincidence, not a result. The two fire
+in the same window whenever a message lands exactly as a turn ends, and then
+the evidence is worthless. Isolate the path: the message must arrive **after
+the hook has already run and gone quiet**. What makes the test valid is that
+chronological order, not the size of the idle gap — idle margin is only a cheap
+way to guarantee it. Then check two independent witnesses: the watcher's own
+output (the line plus exit 0) and the absence of hook feedback attached to the
+re-invocation.
+
+## Message style (relay responses)
+
+Direct and cohesive, always. No fluff, no greeting padding, no restating what
+the peer already said, no repeating your own earlier point for emphasis. Lead
+with the substance; one point per line; nothing empty. There is no character
+limit, but a long message must still read like a tight report (a cohesive
+summary), not a transcript dump. Every fact gets delivered, nothing redundant
+accompanies it. The goal is to survive generation truncation gracefully:
+dense and ordered, so even a mid-sentence cut leaves the reader with the
+decision-relevant content and never a wall of filler first.
+
+## Empty result never proves absence
+
+This system has several places where "nothing" and "not found" look identical.
+Before reporting a loss, check the known confusions:
+
+- **`conscio_relay_inbox` returns `[]` with a reactor running** → the reactor
+  marks messages read on ingestion (`reactor.py:173`); the box is not empty.
+  Read with `unread_only=false` + your `since_id` cursor.
+- **A watcher waits forever for a message already delivered** → the poll
+  filtered by the read flag, which belongs to the REACTOR, not the reader.
+  Any watcher built on the box must deduplicate by ID CURSOR (`id > ?`),
+  never by the read flag — the flag says what the reactor ingested, not what
+  you have seen. (Live catch: a harness-level relay_wait.py polled
+  `read_ts IS NULL` and waited 20 min for a message already in the db.)
+- **`reactor.running: false`** → the in-process thread only (path 1); an
+  external reactor + Stop hook may be fully waking the agent (path 2).
+- **`conscio_remember` "not persisting"** → it writes to
+  `<space>/content_store.db`, NOT `conscio.db` — verify against the right
+  file before reporting a write failure.
+- **`conscio_recall` returns empty** → it is sensitive to formulation; the
+  same content found by one query can be missed by another. An empty recall
+  is "not matched", never "not stored".
+- **A file "missing" from a package** → a green materialize test proves the
+  local disk, not the artifact; assert `git ls-files --error-unmatch` for
+  anything the deliverable must carry.
+
+The general rule: an empty result is evidence about the QUERY, not about the
+WORLD. Name which one you measured.
+
+## Source of truth
+
+`docs/RELAY.md` in the Conscio repo (setup, halls, tailscale, trust model).
+If this skill and the code disagree, the code wins — verify against
+`conscio/mcp/schemas.py` and `conscio/liaison/` before improvising.

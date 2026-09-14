@@ -35,6 +35,36 @@ def test_materialize_copies_commands_skill_hook(tmp_path):
     assert summ["commands"] == expected and summ["skill"] and summ["hook"]
 
 
+def test_materialize_copies_the_relay_skill_beside_the_memory_skill(tmp_path):
+    """The relay skill ships beside the memory skill: a bundle that installs
+    conscio without conscio-relay leaves the host improvising mailbox.send()
+    into another agent's database — the failure mode this skill exists to
+    kill. Source-of-truth driven, like the commands count above."""
+    relay_src = (Path(materialize.__file__).parent / "assets" / "skills"
+                 / "conscio-relay" / "SKILL.md")
+    assert relay_src.is_file(), "assets/skills/conscio-relay lost SKILL.md"
+
+    _run(tmp_path)
+    dst = tmp_path / "claude" / "skills" / "conscio-relay" / "SKILL.md"
+    assert dst.is_file()
+    assert dst.read_bytes() == relay_src.read_bytes()
+
+    # materialize reads the WORKING TREE, so a green run here proves the local
+    # disk, not the shipped artifact: an untracked skill copies fine on this
+    # machine and vanishes from every clean clone and from the CI wheel.
+    import subprocess
+    repo = Path(materialize.__file__).resolve().parents[3]
+    tracked = subprocess.run(
+        ["git", "ls-files", "--error-unmatch",
+         str(relay_src.relative_to(repo))],
+        cwd=repo, capture_output=True, text=True)
+    assert tracked.returncode == 0, (
+        "assets/skills/conscio-relay/SKILL.md is not versioned: materialize "
+        "copies it from the working tree, so it ships in NO clone and NO "
+        "wheel — a green materialize test on the author's machine is the "
+        "environment passing for the artifact.")
+
+
 def test_materialize_registers_mcp_with_storage_and_vault(tmp_path):
     _run(tmp_path)
     data = json.loads((tmp_path / "claude.json").read_text())
@@ -248,3 +278,35 @@ def test_materialize_registers_the_compaction_bracket(tmp_path):
                        ("PostCompact", "post-compact")):
         blob = json.dumps(settings["hooks"][event])
         assert "conscio_deepminer.py" in blob and arg in blob, event
+
+
+def test_materialize_vendors_the_honesty_hook_and_its_package(tmp_path):
+    """The honesty hook is useless without the package beside it.
+
+    The hook loads honesty/ by path because `conscio` is not installed next to
+    the plugin — it comes from PyPI via uvx. Copying the hook and forgetting
+    the package reproduces the v4.0.0 failure exactly: the hook runs, fails to
+    import, exits 0 by design, and records nothing while looking healthy.
+    """
+    _run(tmp_path)
+    hooks = tmp_path / "claude" / "hooks"
+    assert (hooks / "conscio_honesty.py").is_file()
+    pkg = hooks / "conscio_honesty_pkg"
+    for module in ("verdicts.py", "classes.py", "evidence.py",
+                   "recognizer.py", "store.py", "sweep.py", "__init__.py"):
+        assert (pkg / module).is_file(), f"{module} missing from the bundle"
+
+
+def test_the_honesty_package_never_imports_the_conscio_package(tmp_path):
+    """Structural guard for the vendoring invariant.
+
+    The runtime smoke in test_honesty_hook.py proves today's call path; this
+    catches the import that a future edit adds on a path no test exercises.
+    """
+    src = Path(materialize.__file__).parents[2] / "honesty"
+    offenders = [p.name for p in src.glob("*.py")
+                 if "import conscio" in p.read_text(encoding="utf-8")
+                 or "from conscio" in p.read_text(encoding="utf-8")
+                 or "from .." in p.read_text(encoding="utf-8")]
+    assert offenders == [], (
+        f"honesty/ must not import outside itself: {offenders}")

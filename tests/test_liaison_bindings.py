@@ -47,13 +47,19 @@ def test_liaison_tools_absent_without_flag(tmp_path):
 
 
 def test_reviewer_tools_present_without_act(tmp_path):
+    """E3: the advertised surface is the DISPATCHER (conscio_review); the
+    individual names stay as dispatch-only aliases. poll stays gated on act.
+    Migrated from the pre-E3 contract, not skipped."""
     b, eng, seen = _bind(tmp_path, instance_id="X", hermes_review=True,
                          act_flag=False)
     try:
         names = {t["name"] for t in b.tool_defs()}
-        assert {"conscio_reviews", "conscio_review_approve",
-                "conscio_review_reject"} <= names
-        assert "conscio_poll_reviews" not in names      # needs --enable-act
+        assert "conscio_review" in names
+        for old in ("conscio_reviews", "conscio_review_approve",
+                    "conscio_review_reject"):
+            assert old not in names, old
+            assert old in b._tools(), old                 # alias routes alive
+        assert "conscio_poll_reviews" not in names        # needs --enable-act
         meta = b.conscio_meta()
         assert meta["hermes_review_enabled"] is True
     finally:
@@ -375,12 +381,23 @@ def test_relay_tools_absent_without_flag(tmp_path):
 
 
 def test_relay_tools_present_with_flag(tmp_path):
+    """E3: the advertised surface is the DISPATCHER, not the five tools —
+    the individual names live as dispatch-only aliases (route alive, never
+    advertised). Migrated from the pre-E3 contract, not skipped."""
     b, eng, seen = _bind(tmp_path, instance_id="X", hermes_review=False,
                          relay=True, relay_peers=("B",))
     try:
         names = {t["name"] for t in b.tool_defs()}
-        assert {"conscio_relay_send", "conscio_relay_inbox",
-                "conscio_relay_read"} <= names
+        assert "conscio_relay" in names
+        for old in ("conscio_relay_send", "conscio_relay_inbox",
+                    "conscio_relay_read", "conscio_relay_broadcast",
+                    "conscio_relay_peers"):
+            assert old not in names, old
+        # alias: each old name still DISPATCHES through _tools()
+        for old in ("conscio_relay_send", "conscio_relay_inbox",
+                    "conscio_relay_read", "conscio_relay_broadcast",
+                    "conscio_relay_peers"):
+            assert old in b._tools(), old
         meta = b.conscio_meta()
         assert meta["relay_enabled"] is True
         assert meta["relay_peers_count"] == 1
@@ -528,11 +545,15 @@ def test_relay_read_filters_non_int_ids(tmp_path):
 # ── v2.8.2 "Conversation": relay_broadcast fan-out tool ───────────────────────
 
 def test_relay_broadcast_tool_present_with_flag(tmp_path):
+    """E3: broadcast is routed by the dispatcher; its name is a dispatch-only
+    alias, not an advertised tool. Migrated from the pre-E3 contract."""
     b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
                          relay=True, relay_peers=("B", "C"))
     try:
         names = {t["name"] for t in b.tool_defs()}
-        assert "conscio_relay_broadcast" in names
+        assert "conscio_relay" in names
+        assert "conscio_relay_broadcast" not in names     # alias, not advertised
+        assert "conscio_relay_broadcast" in b._tools()    # route alive
     finally:
         seen.close()
         eng.close()
@@ -770,13 +791,20 @@ def test_hall_tools_absent_without_flag(tmp_path):
 
 
 def test_hall_tools_present_with_flag(tmp_path):
+    """E3: the advertised surface is the DISPATCHER (conscio_hall); the seven
+    individual names stay as dispatch-only aliases. Migrated from the pre-E3
+    contract, not skipped."""
     b, eng, seen = _bind(tmp_path, instance_id="A", relay=True,
                          can_create_halls=True)
     try:
         names = {t["name"] for t in b.tool_defs()}
-        assert {"conscio_hall_create", "conscio_hall_list", "conscio_hall_join",
-                "conscio_hall_leave", "conscio_hall_members",
-                "conscio_hall_send", "conscio_hall_manage"} <= names
+        assert "conscio_hall" in names
+        for old in ("conscio_hall_create", "conscio_hall_list",
+                    "conscio_hall_join", "conscio_hall_leave",
+                    "conscio_hall_members", "conscio_hall_send",
+                    "conscio_hall_manage"):
+            assert old not in names, old
+            assert old in b._tools(), old                 # alias routes alive
     finally:
         seen.close()
         eng.close()
@@ -986,5 +1014,141 @@ def test_hall_list_shows_mine_and_owned(tmp_path):
         B._hall_join({"hall_id": hid})
         assert {h["hall_id"] for h in B._hall_list({})["halls"]} == \
             {hid, "b--other"}
+    finally:
+        seenA.close(); engA.close(); seenB.close(); engB.close()
+
+
+def test_relay_inbox_exposes_read_messages_when_unread_only_false(tmp_path):
+    """Correcao (a): com o reactor rodando, tudo ja esta marcado lido na
+    ingestao (reactor.py:173). O agente precisa poder enxergar as lidas por
+    parametro — unread_only=False destrava a leitura que hoje devolve vazio."""
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",), liaison_db=db)
+    _publish("B")
+    try:
+        mailbox.send(db, from_instance="B", to_instance="A",
+                     type="note", payload={"n": 1})
+        rid = mailbox.inbox(db, "A", unread_only=True)[0]["id"]
+        mailbox.mark_read(db, [rid])          # simula o reactor na ingestao
+        # default: unread_only=True -> vazio (comportamento atual)
+        assert b._relay_inbox({})["messages"] == []
+        # novo: unread_only=False -> expoe a lida
+        msgs = b._relay_inbox({"unread_only": False})["messages"]
+        assert [m["id"] for m in msgs] == [rid]
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_inbox_since_id_filters_newer_only(tmp_path):
+    """Correcao (a): since_id=N retorna apenas id > N — o executor le o
+    incremento desde o seu cursor, sem reprocessar o que ja viu."""
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",), liaison_db=db)
+    _publish("B")
+    try:
+        mailbox.send(db, from_instance="B", to_instance="A",
+                     type="note", payload={"n": 1})
+        first = mailbox.inbox(db, "A", unread_only=True)[0]["id"]
+        mailbox.send(db, from_instance="B", to_instance="A",
+                     type="note", payload={"n": 2})
+        second = next(m for m in mailbox.inbox(db, "A", unread_only=True)
+                      if m["id"] > first)["id"]
+        got = b._relay_inbox({"since_id": first})["messages"]
+        assert [m["id"] for m in got] == [second]
+    finally:
+        seen.close()
+        eng.close()
+
+
+# ── E3: dispatchers for RELAY / REVIEW / HALL (ADR-20260913133108-1fac9c) ──
+
+def test_relay_dispatch_routes_all_ops(tmp_path):
+    """E3: conscio_relay(op=...) roteia cada op para o mesmo handler das
+    tools individuais. Um despachante, cinco verbos, zero diferenca de
+    comportamento — o op e argumento, a rota e a tool. Dois dbs, como no
+    e2e: o outbox de um agente nao entra na caixa do outro."""
+    db_a, db_b = tmp_path / "a.db", tmp_path / "b.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",), liaison_db=db_a,
+                         storage=tmp_path / "A")
+    _publish("B")
+    try:
+        # send pelo despachante == send pela tool individual
+        r = b._relay_dispatch({"op": "send", "to": "B",
+                               "type": "note", "payload": {"hi": 1}})
+        assert r["ok"] is True
+        # inbox pelo despachante expoe a mesma surface (unread_only/since_id);
+        # B ingere o PROPRIO spool e le com o PROPRIO despachante, como no e2e
+        db2, eng2, seen2 = _bind(tmp_path, instance_id="B", hermes_review=False,
+                                 relay=True, relay_peers=("A",), liaison_db=db_b,
+                                 storage=tmp_path / "B")
+        try:
+            assert spool.ingest(db_b, "B") == 1   # B ingere o proprio spool
+            inbox = db2._relay_dispatch({"op": "inbox"})["messages"]
+            assert len(inbox) == 1 and inbox[0]["from_instance"] == "A"
+        finally:
+            seen2.close()
+            eng2.close()
+        # op desconhecido e erro com a lista de ops validas
+        try:
+            b._relay_dispatch({"op": "delete"})
+            raise AssertionError("expected InvalidParams")
+        except Exception as exc:
+            assert "delete" in str(exc) and "send" in str(exc)
+        # op ausente e erro
+        try:
+            b._relay_dispatch({})
+            raise AssertionError("expected InvalidParams")
+        except Exception:
+            pass
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_dispatch_advertised_instead_of_five_tools(tmp_path):
+    """E3: tools/list anuncia o despachante, nao as 5 tools individuais.
+    Os nomes individuais continuam no DISPATCH (alias, retrocompat) mas nao
+    no anuncio — e isso que economiza os bytes da ADR."""
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",))
+    try:
+        names = {t["name"] for t in b.tool_defs()}
+        assert "conscio_relay" in names
+        for old in ("conscio_relay_send", "conscio_relay_inbox",
+                    "conscio_relay_read", "conscio_relay_broadcast",
+                    "conscio_relay_peers"):
+            assert old not in names, old
+        # alias: o nome antigo DESPACHA (rota viva), so nao e anunciado
+        assert "conscio_relay_send" in b._tools()
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_hall_dispatch_routes_and_hides_seven_tools(tmp_path):
+    """E3: conscio_hall(op=...) roteia os 7 verbos; os nomes individuais
+    ficam como alias de dispatch, fora do tools/list."""
+    db = tmp_path / "liaison.db"
+    A, engA, seenA = _bind(tmp_path, instance_id="A", hermes_review=False,
+                           relay=True, relay_peers=("B",), can_create_halls=True,
+                           liaison_db=db, storage=tmp_path / "A")
+    B, engB, seenB = _bind(tmp_path, instance_id="B", hermes_review=False,
+                           relay=True, relay_peers=("A",), can_create_halls=True,
+                           liaison_db=db, storage=tmp_path / "B")
+    try:
+        hid = A._hall_dispatch({"op": "create", "name": "team"})["hall"]["hall_id"]
+        names_a = {t["name"] for t in A.tool_defs()}
+        assert "conscio_hall" in names_a
+        assert "conscio_hall_create" not in names_a
+        assert "conscio_hall_create" in A._tools()      # alias vivo
+        # send pelo despachante == fan-out da tool individual
+        r = B._hall_dispatch({"op": "join", "hall_id": hid})
+        assert r["ok"] is True
+        members = A._hall_dispatch({"op": "members", "hall_id": hid})
+        assert len(members["members"]) == 2
     finally:
         seenA.close(); engA.close(); seenB.close(); engB.close()

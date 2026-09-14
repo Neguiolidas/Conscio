@@ -1,35 +1,78 @@
 {
   "hooks": {
     "SessionStart": [
-      {"hooks": [
-        {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_awareness.py\""},
-        {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_deepminer.py\" session-start --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""}
-      ]}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_awareness.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_deepminer.py\" session-start --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""
+          }
+        ]
+      }
     ],
     "PostToolUse": [
-      {"matcher": "*", "hooks": [
-        {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_deepminer.py\" post-tool-use --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""}
-      ]}
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_deepminer.py\" post-tool-use --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""
+          }
+        ]
+      }
     ],
     "PostToolUseFailure": [
-      {"matcher": "*", "hooks": [
-        {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_deepminer.py\" post-tool-use-failure --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""}
-      ]}
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_deepminer.py\" post-tool-use-failure --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""
+          }
+        ]
+      }
     ],
     "Stop": [
-      {"hooks": [
-        {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_wake.py\" stop --storage \"${CLAUDE_PLUGIN_DATA}/space\""}
-      ]}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_wake.py\" stop --storage \"${CLAUDE_PLUGIN_DATA}/space\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_honesty.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\" --honesty \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_honesty_pkg\" --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\""
+          }
+        ]
+      }
     ],
     "PreCompact": [
-      {"hooks": [
-        {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_deepminer.py\" pre-compact --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""}
-      ]}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_deepminer.py\" pre-compact --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""
+          }
+        ]
+      }
     ],
     "PostCompact": [
-      {"hooks": [
-        {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_deepminer.py\" post-compact --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""}
-      ]}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_deepminer.py\" post-compact --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""
+          }
+        ]
+      }
     ]
   }
 }

@@ -210,6 +210,20 @@ def _build_parser() -> argparse.ArgumentParser:
         help="also try to open the manual with the system pager/editor")
 
     # v3.5: observatory subcommand
+    p_honesty = sub.add_parser(
+        "honesty", help="read the honesty record (host-claim outcomes)")
+    p_honesty_sub = p_honesty.add_subparsers(dest="honesty_command",
+                                             metavar="<subcommand>")
+    p_honesty_recent = p_honesty_sub.add_parser(
+        "recent", help="list the most recent recorded claims")
+    p_honesty_recent.add_argument("--storage", default="",
+                                  help="space dir (default: ~/.conscio)")
+    p_honesty_recent.add_argument("--limit", type=int, default=20,
+                                  help="rows to show (default: 20)")
+    p_honesty_recent.add_argument(
+        "--outcome", default="",
+        help="show only this outcome (VERIFIED/CONTRADICTED/UNSUPPORTED)")
+
     p_obs = sub.add_parser(
         "observatory",
         help="start the read-only Observatory web UI (loopback only)")
@@ -1023,6 +1037,61 @@ def _cmd_search(query: str, k: int, category: str | None,
         eng.close()
 
 
+def _cmd_honesty(args) -> int:
+    """Le o registro de honestidade sem depender do E3 nem da superficie MCP.
+
+    Uma feature que so existe em banco e indistinguivel de nao existir para a
+    persona do PRD, que percebe o Conscio pelo que aparece na conversa e pela
+    fatura de contexto.
+    """
+    import sqlite3
+
+    from .timeutil import naive_utc_from_epoch
+
+    if getattr(args, "honesty_command", "") != "recent":
+        print("usage: conscio honesty recent [--limit N] [--outcome O]")
+        return 0
+
+    db = Path(_storage(args.storage)) / "conscio.db"
+    if not db.is_file():
+        print(f"no claims yet: {db} does not exist")
+        return 0
+
+    query = "SELECT ts, session_id, cls_name, anchor, outcome, evidence FROM claims"
+    params: list = []
+    if args.outcome:
+        query += " WHERE outcome=?"
+        params.append(args.outcome)
+    query += " ORDER BY id DESC LIMIT ?"
+    params.append(args.limit)
+
+    conn = sqlite3.connect(str(db))
+    try:
+        rows = conn.execute(query, params).fetchall()
+    except sqlite3.DatabaseError:
+        # Espaco onde o hook nunca rodou, ou arquivo que nao e um banco: nada
+        # a mostrar nao e erro.
+        print("no claims recorded yet")
+        return 0
+    finally:
+        conn.close()
+
+    if not rows:
+        # Silencio seria indistinguivel de comando quebrado.
+        print("no claims recorded yet")
+        return 0
+
+    print(f"{'when':<20} {'outcome':<13} {'class':<11} {'anchor':<22} evidence")
+    for ts, _session, cls_name, anchor, outcome, evidence in rows:
+        # naive-UTC, nao local: a coluna e epoch e o resto do Conscio persiste
+        # naive-UTC. Misturar os dois enviesa qualquer janela pelo offset da
+        # maquina -- ha um guarda arquitetural sobre isso (test_durable_guards).
+        when = naive_utc_from_epoch(ts).strftime("%Y-%m-%d %H:%M:%S")
+        print(f"{when:<20} {outcome:<13} {cls_name:<11} {anchor[:22]:<22}"
+              f" {evidence or '-'}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -1103,6 +1172,9 @@ def main(argv: list[str] | None = None) -> int:
                            exact=args.exact)
     if args.command == "manual":
         return _cmd_manual(open_it=getattr(args, "open", False))
+    if args.command == "honesty":
+        return _cmd_honesty(args)
+
     if args.command == "observatory":
         return _cmd_observatory(host=args.host, port=args.port,
                                 root=args.root, token=args.token,

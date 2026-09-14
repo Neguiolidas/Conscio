@@ -8,7 +8,7 @@ The sets are nested — lite ⊂ balanced ⊂ high ⊂ ultra — so raising the 
 removes a tool the caller was already using. ``conscio_remember`` is in all
 four: a mode without a memory write is not a Conscio.
 
-Mind the off-by-one when reading the frozensets below: they hold 9, 17, and 19,
+Mind the off-by-one when reading the frozensets below: they hold 9, 18, and 26,
 but they are the *pre-filter* subsets. ``conscio_mode`` is appended after the mode
 filter (see ``MODE_TOOL_DEF``), so every mode serves one tool more than its set.
 Ultra has no set at all; it is the absence of a filter over the entries of
@@ -57,6 +57,16 @@ BALANCED_TOOLS = LITE_TOOLS | frozenset({
 HIGH_TOOLS = BALANCED_TOOLS | frozenset({
     "conscio_squad_experts",
     "conscio_squad_opositors",
+    # v4.6 E3 (ADR-20260913133108-1fac9c): the six deep instruments leave
+    # ultra for high, so a mid-size model gets them without the 36-tool
+    # flood. With this move the byte-monotonicity argument of the ADR holds
+    # at the balanced->high rung too (its pre-condition, spec §4.3).
+    "conscio_acceptance_criteria",
+    "conscio_delivery_check",
+    "conscio_investigate",
+    "conscio_evaluate",
+    "conscio_eval_harness",
+    "conscio_rules_distill",
 })
 
 _FILENAME = "mcp_mode"

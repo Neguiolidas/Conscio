@@ -24,11 +24,12 @@ from .protocol import SUPPORTED_PROTOCOLS, Dispatcher
 from .schemas import (
     ACT_TOOL_DEFS,
     BASE_TOOL_DEFS,
-    HALL_TOOL_DEFS,
+    HALL_DISPATCH_DEF,
     LIAISON_TOOL_DEFS,
     MODE_TOOL_DEF,
-    RELAY_TOOL_DEFS,
+    RELAY_DISPATCH_DEF,
     RESOURCE_DEFS,
+    REVIEW_DISPATCH_DEF,
     derive_event_id,
     event_to_frame,
     validate_event,
@@ -194,14 +195,18 @@ class Bindings:
         if self._act_enabled():
             flagged += list(ACT_TOOL_DEFS)
         if self.hermes_review:
-            for d in LIAISON_TOOL_DEFS:
-                if d["name"] == "conscio_poll_reviews" and not self._act_enabled():
-                    continue                 # proposer tool needs act too
-                flagged.append(d)
+            # E3: one advertised dispatcher (the individual names stay in
+            # _tools() as dispatch-only aliases); poll stays gated on act
+            # because the proposer path needs it too.
+            flagged.append(REVIEW_DISPATCH_DEF)
+            if self._act_enabled():
+                poll = next(d for d in LIAISON_TOOL_DEFS
+                            if d["name"] == "conscio_poll_reviews")
+                flagged.append(poll)
         if self.relay:
-            flagged += list(RELAY_TOOL_DEFS)
+            flagged.append(RELAY_DISPATCH_DEF)
         if self.can_create_halls:                # v4.5: Agent's Hall tools
-            flagged += list(HALL_TOOL_DEFS)
+            flagged.append(HALL_DISPATCH_DEF)
 
         # 1. seleção: o modo filtra só a superfície BASE
         allowed = {"lite": modes.LITE_TOOLS,
@@ -344,18 +349,24 @@ class Bindings:
                     self._int_arg(a, "ledger_id"), str(a.get("reason", ""))),
             })
         if self.hermes_review:
+            tools["conscio_review"] = self._review_dispatch
+            # E3: dispatch-only aliases — route alive, never advertised
             tools["conscio_reviews"] = self._reviews
             tools["conscio_review_approve"] = self._review_approve
             tools["conscio_review_reject"] = self._review_reject
             if self._act_enabled():
                 tools["conscio_poll_reviews"] = self._poll_reviews
         if self.relay:
+            tools["conscio_relay"] = self._relay_dispatch
+            # E3: dispatch-only aliases — route alive, never advertised
             tools["conscio_relay_send"] = self._relay_send
             tools["conscio_relay_inbox"] = self._relay_inbox
             tools["conscio_relay_read"] = self._relay_read
             tools["conscio_relay_broadcast"] = self._relay_broadcast
             tools["conscio_relay_peers"] = self._relay_peers_tool
             if self.can_create_halls:      # v4.5: Agent's Hall tools
+                tools["conscio_hall"] = self._hall_dispatch
+                # E3: dispatch-only aliases — route alive, never advertised
                 tools["conscio_hall_create"] = self._hall_create
                 tools["conscio_hall_list"] = self._hall_list
                 tools["conscio_hall_join"] = self._hall_join
@@ -640,13 +651,78 @@ class Bindings:
             self._retention_tick()
         return {"ok": True, "sent": sent, "errors": errors}
 
+    def _relay_dispatch(self, args: dict) -> dict:
+        """E3 (ADR-20260913133108-1fac9c): one dispatcher for the five relay
+        verbs. The op is an argument; the route is the tool. The individual
+        names stay in _tools() as dispatch-only aliases (zero MethodNotFound
+        for scripted hosts) but are not advertised in tools/list — that is
+        where the ADR's byte savings live."""
+        op = self._require(args, "op")
+        handler = {
+            "send":      lambda: self._relay_send(args),
+            "inbox":     lambda: self._relay_inbox(args),
+            "read":      lambda: self._relay_read(args),
+            "broadcast": lambda: self._relay_broadcast(args),
+            "peers":     lambda: self._relay_peers_tool(args),
+        }.get(op)
+        if handler is None:
+            raise j.InvalidParams(
+                f"unknown op {op!r}; expected one of "
+                f"send|inbox|read|broadcast|peers")
+        return handler()
+
+    def _hall_dispatch(self, args: dict) -> dict:
+        """E3: one dispatcher for the seven hall verbs, same alias policy as
+        _relay_dispatch."""
+        op = self._require(args, "op")
+        handler = {
+            "create":  lambda: self._hall_create(args),
+            "list":    lambda: self._hall_list(args),
+            "join":    lambda: self._hall_join(args),
+            "leave":   lambda: self._hall_leave(args),
+            "members": lambda: self._hall_members(args),
+            "send":    lambda: self._hall_send(args),
+            "manage":  lambda: self._hall_manage(args),
+        }.get(op)
+        if handler is None:
+            raise j.InvalidParams(
+                f"unknown op {op!r}; expected one of "
+                f"create|list|join|leave|members|send|manage")
+        return handler()
+
+    def _review_dispatch(self, args: dict) -> dict:
+        """E3: one dispatcher for the four reviewer verbs."""
+        op = self._require(args, "op")
+        handler = {
+            "reviews": lambda: self._reviews(args),
+            "approve": lambda: self._review_approve(args),
+            "reject":  lambda: self._review_reject(args),
+            "poll":    lambda: self._poll_reviews(args),
+        }.get(op)
+        if handler is None:
+            raise j.InvalidParams(
+                f"unknown op {op!r}; expected one of "
+                f"reviews|approve|reject|poll")
+        return handler()
+
     def _relay_inbox(self, args: dict) -> dict:
         # Reception is symmetric with sending: the same peer source on both
         # sides, and the spool is drained first — nobody writes into my db.
         self._ensure_registered()
         limit = self._int_arg(args, "limit", 50)
+        # v4.6 fix (a): the reactor marks messages read on INGESTION
+        # (reactor.py:173) before the agent ever looks. Default legibility
+        # stays unread_only=True, but a host that runs a reactor needs
+        # unread_only=False + since_id to read its own inbox by tool instead
+        # of going to SQLite directly.
+        unread_only = not (args.get("unread_only") is False)
+        since_id = args.get("since_id")
+        if since_id is not None and (isinstance(since_id, bool)
+                                     or not isinstance(since_id, int)):
+            raise j.InvalidParams("'since_id' must be an integer")
         rows = mailbox.inbox(self.liaison_db, self.self_instance_id,
-                             types=None, unread_only=True, limit=limit)
+                             types=None, unread_only=unread_only,
+                             since_id=since_id, limit=limit)
         peers = self._resolve_peers()
         out: list[dict] = []
         junk: list[int] = []
@@ -1359,7 +1435,15 @@ class Bindings:
 
     # ── read-only state payloads (shared by resources + tools, v2.4) ──
     def _state_payload(self) -> dict:
-        return self.engine.advisory().get("state", {})
+        import dataclasses
+        st = self.engine.state
+        payload = dataclasses.asdict(st)
+        # context_mode é um enum; asdict o deixa cru (não-serializável e inútil
+        # pro host). Normaliza pra .value em vez de vazar o enum.
+        cm = payload.get("context_mode")
+        if cm is not None and hasattr(cm, "value"):
+            payload["context_mode"] = cm.value
+        return payload
 
     def _events_payload(self, params: dict) -> list[dict]:
         def s(key: str) -> str | None:
