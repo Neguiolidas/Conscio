@@ -161,3 +161,17 @@ def test_a_leading_dot_survives_the_delimiter_strip():
     "env.local", que nunca casa o alvo real e vira ACUSACAO. Delimitador de
     prosa a esquerda nao inclui ponto -- dotfile comeca com ele."""
     assert _anchors("criei `.env.local`") == [".env.local"]
+
+
+def test_a_blockquote_line_is_citation():
+    """Citar log e issue com '>' e idioma universal de analise de causa.
+    Medido pelo Gemini e reproduzido aqui: as duas frases viravam claim."""
+    assert find_claims("> Issue #123: criei `schema.sql` e deu timeout.") == []
+    assert find_claims("> Log do CI: executei `pytest` com sucesso.") == []
+
+
+def test_a_redirect_mid_line_is_not_a_blockquote():
+    """O criterio e o INICIO da linha: redirecionamento vive dentro de
+    comando, nunca abrindo linha de prosa."""
+    assert _anchors("criei `a.py` rodando cat > a.py") == ["a.py"]
+

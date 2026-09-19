@@ -267,9 +267,17 @@ _FENCE = re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)
 #: ganho medido veio de crase, aspas duplas e bloco de codigo.
 _QUOTED = re.compile(r"`[^`\n]*`|\"[^\"\n]*\"|\u201c[^\u201d\n]*\u201d")
 
+#: Linha de citacao markdown. O criterio e o INICIO da linha: redirecionamento
+#: de shell vive dentro de comando, nunca abrindo linha de prosa, entao nao ha
+#: ambiguidade. Medido: "> Issue #123: criei `schema.sql`" virava claim.
+_BLOCKQUOTE = re.compile(r"^[ \t]*>.*$", re.MULTILINE)
+
 
 def _cited_spans(text: str) -> list[tuple[int, int]]:
-    return [m.span() for rx in (_FENCE, _QUOTED) for m in rx.finditer(text)]
+    return [m.span()
+            for rx in (_FENCE, _QUOTED, _BLOCKQUOTE)
+            for m in rx.finditer(text)]
+
 
 
 #: Delimitadores que a prosa poe em volta da ancora e que nao fazem parte dela.

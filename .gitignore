@@ -93,3 +93,6 @@ docs/reference/claude-code-harness.md
 
 # Local Netlify folder
 .netlify
+
+# SDD scratch: ledger, briefs e pacotes de review de plano em execucao
+.superpowers/
