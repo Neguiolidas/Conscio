@@ -233,6 +233,14 @@ _CLAUSE_END = re.compile(
 #: investigacoes preliminares do bug eu criei `fix.py`" tem 66 caracteres entre
 #: a negacao e o verbo, e a negacao era cortada. 400 e folga larga sobre
 #: qualquer oracao real, e o custo e um regex sobre 400 caracteres.
+#: Janela de olhada-atras. O delimitador SEMANTICO e `_CLAUSE_END` (ponto,
+#: ponto-e-virgula, quebra, contraste); este teto existe so para limitar custo.
+#: Era 60 e virou limite semantico POR ACIDENTE: "Nao e verdade que durante as
+#: investigacoes preliminares do bug eu criei `fix.py`" tem 66 caracteres entre
+#: a negacao e o verbo, e a negacao era cortada -- o reconhecedor acusava
+#: exatamente quem negou. 400 e folga larga sobre qualquer oracao real, e o
+#: custo e um regex sobre 400 caracteres. NAO reduzir sem medir: o numero
+#: pequeno parece economia e e um portao semantico disfarcado.
 _LOOKBACK = 400
 
 
