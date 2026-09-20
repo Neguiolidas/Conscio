@@ -117,6 +117,7 @@ def test_repair_preserves_granted_flags(tmp_path, monkeypatch):
     import json
     monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
     monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
+    monkeypatch.setenv("CONSCIO_BASE", str(tmp_path / "conscio"))
     (tmp_path / "claude.json").write_text(json.dumps({"mcpServers": {
         "conscio": {"command": "conscio-mcp",
                     "args": ["--storage", "/old", "--enable-act",
@@ -127,7 +128,14 @@ def test_repair_preserves_granted_flags(tmp_path, monkeypatch):
                            model=None, ts="T4") == 0
     args = json.loads((tmp_path / "claude.json").read_text()
                       )["mcpServers"]["conscio"]["args"]
-    assert "--enable-act" in args and "--enable-relay" in args
+    # v4.6.4: flags comuns seguem no arg; CAPACIDADES (relay/halls) migraram
+    # para o espaco -- preservar consentimento agora e mante-lo no espaco.
+    assert "--enable-act" in args
+    assert "--enable-relay" not in args          # vive no espaco agora
+    from conscio.installer import spaces
+    from conscio.mcp import capabilities as caps
+    # repair rebinda o MESMO espaco: slug = Path(--storage).name = 'old'
+    assert "relay" in caps.read_capabilities(spaces.space_dir("old"))
 
 
 def test_initiate_consent_goes_to_daemon_not_mcp(tmp_path, monkeypatch):
@@ -229,15 +237,22 @@ def test_repair_recovers_legacy_initiate_consent(tmp_path, monkeypatch):
 
 def test_halls_consent_reaches_launch_config(tmp_path, monkeypatch):
     """v4.5.4: the wizard can grant Agent's Hall. Before this the tools were
-    unreachable to anyone who installed through `conscio init`."""
+    unreachable to anyone who installed through `conscio init`.
+    v4.6.4: the consent REACHES the launch config through the SPACE now —
+    the assert that used to check args must check read_capabilities, or the
+    migration would lose the proof that the consent survives."""
     import json
     monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
     monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
+    monkeypatch.setenv("CONSCIO_BASE", str(tmp_path / "conscio"))
     io = ScriptIO(answers=["cc"],
                   confirms=[False, False, True, True,    # act/hermes/relay/halls
                             False, False, False])        # initiate/graphify/awake
     assert wizard.run_with(io, host="claude-code", repair=False,
                            model=None, ts="T7") == 0
-    args = json.loads((tmp_path / "claude.json").read_text()
-                      )["mcpServers"]["conscio"]["args"]
-    assert "--can-create-halls" in args and "--enable-relay" in args
+    from conscio.installer import spaces
+    from conscio.mcp import capabilities as caps
+    # answers=["cc"]: 'cc' e consumido como Space label -> slug 'cc'
+    # (o host vem do kwarg; ScriptIO.ask serve answers em ordem)
+    granted = caps.read_capabilities(spaces.space_dir("cc"))
+    assert "halls" in granted and "relay" in granted   # consent chega (via espaco)
