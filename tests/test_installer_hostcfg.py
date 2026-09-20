@@ -76,10 +76,58 @@ def test_command_rejects_a_relative_hit(monkeypatch, tmp_path):
 
 
 def test_flags_become_args():
+    """v4.6.4: relay/halls SAIRAM dos args (sao capacidades no espaco agora) --
+    o consentimento se prova no espaco, nao no .mcp.json (guarda A3)."""
     e = hostcfg.mcp_server_entry("h", flags={"act": True, "relay": True},
                                  model=None)
-    assert "--enable-act" in e["args"] and "--enable-relay" in e["args"]
+    assert "--enable-act" in e["args"]
+    assert "--enable-relay" not in e["args"]   # vive no espaco
     assert "--awake" not in e["args"]
+
+
+def test_no_capability_depends_on_an_arg_the_asset_never_carries():
+    """A guarda contra o A3 (v4.6.4 task 8). Capacidade que so existe como
+    argumento escrito pelo instalador no cache morre no proximo update, porque
+    o update recria o arquivo do asset por cima. Medido em producao: o relay
+    sumiu no meio de uma sessao."""
+    from conscio.installer.hostcfg import _FLAG_ARG
+    from conscio.mcp.capabilities import CAPABILITIES
+    vazam = sorted(set(CAPABILITIES) & set(_FLAG_ARG))
+    assert vazam == [], (
+        f"{vazam} volta a depender de um arg do .mcp.json; "
+        "capacidade persistida mora no espaco")
+
+
+def test_upsert_persists_the_capability_into_the_space(tmp_path, monkeypatch):
+    """O consentimento nao pode sumir junto com a flag: quem dizia 'relay: True'
+    agora escreve no espaco."""
+    from conscio.installer import hostcfg, spaces
+    from conscio.mcp import capabilities as caps
+    monkeypatch.setattr(spaces, "space_dir", lambda slug: tmp_path)
+    o = {}
+    hostcfg.upsert_conscio_entry(o, "host-a",
+                                 flags={"relay": True}, model=None)
+    assert "relay" in caps.read_capabilities(tmp_path)
+
+
+def test_a_legacy_arg_migrates_into_the_space(tmp_path, monkeypatch):
+    """MIGRACAO a partir do estado ANTERIOR (v4.6.4 task 8): instalacao
+    existente tem --enable-relay no .mcp.json e nao pode perder o relay no
+    update. A funcao de recuperacao chama-se existing_flags e recebe o CAMINHO
+    do config, nao o dict da entrada (hostcfg.py:122). Por isso o teste
+    escreve um config REAL."""
+    from conscio.installer import hostcfg, spaces
+    from conscio.mcp import capabilities as caps
+    monkeypatch.setattr(spaces, "space_dir", lambda slug: tmp_path)
+    cfg = tmp_path / "mcp.json"
+    cfg.write_text(json.dumps({"mcpServers": {"conscio": {
+        "command": "conscio-mcp",
+        "args": ["--storage", str(tmp_path), "--enable-relay"]}}}))
+    recuperado = hostcfg.existing_flags(cfg)
+    assert recuperado.get("relay") is True      # o consentimento foi lido
+    o = json.loads(cfg.read_text())
+    hostcfg.upsert_conscio_entry(o, "host-a", flags=recuperado, model=None)
+    assert "relay" in caps.read_capabilities(tmp_path)
 
 
 def test_write_claude_code_backs_up_and_verifies(tmp_path):
@@ -248,9 +296,11 @@ def test_existing_slug_from_storage_arg(tmp_path):
 
 def test_halls_flag_maps_to_can_create_halls():
     """v4.5.4: Agent's Hall is a consent the installer can grant — before this
-    the flag existed only as a hand-typed server arg."""
+    the flag existed only as a hand-typed server arg.
+    v4.6.4: halls mora no ESPACO agora — a flag nao e mais emitida; o
+    consentimento se prova via existing_flags (migracao) e persistencia."""
     e = hostcfg.mcp_server_entry("h", flags={"halls": True}, model=None)
-    assert "--can-create-halls" in e["args"]
+    assert "--can-create-halls" not in e["args"]   # vive no espaco
 
 
 def test_repair_recovers_hand_added_halls_flag(tmp_path):
