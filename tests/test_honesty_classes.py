@@ -218,5 +218,7 @@ def test_a_question_about_a_path_with_an_extension_is_still_a_question():
     assert find_claims("Será que criei `fix.py`?") == []
 
 
-
-
+def test_portuguese_negative_constructions_block_the_claim():
+    assert find_claims("Em hipótese alguma criei `fix.py`.") == []
+    assert find_claims("Ninguém disse que criei `fix.py`.") == []
+    assert find_claims("Zero vezes criei `fix.py`.") == []

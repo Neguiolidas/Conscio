@@ -212,7 +212,9 @@ _STOP_WORDS: frozenset[str] = frozenset({
 #: que a porta de ancora descartava, varias eram exatamente negacoes.
 _NOT_MINE = re.compile(
     r"\b(n[ãa]o|nem|nenhum|nenhuma|nada|sem|jamais|nunca"
+    r"|hip[óo]tese alguma|de jeito nenhum|ningu[ée]m|zero"
     r"|not|never|nothing|without|n't"
+    r"|nobody|no one"
     r"|ele|ela|eles|elas|voc[êe]|vc|tu|seu|teu"
     r"|he|she|they|you|your|his|her|their"
     r"|hermet|gemini|hermes|owner|usuario|usu[áa]rio|user)\b",
