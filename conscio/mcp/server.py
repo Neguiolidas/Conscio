@@ -18,9 +18,8 @@ from conscio.workspace import WorkspaceContext
 
 from ..agency import review_apply
 from ..liaison import mailbox, relay, review
+from . import capabilities, modes
 from . import jsonrpc as j
-from . import modes
-from . import capabilities
 from .protocol import SUPPORTED_PROTOCOLS, Dispatcher
 from .schemas import (
     ACT_TOOL_DEFS,

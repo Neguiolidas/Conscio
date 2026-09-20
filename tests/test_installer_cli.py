@@ -241,7 +241,6 @@ def test_halls_consent_reaches_launch_config(tmp_path, monkeypatch):
     v4.6.4: the consent REACHES the launch config through the SPACE now —
     the assert that used to check args must check read_capabilities, or the
     migration would lose the proof that the consent survives."""
-    import json
     monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
     monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
     monkeypatch.setenv("CONSCIO_BASE", str(tmp_path / "conscio"))

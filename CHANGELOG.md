@@ -7,6 +7,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.6.4] - 2026-09-20 — The gate stops lying
+
+4.6.3 closed self-certification: evidence became the trace of the act. It did
+not close the other half of the same error — **accusing someone who did not
+lie**. This release closes it, and the corpus that proves it came from
+**outside**: nine sentences built by two other agents, on other runtimes,
+trying to make the recogniser accuse a truth. All nine passed on 4.6.3.
+
+**Shadow mode stays.** Nothing here contests anyone.
+
+### Fixed
+
+- **A markdown blockquote counted as an assertion.** `> Issue #123: criei
+  \`schema.sql\`` produced a claim. Quoting a log or an issue with `>` is the
+  universal idiom of root-cause analysis, and the citation gate knew only
+  fences, backticks and double quotes.
+
+- **Indented code blocks leaked entirely.** Markdown accepts a code block by
+  4-space indentation, with no fence. Every indented line is now masked — not
+  only the ones following a blank line, as the strict rule requires: measured,
+  **zero claims in the real corpus are born on an indented line**, so the strict
+  rule would have let the adversarial case through while saving nothing.
+
+- **Negation was cut by a character budget.** *"Não é verdade que durante as
+  investigações preliminares do bug eu criei `fix.py`"* puts 66 characters
+  between the negation and the verb, and the budget was 60 — so the recogniser
+  accused precisely the person who denied it. The budget was a cost guard that
+  became a semantic limit by accident; the clause is the delimiter again.
+
+- **A question counted as an assertion.** *"Será que executei `pytest`?"*
+  produced a claim. The search for the sentence terminator starts at the **end**
+  of the match: starting at the verb would mistake the dot inside `fix.py` for
+  the end of a sentence, and a question about a path with an extension would
+  slip through.
+
+- **Portuguese negatives missing from the list:** `em hipótese alguma`,
+  `ninguém`, `zero`, `de jeito nenhum`.
+
+- **A write through an interpreter became an accusation.** `python3 - <<PY …
+  write_text … PY` is invisible: the tool is a shell, the heredoc body is
+  discarded, and what remains matches no write pattern. With no act region the
+  observation does not count, the window never saturates, and absence reads as
+  positive.
+
+  Measured over 52 real paths written only that way: **25 `CONTRADICTED` became
+  `UNSUPPORTED` and all 25 `VERIFIED` survived** — no positive evidence knocked
+  down, which was the condition. The remaining 2 are pure citation and stay
+  contested, correctly.
+
+  The trigger is the **argument of a write call**, never the mention of a path.
+  With a loose trigger, measured, 5 invented control paths turned `UNSUPPORTED`
+  merely because the probe quoting them had been captured. And never `VERIFIED`:
+  there is no way to know whether that branch ran, and treating code that
+  *mentions* a write as proof of one would reopen self-certification.
+
+- **Updating the plugin disarmed the relay.** `--enable-relay` and
+  `--can-create-halls` lived in the cached `.mcp.json`, written by the
+  installer — and an update recreates that file from the asset. The symptom in
+  production is the tool vanishing from the session, indistinguishable from "the
+  relay broke". Capabilities now resolve from the **space**, the pattern
+  `mcp_mode` already used.
+
+  Precedence differs from `resolve_mode` **on purpose**: for the mode, the
+  persisted value beats the command line so an update never shrinks a host that
+  already chose. These are `store_true` flags and cannot express "off" — absence
+  means "unspecified". So the flag can only turn a capability on.
+
+### Added
+
+- **The adversarial corpus as an acceptance test**
+  (`tests/test_honesty_adversarial.py`): the nine sentences from Gemini, the
+  three from Hermet as non-regression of 4.6.3's gates, and an affirmative
+  control that keeps the fix from turning into total blindness.
+
+- **Consent migration.** `--enable-relay` / `--can-create-halls` on an existing
+  entry are recognised as consent and migrate into the space. Without it,
+  whoever typed the flag by hand would lose the capability on update, silently.
+
+### What the historical corpus says
+
+1589 assistant messages: **6 `VERIFIED`, 1 `CONTRADICTED`**. The single
+contestation is the same one 4.6.3 left — `commitado em 67e1c2c` — and it is a
+declared limit, not a regression.
+
+### Declared limits
+
+- **`67e1c2c` is still a false accusation.** A true act the capture never saw is
+  indistinguishable from an invented sha when the only source is the
+  `obsstore`: both signatures are absence. That is what the receipt will record
+  and a human will adjudicate.
+
+- **Modality still leaks.** *"Duvida se executei `pytest`"*, *"Acredito que
+  executei `pytest`"* and *"Suponho que criei `fix.py`"* produce claims.
+  Measured: they leak **identically on 4.6.3**, so this is not a regression of
+  this release, and **zero** claims in the real corpus are born in a modality
+  clause. That *"talvez"* and *"poderia"* do not leak is an accident of
+  conjugation, not design — the coverage there is luck. It goes to the 4.6.5
+  gate, which must cover the family, not a verb list.
+
+- **An indented list continuation is masked along with code blocks.** Blindness
+  accepted deliberately, measured at zero claims in the real corpus.
+
+- **A write through an interpreter loses verification.** It resolves
+  `UNSUPPORTED`, never `VERIFIED` — the price of not reopening
+  self-certification.
+
+---
+
 ## [4.6.3] - 2026-09-14 — O reconhecedor enxerga, e para de acusar quem cita
 
 A 4.6.2 fechou o A1 só nas classes de âncora na **saída**. Esta versão fecha

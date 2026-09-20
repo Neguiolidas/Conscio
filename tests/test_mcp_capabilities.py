@@ -1,5 +1,6 @@
-from conscio.mcp import capabilities as caps
 import pytest
+
+from conscio.mcp import capabilities as caps
 
 
 def test_the_space_supplies_the_capability_without_a_flag(tmp_path):
