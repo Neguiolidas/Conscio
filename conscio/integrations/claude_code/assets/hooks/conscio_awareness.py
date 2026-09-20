@@ -13,6 +13,7 @@ same way the honesty hook re-implements blob reading.
 """
 import argparse
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -73,8 +74,9 @@ def consent_warning(space, plugin_root):
         if not perdidas:
             return None
         nomes = ", ".join(sorted(perdidas))
-        cmds = "; ".join(f"conscio capabilities enable {n}"
-                         for n in sorted(perdidas))
+        cmds = "; ".join(
+            f"conscio capabilities enable {n} --storage {shlex.quote(str(space))}"
+            for n in sorted(perdidas))
         return (f"Conscio: a previous install had {nomes} enabled and this space "
                 f"has no record of it. A plugin update moves capabilities into "
                 f"the space, and this consent did not travel. NOTHING was granted "

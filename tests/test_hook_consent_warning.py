@@ -73,3 +73,38 @@ def test_it_never_raises_on_a_broken_cache(tmp_path):
     atual = _cache_irmao(cache, "4.6.5", ["--storage", "x"])
     space = tmp_path / "space"; space.mkdir()
     assert _hook().consent_warning(space, atual) is None
+
+
+# ── v4.6.6: o remedio aponta o espaco que o hook leu ──
+
+def test_the_remedy_names_the_storage_the_hook_read(tmp_path):
+    """Sem --storage, o CLI nu grava em ~/.conscio/consciousness -- espaco
+    diferente do que o hook acabou de ler. O usuario obedece o aviso e o
+    consentimento cai fora."""
+    cache = tmp_path / "cache"
+    _cache_irmao(cache, "4.6.3", ["--storage", "x", "--enable-relay"])
+    atual = _cache_irmao(cache, "4.6.5", ["--storage", "x"])
+    space = tmp_path / "space"; space.mkdir()
+    aviso = _hook().consent_warning(space, atual)
+    assert f"--storage {space}" in aviso
+
+
+def test_running_the_remedy_closes_the_warning(tmp_path):
+    """Criterio 10: um aviso cujo remedio nao fecha o proprio aviso e um loop.
+
+    Roda o comando DE VERDADE, por subprocesso -- e a unica forma de distinguir
+    'imprime a flag' de 'o remedio funciona'.
+    """
+    import subprocess
+    import sys
+    cache = tmp_path / "cache"
+    _cache_irmao(cache, "4.6.3", ["--storage", "x", "--enable-relay"])
+    atual = _cache_irmao(cache, "4.6.5", ["--storage", "x"])
+    space = tmp_path / "space"; space.mkdir()
+    hook = _hook()
+    assert hook.consent_warning(space, atual) is not None      # antes: fala
+    r = subprocess.run([sys.executable, "-m", "conscio.cli", "capabilities",
+                        "enable", "relay", "--storage", str(space)],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert hook.consent_warning(space, atual) is None          # depois: cala
