@@ -54,13 +54,38 @@ def test_without_marker_and_without_flag_relay_is_not_announced(tmp_path):
     assert "conscio_relay" not in {d["name"] for d in srv.tool_defs()}
 
 
-def test_legacy_space_with_liaison_db_auto_migrates(tmp_path):
-    (tmp_path / "liaison.db").touch()
-    assert caps.resolve_capability(tmp_path, "relay", False) is True
-    assert "relay" in caps.read_capabilities(tmp_path)
 
+# ── v4.6.5: write-through — a flag vista uma vez vira consentimento durável ──
 
-def test_cli_flag_persists_capability_to_space(tmp_path):
+def test_a_cli_flag_is_persisted_on_first_sight(tmp_path):
+    """Host configurado a mao se cura sozinho: depois da primeira subida a
+    capacidade deixa de depender do arg que o proximo update apaga."""
     assert caps.resolve_capability(tmp_path, "relay", True) is True
-    assert "relay" in caps.read_capabilities(tmp_path)
+    assert caps.read_capabilities(tmp_path) == {"relay"}
 
+
+def test_persisting_does_not_drop_what_was_already_granted(tmp_path):
+    caps.write_capabilities(tmp_path, ["halls"])
+    caps.resolve_capability(tmp_path, "relay", True)
+    assert caps.read_capabilities(tmp_path) == {"halls", "relay"}
+
+
+def test_resolving_without_a_flag_writes_nothing(tmp_path):
+    """Leitura nao pode criar arquivo. Um espaco sem consentimento continua
+    sem consentimento -- senao o proprio ato de perguntar concederia."""
+    assert caps.resolve_capability(tmp_path, "relay", False) is False
+    assert not caps.capabilities_path(tmp_path).exists()
+
+
+def test_an_existing_liaison_db_does_not_grant_consent(tmp_path):
+    """Ruling da v4.6.5: consentimento nasce de ACAO PRESENTE do usuario,
+    nunca de artefato retroativo.
+
+    `liaison.db` existe porque o agente RECEBEU MENSAGEM, nao porque alguem
+    consentiu. Conceder por causa dele ressuscita o consentimento de quem
+    tirou --enable-relay do .mcp.json a mao -- que era a UNICA forma de
+    revogar antes desta versao, e e exatamente a populacao atingida pelo A3.
+    """
+    (tmp_path / "liaison.db").touch()
+    assert caps.resolve_capability(tmp_path, "relay", False) is False
+    assert not caps.capabilities_path(tmp_path).exists()
