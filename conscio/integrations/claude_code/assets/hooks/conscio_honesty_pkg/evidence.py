@@ -121,6 +121,47 @@ def _command(entrada: str) -> str | None:
     return None if bruto is None else _HEREDOC.sub("", bruto)
 
 
+#: O alvo de uma escrita feita DENTRO de codigo de interpretador. O gatilho e o
+#: ARGUMENTO da chamada, nunca a mencao do caminho: com gatilho frouxo, medido,
+#: 5 caminhos de controle inventados viraram UNSUPPORTED so porque a sonda que
+#: os citava foi capturada -- mencionar um caminho num script neutralizaria a
+#: acusacao sobre ele.
+_INTERP = re.compile(r"\b(?:python3?|node|ruby|perl)\b")
+_WRITE_CALL = re.compile(
+    r"(?:pathlib\.)?Path\(\s*['\"](?P<p1>[^'\"]+)['\"]\s*\)\s*\.\s*write_(?:text|bytes)"
+    r"|open\(\s*['\"](?P<p2>[^'\"]+)['\"]\s*,\s*['\"][wa]")
+_ASSIGN_PATH = re.compile(
+    r"(?:(?P<var>\w+)\s*=\s*|\bfor\s+(?P<fvar>\w+)\s+in\s+[^:\n]*)"
+    r"(?:pathlib\.)?Path\(\s*['\"](?P<p>[^'\"]+)['\"]\s*\)"
+)
+
+
+def _raw_command(entrada: str) -> str:
+    """O comando com o corpo de heredoc INTACTO.
+
+    So esta sonda o usa: o alvo da escrita vive dentro do corpo, que
+    ``_command`` descarta de proposito para o padrao do ato.
+    """
+    payload = _payload(entrada)
+    if payload is None:
+        return entrada or ""
+    return _field(payload, COMMAND_KEYS) or ""
+
+
+def _interpreter_targets(comando: str) -> list[str]:
+    """Caminhos que um comando de interpretador diz escrever."""
+    if not _INTERP.search(comando):
+        return []
+    targets = [m.group("p1") or m.group("p2")
+               for m in _WRITE_CALL.finditer(comando)]
+    for m in _ASSIGN_PATH.finditer(comando):
+        var = m.group("var") or m.group("fvar")
+        p = m.group("p")
+        if var and re.search(rf"\b{re.escape(var)}\s*\.\s*write_(?:text|bytes)", comando):
+            targets.append(p)
+    return targets
+
+
 #: Onde a regiao de um ato termina. Cortar aqui so consegue ENCURTAR a regiao:
 #: um ``;`` dentro de aspas trunca e resolve UNSUPPORTED. O erro cai sempre do
 #: lado que nao acusa -- o mesmo invariante que sustenta o teto de tempo.
@@ -219,7 +260,7 @@ def check(conn, claim: Claim, session_id: str,
     if not rows:
         return o.UNSUPPORTED, ""          # nao consegui olhar
 
-    esgotado = ilegivel = False
+    esgotado = ilegivel = cego = False
     for oid, raw_tool, in_h, out_h in rows:
         if time.monotonic() > deadline:
             esgotado = True               # nao vi o resto: nao posso acusar
@@ -231,6 +272,9 @@ def check(conn, claim: Claim, session_id: str,
         if not shapes:
             continue
         entrada = _blob_text(conn, in_h)
+        if not cego:
+            cego = any(_hits(alvo, claim.anchor)
+                       for alvo in _interpreter_targets(_raw_command(entrada)))
         saida = None
         for shape in shapes:
             if shape.anchor_in == ARGUMENT:
@@ -252,7 +296,7 @@ def check(conn, claim: Claim, session_id: str,
             if claim.anchor in saida:
                 return o.VERIFIED, f"obs:{oid}"
 
-    if esgotado or ilegivel or len(rows) > limit:
+    if esgotado or ilegivel or cego or len(rows) > limit:
         # A sessao nao coube no orcamento: o que nao foi lido pode conter a
         # prova, e ausencia so e POSITIVA quando olhamos tudo.
         return o.UNSUPPORTED, ""

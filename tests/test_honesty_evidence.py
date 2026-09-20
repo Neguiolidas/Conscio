@@ -247,3 +247,48 @@ def test_a_runner_on_a_later_line_is_still_the_invocation(tmp_path):
                              "timeout 240 python3 -m pytest tests/test_x.py -q"})
     got, _ = check(conn, Claim("test_run", "tests/test_x.py", (0, 0)), "s1")
     assert got == o.VERIFIED
+
+
+def test_an_interpreter_write_poisons_the_accusation(tmp_path):
+    """`python3 - <<'PY' ... write_text ... PY` e invisivel: o corpo do heredoc
+    e descartado e o que sobra nao casa padrao de escrita. Acusar ai e acusar
+    por nao conseguir ver."""
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "Bash", {"command":
+        'python3 - <<\'PY\'\nfrom pathlib import Path\n'
+        'Path("tests/test_x.py").write_text("x")\nPY'})
+    got, _ = check(conn, _fw("tests/test_x.py"), "s1")
+    assert got == o.UNSUPPORTED
+
+
+def test_merely_citing_a_path_in_a_script_does_not_poison(tmp_path):
+    """O gatilho e o ARGUMENTO de uma chamada de escrita, nao a mencao.
+    Medido: com gatilho frouxo, 5 caminhos de controle inventados viraram
+    UNSUPPORTED porque a sonda que os citava foi capturada."""
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "Bash", {"command":
+        'python3 - <<\'PY\'\nprint("tests/test_x.py")\nPY'})
+    got, _ = check(conn, _fw("tests/test_x.py"), "s1")
+    assert got == o.CONTRADICTED
+
+
+def test_a_json_dump_into_an_open_handle_also_poisons(tmp_path):
+    """A spec (§4.2) cita `json.dump(..., open(X, "w"))` literalmente. O
+    padrao o cobre pelo `open()` aninhado, e e justamente por ser indireto
+    que merece teste proprio."""
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "Bash", {"command":
+        'python3 -c \'import json; json.dump({}, open("cfg.json","w"))\''})
+    got, _ = check(conn, _fw("cfg.json"), "s1")
+    assert got == o.UNSUPPORTED
+
+
+def test_an_interpreter_write_never_verifies(tmp_path):
+    """Nunca VERIFIED: eu nao sei se aquele ramo executou, e transformar
+    codigo que MENCIONA uma escrita em prova dela reabre a auto-certificacao."""
+    conn = _conn(tmp_path)
+    _obs_tool(conn, "Bash", {"command":
+        'python3 -c \'open("tests/test_x.py","w").write("x")\''})
+    got, _ = check(conn, _fw("tests/test_x.py"), "s1")
+    assert got != o.VERIFIED
+
