@@ -50,5 +50,33 @@ def write_capabilities(storage, caps: Iterable[str]) -> None:
 
 
 def resolve_capability(storage, name: str, cli_flag: bool) -> bool:
-    """CLI flag turns it on; otherwise the space decides; otherwise off."""
-    return bool(cli_flag) or name in read_capabilities(storage)
+    """CLI flag turns it on; otherwise the space decides; otherwise off.
+
+    If cli_flag is on, it is persisted to the space.
+    If the space has no capability marker but already has a liaison.db,
+    it auto-migrates consent for relay (and halls if hallways.db exists).
+    """
+    if bool(cli_flag):
+        try:
+            write_capabilities(storage, read_capabilities(storage) | {name})
+        except (OSError, ValueError):
+            pass
+        return True
+
+    caps = read_capabilities(storage)
+    if name in caps:
+        return True
+
+    if not capabilities_path(storage).exists():
+        storage_path = Path(storage).expanduser()
+        if (storage_path / "liaison.db").exists():
+            migrated = {"relay"}
+            if (storage_path / "hallways.db").exists():
+                migrated.add("halls")
+            try:
+                write_capabilities(storage, caps | migrated)
+            except (OSError, ValueError):
+                pass
+            return name in migrated
+
+    return False

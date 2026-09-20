@@ -52,3 +52,15 @@ def test_without_marker_and_without_flag_relay_is_not_announced(tmp_path):
     srv = _server_with(tmp_path, relay=caps.resolve_capability(
         tmp_path, "relay", False))
     assert "conscio_relay" not in {d["name"] for d in srv.tool_defs()}
+
+
+def test_legacy_space_with_liaison_db_auto_migrates(tmp_path):
+    (tmp_path / "liaison.db").touch()
+    assert caps.resolve_capability(tmp_path, "relay", False) is True
+    assert "relay" in caps.read_capabilities(tmp_path)
+
+
+def test_cli_flag_persists_capability_to_space(tmp_path):
+    assert caps.resolve_capability(tmp_path, "relay", True) is True
+    assert "relay" in caps.read_capabilities(tmp_path)
+
