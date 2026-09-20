@@ -17,9 +17,20 @@ from . import spaces
 # --initiate); conscio-mcp rejects it, so it must never enter the MCP entry.
 # "awake" stays even though the wizard never offers it: conscio-mcp accepts
 # it and hand-tuned/pre-Reach entries carrying it must survive a --repair.
+# v4.6.4: "relay" e "halls" SAIRAM deste mapa. Sao capacidades, e capacidade
+# escrita aqui morre no proximo update do plugin, que recria o .mcp.json do
+# cache a partir do asset (A3, medido em producao). Agora moram no espaco
+# (conscio.mcp.capabilities); um arg numa entrada antiga continua ligando, e
+# `existing_flags` o recupera como consentimento para a migracao.
 _FLAG_ARG = {"act": "--enable-act", "awake": "--awake",
-             "relay": "--enable-relay", "hermes": "--enable-hermes-review",
-             "halls": "--can-create-halls"}
+             "hermes": "--enable-hermes-review"}
+# v4.6.4: args de CAPACIDADE que instaladores antigos emitiram. Nao sao
+# re-emitidos (a capacidade mora no espaco agora), mas existing_flags os
+# reconhece como CONSENTIMENTO: uma instalacao que ja tinha --enable-relay
+# ou --can-create-halls no .mcp.json nao pode perder o acesso no update --
+# o consentimento migra para o espaco.
+_LEGACY_CAP_ARGS = {"--enable-relay": "relay",
+                    "--can-create-halls": "halls"}
 # a flag that is inert without another one. A hall delivers through the relay
 # mailbox, so --can-create-halls alone would launch a server that advertises
 # hall tools and serves none. Emit the dependency instead of the broken pair.
@@ -91,6 +102,17 @@ def upsert_conscio_entry(o: dict, slug: str, *, flags: dict,
                 f"belongs to another agent (self={self_instance_id}). "
                 f"Install conscio for YOUR agent; don't hijack another."
             )
+    # v4.6.4: capacidades opt-in (relay/halls) moram no ESPACO, nao no arg do
+    # .mcp.json que o update do plugin recria do asset. A uniao com o ja
+    # persistido e deliberada: um --repair que nao mencione halls nao pode
+    # desligar o que o usuario ja consentiu.
+    from ..mcp import capabilities as _caps
+    pedidas = {k for k, v in flags.items() if v and k in _caps.CAPABILITIES}
+    pedidas |= {_FLAG_REQUIRES[k] for k in pedidas if k in _FLAG_REQUIRES}
+    if pedidas:
+        _caps.write_capabilities(spaces.space_dir(slug),
+                                 _caps.read_capabilities(
+                                     spaces.space_dir(slug)) | pedidas)
     entry = mcp_server_entry(slug, flags=flags, model=model)
     servers = o.setdefault("mcpServers", {})
     if not isinstance(servers, dict):      # corrupt shape: rebuild (backed up)
@@ -126,6 +148,7 @@ def existing_flags(config_path: Path) -> dict:
     never re-emitted). Missing/corrupt file or entry -> {}."""
     inv = {arg: key for key, arg in _FLAG_ARG.items()}
     inv.update(_LEGACY_ARG_FLAG)
+    inv.update(_LEGACY_CAP_ARGS)
     return {inv[a]: True for a in _entry_args(config_path) if a in inv}
 
 

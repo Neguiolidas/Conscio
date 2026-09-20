@@ -161,3 +161,64 @@ def test_a_leading_dot_survives_the_delimiter_strip():
     "env.local", que nunca casa o alvo real e vira ACUSACAO. Delimitador de
     prosa a esquerda nao inclui ponto -- dotfile comeca com ele."""
     assert _anchors("criei `.env.local`") == [".env.local"]
+
+
+def test_a_blockquote_line_is_citation():
+    """Citar log e issue com '>' e idioma universal de analise de causa.
+    Medido pelo Gemini e reproduzido aqui: as duas frases viravam claim."""
+    assert find_claims("> Issue #123: criei `schema.sql` e deu timeout.") == []
+    assert find_claims("> Log do CI: executei `pytest` com sucesso.") == []
+
+
+def test_a_redirect_mid_line_is_not_a_blockquote():
+    """O criterio e o INICIO da linha: redirecionamento vive dentro de
+    comando, nunca abrindo linha de prosa."""
+    assert _anchors("criei `a.py` rodando cat > a.py") == ["a.py"]
+
+
+def test_an_indented_block_is_citation():
+    """Markdown permite bloco de codigo por indentacao, sem cerca, e _FENCE
+    nao o ve. O caso do Gemini NAO tem linha em branco antes -- por isso a
+    regra estrita do markdown foi descartada no self-review da spec."""
+    assert find_claims("O desenvolvedor me enviou:\n    criei `fix.patch`") == []
+
+
+def test_a_normal_line_still_produces_a_claim():
+    """Contrapartida: indentacao de ate 3 espacos nao e bloco de codigo."""
+    assert _anchors("  criei `fix.patch`") == ["fix.patch"]
+
+
+def test_a_long_clause_does_not_cut_the_negation():
+    """66 caracteres entre o 'Nao' e o verbo: com teto de 60 a negacao era
+    cortada e o reconhecedor acusava exatamente quem negou."""
+    frase = ("Não é verdade que durante as investigações preliminares "
+             "do bug eu criei `fix.py`.")
+    assert find_claims(frase) == []
+
+
+def test_a_negation_in_a_previous_sentence_does_not_bleed():
+    """O delimitador continua sendo a ORACAO: ponto final corta."""
+    assert _anchors("Não commitei nada. Criei `fix.py`.") == ["fix.py"]
+
+
+def test_a_question_is_not_a_claim():
+    assert find_claims("Será que executei `pytest` antes do commit?") == []
+    assert find_claims("Como saber se executei `pytest`?") == []
+
+
+def test_a_question_after_an_assertion_does_not_kill_it():
+    assert _anchors("Criei `fix.py`. Será que funcionou?") == ["fix.py"]
+
+
+def test_a_question_about_a_path_with_an_extension_is_still_a_question():
+    """ESTE e o teste que fixa o ponto de entrada. Medido: nem o caso acima
+    nem a pergunta simples discriminam entre m.start() e m.end() -- so este.
+    Com m.start(), a busca acha o ponto DENTRO de 'fix.py', conclui
+    "afirmacao" e a claim vaza."""
+    assert find_claims("Será que criei `fix.py`?") == []
+
+
+def test_portuguese_negative_constructions_block_the_claim():
+    assert find_claims("Em hipótese alguma criei `fix.py`.") == []
+    assert find_claims("Ninguém disse que criei `fix.py`.") == []
+    assert find_claims("Zero vezes criei `fix.py`.") == []

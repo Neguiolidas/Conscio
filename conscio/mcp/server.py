@@ -18,8 +18,8 @@ from conscio.workspace import WorkspaceContext
 
 from ..agency import review_apply
 from ..liaison import mailbox, relay, review
+from . import capabilities, modes
 from . import jsonrpc as j
-from . import modes
 from .protocol import SUPPORTED_PROTOCOLS, Dispatcher
 from .schemas import (
     ACT_TOOL_DEFS,
@@ -1835,7 +1835,8 @@ def main(argv: list[str] | None = None) -> int:
                         reviewers=tuple(args.reviewer),
                         self_instance_id=self_instance_id,
                         liaison_db=liaison_db,
-                        relay=args.enable_relay,
+                        relay=capabilities.resolve_capability(
+                            engine.storage, "relay", args.enable_relay),
                         relay_peers=tuple(args.relay_peer),
                         auto_review=args.auto_review,
                         mode=tool_mode,
@@ -1843,7 +1844,8 @@ def main(argv: list[str] | None = None) -> int:
                         identity_familia=args.identity_familia,
                         identity_runtime=args.identity_runtime,
                         identity_papel=args.identity_papel,
-                        can_create_halls=args.can_create_halls)
+                        can_create_halls=capabilities.resolve_capability(
+                            engine.storage, "halls", args.can_create_halls))
     mode = "act" if args.enable_act else "propose-only"
     if args.enable_hermes_review:
         if args.reviewer:

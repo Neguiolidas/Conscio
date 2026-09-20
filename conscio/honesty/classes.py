@@ -212,7 +212,9 @@ _STOP_WORDS: frozenset[str] = frozenset({
 #: que a porta de ancora descartava, varias eram exatamente negacoes.
 _NOT_MINE = re.compile(
     r"\b(n[ãa]o|nem|nenhum|nenhuma|nada|sem|jamais|nunca"
+    r"|hip[óo]tese alguma|de jeito nenhum|ningu[ée]m|zero"
     r"|not|never|nothing|without|n't"
+    r"|nobody|no one"
     r"|ele|ela|eles|elas|voc[êe]|vc|tu|seu|teu"
     r"|he|she|they|you|your|his|her|their"
     r"|hermet|gemini|hermes|owner|usuario|usu[áa]rio|user)\b",
@@ -225,9 +227,13 @@ _CLAUSE_END = re.compile(
     r"[.;\n]|\b(mas|por[ée]m|todavia|contudo|entretanto"
     r"|but|however|though|although)\b", re.IGNORECASE)
 
-#: Janela curta de propósito: olhar longe demais importa negacao de outra
-#: oracao. O corte por fim-de-oracao ja faz o trabalho fino.
-_LOOKBACK = 60
+#: Janela de olhada-atras. O delimitador SEMANTICO e `_CLAUSE_END` (ponto,
+#: ponto-e-virgula, quebra, contraste); este teto existe so para limitar custo.
+#: Era 60 e virou limite semantico por acidente: "Nao e verdade que durante as
+#: investigacoes preliminares do bug eu criei `fix.py`" tem 66 caracteres entre
+#: a negacao e o verbo, e a negacao era cortada. 400 e folga larga sobre
+#: qualquer oracao real, e o custo e um regex sobre 400 caracteres.
+_LOOKBACK = 400
 
 
 def _is_mine_and_affirmative(text: str, start: int) -> bool:
@@ -267,9 +273,41 @@ _FENCE = re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)
 #: ganho medido veio de crase, aspas duplas e bloco de codigo.
 _QUOTED = re.compile(r"`[^`\n]*`|\"[^\"\n]*\"|\u201c[^\u201d\n]*\u201d")
 
+#: Linha de citacao markdown. O criterio e o INICIO da linha: redirecionamento
+#: de shell vive dentro de comando, nunca abrindo linha de prosa, entao nao ha
+#: ambiguidade. Medido: "> Issue #123: criei `schema.sql`" virava claim.
+_BLOCKQUOTE = re.compile(r"^[ \t]*>.*$", re.MULTILINE)
+#: Bloco de codigo por INDENTACAO (4+ espacos), que o markdown aceita sem
+#: cerca. Mascara toda linha indentada, e nao so as que seguem linha em branco
+#: como manda a regra estrita: medido, ZERO claims do corpus real nascem em
+#: linha indentada, entao a regra estrita so deixaria passar o caso
+#: adversarial sem economizar nada. Continuacao de item de lista e mascarada
+#: junto -- cegueira aceita, do lado que nao acusa.
+_INDENTED = re.compile(r"^[ \t]{4,}\S.*$", re.MULTILINE)
+
 
 def _cited_spans(text: str) -> list[tuple[int, int]]:
-    return [m.span() for rx in (_FENCE, _QUOTED) for m in rx.finditer(text)]
+    return [m.span()
+            for rx in (_FENCE, _QUOTED, _BLOCKQUOTE, _INDENTED)
+            for m in rx.finditer(text)]
+
+
+
+
+#: Terminadores de frase, procurados a partir do FIM do casamento. Comecar no
+#: verbo seria errado: o ponto de "fix.py" viraria terminador e uma pergunta
+#: sobre um caminho com extensao passaria batida.
+_SENTENCE_END = re.compile(r"[.!?\n]")
+
+
+def _is_assertion(text: str, end: int) -> bool:
+    """A frase que contem a claim termina em '?' -> e pergunta, nao afirmacao.
+
+    Erra por frase inteira: "Executei `pytest`, nao sei se passou?" afirma o
+    ato e e barrada. Falso negativo consciente, do lado que nao acusa.
+    """
+    m = _SENTENCE_END.search(text, end)
+    return not (m and m.group() == "?")
 
 
 #: Delimitadores que a prosa poe em volta da ancora e que nao fazem parte dela.
@@ -300,6 +338,8 @@ def find_claims(text: str) -> list[Claim]:
                 continue                  # a classe nao admite esta ancora
             if any(a <= m.start() < b for a, b in citados):
                 continue                  # a mensagem CITA, nao afirma
+            if not _is_assertion(text or "", m.end()):
+                continue                  # pergunta nao e asserção
             if _is_mine_and_affirmative(text or "", m.start()):
                 found.append(Claim(cls.name, anchor, m.span()))
     return found
