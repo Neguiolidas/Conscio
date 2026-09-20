@@ -92,19 +92,29 @@ def test_the_remedy_names_the_storage_the_hook_read(tmp_path):
 def test_running_the_remedy_closes_the_warning(tmp_path):
     """Criterio 10: um aviso cujo remedio nao fecha o proprio aviso e um loop.
 
-    Roda o comando DE VERDADE, por subprocesso -- e a unica forma de distinguir
-    'imprime a flag' de 'o remedio funciona'.
+    O comando executado sai DO PROPRIO AVISO. Construir o comando aqui
+    provaria que o CLI funciona, nao que o aviso manda o comando certo --
+    e era assim que este teste ficava verde com a correcao revertida.
     """
+    import shlex
     import subprocess
     import sys
+
     cache = tmp_path / "cache"
     _cache_irmao(cache, "4.6.3", ["--storage", "x", "--enable-relay"])
     atual = _cache_irmao(cache, "4.6.5", ["--storage", "x"])
     space = tmp_path / "space"; space.mkdir()
     hook = _hook()
-    assert hook.consent_warning(space, atual) is not None      # antes: fala
-    r = subprocess.run([sys.executable, "-m", "conscio.cli", "capabilities",
-                        "enable", "relay", "--storage", str(space)],
+
+    aviso = hook.consent_warning(space, atual)
+    assert aviso is not None                       # antes: fala
+
+    # O comando vem do aviso. So o executavel e traduzido para rodar o
+    # pacote local; tudo depois do primeiro token e do hook.
+    comando = shlex.split(aviso.split("to restore it: ")[1].split("; ")[0])
+    assert comando[0] == "conscio"
+    r = subprocess.run([sys.executable, "-m", "conscio.cli", *comando[1:]],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
-    assert hook.consent_warning(space, atual) is None          # depois: cala
+
+    assert hook.consent_warning(space, atual) is None   # depois: cala
