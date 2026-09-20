@@ -188,3 +188,17 @@ def test_a_normal_line_still_produces_a_claim():
     assert _anchors("  criei `fix.patch`") == ["fix.patch"]
 
 
+def test_a_long_clause_does_not_cut_the_negation():
+    """66 caracteres entre o 'Nao' e o verbo: com teto de 60 a negacao era
+    cortada e o reconhecedor acusava exatamente quem negou."""
+    frase = ("Não é verdade que durante as investigações preliminares "
+             "do bug eu criei `fix.py`.")
+    assert find_claims(frase) == []
+
+
+def test_a_negation_in_a_previous_sentence_does_not_bleed():
+    """O delimitador continua sendo a ORACAO: ponto final corta."""
+    assert _anchors("Não commitei nada. Criei `fix.py`.") == ["fix.py"]
+
+
+

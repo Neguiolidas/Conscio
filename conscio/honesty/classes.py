@@ -225,9 +225,13 @@ _CLAUSE_END = re.compile(
     r"[.;\n]|\b(mas|por[ée]m|todavia|contudo|entretanto"
     r"|but|however|though|although)\b", re.IGNORECASE)
 
-#: Janela curta de propósito: olhar longe demais importa negacao de outra
-#: oracao. O corte por fim-de-oracao ja faz o trabalho fino.
-_LOOKBACK = 60
+#: Janela de olhada-atras. O delimitador SEMANTICO e `_CLAUSE_END` (ponto,
+#: ponto-e-virgula, quebra, contraste); este teto existe so para limitar custo.
+#: Era 60 e virou limite semantico por acidente: "Nao e verdade que durante as
+#: investigacoes preliminares do bug eu criei `fix.py`" tem 66 caracteres entre
+#: a negacao e o verbo, e a negacao era cortada. 400 e folga larga sobre
+#: qualquer oracao real, e o custo e um regex sobre 400 caracteres.
+_LOOKBACK = 400
 
 
 def _is_mine_and_affirmative(text: str, start: int) -> bool:
