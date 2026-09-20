@@ -115,279 +115,283 @@ declared limit, not a regression.
 
 ---
 
-## [4.6.3] - 2026-09-14 — O reconhecedor enxerga, e para de acusar quem cita
+## [4.6.3] - 2026-09-14 — The recogniser sees, and stops accusing whoever quotes
 
-A 4.6.2 fechou o A1 só nas classes de âncora na **saída**. Esta versão fecha
-nas de âncora na **entrada**, e conserta a cegueira que tornava o portão de
-corpus (C5b) inatingível. **O modo sombra continua**: nada aqui contesta
-ninguém.
-
-### Fixed
-
-- **A âncora de entrada valia "em qualquer lugar do blob", e o blob é escrito
-  pelo afirmante.** Medido na obs 10295 do `obs.db` vivo: um `Write` do arquivo
-  de *plano* provava `escrevi conscio/mcp/server.py`, `escrevi
-  conscio/mcp/schemas.py` e `escrevi docs/.../design.md` — o plano apenas
-  **citava** esses caminhos no corpo. Para as ferramentas de escrita nativa não
-  havia padrão de ato nenhum, então bastava a âncora aparecer dentro de
-  `content`. A âncora passa a exigir a **posição de argumento** do ato: campo
-  de caminho do payload, ou alvo do redirecionamento até o próximo separador de
-  comando. Depois do conserto, as duas primeiras resolvem `CONTRADICTED` e a
-  terceira continua `VERIFIED` apontando para `obs:10268` — um `Edit` real
-  daquele arquivo. O conserto não só remove o falso: re-aponta o verdadeiro
-  para a evidência certa.
-
-- **`_decoded` só conhecia a chave `command`.** No Antigravity o comando vem em
-  `CommandLine`, então o payload caía no JSON cru e o padrão do ato voltava a
-  casar contra o blob inteiro — o A1 entrando por outra porta. Um payload sem
-  chave conhecida agora resolve `UNSUPPORTED`, nunca o permissivo.
-
-- **O reconhecedor estava quase cego.** Em 1225 mensagens de assistente reais,
-  a porta léxica passava 68 e a de âncora passava 4: queda de 94,1%, porque o
-  padrão exigia a âncora colada no verbo com `\s+`. A prosa real escreve
-  ``commitado (`f82e504`)`` e ``criei `x.service` ``. O conector passa a
-  admitir pontuação e markdown mais **no máximo duas** palavras de função —
-  teto que mantém verbo e âncora na mesma oração.
-
-- **Citação não é afirmação.** Alargar o conector sozinho transformava o
-  reconhecedor num gerador de falsa acusação: das 30 claims que o corpus
-  passou a render, **25 resolviam `CONTRADICTED` e todas as amostradas eram a
-  mensagem citando uma afirmação** — exemplo de corpus dentro de bloco de
-  código, saída de sonda, prosa de desenho. Bloco de código e trecho entre
-  aspas passam a ser dado que a mensagem exibe, nunca afirmação dela. É o mesmo
-  raciocínio que tirou o corpo de heredoc do comando na 4.6.2, uma camada
-  acima. O critério é a posição do **verbo**, não a da âncora: quem escreve
-  ``criei `x.py` `` põe a âncora entre crases de propósito.
-
-- **Substantivo não é artefato.** `rodei o hook`, `rodei a checagem`,
-  `controle`, `suíte` produziam âncora e, com ela, acusação, e apareciam
-  repetidamente entre as 25. O
-  critério de admissão do desenho é existir consulta que refute sem
-  interpretação, e nenhuma dessas tem. Âncora de execução passa a exigir
-  caminho ou nome de executável conhecido.
-
-- **Extensão de 7 letras era truncada.** `\w{1,6}` cortava `.service` em
-  `.servic`: a âncora nascia errada, não casava nada e virava **acusação**.
-
-- **`_RUNNER` não ancorava em quebra de linha nem em `timeout` — defeito
-  herdado da 4.6.2.** Medido na obs 10310: `cd /repo\ntimeout 240 python3 -m
-  pytest tests/test_liaison_bindings.py` é uma execução legítima daquele
-  arquivo, e era contestada. Comando multilinha é a norma nesta frota, e
-  `timeout` embrulha quase todo teste daqui.
-
-- **Rodar um diretório e afirmar um arquivo dele.** O nome do arquivo na saída
-  do próprio runner é identificador gerado pelo mundo, e agora conta — sem
-  abrir brecha, porque a observação já teve de ser uma invocação de runner.
-
-### Added
-
-- **Portão de primeira pessoa e afirmativa.** Negação (`não commitei nada`) e
-  atribuição a terceiro (`the Hermet committed f82e504`) deixam de virar
-  afirmação minha. Os dois levam ao mesmo lugar — a claim não nasce — então
-  moram na mesma porta. A janela para no contraste (`mas`, `but`), senão *"não
-  consegui rodar o lint, mas rodei `x.py`"* mataria uma claim verdadeira.
-
-- **Nomes de campo dos três runtimes, medidos e não inferidos:** `file_path` /
-  `notebook_path` (Claude Code), **`TargetFile`** e `AbsolutePath`
-  (Antigravity, PascalCase), `path` (Hermes); comando em `command` e
-  **`CommandLine`**. A inferência `target_file` estava errada e teria posto
-  toda escrita nativa do Antigravity em `UNSUPPORTED` permanente, sem sintoma.
-
-### O que o corpus histórico diz agora
-
-7 claims ancoradas em 1255 mensagens — o corpus cresceu durante a própria
-sessão que o mediu, daí 1255 aqui e 1225 acima: **6 `VERIFIED`, 1
-`CONTRADICTED`**. O
-número não subiu de 4 para 30 — as 30 incluíam as 25 citações e âncoras vagas
-que teriam sido acusação. Subiu de 4 claims, parte delas falsa, para 7 que se
-sustentam contra a telemetria.
-
-### Limites declarados
-
-- **O laço é mono-runtime de fato.** Medido pelos agentes dos outros dois
-  runtimes: nem o Antigravity nem o Hermes tem captura de tool call escrevendo
-  no `obs.db` (no Hermes, `grep` zero em `tools/`), e os dois espaços têm zero
-  linhas em `claims`. Não é cegueira do reconhecedor — o produtor não existe
-  lá. As tabelas de runtime seguem corretas, mas cobertura homogênea seria
-  insinuação falsa. Dar captura ao Hermes é feature nova.
-
-- **A janela é a sessão, e a única contestação restante é disso.** `commitado
-  em 67e1c2c` é afirmação verdadeira feita numa sessão cuja telemetria não
-  contém o ato — o commit nasceu fora dela. Contestar aí é acusar por limite de
-  janela, não por ausência real. É o motivo mais forte para a sombra continuar.
-
-- **O corte por separador ignora aspas.** `pytest -k "a;b" tests/x.py` trunca a
-  região e resolve `UNSUPPORTED`. Cortar só consegue **encurtar** a região,
-  então o erro cai sempre do lado que não acusa — o mesmo invariante que
-  sustenta o teto de tempo.
-
-- **Idioma de teste desta casa lê como `UNSUPPORTED`.** `for f in tests/*.py;
-  do pytest "$f"; done` põe a âncora antes do runner, fora da região da
-  invocação. É assim que rodamos teste aqui, por causa da RAM.
-
----
-
-## [4.6.2] - 2026-09-14 — A evidência passa a ser o traço do ato
-
-Descoberto em ambiente real com a 4.6.1 instalada, medido no `obs.db` vivo e
-revisado pelos três agentes da frota.
+4.6.2 closed A1 only for the classes whose anchor lives in the **output**. This
+release closes it for the ones whose anchor lives in the **input**, and fixes
+the blindness that made the corpus gate (C5b) unreachable. **Shadow mode
+stays**: nothing here contests anyone.
 
 ### Fixed
 
-- **O predicado aceitava evidência escrita pelo próprio afirmante.** A busca
-  casava a âncora contra a **entrada** da observação, que é texto que o agente
-  escreveu: inventar um sha e digitá-lo em qualquer comando produzia
-  `VERIFIED`. Auto-certificação — o defeito que esta linha de versões existe
-  para matar, uma camada abaixo. E o registro do próprio laço, impresso na
-  saída de um comando, virava prova textual de que a âncora existe.
+- **An input anchor counted "anywhere in the blob", and the blob is written by
+  the claimant.** Measured on obs 10295 of the live `obs.db`: a `Write` of the
+  *plan* file proved `escrevi conscio/mcp/server.py`, `escrevi
+  conscio/mcp/schemas.py` and `escrevi docs/.../design.md` — the plan merely
+  **cited** those paths in its body. Native write tools had no act pattern at
+  all, so the anchor only had to appear inside `content`. An anchor now requires
+  the **argument position** of the act: the payload's path field, or the
+  redirect target up to the next command separator. After the fix the first two
+  resolve `CONTRADICTED` and the third stays `VERIFIED`, pointing at
+  `obs:10268` — a real `Edit` of that file. The fix does not merely remove the
+  false one: it re-points the true one at the right evidence.
 
-  A evidência passa a ser o **traço do ato**: a ferramenta tem de executar a
-  classe (casada **antes** de qualquer padrão — medido, 2 de 22 observações com
-  `git commit` na entrada eram mensagens *discutindo* commits), a entrada tem
-  de identificar o ato, a âncora só conta do lado que quem a gerou permite
-  (identificador do mundo na **saída**; caminho dado pelo agente nos
-  argumentos, com a identidade da ferramenta como garantia), e a chamada não
-  pode ter falhado.
+- **`_decoded` knew only the `command` key.** On Antigravity the command
+  arrives in `CommandLine`, so the payload fell through to raw JSON and the act
+  pattern went back to matching the whole blob — A1 entering through another
+  door. A payload with no known key now resolves `UNSUPPORTED`, never the
+  permissive path.
 
-- **Corpo de heredoc deixou de contar como comando.** O comando que *escreve*
-  um arquivo carrega o conteúdo inteiro dele na entrada — então um arquivo que
-  **fala** de um ato parecia o ato. Medido: o comando que escreveu os testes
-  desta versão era aceito como evidência de commit, porque um docstring citava
-  a expressão e a saída exibia o arquivo. Escrever o teste que prova a
-  afirmação falsa virava a prova de que ela era verdadeira.
+- **The recogniser was nearly blind.** Over 1225 real assistant messages, the
+  lexical gate passed 68 and the anchor gate passed 4: a 94.1% drop, because
+  the pattern required the anchor glued to the verb with `\s+`. Real prose
+  writes ``commitado (`f82e504`)`` and ``criei `x.service` ``. The connector now
+  admits punctuation and markdown plus **at most two** function words — a cap
+  that keeps verb and anchor in the same clause.
 
-- **A falha é lida do nome da ferramenta, não do texto da saída.** Procurar
-  `fatal:` ou `Traceback` na saída era léxico passando por semântico — o mesmo
-  defeito que o `verify()` tinha. Medido em 400 chamadas **bem-sucedidas**, 2%
-  seriam descartadas, entre elas um `git commit` legítimo cuja saída trazia
-  `command not found` de outro trecho do script.
+- **Quotation is not assertion.** Widening the connector alone turned the
+  recogniser into a false-accusation generator: of the 30 claims the corpus then
+  produced, **25 resolved `CONTRADICTED`, and every sampled one was the message
+  quoting a claim** — a corpus sample inside a code block, probe output, design
+  prose. A code block and a quoted span are now data the message displays, never
+  an assertion it makes. It is the same reasoning that took the heredoc body out
+  of the command in 4.6.2, one layer up. The criterion is the position of the
+  **verb**, not the anchor's: someone writing ``criei `x.py` `` puts the anchor
+  in backticks on purpose.
 
-- **`test_run` deixou de ser circular.** O runner tem de ser o executável
-  invocado, com os prefixos de wrapper que a frota usa (`uv run`, `python -m`,
-  `poetry run`, `npx`). Antes, `grep pytest` verificava "rodei pytest".
+- **A noun is not an artefact.** `rodei o hook`, `rodei a checagem`, `controle`
+  and `suíte` produced anchors and, with them, accusations, and they appeared
+  repeatedly among the 25. The design's admission criterion is that a query must
+  refute the claim without interpretation, and none of those has one. An
+  execution anchor now requires a path or a known executable name.
 
-- **`CONTRADICTED` era inalcançável em sessão real.** Das quatro sessões
-  medidas (1925, 1306, 318, 290 observações), nenhuma cabia na janela de 200, e
-  janela saturada resolve `UNSUPPORTED` por desenho. O teto de linhas virou
-  **teto de tempo**, porque a restrição sempre foi custo.
+- **A 7-letter extension was truncated.** `\w{1,6}` cut `.service` down to
+  `.servic`: the anchor was born wrong, matched nothing, and became an
+  **accusation**.
+
+- **`_RUNNER` anchored on neither a newline nor `timeout` — a defect inherited
+  from 4.6.2.** Measured on obs 10310: `cd /repo\ntimeout 240 python3 -m pytest
+  tests/test_liaison_bindings.py` is a legitimate run of that file, and it was
+  contested. Multi-line commands are the norm in this fleet, and `timeout`
+  wraps nearly every test here.
+
+- **Running a directory and claiming one file of it.** The file name in the
+  runner's own output is a world-generated identifier, and it now counts —
+  without opening a hole, because the observation already had to be a runner
+  invocation.
 
 ### Added
 
-- Nomes de ferramenta dos três runtimes: `Bash`/`Write`/`Edit` (Claude Code,
-  medidos), `run_command`/`write_to_file`/`replace_file_content` (Antigravity),
-  `terminal`/`write_file`/`patch` (Hermes). Sem eles a verificação só
-  funcionaria num terço da frota. Escrita por shell cobre redirecionamento,
-  heredoc, `touch`, `sed -i` e `cp`.
+- **A first-person, affirmative gate.** Negation (`não commitei nada`) and
+  attribution to someone else (`the Hermet committed f82e504`) stop becoming my
+  assertion. Both lead to the same place — no claim is born — so they live at
+  the same gate. The window stops at a contrast (`mas`, `but`); otherwise *"não
+  consegui rodar o lint, mas rodei `x.py`"* would kill a true claim.
 
-### Nota de custo, e a condição que a sustenta
+- **Field names for the three runtimes, measured rather than inferred:**
+  `file_path` / `notebook_path` (Claude Code), **`TargetFile`** and
+  `AbsolutePath` (Antigravity, PascalCase), `path` (Hermes); the command in
+  `command` and **`CommandLine`**. Inferring `target_file` was wrong and would
+  have put every native write on Antigravity into permanent `UNSUPPORTED`, with
+  no symptom.
 
-O orçamento é de **800ms** por afirmação. Três números medidos na maior sessão
-real (1925 observações, ~15MB de blobs), e os três importam porque um só
-engana: **~123ms** é o custo estável do scan completo, **~809ms** foi o outlier
-de cache de página frio no primeiro acesso, **800ms** é o teto.
+### What the historical corpus says now
 
-A condição que torna um teto de tempo defensável: um veredito que depende do
-relógio só pode variar no lado que **não acusa**. Estourar o orçamento resolve
-`UNSUPPORTED`, nunca `CONTRADICTED` — máquina carregada perde detecção, jamais
-inventa uma.
+7 anchored claims over 1255 messages — the corpus grew during the very session
+that measured it, hence 1255 here and 1225 above: **6 `VERIFIED`, 1
+`CONTRADICTED`**. The number did not rise from 4 to 30 — those 30 included the
+25 quotations and vague anchors that would have been accusations. It rose from
+4 claims, some of them false, to 7 that hold up against the telemetry.
 
-### Limite declarado
+### Declared limits
 
-A marca de falha no nome da ferramenta nasce de um evento do harness do Claude
-Code. O código viaja vendorizado nos três runtimes; o evento, não. Para
-`commit` e `push` isso não abre buraco — exigir a âncora na saída já descarta
-ato que falhou. Para as classes cuja âncora vive nos argumentos, a defesa cai
-nos outros dois runtimes: dívida conhecida, não esquecimento.
+- **The loop is single-runtime in practice.** Measured by the agents running on
+  the other two: neither Antigravity nor Hermes has tool-call capture writing to
+  `obs.db` (on Hermes, `grep` finds zero in `tools/`), and both spaces have zero
+  rows in `claims`. It is not recogniser blindness — the producer does not exist
+  there. The runtime tables remain correct, but claiming homogeneous coverage
+  would be a false insinuation. Giving Hermes capture is a new feature.
+
+- **The window is the session, and the one remaining contestation comes from
+  that.** `commitado em 67e1c2c` is a true statement made in a session whose
+  telemetry does not contain the act — the commit was born outside it.
+  Contesting there is accusing from a window limit, not from real absence. It is
+  the strongest reason for shadow mode to stay.
+
+- **Splitting on separators ignores quoting.** `pytest -k "a;b" tests/x.py`
+  truncates the region and resolves `UNSUPPORTED`. Splitting can only **shorten**
+  the region, so the error always falls on the side that does not accuse — the
+  same invariant that holds up the time budget.
+
+- **This house's test idiom reads as `UNSUPPORTED`.** `for f in tests/*.py; do
+  pytest "$f"; done` puts the anchor before the runner, outside the invocation's
+  region. That is how we run tests here, because of RAM.
 
 ---
 
-## [4.6.1] - 2026-09-14 — O hook da 4.6.0 estava inerte no plugin
+## [4.6.2] - 2026-09-14 — Evidence becomes the trace of the act
+
+Found in a real environment with 4.6.1 installed, measured against the live
+`obs.db`, and reviewed by all three agents in the fleet.
 
 ### Fixed
 
-- **O laço de honestidade não gravava nada numa instalação de plugin.** A
-  `hooks.json` da 4.6.0 registrava o hook de `Stop` contra
-  `${CLAUDE_PLUGIN_ROOT}/hooks/conscio_honesty_pkg`, um diretório que a
-  distribuição nunca carregou: o pacote era copiado por `materialize.py`, que
-  roda no caminho do `conscio install` e **não** no do marketplace. O hook
-  rodava, falhava ao importar, saía 0 por desenho e não registrava nada —
-  indistinguível de uma instalação saudável, exatamente a falha que a v4.0.0
-  teve com a captura.
+- **The predicate accepted evidence written by the claimant.** The search
+  matched the anchor against the observation's **input**, which is text the
+  agent wrote: inventing a sha and typing it into any command produced
+  `VERIFIED`. Self-certification — the very defect this line of releases exists
+  to kill, one layer down. And the loop's own record, printed in a command's
+  output, became textual proof that the anchor exists.
 
-  O pacote passa a viajar versionado em `assets/hooks/conscio_honesty_pkg/`,
-  como `conscio_obsstore.py` já fazia. Um guarda novo confere que **todo**
-  caminho `${CLAUDE_PLUGIN_ROOT}` citado numa `hooks.json` existe na árvore que
-  o plugin distribui, que a cópia não divergiu do módulo de origem, e que ela
-  está rastreada pelo git — teste verde contra o disco local prova o disco, não
-  o artefato.
+  Evidence becomes the **trace of the act**: the tool must execute the class
+  (matched **before** any pattern — measured, 2 of 22 observations with `git
+  commit` in the input were messages *discussing* commits), the input must
+  identify the act, the anchor only counts on the side whoever generated it
+  allows (a world identifier in the **output**; an agent-supplied path in the
+  arguments, with the tool's identity as the guarantee), and the call must not
+  have failed.
 
----
+- **A heredoc body stopped counting as a command.** The command that *writes* a
+  file carries the file's entire content in its input — so a file that **talks
+  about** an act looked like the act. Measured: the command that wrote this
+  release's tests was accepted as evidence of a commit, because a docstring
+  quoted the expression and the output displayed the file. Writing the test that
+  proves the false claim became the proof that it was true.
 
-## [4.6.0] - 2026-09-13 — Honestidade verificável (modo sombra)
+- **Failure is read from the tool's name, not from the output text.** Searching
+  the output for `fatal:` or `Traceback` was lexical passing itself off as
+  semantic — the same defect `verify()` had. Measured over 400 **successful**
+  calls, 2% would have been discarded, among them a legitimate `git commit`
+  whose output carried `command not found` from another part of the script.
 
-O Conscio dizia verificar. Três medições na v4.5.4 mostraram que a verificação
-existia como vocabulário e não como mecanismo: `expected_outcome` era campo
-obrigatório que ninguém lia, o ledger não tinha onde representar *executou e não
-funcionou*, a confiança subia com o código de saída do comando, e `verify()`
-aprovava um critério que citasse o próprio nome — ou aprovava a ausência de
-critérios. Esta versão fecha o laço e **entrega em modo sombra**: o
-reconhecedor grava desfecho e não contesta ninguém.
+- **`test_run` stopped being circular.** The runner must be the invoked
+  executable, with the wrapper prefixes the fleet actually uses (`uv run`,
+  `python -m`, `poetry run`, `npx`). Before, `grep pytest` verified "I ran
+  pytest".
+
+- **`CONTRADICTED` was unreachable in a real session.** Of the four measured
+  sessions (1925, 1306, 318, 290 observations), none fit in the 200-row window,
+  and a saturated window resolves `UNSUPPORTED` by design. The row cap became a
+  **time cap**, because the constraint was always cost.
 
 ### Added
 
-- **`outcome` no ledger de ações**, com `outcome_ts` e `outcome_evidence`.
-  Três perguntas distintas passam a ter três campos que não se sobrepõem:
-  `verdict` (o Skeptic deixou rodar?), `ok` (o comando rodou?) e `outcome` (o
-  que se esperava aconteceu?). `verdict` **não** foi reusado — ele já valia
-  `PASS`/`unaudited` com sentido pré-execução. Linha gravada antes desta versão
-  fica com `outcome` vazio, *fora de escopo*: promovê-las a pendentes declararia
-  retroativamente que centenas de ações antigas aguardam verificação, e todas
-  expirariam.
-- **Expiração como desfecho de primeira classe.** A evidência é podada aos 30
-  dias, então pendência mais velha que a janela não pode ser decidida nem a
-  favor nem contra. Ela resolve como `UNSUPPORTED` *registrado*, nunca some e
-  nunca vira sucesso por decurso de prazo. A varredura roda no hook de `Stop`,
-  limitada a 200 linhas por passe para o custo por turno ser plano, e a janela é
-  aplicada também na leitura — numa máquina parada por meses a varredura nunca
-  rodou.
-- **Reconhecedor de afirmações do agente hospedeiro**, funil de três portas:
-  vocabulário fechado por classe (bilíngue, pt e en), âncora de artefato
-  obrigatória, e predicado determinístico sobre as observações já capturadas.
-  Classes: `commit`, `push`, execução de teste, escrita de arquivo. Fora:
-  "verifiquei", "confirmei" — não há consulta que as refute.
-- **`conscio honesty recent`**, o caminho de leitura do registro. Sem ele a
-  feature existiria só em banco, e o PRD define a persona por exclusão: o que só
-  existe em log é indistinguível de não existir.
-- **Despachantes de RELAY, REVIEW e HALL** e redistribuição dos modos (E3).
-  Superfície servida medida nesta branch: **10 / 19 / 27 / 37** tools em
+- Tool names for the three runtimes: `Bash`/`Write`/`Edit` (Claude Code,
+  measured), `run_command`/`write_to_file`/`replace_file_content` (Antigravity),
+  `terminal`/`write_file`/`patch` (Hermes). Without them verification would work
+  on a third of the fleet. Writing through a shell covers redirection, heredoc,
+  `touch`, `sed -i` and `cp`.
+
+### A note on cost, and the condition that holds it up
+
+The budget is **800ms** per claim. Three numbers measured on the largest real
+session (1925 observations, ~15MB of blobs), and all three matter because any
+one of them alone misleads: **~123ms** is the stable cost of a full scan,
+**~809ms** was the cold page-cache outlier on first access, **800ms** is the cap.
+
+The condition that makes a time cap defensible: a verdict that depends on the
+clock may only vary on the side that **does not accuse**. Blowing the budget
+resolves `UNSUPPORTED`, never `CONTRADICTED` — a loaded machine loses detection,
+it never invents one.
+
+### Declared limit
+
+The failure mark in the tool's name comes from a Claude Code harness event. The
+code travels vendored into all three runtimes; the event does not. For `commit`
+and `push` that opens no hole — requiring the anchor in the output already
+discards a failed act. For the classes whose anchor lives in the arguments, the
+defence falls away on the other two runtimes: known debt, not an oversight.
+
+---
+
+## [4.6.1] - 2026-09-14 — 4.6.0's hook was inert inside the plugin
+
+### Fixed
+
+- **The honesty loop recorded nothing in a plugin installation.** 4.6.0's
+  `hooks.json` registered the `Stop` hook against
+  `${CLAUDE_PLUGIN_ROOT}/hooks/conscio_honesty_pkg`, a directory the
+  distribution never carried: the package was copied by `materialize.py`, which
+  runs on the `conscio install` path and **not** on the marketplace one. The
+  hook ran, failed to import, exited 0 by design and recorded nothing —
+  indistinguishable from a healthy installation, exactly the failure v4.0.0 had
+  with capture.
+
+  The package now travels versioned in `assets/hooks/conscio_honesty_pkg/`, as
+  `conscio_obsstore.py` already did. A new guard asserts that **every**
+  `${CLAUDE_PLUGIN_ROOT}` path named in a `hooks.json` exists in the tree the
+  plugin ships, that the copy has not drifted from its source module, and that
+  it is tracked by git — a test green against the local disk proves the disk,
+  not the artefact.
+
+---
+
+## [4.6.0] - 2026-09-13 — Verifiable honesty (shadow mode)
+
+Conscio said it verified. Three measurements on v4.5.4 showed verification
+existed as vocabulary, not as mechanism: `expected_outcome` was a required field
+nobody read, the ledger had nowhere to represent *ran and did not work*, trust
+rose on a command's exit code, and `verify()` approved a criterion that cited
+its own name — or approved the absence of criteria. This release closes the loop
+and **ships in shadow mode**: the recogniser records an outcome and contests
+nobody.
+
+### Added
+
+- **`outcome` in the action ledger**, with `outcome_ts` and `outcome_evidence`.
+  Three distinct questions now have three non-overlapping fields: `verdict` (did
+  the Skeptic let it run?), `ok` (did the command run?) and `outcome` (did what
+  was expected happen?). `verdict` was **not** reused — it already meant
+  `PASS`/`unaudited` with a pre-execution sense. A row written before this
+  release keeps `outcome` empty, *out of scope*: promoting them to pending would
+  retroactively declare that hundreds of old actions await verification, and all
+  of them would expire.
+- **Expiry as a first-class outcome.** Evidence is pruned at 30 days, so a
+  pending item older than the window can be decided neither for nor against. It
+  resolves as a *recorded* `UNSUPPORTED`; it never disappears and never becomes
+  success by lapse of time. The sweep runs in the `Stop` hook, capped at 200
+  rows per pass so the per-turn cost stays flat, and the window is applied on
+  read as well — on a machine idle for months the sweep never ran.
+- **A recogniser for the host agent's own claims**, a three-gate funnel: a
+  closed vocabulary per class (bilingual, pt and en), a mandatory artefact
+  anchor, and a deterministic predicate over the observations already captured.
+  Classes: `commit`, `push`, test run, file write. Out: "verifiquei",
+  "confirmei" — no query can refute them.
+- **`conscio honesty recent`**, the read path for the record. Without it the
+  feature would exist only in a database, and the PRD defines the persona by
+  exclusion: what exists only in a log is indistinguishable from what does not
+  exist.
+- **RELAY, REVIEW and HALL dispatchers** plus a redistributed mode ladder (E3).
+  Served surface measured on this branch: **10 / 19 / 27 / 37** tools in
   lite / balanced / high / ultra.
 
 ### Fixed
 
-- **`verify()` deixa de aprovar o que não examinou.** Sem critério devolvia
-  `pass=True` — verificar coisa nenhuma era aprovado. Com critério, bastava
-  existir um evento cujo campo de evidência fosse o *ID do critério*: o conteúdo
-  era lido para uma variável e nunca confrontado. Agora a evidência tem de ser
-  ponteiro **resolvível** (observação ou blob que existe), não apenas
-  bem-formado: aceitar a forma trocaria *"o critério se aprova citando o próprio
-  nome"* por *"se aprova citando `obs:` e um número inventado"*.
-- **A confiança passa a se mover por desfecho.** `VERIFIED` perdoa erro,
-  `CONTRADICTED` registra erro, `PENDING` e `UNSUPPORTED` não movem nada.
+- **`verify()` stops approving what it did not examine.** With no criteria it
+  returned `pass=True` — verifying nothing was approved. With criteria, it was
+  enough for an event to exist whose evidence field was the *criterion's ID*:
+  the content was read into a variable and never confronted. Evidence must now
+  be a **resolvable** pointer (an observation or blob that exists), not merely a
+  well-formed one: accepting the shape would trade *"the criterion approves
+  itself by citing its own name"* for *"it approves itself by citing `obs:` and
+  an invented number"*.
+- **Trust now moves on outcome.** `VERIFIED` forgives an error, `CONTRADICTED`
+  records one, `PENDING` and `UNSUPPORTED` move nothing.
 
-### O que esta versão NÃO entrega
+### What this release does NOT deliver
 
-Declarado para poder ser conferido em vez de suposto:
+Declared so it can be checked rather than assumed:
 
-- **A contestação não liga.** Modo sombra é a entrega. Ligar depende de um
-  portão de corpus com adjudicação humana, lendo o turno — nunca por
-  concordância do predicado consigo mesmo.
-- **O código de saída ainda alimenta a confiança** em três lugares
-  (`act.py:276`, `act.py:326`, `host_act.py:155`). A troca de fonte exige o
-  reconhecedor produzindo desfecho de ação; removê-los agora deixaria a
-  confiança sem fonte nenhuma.
-- **A confiança vai parecer congelada** no início, porque quase tudo nasce
-  pendente. É correto e vai parecer quebrado.
-- **Baseline tokenizada de custo por modo** não foi medida nesta entrega.
+- **Contestation does not turn on.** Shadow mode is the delivery. Turning it on
+  depends on a corpus gate with human adjudication, reading the turn — never on
+  the predicate agreeing with itself.
+- **The exit code still feeds trust** in three places (`act.py:276`,
+  `act.py:326`, `host_act.py:155`). Switching the source requires the recogniser
+  producing action outcomes; removing them now would leave trust with no source
+  at all.
+- **Trust will look frozen** at first, because almost everything is born
+  pending. That is correct and will look broken.
+- **A tokenised cost baseline per mode** was not measured in this delivery.
 
 ---
 
