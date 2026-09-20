@@ -71,3 +71,29 @@ def test_the_inbox_matches_messages_addressed_to_that_identity(tmp_path):
                              since_id=None, limit=50)) == 1
     assert mailbox.inbox(db, "", types=None, unread_only=True,
                          since_id=None, limit=50) == []
+
+
+def test_main_wires_the_identity_from_the_space(tmp_path, monkeypatch):
+    """O teste que faltava: prova a FIACAO, nao a funcao.
+
+    Os outros chamam resolve_identity() direto, entao sabotar o main() nao
+    ficava vermelho -- e o bug original morava exatamente no main().
+    """
+    from conscio.mcp import server as srv
+
+    caps.write_capabilities(tmp_path, ["relay"])
+    capturado = {}
+
+    def _fake_serve(bindings, *a, **k):
+        capturado["b"] = bindings
+
+    monkeypatch.setattr(srv, "serve", _fake_serve)
+    rc = srv.main(["--storage", str(tmp_path), "--model", "glm-5.1",
+                   "--adapter", "mock"])
+
+    assert rc == 0
+    b = capturado["b"]
+    esperado = json.loads(
+        (tmp_path / "instance.json").read_text("utf-8"))["instance_id"]
+    assert b.self_instance_id == esperado     # veio do espaco, sem flag
+    assert b.relay is True
