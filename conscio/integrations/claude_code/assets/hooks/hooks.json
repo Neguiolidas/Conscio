@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_awareness.py\""
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_awareness.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""
           },
           {
             "type": "command",

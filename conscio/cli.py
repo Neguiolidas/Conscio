@@ -117,6 +117,19 @@ def _build_parser() -> argparse.ArgumentParser:
                            help="grant this scope (omit to show the current one)")
     p_consent.add_argument("--storage", default="", help="storage dir (default: ~/.conscio)")
 
+    # v4.6.5: o unico caminho de primeira classe para conceder/revogar. Antes
+    # disto so o wizard e `conscio init --repair` escreviam a capacidade, e
+    # nenhum dos dois roda no caminho do marketplace -- foi assim que a 4.6.4
+    # desarmou o relay em silencio num update de plugin.
+    p_caps = sub.add_parser(
+        "capabilities",
+        help="grant/revoke opt-in MCP capabilities (relay, halls) for a space")
+    p_caps.add_argument("action", nargs="?", choices=["enable", "disable"],
+                        help="omit to list what is granted")
+    p_caps.add_argument("name", nargs="?", help="capability name")
+    p_caps.add_argument("--storage", default="",
+                        help="storage dir (default: ~/.conscio)")
+
     p_structure = sub.add_parser(
         "structure",
         help="show structural drift + freshness for the current workspace (read-only)")
@@ -825,6 +838,36 @@ def _cmd_consent(scope_arg: str, storage: str) -> int:
     return 0
 
 
+def _cmd_capabilities(args) -> int:
+    """List, grant or revoke an opt-in capability persisted in the space.
+
+    Listing an empty space says so out loud: printing nothing would be
+    indistinguishable from a broken command, which is the failure mode this
+    whole release exists to remove.
+    """
+    from .mcp import capabilities as caps
+    storage = _storage(args.storage)
+    if not args.action:
+        granted = sorted(caps.read_capabilities(storage))
+        print(f"capabilities in {storage}: "
+              f"{', '.join(granted) if granted else 'none'}")
+        return 0
+    if not args.name:
+        print(f"usage: conscio capabilities {args.action} <name>")
+        return 2
+    if args.name not in caps.CAPABILITIES:
+        print(f"error: unknown capability {args.name!r}; "
+              f"expected one of {', '.join(caps.CAPABILITIES)}")
+        return 2
+    granted = caps.read_capabilities(storage)
+    alvo = (granted | {args.name}) if args.action == "enable" \
+        else (granted - {args.name})
+    caps.write_capabilities(storage, alvo)
+    print(f"{args.name} {'granted' if args.action == 'enable' else 'revoked'}; "
+          f"capabilities in {storage}: {', '.join(sorted(alvo)) or 'none'}")
+    return 0
+
+
 def _cmd_structure(storage: str) -> int:
     """Read-only: distill the consented graph and report drift + freshness.
 
@@ -1172,6 +1215,8 @@ def main(argv: list[str] | None = None) -> int:
                            exact=args.exact)
     if args.command == "manual":
         return _cmd_manual(open_it=getattr(args, "open", False))
+    if args.command == "capabilities":
+        return _cmd_capabilities(args)
     if args.command == "honesty":
         return _cmd_honesty(args)
 

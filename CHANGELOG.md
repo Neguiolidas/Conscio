@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.6.5] - 2026-09-20 — Consent speaks instead of being guessed
+
+4.6.4 moved opt-in capabilities out of the cached `.mcp.json` and into the
+space, so a plugin update would stop erasing them. Measured on a real update
+the same day: **the relay was disarmed anyway**. The argument left with the
+asset, and nothing ever wrote the space — the symptom changed owner without
+going away. Reproduced independently on two machines with different install
+paths.
+
+### Fixed
+
+- **A marketplace update still disarmed the relay.** The consent migration
+  lives in `upsert_conscio_entry`, which runs from `conscio init`/`--repair`,
+  the wizard and `materialize.py`. **A marketplace update runs none of the
+  three** — the same discovery 4.6.1 made about the honesty hook's package. The
+  4.6.4 test passed green while proving a path the user never walks, because it
+  called that function directly instead of starting from an updated cache with
+  no argument.
+
+- **A capability could be granted but never revoked.** Until now only the
+  wizard and `--repair` wrote one, so the only way to withdraw consent was
+  deleting the flag by hand — which is precisely what A3 then erased, making
+  revocation and the bug indistinguishable.
+
+### Added
+
+- **`conscio capabilities`** — `list`, `enable <name>`, `disable <name>`. The
+  first-class path to grant and withdraw. Listing an empty space says `none`
+  out loud: printing nothing would be indistinguishable from a broken command,
+  the failure mode this release exists to remove.
+
+- **A capability that looks lost is announced at `SessionStart`**, naming it
+  and the command that restores it. It restores nothing. A fresh install stays
+  silent — announcing a loss that never happened trains the reader to ignore
+  the line, which is how a warning becomes noise.
+
+- **Write-through on a command-line flag.** A flag seen once is persisted, so a
+  hand-configured host heals itself after one boot and the capability stops
+  depending on an argument the next update overwrites.
+
+### The rule that decides every case
+
+**Consent is born from a present action of the user, never from a retroactive
+artefact.**
+
+A flag on the command line is the user invoking the server with it right now,
+so write-through is consent. A previous version's cached `.mcp.json` is the
+past, and with A3 in play the absence of the flag is ambiguous between the user
+revoking and the bug erasing. An existing `liaison.db` is worse: it exists
+because the agent *received a message*, not because anyone agreed to anything.
+
+An auto-migration keyed on `liaison.db` was written and then removed under this
+rule. Measured before removing it: a space with that file and no marker was
+granted the capability **and had the guess persisted**, while a space with an
+explicit empty marker correctly stayed off — so the error landed exactly on the
+population A3 had hit, the people who revoked by deleting the flag.
+
+The rule now lives in the docstring that decides every case, where it prevents
+the relapse.
+
+---
+
 ## [4.6.4] - 2026-09-20 — The gate stops lying
 
 4.6.3 closed self-certification: evidence became the trace of the act. It did

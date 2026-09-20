@@ -52,31 +52,32 @@ def write_capabilities(storage, caps: Iterable[str]) -> None:
 def resolve_capability(storage, name: str, cli_flag: bool) -> bool:
     """CLI flag turns it on; otherwise the space decides; otherwise off.
 
-    If cli_flag is on, it is persisted to the space.
-    If the space has no capability marker but already has a liaison.db,
-    it auto-migrates consent for relay (and halls if hallways.db exists).
+    THE RULE THAT DECIDES EVERY CASE HERE, and it is the whole design:
+    **consent is born from a present action of the user, never from a
+    retroactive artefact.**
+
+    A flag on the command line IS a present action — the user is invoking the
+    server with it right now — so seeing one persists it. That write-through is
+    what lets a hand-configured host heal itself: after the first boot the
+    capability no longer depends on an argument the next update overwrites.
+
+    Everything on the other side of that line is refused, however tempting.
+    An earlier version's cached `.mcp.json` still carrying `--enable-relay` is
+    the past, and with A3 in play its absence is ambiguous — it could be the
+    user revoking or the bug erasing. An existing `liaison.db` is worse still:
+    it exists because the agent RECEIVED A MESSAGE, not because anyone agreed
+    to anything. Granting on either would resurrect the consent of whoever
+    deleted the flag by hand, which until this release was the only way to
+    revoke — exactly the population A3 hit.
+
+    A capability that cannot be inferred is announced instead: the SessionStart
+    hook says what looks lost and which command restores it. The cure for a
+    silent failure is to make it speak, not to guess.
     """
-    if bool(cli_flag):
+    if cli_flag:
         try:
             write_capabilities(storage, read_capabilities(storage) | {name})
         except (OSError, ValueError):
-            pass
+            pass                      # persistir e conveniencia, nao o veredito
         return True
-
-    caps = read_capabilities(storage)
-    if name in caps:
-        return True
-
-    if not capabilities_path(storage).exists():
-        storage_path = Path(storage).expanduser()
-        if (storage_path / "liaison.db").exists():
-            migrated = {"relay"}
-            if (storage_path / "hallways.db").exists():
-                migrated.add("halls")
-            try:
-                write_capabilities(storage, caps | migrated)
-            except (OSError, ValueError):
-                pass
-            return name in migrated
-
-    return False
+    return name in read_capabilities(storage)
