@@ -271,12 +271,20 @@ _QUOTED = re.compile(r"`[^`\n]*`|\"[^\"\n]*\"|\u201c[^\u201d\n]*\u201d")
 #: de shell vive dentro de comando, nunca abrindo linha de prosa, entao nao ha
 #: ambiguidade. Medido: "> Issue #123: criei `schema.sql`" virava claim.
 _BLOCKQUOTE = re.compile(r"^[ \t]*>.*$", re.MULTILINE)
+#: Bloco de codigo por INDENTACAO (4+ espacos), que o markdown aceita sem
+#: cerca. Mascara toda linha indentada, e nao so as que seguem linha em branco
+#: como manda a regra estrita: medido, ZERO claims do corpus real nascem em
+#: linha indentada, entao a regra estrita so deixaria passar o caso
+#: adversarial sem economizar nada. Continuacao de item de lista e mascarada
+#: junto -- cegueira aceita, do lado que nao acusa.
+_INDENTED = re.compile(r"^[ \t]{4,}\S.*$", re.MULTILINE)
 
 
 def _cited_spans(text: str) -> list[tuple[int, int]]:
     return [m.span()
-            for rx in (_FENCE, _QUOTED, _BLOCKQUOTE)
+            for rx in (_FENCE, _QUOTED, _BLOCKQUOTE, _INDENTED)
             for m in rx.finditer(text)]
+
 
 
 

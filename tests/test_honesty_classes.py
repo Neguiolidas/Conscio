@@ -175,3 +175,16 @@ def test_a_redirect_mid_line_is_not_a_blockquote():
     comando, nunca abrindo linha de prosa."""
     assert _anchors("criei `a.py` rodando cat > a.py") == ["a.py"]
 
+
+def test_an_indented_block_is_citation():
+    """Markdown permite bloco de codigo por indentacao, sem cerca, e _FENCE
+    nao o ve. O caso do Gemini NAO tem linha em branco antes -- por isso a
+    regra estrita do markdown foi descartada no self-review da spec."""
+    assert find_claims("O desenvolvedor me enviou:\n    criei `fix.patch`") == []
+
+
+def test_a_normal_line_still_produces_a_claim():
+    """Contrapartida: indentacao de ate 3 espacos nao e bloco de codigo."""
+    assert _anchors("  criei `fix.patch`") == ["fix.patch"]
+
+
