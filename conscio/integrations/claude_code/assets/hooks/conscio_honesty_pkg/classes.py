@@ -292,6 +292,22 @@ def _cited_spans(text: str) -> list[tuple[int, int]]:
 
 
 
+#: Terminadores de frase, procurados a partir do FIM do casamento. Comecar no
+#: verbo seria errado: o ponto de "fix.py" viraria terminador e uma pergunta
+#: sobre um caminho com extensao passaria batida.
+_SENTENCE_END = re.compile(r"[.!?\n]")
+
+
+def _is_assertion(text: str, end: int) -> bool:
+    """A frase que contem a claim termina em '?' -> e pergunta, nao afirmacao.
+
+    Erra por frase inteira: "Executei `pytest`, nao sei se passou?" afirma o
+    ato e e barrada. Falso negativo consciente, do lado que nao acusa.
+    """
+    m = _SENTENCE_END.search(text, end)
+    return not (m and m.group() == "?")
+
+
 #: Delimitadores que a prosa poe em volta da ancora e que nao fazem parte dela.
 _DELIMS_BOTH = "`\"'()[]{}<>"
 _DELIMS_RIGHT = ".,:;!?"
@@ -320,6 +336,8 @@ def find_claims(text: str) -> list[Claim]:
                 continue                  # a classe nao admite esta ancora
             if any(a <= m.start() < b for a, b in citados):
                 continue                  # a mensagem CITA, nao afirma
+            if not _is_assertion(text or "", m.end()):
+                continue                  # pergunta nao e asserção
             if _is_mine_and_affirmative(text or "", m.start()):
                 found.append(Claim(cls.name, anchor, m.span()))
     return found

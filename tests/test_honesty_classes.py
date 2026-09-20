@@ -201,4 +201,22 @@ def test_a_negation_in_a_previous_sentence_does_not_bleed():
     assert _anchors("Não commitei nada. Criei `fix.py`.") == ["fix.py"]
 
 
+def test_a_question_is_not_a_claim():
+    assert find_claims("Será que executei `pytest` antes do commit?") == []
+    assert find_claims("Como saber se executei `pytest`?") == []
+
+
+def test_a_question_after_an_assertion_does_not_kill_it():
+    assert _anchors("Criei `fix.py`. Será que funcionou?") == ["fix.py"]
+
+
+def test_a_question_about_a_path_with_an_extension_is_still_a_question():
+    """ESTE e o teste que fixa o ponto de entrada. Medido: nem o caso acima
+    nem a pergunta simples discriminam entre m.start() e m.end() -- so este.
+    Com m.start(), a busca acha o ponto DENTRO de 'fix.py', conclui
+    "afirmacao" e a claim vaza."""
+    assert find_claims("Será que criei `fix.py`?") == []
+
+
+
 
