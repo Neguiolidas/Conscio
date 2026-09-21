@@ -279,26 +279,59 @@ def _is_mine_and_affirmative(text: str, start: int) -> bool:
 #: um radical curto engolir substantivo/adverbio alheio. Onde colide, a lista
 #: enumera as formas conjugadas do verbo em vez do radical.
 #:
-#: `teria` ancorado no FIM da janela (`\bteria\s*$`), nao mais solto: a janela
-#: ja corta exatamente no inicio do verbo da claim, entao ancorar no fim da
-#: janela equivale a "teria imediatamente antes do verbo" -- exigir particip
-#: depois seria pedir o proprio verbo. Sem a ancora, um `teria` de uma oracao
-#: anterior atravessava a janela e matava uma claim verdadeira mais adiante
-#: ("O relatorio que eu teria revisado ficou pronto, e commitei abc1234.").
+#: ENUMERACAO TEM DE SER COMPLETA, OU VIRA VAZAMENTO. Medido depois do ajuste
+#: anterior: a lista enumerada cobria so as formas finitas e esquecia o
+#: GERUNDIO -- "Estou achando que commitei", "Estou imaginando que criei",
+#: "Estou crendo que commitei" sao prosa comum e nenhuma casava, entao a
+#: claim nascia. Faltar uma forma numa enumeracao nao e cautela, e vazamento:
+#: aqui o erro cai do lado que ACUSA (claim nasce apesar da frase estar
+#: modalizada), o pior desfecho que este gate pode produzir -- pior que a
+#: cegueira aceita acima. Por isso `ando` entra em achar/imaginar e `ndo`
+#: entra em crer; qualquer lista nova nesta secao tem de incluir o gerundio
+#: antes de ser considerada completa.
+#:
+#: POR ISSO AS LISTAS SAO VERBOSAS DE PROPOSITO. `ach(?:o|a|as|amos|am|ei|ou
+#: |aram|ava|avam|aria|ariam|ando)`, `cre(?:io|s|mos|em|ia|iam|ndo)` e
+#: `imagin(?:o|a|as|amos|am|ei|ava|aria|ando)` sao enumeracao de forma
+#: conjugada, nao radical, porque o radical curto colide com substantivo e
+#: advervio alheio (ver acima: "credito", "creche", "achado"). Uma enumeracao
+#: que esquece uma forma -- o gerundio, medido -- e VAZAMENTO, e vazamento
+#: aqui cai do lado que ACUSA: quem marcou incerteza seria contestado como se
+#: tivesse afirmado. Por isso NAO "arrumar" estas listas de volta para um
+#: radical curto: isso reabriria os seis kills de claim verdadeira que a
+#: rodada anterior corrigiu (credito/creche/crescimento/achado/doubtless/
+#: teria-com-parentetico em UNHEDGED). A lista verbosa e a correcao, nao o
+#: problema.
+#:
+#: `doubt(?:s|ful)?`: "doubtful" e a mesma duvida com sufixo adjetival e
+#: vazava ("It's doubtful I committed abc1234"). "doubtless" continua FORA
+#: por construcao, nao por seguranca: depois de "doubt" vem "l", que nao e
+#: limite de palavra nem um dos sufixos aceitos, entao nenhuma alternativa
+#: casa. Deliberado -- "doubtless" e CERTEZA, nao duvida, e tem de continuar
+#: rendendo claim (ver UNHEDGED).
+#:
+#: `teria` ancorado no fim da janela, agora tolerando ATE DUAS palavras de
+#: parentetico antes do fim (`\bteria[\s,]*(?:\w+[\s,]+){0,2}$`): medido,
+#: "Teria, honestamente, commitado abc1234" tem uma palavra entre o hedge e
+#: o verbo, e a ancora rigida anterior (`\bteria\s*$`) matava essa claim
+#: verdadeira. O teto de DUAS e deliberado -- NAO AUMENTAR: a regressao que a
+#: ancora corrige ("O relatorio que eu teria revisado ficou pronto, e
+#: commitei abc1234") tem QUATRO palavras entre o hedge e o verbo da claim
+#: seguinte; um teto maior que dois volta a matar essa claim.
 _HEDGE = re.compile(
     r"\b(?:talvez|possivelmente|provavelmente|aparentemente"
     r"|supon\w*|presum\w*|parece\s+que"
     r"|(?<!sem )d[uú]vid\w*"
     r"|(?:acredit\w*|suspeit\w*)\s+que"
-    r"|ach(?:o|a|as|amos|am|ei|ou|aram|ava|avam|aria|ariam)\s+que"
-    r"|cre(?:io|s|mos|em|ia|iam)\s+que|cr[eê]\s+que"
-    r"|imagin(?:o|a|as|amos|am|ei|ava|aria)\s+que"
+    r"|ach(?:o|a|as|amos|am|ei|ou|aram|ava|avam|aria|ariam|ando)\s+que"
+    r"|cre(?:io|s|mos|em|ia|iam|ndo)\s+que|cr[eê]\s+que"
+    r"|imagin(?:o|a|as|amos|am|ei|ava|aria|ando)\s+que"
     r"|dev(?:e|ia)\s+ter|poderia\s+ter"
     r"|maybe|perhaps|probably|apparently|supposedly|presumably|seems"
-    r"|(?<!no )doubts?"
+    r"|(?<!no )doubt(?:s|ful)?"
     r"|i\s+think|i\s+believe|i\s+guess|i\s+assume|i\s+suspect"
     r"|might\s+have|could\s+have|would\s+have)\b"
-    r"|\bteria\s*$", re.IGNORECASE)
+    r"|\bteria[\s,]*(?:\w+[\s,]+){0,2}$", re.IGNORECASE)
 
 
 #: LIMITE DECLARADO (medido depois do commit anterior): hedge preso a um verbo

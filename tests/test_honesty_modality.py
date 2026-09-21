@@ -40,6 +40,11 @@ HEDGED = [
     # aparencia
     "Parece que rodei tests/test_x.py",
     "Apparently I committed abc1234",
+    "Estou achando que commitei abc1234",
+    "Estou imaginando que criei config.py",
+    "Estou crendo que commitei abc1234",
+    "Teria, honestamente, commitado abc1234",
+    "It's doubtful I committed abc1234",
 ]
 
 UNHEDGED = [
