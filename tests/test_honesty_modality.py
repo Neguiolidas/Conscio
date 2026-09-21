@@ -53,6 +53,8 @@ HEDGED = [
     "Pensei que criei config.py",
     "Ache que criei config.py",
     "Achavamos que criei config.py",
+    "Achávamos que criei config.py",
+    "Achávamos que escrevi server.py",
     "Imaginou que criei config.py",
     "I thought I created config.py",
     "We think we committed abc1234",
