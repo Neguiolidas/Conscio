@@ -241,7 +241,10 @@ def main(argv: list[str] | None = None) -> int:
                     " to the agent's notify hook (CONSCIO_NOTIFY_CMD), loop "
                     "forever, at-least-once.",)
     p.add_argument("--liaison-db", default=None,
-                   help="path to liaison.db (default: $CONSCIO_HOME/liaison.db)")
+                   help="path to liaison.db (default: <live space>/liaison.db)")
+    p.add_argument("--storage", default="",
+                   help="space to act on (default: the live space,"
+                        " resolved from the directory card)")
     p.add_argument("--self-id", default="",
                    help="our provider instance id (or env CONSCIO_SELF_ID)")
     p.add_argument("--relay-peer", action="append", default=[],
@@ -255,7 +258,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="single dispatch tick and exit (cron/health mode)")
     args = p.parse_args(argv)
 
-    db = Path(args.liaison_db) if args.liaison_db else mailbox.default_db()
+    from ..space import resolve_live_space
+    # v4.6.7: the live space, not $CONSCIO_HOME/liaison.db.
+    db = mailbox.resolve_db(resolve_live_space(args.storage).path,
+                            args.liaison_db)
     self_id = os.environ.get("CONSCIO_SELF_ID", "").strip() or args.self_id
     peers = list(dict.fromkeys(args.relay_peer))
     notify_cmd = args.notify_cmd or os.environ.get(NOTIFY_ENV, "").strip()

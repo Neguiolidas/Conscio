@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 from . import audit, catalog, identity, importer, publish, quarantine, record_publish
-from .paths import quarantine_db_path, resolve_noosphere, resolve_storage
+from .paths import quarantine_db_path, resolve_noosphere
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -79,12 +80,24 @@ def _cmd_import(args) -> int:
     return 0
 
 
+def _live(explicit: str) -> Path:
+    """v4.6.7: the live space, not the neutral default.
+
+    `_cmd_id` reaches `identity.load_or_create`, which MINTS an identity when
+    the space has none — so resolving wrong here does not merely read the wrong
+    place, it manufactures a second identity for this agent in a space nobody
+    reads, and the relay card for it is published to the machine.
+    """
+    from ..space import resolve_live_space
+    return resolve_live_space(explicit).path
+
+
 def _cmd_list(args) -> int:
     if args.catalog:
         for cr in catalog.read_all(resolve_noosphere(args.noosphere)):
             print(f"{cr.origin_label}  {cr.content_sha256[:12]}  {cr.goal_text}")
     else:
-        qdb = quarantine_db_path(resolve_storage(args.storage))
+        qdb = quarantine_db_path(_live(args.storage))
         for qr in quarantine.list_rows(qdb):
             print(f"#{qr.id}  {qr.origin_label}  [{qr.import_status}/"
                   f"{qr.revalidation_result}]  {qr.goal_text}")
@@ -93,7 +106,7 @@ def _cmd_list(args) -> int:
 
 def _cmd_show(args) -> int:
     if args.quarantine is not None:
-        qdb = quarantine_db_path(resolve_storage(args.storage))
+        qdb = quarantine_db_path(_live(args.storage))
         qrow = quarantine.get(qdb, int(args.quarantine))
         if qrow is None:
             print("not found")
@@ -126,7 +139,7 @@ def _cmd_show(args) -> int:
 
 
 def _cmd_id(args) -> int:
-    storage = resolve_storage(args.storage)
+    storage = _live(args.storage)
     ident = (identity.set_label(storage, args.set_label)
              if args.set_label is not None
              else identity.load_or_create(storage))

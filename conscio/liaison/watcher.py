@@ -25,7 +25,7 @@ from enum import IntEnum
 from pathlib import Path
 
 from . import relay
-from .mailbox import default_db
+from .mailbox import resolve_db
 
 BUSY_TIMEOUT_MS = 3000  # mirror relay_watch_hermes.py
 STATE_TABLE = "watcher_state"
@@ -312,7 +312,10 @@ def main(argv: list[str] | None = None) -> int:
                     " exit silently when idle.",
     )
     p.add_argument("--liaison-db", default=None,
-                   help="path to liaison.db (default: $CONSCIO_HOME/liaison.db)")
+                   help="path to liaison.db (default: <live space>/liaison.db)")
+    p.add_argument("--storage", default="",
+                   help="space to act on (default: the live space,"
+                        " resolved from the directory card)")
     p.add_argument("--self-id", default="",
                    help=f"our provider instance id (or env {SELF_ID_ENV})")
     p.add_argument("--relay-peer", action="append", default=[],
@@ -340,7 +343,10 @@ def main(argv: list[str] | None = None) -> int:
                         " watcher that must not need re-arming.")
     args = p.parse_args(argv)
 
-    db = Path(args.liaison_db) if args.liaison_db else default_db()
+    from ..space import resolve_live_space
+    # v4.6.7: the live space, not $CONSCIO_HOME/liaison.db.
+    db = resolve_db(resolve_live_space(args.storage).path,
+                    args.liaison_db)
     self_id = _resolve_self_id(args.self_id)
     peers = list(dict.fromkeys(args.relay_peer))  # preserve order, dedupe
 

@@ -258,12 +258,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _storage(arg: str) -> str:
-    if arg:
-        return arg
-    # Persistent default so awake/sleep state survives across CLI calls. Route
-    # through the neutral conscio home (with legacy HERMES_HOME preservation).
-    from .noosphere.paths import default_storage
-    return str(default_storage())
+    # v4.6.7: the one resolver. This function is the funnel for the whole CLI,
+    # so pointing it at the live space is what stops `conscio <anything>` from
+    # answering confidently about a space nobody runs.
+    from .space import resolve_live_space
+    return str(resolve_live_space(arg).path)
 
 
 def _note_if_unknown(model: str, model_info) -> None:
@@ -1136,6 +1135,23 @@ def _cmd_honesty(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # v4.6.7: refusing to guess between several published spaces is a designed
+    # outcome, not a crash — it earns a message, not a traceback. Caught here,
+    # at the one funnel every `conscio <subcommand>` passes through. The
+    # standalone service entrypoints (conscio-reactor, conscio-observatory) let
+    # it propagate on purpose: those run under systemd, where a traceback in the
+    # journal is the more useful artifact.
+    from .space import AmbiguousSpace
+    try:
+        return _main(argv)
+    except AmbiguousSpace as exc:
+        print(f"conscio: {exc}", file=sys.stderr)
+        for cid, path in exc.candidates:
+            print(f"  {cid}  {path}", file=sys.stderr)
+        return 2
+
+
+def _main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
     # bench/daemon: route the tail straight to the subcommand's own argparse so
@@ -1237,11 +1253,8 @@ def _cmd_observatory(*, host: str, port: int, root: str,
     from pathlib import Path
 
     from .observatory.server import _DEFAULT_NOOSPHERE, make_server
-    if storage:
-        storage_path = Path(storage).expanduser()
-    else:
-        from .noosphere.paths import default_storage
-        storage_path = default_storage()
+    from .space import resolve_live_space
+    storage_path = resolve_live_space(storage).path
     noo = Path(noosphere).expanduser() if noosphere else _DEFAULT_NOOSPHERE
     # v4.5.4 C1: o db é do espaço do agente — o mesmo resolvedor do servidor
     # MCP e do daemon, senão o Observatory olha um db que ninguém escreve.
