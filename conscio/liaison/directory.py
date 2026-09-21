@@ -102,7 +102,8 @@ def publish(card: dict) -> None:
 def publish_self(instance_id: str, *, modelo: str = "", familia: str = "",
                  runtime: str = "", papel: str = "",
                  capabilities: tuple[str, ...] = ("relay",),
-                 url: str = "", min_interval: float = 0.0) -> bool:
+                 url: str = "", space: str = "",
+                 min_interval: float = 0.0) -> bool:
     """Publica/refresca MEU cartão. Devolve True se escreveu.
 
     Um agente é alcançável porque seu cartão existe, não porque ele está numa
@@ -115,7 +116,8 @@ def publish_self(instance_id: str, *, modelo: str = "", familia: str = "",
     restart não vire uma rajada de republicações.
 
     Chaves DO AGENTE (halls) sobrevivem ao refresh: são dele, não do processo
-    que republica.
+    que republica. `space` (v4.6.7) é uma delas — ver a nota abaixo, porque a
+    regra dele NÃO é a mesma das outras.
     """
     old = get(instance_id) or {}
     if min_interval > 0:
@@ -135,6 +137,16 @@ def publish_self(instance_id: str, *, modelo: str = "", familia: str = "",
     for key in ("halls", "halls_declined"):
         if old.get(key):
             card[key] = old[key]
+    # v4.6.7: `space` é chave do AGENTE, como halls — mas com a precedência
+    # invertida, e por isso fora do laço acima. Ali o valor velho sempre vence,
+    # o que é correto para halls porque halls nunca está no cartão novo. Para
+    # `space` o valor novo tem de vencer quando vier: acrescentar "space"
+    # àquela tupla congelaria o campo para sempre no primeiro valor publicado.
+    # Só quem RESOLVEU um espaço (o servidor) passa o argumento; quem republica
+    # sem saber (o reactor) herda, e nunca apaga nem rebaixa para o default.
+    herdado = str(old.get("space", "") or "")
+    if space or herdado:
+        card["space"] = space or herdado
     publish(card)
     return True
 
