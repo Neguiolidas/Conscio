@@ -92,6 +92,43 @@ def _cmd_quarantine(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_forget(args: argparse.Namespace) -> int:
+    """Drop a peer's card from this machine's directory.
+
+    The card is an address, not the agent: forgetting one removes a name from
+    the square, and any agent still running simply republishes on its next
+    heartbeat. That asymmetry is the whole safety story — this cannot silence a
+    live peer, only retire a dead one.
+
+    It exists because a card can outlive what published it. An agent whose space
+    was minted by an older version and never ran again leaves a card that no
+    process will ever refresh or remove, and every peer on the machine carries
+    it as a name that never answers.
+    """
+    target = (args.id or "").strip()
+    if not directory.valid_id(target):
+        print(f"not an instance id: {target!r}", file=sys.stderr)
+        return 2
+
+    card = directory.get(target)
+    if card is None:
+        print(f"no card for {target} in {directory.peers_dir()}")
+        return 1
+
+    if target == (args.self_id or os.environ.get("CONSCIO_SELF_ID", "")).strip():
+        print("note: that is your own card — a running agent republishes it "
+              "on its next heartbeat", file=sys.stderr)
+
+    age_days = (time.time() - float(card.get("updated_at", 0) or 0)) / 86400
+    if not directory.forget(target):
+        print(f"could not remove the card for {target}", file=sys.stderr)
+        return 1
+    print(f"forgot {target} (card was {age_days:.0f} day(s) old, "
+          f"runtime {card.get('runtime') or '-'})")
+    print("the space and its identity are untouched; only the address is gone")
+    return 0
+
+
 def _cmd_doctor(args: argparse.Namespace) -> int:
     """Three questions, no journal: am I published, is anything parked in my
     spool, and does the directory know anybody at all."""
@@ -225,6 +262,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--purge-days", type=float, default=None,
                    help="purge entries older than N days (0 = all)")
     p.set_defaults(fn=_cmd_quarantine)
+
+    p = sub.add_parser("forget", help="drop a peer's card from the directory")
+    p.add_argument("id", help="the instance id to forget")
+    p.add_argument("--self-id", default="",
+                   help="my instance id, only so the command can warn when you "
+                        "are forgetting yourself (default $CONSCIO_SELF_ID)")
+    p.set_defaults(fn=_cmd_forget)
 
     p = sub.add_parser("doctor", help="why is nothing arriving?")
     p.add_argument("--id", default="", help="my instance id")
