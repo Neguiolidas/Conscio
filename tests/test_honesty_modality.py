@@ -45,6 +45,17 @@ HEDGED = [
     "Estou crendo que commitei abc1234",
     "Teria, honestamente, commitado abc1234",
     "It's doubtful I committed abc1234",
+    # v4.6.6 fix round (achado do Gemini): 7 formas que vazavam por omissao
+    # nas listas ou restricao de pronome. HEDGED e UNHEDGED existem juntos de
+    # proposito: radical solto mata as claims verdadeiras de UNHEDGED,
+    # enquanto enumeracao incompleta deixa vazar as formas de HEDGED.
+    "Penso que criei config.py",
+    "Pensei que criei config.py",
+    "Ache que criei config.py",
+    "Achavamos que criei config.py",
+    "Imaginou que criei config.py",
+    "I thought I created config.py",
+    "We think we committed abc1234",
 ]
 
 UNHEDGED = [
