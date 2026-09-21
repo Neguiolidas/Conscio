@@ -269,17 +269,46 @@ def _is_mine_and_affirmative(text: str, start: int) -> bool:
 #: LIMITE DECLARADO: hedge DEPOIS do verbo ("criei x.py, acho eu") fica de
 #: fora. A janela olha para tras porque e la que a modalidade mora em quase
 #: todo caso real. Cegueira aceita, do lado que nao acusa.
+#:
+#: RADICAL SO ONDE NAO COLIDE. Medido: `cre\w*`, `ach\w*` e `doubt\w*` matavam
+#: seis claims verdadeiras por casar dentro de palavra comum sem relacao --
+#: "credito", "creche", "crescimento" (contem "cre"), "achado" (contem "ach"),
+#: "doubtless" (contem "doubt"). A familia por radical continua valendo para
+#: os verbos onde ela nao colide (`duvid*`, `acredit*`, `suspeit*`, `supon*`,
+#: `presum*`) -- o principio serve so para nao perder CONJUGACAO, nunca para
+#: um radical curto engolir substantivo/adverbio alheio. Onde colide, a lista
+#: enumera as formas conjugadas do verbo em vez do radical.
+#:
+#: `teria` ancorado no FIM da janela (`\bteria\s*$`), nao mais solto: a janela
+#: ja corta exatamente no inicio do verbo da claim, entao ancorar no fim da
+#: janela equivale a "teria imediatamente antes do verbo" -- exigir particip
+#: depois seria pedir o proprio verbo. Sem a ancora, um `teria` de uma oracao
+#: anterior atravessava a janela e matava uma claim verdadeira mais adiante
+#: ("O relatorio que eu teria revisado ficou pronto, e commitei abc1234.").
 _HEDGE = re.compile(
     r"\b(?:talvez|possivelmente|provavelmente|aparentemente"
     r"|supon\w*|presum\w*|parece\s+que"
     r"|(?<!sem )d[uú]vid\w*"
-    r"|(?:ach\w*|cr[eê]\w*|acredit\w*|imagin\w*|suspeit\w*)\s+que"
-    r"|dev(?:e|ia)\s+ter|poderia\s+ter|teria"
+    r"|(?:acredit\w*|suspeit\w*)\s+que"
+    r"|ach(?:o|a|as|amos|am|ei|ou|aram|ava|avam|aria|ariam)\s+que"
+    r"|cre(?:io|s|mos|em|ia|iam)\s+que|cr[eê]\s+que"
+    r"|imagin(?:o|a|as|amos|am|ei|ava|aria)\s+que"
+    r"|dev(?:e|ia)\s+ter|poderia\s+ter"
     r"|maybe|perhaps|probably|apparently|supposedly|presumably|seems"
-    r"|(?<!no )doubt\w*"
+    r"|(?<!no )doubts?"
     r"|i\s+think|i\s+believe|i\s+guess|i\s+assume|i\s+suspect"
-    r"|might\s+have|could\s+have|would\s+have)\b",
-    re.IGNORECASE)
+    r"|might\s+have|could\s+have|would\s+have)\b"
+    r"|\bteria\s*$", re.IGNORECASE)
+
+
+#: LIMITE DECLARADO (medido depois do commit anterior): hedge preso a um verbo
+#: ANTERIOR, separado so por virgula ou "e"/"and", ainda mata uma claim
+#: verdadeira mais adiante: "Acho que o time ganhou, e commitei abc1234" nao
+#: rende claim nenhuma, mas a mesma frase com ponto final ("...ganhou.
+#: Commitei abc1234") rende uma. A janela de oracao corta em `. ; \n` e
+#: conjuncao de contraste, nao em virgula -- comportamento herdado de
+#: `_NOT_MINE`. Mudar a janela mudaria tambem o portao de negacao, fora do
+#: escopo deste ajuste. O erro cai do lado que nao acusa.
 
 
 def _is_unhedged(text: str, start: int) -> bool:

@@ -34,6 +34,7 @@ HEDGED = [
     # claim), entao testaria nada. Medido.
     "Poderia ter commitado abc1234",
     "Deve ter commitado abc1234",
+    "Teria commitado abc1234",
     "I might have committed abc1234",
     "I could have committed abc1234",
     # aparencia
@@ -52,6 +53,14 @@ UNHEDGED = [
     "Talvez eu tenha errado, mas commitei abc1234",
     # 'no doubt' e CERTEZA: o lookbehind (?<!no ) existe para isto, e foi medido.
     "No doubt I committed abc1234",
+    # Fix round 1 (achado do coordenador): radical solto engolia palavra comum
+    # sem relacao com o verbo de crenca -- medido, seis falsos negativos.
+    "O credito que pedi saiu, e commitei abc1234",
+    "A creche que escolhi abriu, e criei config.py",
+    "O crescimento que tivemos ajudou, e commitei abc1234",
+    "O achado que fizemos rendeu, e criei config.py",
+    "Doubtless I committed abc1234",
+    "O relatorio que eu teria revisado ficou pronto, e commitei abc1234.",
 ]
 
 
