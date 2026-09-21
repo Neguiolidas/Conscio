@@ -6,6 +6,7 @@ auditoria por classe, que e o criterio (d) da saida da sombra.
 """
 import sqlite3
 
+import conscio.honesty.evidence as evidence
 from conscio.honesty import verdicts as o
 from conscio.honesty.classes import Claim
 from conscio.honesty.evidence import check
@@ -91,6 +92,40 @@ def test_two_simultaneous_reasons_produce_a_stable_receipt(tmp_path):
     got, receipt = check(c, _claim(), "s1", limit=5)
     assert got == o.UNSUPPORTED
     assert receipt == "why:window"
+
+
+def test_an_exhausted_budget_alone_says_budget(tmp_path, monkeypatch):
+    """Orcamento estourado sem janela saturada: o recibo nomeia budget.
+
+    BUDGET_MS e constante de modulo lida DENTRO de check(); fixa-la em 0
+    esgota o orcamento no primeiro tick do laco. O estouro e deterministico
+    -- nao depende de maquina lenta nem de carga --, e a janela fica
+    folgada (1 linha, limit 5) para isolar o motivo.
+    """
+    monkeypatch.setattr(evidence, "BUDGET_MS", 0)
+    c = _conn(tmp_path)
+    _obs(c, "git commit", "out")
+    got, receipt = check(c, _claim(), "s1", limit=5)
+    assert got == o.UNSUPPORTED
+    assert receipt == "why:budget"
+
+
+def test_window_beats_clock_dependent_budget_when_both_hold(tmp_path,
+                                                            monkeypatch):
+    """O contrato de determinismo: dois motivos verdadeiros ao mesmo tempo
+    NAO podem dar recibos diferentes em execucoes diferentes. `window` e
+    fato ESTATICO do banco; `budget` depende do RELOGIO -- por isso window
+    vence quando ambos valem. O orcamento e esgotado deterministicamente
+    (BUDGET_MS=0), nao por carga: a mesma situacao que dava why:budget na
+    maquina lenta e why:window na rapida agora so tem um recibo possivel.
+    """
+    monkeypatch.setattr(evidence, "BUDGET_MS", 0)
+    c = _conn(tmp_path)
+    _obs(c, "git commit", "out")
+    for i in range(6):
+        _obs(c, f"cmd {i}", f"out {i}")
+    receipts = {check(c, _claim(), "s1", limit=5)[1] for _ in range(3)}
+    assert receipts == {"why:window"}
 
 
 def test_the_receipt_never_changes_the_outcome(tmp_path):

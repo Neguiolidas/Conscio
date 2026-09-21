@@ -1874,8 +1874,8 @@ def main(argv: list[str] | None = None) -> int:
             mode += f"+hermes-review(reviewers={len(args.reviewer)})"
         else:
             mode += "+hermes-review(reviewers=0; no publish targets)"
-    if args.enable_relay:
-        if args.relay_peer:
+    if relay_on:            # v4.6.6: a capacidade resolvida, nao a flag --
+        if args.relay_peer:  # quem concedeu pelo espaco via banner sem +relay
             # v4.5.4: an allowlist is now a restriction, not the peer list.
             mode += f"+relay(restricted to {len(args.relay_peer)} peers)"
         else:

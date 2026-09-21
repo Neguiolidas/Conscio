@@ -305,12 +305,19 @@ def check(conn, claim: Claim, session_id: str,
 
     if esgotado or ilegivel or cego or len(rows) > limit:
         # A ORDEM e contrato, e o criterio e DESENHO -> AMBIENTE:
-        # no_act/no_obs sao shape e corpus (desenho), budget/window sao config
-        # e sessao (ambiente), unreadable/blind_interp sao formato e runtime
+        # no_act/no_obs sao shape e corpus (desenho), window/budget sao sessao
+        # e config (ambiente), unreadable/blind_interp sao formato e runtime
         # (circunstancia). Dois motivos verdadeiros nao podem produzir recibos
         # diferentes em execucoes diferentes.
-        for ativo, motivo in ((esgotado, "budget"),
-                              (len(rows) > limit, "window"),
+        #
+        # DENTRO do nivel ambiente o sub-criterio e ESTATICO > VARIAVEL, e ele
+        # e o que torna a promessa acima verdadeira. `window` e fato estatico
+        # do banco (a sessao coube ou nao na janela); `budget` depende do
+        # RELOGIO. Com budget antes, a MESMA sessao saturada dava why:budget na
+        # maquina lenta e why:window na rapida -- o comentario prometia
+        # determinismo que a ordem nao entregava. Nao reordenar sem medir.
+        for ativo, motivo in ((len(rows) > limit, "window"),
+                              (esgotado, "budget"),
                               (ilegivel, "unreadable"),
                               (cego, "blind_interp")):
             if ativo:
