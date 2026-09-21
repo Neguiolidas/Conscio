@@ -31,7 +31,6 @@ _STATIC = Path(__file__).parent / "static"
 _STATIC_WHITELIST = {"index.html", "app.js", "style.css", "d3.min.js", "graphview.js"}
 _CONTENT_TYPES = {".html": "text/html", ".js": "application/javascript",
                   ".css": "text/css"}
-_DEFAULT_STORAGE = Path.home() / ".conscio" / "consciousness"
 
 
 def _workspace_id(root: Path) -> str:
@@ -387,8 +386,8 @@ def _arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="conscio-observatory",
         description="Conscio Observatory — read-only localhost state viewer")
-    p.add_argument("--storage", default=str(_DEFAULT_STORAGE),
-                   help="instance storage dir (default: ~/.conscio/consciousness)")
+    p.add_argument("--storage", default="",
+                   help="instance storage dir (default: the live space)")
     p.add_argument("--noosphere", default=str(_DEFAULT_NOOSPHERE),
                    help="host-shared noosphere.db (default: $CONSCIO_HOME/noosphere.db)")
     p.add_argument("--liaison-db", default="",
@@ -404,11 +403,15 @@ def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
     # v4.5.4 C1: mesmo resolvedor do servidor MCP e do daemon — o Observatory
     # nunca deve olhar um db que ninguém escreve.
+    # v4.6.7: this standalone entrypoint had its own default — a third
+    # divergent resolver, and one that did not even honour CONSCIO_HOME.
     from ..liaison.mailbox import resolve_db
-    liaison_db = resolve_db(Path(args.storage), args.liaison_db)
+    from ..space import resolve_live_space
+    storage = resolve_live_space(args.storage).path
+    liaison_db = resolve_db(storage, args.liaison_db)
     try:
         server = make_server(args.host, args.port, args.token,
-                             Path(args.storage), Path(args.noosphere),
+                             storage, Path(args.noosphere),
                              liaison_db)
     except ValueError as exc:
         print(f"conscio-observatory: {exc}")

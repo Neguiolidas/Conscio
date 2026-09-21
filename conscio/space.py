@@ -73,16 +73,31 @@ class AmbiguousSpace(Exception):
             f"set {SELF_ID_ENV} to the instance you mean")
 
 
-def _published_spaces() -> list[tuple[str, Path]]:
+def _real(path: Path) -> Path:
+    """Best-effort canonical form. `resolve()` does not need the path to exist,
+    but a permission error or a symlink loop must not take the CLI down — an
+    unresolvable path simply compares as itself."""
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError):
+        return path
+
+
+def _published_spaces() -> list[tuple[str, Path, bool]]:
     """Cards that name a usable space, newest-first order NOT applied on purpose.
 
     Three filters, and each one catches what the others let through:
 
-    *Points at the default.* Dropped. Not a staleness heuristic: such a card is
-    *by construction* an artifact of the very bug this module closes, and
-    dropping it can never change the outcome for its own case — falling through
-    lands on the same path it named. Removes exactly the class of ghost the bug
-    manufactures, and nothing else.
+    *Points at the default.* Flagged, not dropped — it may not be SELECTED, but
+    it still counts as an agent laying claim. Such a card is by construction an
+    artifact of the very bug this module closes, and preferring it changes
+    nothing, since falling through lands on the path it named anyway.
+
+    It has to keep counting, though, and that was a real hole: dropping it
+    outright meant that on a machine with one ghost and one live agent, the
+    ghost vanished, the live agent became the sole candidate, and the operator
+    working in the default space was silently handed somebody else's. Trading
+    one confident answer about the wrong space for another is not a fix.
 
     *Space is gone.* Dropped. A deleted space is the one unambiguous sign that
     an agent is not merely idle. The default answers instead, and says so.
@@ -100,48 +115,64 @@ def _published_spaces() -> list[tuple[str, Path]]:
     from .installer.spaces import space_is_cross_agent
     from .liaison import directory  # deferred: keeps this module light
 
-    default = default_storage()
-    out: list[tuple[str, Path]] = []
+    # Resolved on both sides: a space reached through a symlink (a moved home,
+    # a mounted disk) is the same space, and comparing unresolved paths would
+    # let a ghost slip past the flag below while filter three, which DOES
+    # resolve, disagreed with it.
+    default_real = _real(default_storage().expanduser())
+    out: list[tuple[str, Path, bool]] = []
     for card in directory.peers():
         raw = str(card.get(CARD_FIELD, "") or "").strip()
         if not raw:
             continue
         path = Path(raw).expanduser()
         cid = str(card.get("instance_id", ""))
-        if path == default or not path.exists():
+        if not path.exists():
             continue
         if space_is_cross_agent(str(path), cid):
             continue
-        out.append((cid, path))
+        out.append((cid, path, _real(path) == default_real))
     return out
 
 
-def _from_cards() -> Path | None:
-    """The card rung: the published space, when exactly one agent is meant."""
+def _from_cards(self_id: str = "") -> Path | None:
+    """The card rung: the published space, when exactly one agent is meant.
+
+    Ambiguity is counted over every surviving card, including one that names
+    the default; selection happens only among the rest. A named agent — by
+    flag or by environment — outranks all of it, which is what keeps a fleet
+    script or a systemd unit working on a machine with several agents.
+    """
     candidates = _published_spaces()
     if not candidates:
         return None
 
-    self_id = os.environ.get(SELF_ID_ENV, "").strip()
     if self_id:
-        mine = [p for cid, p in candidates if cid == self_id]
+        mine = [p for cid, p, _ in candidates if cid == self_id]
         if mine:
             return mine[0]
 
-    if len(candidates) == 1:
-        return candidates[0][1]
-    raise AmbiguousSpace(candidates)
+    if len(candidates) > 1:
+        raise AmbiguousSpace([(cid, p) for cid, p, _ in candidates])
+
+    _cid, path, is_default = candidates[0]
+    # The sole card names the default: fall through to it by the front door, so
+    # the source reads "default" rather than dressing the same path as a card.
+    return None if is_default else path
 
 
 def resolve_live_space(
-        explicit: str | os.PathLike[str] | None = None) -> LiveSpace:
+        explicit: str | os.PathLike[str] | None = None,
+        self_id: str = "") -> LiveSpace:
     """Resolve the space this command should act on.
 
     Precedence, and every rung is declared rather than discovered:
 
     1. ``explicit`` — the operator named it; nothing argues with that.
     2. ``CONSCIO_SPACE`` — the environment named it.
-    3. the directory card — the agent that owns a space published where it is.
+    3. the directory card — the agent that owns a space published where it is,
+       with ``self_id`` (a ``--self-id`` flag, falling back to the environment)
+       naming which agent is meant when more than one published.
     4. ``default_storage()`` — and the caller is told, via ``.source``, that this
        is what happened. The default is no longer invisible.
 
@@ -155,7 +186,8 @@ def resolve_live_space(
     if from_env:
         return LiveSpace(Path(from_env).expanduser(), "env")
 
-    from_card = _from_cards()
+    from_card = _from_cards(
+        self_id or os.environ.get(SELF_ID_ENV, "").strip())
     if from_card is not None:
         return LiveSpace(from_card, "card")
 

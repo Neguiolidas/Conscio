@@ -142,3 +142,60 @@ def test_explicit_beats_even_an_ambiguous_directory(space_env):
     _card(_A, space_env / "one")
     _card(_B, space_env / "two")
     assert resolve_live_space(space_env / "named").source == "explicit"
+
+
+# ── os pontos cegos que o Gemini achou lendo os commits (review hostil)
+
+def test_a_card_on_the_default_still_counts_as_a_claim(space_env):
+    """Dropping it outright traded one wrong confident answer for another.
+
+    With a ghost on the default and one live agent, dropping the ghost left a
+    single candidate — so the operator working in the default space was handed
+    somebody else's, silently. It may not be selected; it must still be counted.
+    """
+    from conscio.noosphere.paths import default_storage
+
+    _card(_A, default_storage())
+    _card(_B, space_env / "somebody-else")
+    with pytest.raises(AmbiguousSpace):
+        resolve_live_space()
+
+
+def test_self_id_arrives_by_flag_not_only_by_environment(space_env):
+    """A generated systemd unit carries --self-id and no environment.
+
+    Reading only the env meant such a unit died at boot on a multi-agent
+    machine — carrying the answer to the ambiguity but unable to use it.
+    """
+    mine = space_env / "mine"
+    _card(_A, mine)
+    _card(_B, space_env / "theirs")
+    assert resolve_live_space(self_id=_A) == (mine, "card")
+
+
+def test_a_named_agent_may_choose_the_default_space(space_env):
+    """Being flagged is not being forbidden: an explicit choice still wins."""
+    from conscio.noosphere.paths import default_storage
+
+    _card(_A, default_storage())
+    _card(_B, space_env / "other")
+    assert resolve_live_space(self_id=_A).path == default_storage()
+
+
+def test_a_symlinked_home_does_not_hide_the_ghost(tmp_path, monkeypatch):
+    """Comparing unresolved paths let the ghost through a moved home.
+
+    Filter three already resolved; this comparison did not, so the two
+    disagreed about whether a path was the default.
+    """
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    monkeypatch.setenv("CONSCIO_HOME", str(link))
+    monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+    monkeypatch.delenv(SPACE_ENV, raising=False)
+    monkeypatch.delenv(SELF_ID_ENV, raising=False)
+
+    _card(_A, real / "consciousness")          # the same place, spelled differently
+    assert resolve_live_space().source == "default"

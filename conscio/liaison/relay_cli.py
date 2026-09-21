@@ -71,8 +71,12 @@ def _db_for(args: argparse.Namespace) -> Path:
     service file pointed at a database nobody writes.
     """
     from ..space import resolve_live_space
-    return mailbox.resolve_db(resolve_live_space(args.storage).path,
-                              args.liaison_db)
+    # `service` already knows which agent it is generating a unit for: that id
+    # is what disambiguates the space, so the generated unit does not die on a
+    # machine where more than one agent published one.
+    self_id = str(getattr(args, "id", "") or "").strip()
+    return mailbox.resolve_db(
+        resolve_live_space(args.storage, self_id).path, args.liaison_db)
 
 
 def _cmd_quarantine(args: argparse.Namespace) -> int:

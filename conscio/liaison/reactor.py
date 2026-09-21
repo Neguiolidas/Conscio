@@ -260,9 +260,13 @@ def main(argv: list[str] | None = None) -> int:
 
     from ..space import resolve_live_space
     # v4.6.7: the live space, not $CONSCIO_HOME/liaison.db.
-    db = mailbox.resolve_db(resolve_live_space(args.storage).path,
-                            args.liaison_db)
+    # v4.6.7: the identity must be resolved BEFORE the space, because it is
+    # what names which agent is meant when several published one. A unit
+    # generated with --self-id would otherwise hit AmbiguousSpace and die at
+    # boot on a multi-agent machine — carrying the answer but not using it.
     self_id = os.environ.get("CONSCIO_SELF_ID", "").strip() or args.self_id
+    db = mailbox.resolve_db(resolve_live_space(args.storage, self_id).path,
+                            args.liaison_db)
     peers = list(dict.fromkeys(args.relay_peer))
     notify_cmd = args.notify_cmd or os.environ.get(NOTIFY_ENV, "").strip()
 

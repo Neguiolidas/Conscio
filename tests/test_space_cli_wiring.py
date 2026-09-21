@@ -113,6 +113,72 @@ def test_no_cli_hands_a_raw_arg_to_a_library_that_resolves_it_itself():
         f"that resolves it to the default; resolve first and pass the result")
 
 
+def _offers_storage_flag(path: Path) -> bool:
+    """Does this module DECLARE a --storage option for an operator to pass?
+
+    Declaring the flag and handing `--storage <computed path>` to a subprocess
+    both put the same literal in the file, and they are opposite roles: the
+    installer computes a space and tells a child about it, which is the correct
+    end of the pipe. Only an `add_argument` call is a question being asked of an
+    operator, so only that is what this looks for.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return any(isinstance(n, ast.Call)
+               and isinstance(n.func, ast.Attribute)
+               and n.func.attr == "add_argument"
+               and any(isinstance(a, ast.Constant) and a.value == "--storage"
+                       for a in n.args)
+               for n in ast.walk(tree))
+
+
+def _mentions_resolver(path: Path) -> bool:
+    return "resolve_live_space" in path.read_text(encoding="utf-8")
+
+
+def test_every_module_that_takes_a_space_resolves_it():
+    """The structural invariant, and the one a textual guard kept missing.
+
+    The earlier sweep looked for the literal `storage=args.storage`, so
+    `daemon.py` slipped through on the strength of its parameter being named
+    `storage_path=` instead — and the daemon is the sharpest case there is: it
+    is long-lived, it mints an identity, and `/conscio:awake` starts it with no
+    space at all. `conscio-observatory` slipped through the same way, carrying
+    a third hardcoded default that did not even honour CONSCIO_HOME.
+
+    Shape-matching finds the spelling you thought of. This asks the question
+    that actually matters: if a module lets an operator name a space, it has to
+    resolve that space through the one resolver.
+    """
+    # The MCP server is the AUTHOR of the card the resolver reads. Resolving
+    # from cards there would be circular, and worse: a bare `conscio-mcp` would
+    # adopt whatever space another agent had published. A server told nothing
+    # makes its own space, which is what the neutral default is for.
+    allowed = {"mcp/server.py"}
+    offenders = sorted(
+        {str(p.relative_to(_PKG)) for p in _PKG.rglob("*.py")
+         if "assets" not in p.parts
+         and _offers_storage_flag(p) and not _mentions_resolver(p)} - allowed)
+    assert not offenders, (
+        f"{offenders} accept --storage but never call resolve_live_space; "
+        f"their default lands on a space nobody runs")
+
+
+def test_no_caller_hands_the_resolver_an_empty_path_object():
+    """`bool(Path(""))` is True and `Path("")` is `.`, so an empty string that
+    has already been wrapped arrives as an explicit request for the working
+    directory. The resolver cannot tell those apart after the fact, so the
+    contract is that callers pass the raw value and let it do the wrapping."""
+    import re
+    bad = re.compile(r"resolve_live_space\(\s*Path\(")
+    offenders = sorted(
+        str(p.relative_to(_PKG)) for p in _PKG.rglob("*.py")
+        if "assets" not in p.parts
+        and bad.search(p.read_text(encoding="utf-8")))
+    assert not offenders, (
+        f"{offenders} wrap the value before resolving; an empty string becomes "
+        f"Path('.') and is taken as an explicit choice")
+
+
 def test_the_sweep_can_actually_see_a_caller():
     """Positive control: an empty result must not read as a clean result."""
     assert _direct_calls(_PKG / "space.py", "default_storage")
