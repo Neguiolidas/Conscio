@@ -829,7 +829,11 @@ class Bindings:
             # v4.6.7: o servidor é o único escritor autoritativo do espaço —
             # ele é o único destes processos que o resolveu. O reactor publica
             # sem o argumento e herda o valor já no cartão.
-            storage = getattr(self.engine, "storage", None)
+            # `self.engine` itself may be absent: a Bindings built for card
+            # publishing alone has no engine, and an agent must stay findable
+            # either way. No engine simply means no space to publish — the card
+            # still goes out, and the field is left to whatever already held it.
+            storage = getattr(getattr(self, "engine", None), "storage", None)
             directory.publish_self(
                 self.self_instance_id,
                 modelo=self.identity_model, familia=self.identity_familia,
