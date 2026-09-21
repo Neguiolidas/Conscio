@@ -244,13 +244,47 @@ _CLAUSE_END = re.compile(
 _LOOKBACK = 400
 
 
-def _is_mine_and_affirmative(text: str, start: int) -> bool:
-    """A oracao imediatamente antes do verbo nega ou atribui a outro?"""
+def _clause_before(text: str, start: int) -> str:
+    """A oração imediatamente antes de ``start``, cortada no delimitador."""
     janela = text[max(0, start - _LOOKBACK):start]
     cortes = list(_CLAUSE_END.finditer(janela))
-    if cortes:
-        janela = janela[cortes[-1].end():]
-    return _NOT_MINE.search(janela) is None
+    return janela[cortes[-1].end():] if cortes else janela
+
+
+def _is_mine_and_affirmative(text: str, start: int) -> bool:
+    """A oração imediatamente antes do verbo nega ou atribui a outro?"""
+    return _NOT_MINE.search(_clause_before(text, start)) is None
+
+
+#: Modalidade: a afirmacao e minha, e sobre mim, e mesmo assim nao e asserção.
+#: FAMILIA POR RADICAL, nao conjugacao enumerada -- medido: um rascunho com
+#: `ach(?:o|ei|amos)` e `cre(?:io|mos)` deixava passar as duas frases
+#: adversariais do Hermet ("Duvida se executei", "Acredito que executei"),
+#: porque faltavam `duvid*` e `acredit*`. Os verbos de crenca exigem o
+#: complementizador "que": em pt, "achei o arquivo" e ENCONTRAR, nao crenca.
+#: `(?<!sem )` porque "sem duvida" e CERTEZA -- hoje inalcancavel (`sem` ja
+#: esta no _NOT_MINE), mantido para o dia em que aquela lista mudar. O
+#: `(?<!no )` ingles NAO e redundante: "No doubt I committed" chega aqui.
+#:
+#: LIMITE DECLARADO: hedge DEPOIS do verbo ("criei x.py, acho eu") fica de
+#: fora. A janela olha para tras porque e la que a modalidade mora em quase
+#: todo caso real. Cegueira aceita, do lado que nao acusa.
+_HEDGE = re.compile(
+    r"\b(?:talvez|possivelmente|provavelmente|aparentemente"
+    r"|supon\w*|presum\w*|parece\s+que"
+    r"|(?<!sem )d[uú]vid\w*"
+    r"|(?:ach\w*|cr[eê]\w*|acredit\w*|imagin\w*|suspeit\w*)\s+que"
+    r"|dev(?:e|ia)\s+ter|poderia\s+ter|teria"
+    r"|maybe|perhaps|probably|apparently|supposedly|presumably|seems"
+    r"|(?<!no )doubt\w*"
+    r"|i\s+think|i\s+believe|i\s+guess|i\s+assume|i\s+suspect"
+    r"|might\s+have|could\s+have|would\s+have)\b",
+    re.IGNORECASE)
+
+
+def _is_unhedged(text: str, start: int) -> bool:
+    """A oração modaliza o verbo? Modalizada, não é asserção."""
+    return _HEDGE.search(_clause_before(text, start)) is None
 
 
 def _is_valid_anchor(anchor: str) -> bool:
@@ -348,6 +382,8 @@ def find_claims(text: str) -> list[Claim]:
                 continue                  # a mensagem CITA, nao afirma
             if not _is_assertion(text or "", m.end()):
                 continue                  # pergunta nao e asserção
+            if not _is_unhedged(text or "", m.start()):
+                continue                  # modalizada nao e asserção
             if _is_mine_and_affirmative(text or "", m.start()):
                 found.append(Claim(cls.name, anchor, m.span()))
     return found
