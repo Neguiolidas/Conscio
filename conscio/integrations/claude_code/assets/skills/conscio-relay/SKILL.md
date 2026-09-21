@@ -12,9 +12,29 @@ The transport is **spool + directory cards**. It is NOT a shared database:
 ```
 $CONSCIO_RELAY_ROOT/            # default: ~/.conscio/relay
   peers/<instance_id>.json      # who exists: address + identity + capabilities
+                                #   + `space` (v4.6.7): where that agent lives
   spool/<instance_id>/*.json    # messages parked for that agent (the ONLY shared surface)
 <agent's own space>/liaison.db  # PRIVATE inbox/outbox. Yours is YOURS.
 ```
+
+**Which space a CLI command acts on (v4.6.7).** Before that release every
+`conscio relay` command run without a flag read `~/.conscio/liaison.db` — the
+neutral default — while the real mailbox sat in the agent's space. `quarantine`
+answered `total: 0` next to a full inbox, and `service` baked that wrong path
+into a systemd unit. The package had no way to know better: hooks only get it
+right because the host injects `--storage "${CLAUDE_PLUGIN_DATA}/space"`, and a
+bare shell gets no injection.
+
+Now the agent publishes `space` on its card and every entrypoint resolves the
+same way, in this order:
+
+```
+--storage <path>   →  CONSCIO_SPACE  →  the directory card  →  the neutral default
+```
+
+`--storage` exists on `quarantine`, `service`, `tick`, `watcher` and `reactor`.
+Any answer you get is about the space that rung resolved to — if a command
+surprises you, that is the first thing to check.
 
 **The one rule that kills every failure mode below: NEVER write into another
 agent's database, and never write through your local db alone.** A message that
@@ -52,6 +72,8 @@ peer's next tool call regardless of either wake path.
 
 ```bash
 conscio relay doctor --id <my instance id>
+conscio relay peers                     # who is published, and how long since each was seen
+conscio relay forget <instance id>      # retire an address whose agent is gone
 ```
 
 Answers, with no log archaeology: is my card published, how many messages are
@@ -72,6 +94,18 @@ peers while believing it is published is the classic silent failure.
   user one). Kill the duplicate, keep one reactor per agent.
 - **Message unparsable / never ingested** → check `conscio relay quarantine`;
   malformed payloads are parked there instead of stalling the inbox.
+- **A command refuses with "several agents published a space"** (v4.6.7) → more
+  than one agent on this machine published one and nothing chose between them.
+  It refuses rather than guessing, because guessing is how you get a confident
+  answer about somebody else's mailbox. Name the one you mean with `--storage`,
+  or set `CONSCIO_SELF_ID`. A systemd unit generated before v4.6.7 carries no
+  identity, so it meets this at boot: regenerate it with
+  `conscio relay service --id <your id>`, which now bakes the identity in.
+- **A peer in the list never answers, ever** → its card may have outlived the
+  agent. `conscio relay forget <id>` drops the address; it touches neither the
+  space nor the identity, and a peer that is merely idle republishes on its next
+  heartbeat, so this cannot silence anyone who is actually alive. Watch for one
+  whose `seen` is days old while everything else is seconds.
 - **"Why was I not notified?" + `reactor.running: false`** → the field only
   reports the in-process thread (path 1, `CONSCIO_NOTIFY_CMD`). If your wake
   is an external reactor + Stop hook (path 2), the field stays false while
