@@ -6,7 +6,7 @@ auditoria por classe, que e o criterio (d) da saida da sombra.
 """
 import sqlite3
 
-import conscio.honesty.evidence as evidence
+from conscio.honesty import evidence
 from conscio.honesty import verdicts as o
 from conscio.honesty.classes import Claim
 from conscio.honesty.evidence import check

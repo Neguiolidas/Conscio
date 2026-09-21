@@ -92,15 +92,18 @@ proposed actions, but never executes. The host stays sovereign over execution.
 
 ### Review (opt-in `--enable-hermes-review --reviewer <id>`)
 
-Cross-agent review channel: `conscio_reviews`, `conscio_review_approve`,
-`conscio_review_reject`, `conscio_poll_reviews`.
+Cross-agent review channel, advertised as one dispatcher: `conscio_review` with
+`op=` `reviews` | `approve` | `reject` | `poll`. The per-operation names
+(`conscio_reviews`, `conscio_review_approve`, `conscio_review_reject`,
+`conscio_poll_reviews`) stay callable as dispatch-only aliases — `tools/call`
+accepts them, `tools/list` advertises only the dispatcher.
 
 ### Relay (opt-in `--enable-relay --relay-peer <id>`)
 
-Cross-agent messaging: `conscio_relay_send`, `conscio_relay_inbox`,
-`conscio_relay_read`, `conscio_relay_broadcast`, `conscio_relay_peers`.
-Reserved-type isolation from review channel. Payload cap 64KB, retention
-7 days after read.
+Cross-agent messaging, advertised as one dispatcher: `conscio_relay` with `op=`
+`send` | `inbox` | `read` | `broadcast` | `peers`. The per-operation names stay
+callable as dispatch-only aliases. Reserved-type isolation from review channel.
+Payload cap 64KB, retention 7 days after read.
 
 ### Resources (read-only URIs)
 

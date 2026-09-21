@@ -51,7 +51,7 @@ sqlite-vec and numpy — auto-detected at startup, with a one-command
 **v4.0** makes Conscio installable as a Claude Code plugin and sizes the MCP
 surface to the model: `lite` (10 tools), `balanced` (19) or `ultra` (37),
 switchable at runtime. A tool list is context the host pays for before the first
-prompt — a small model drowns in 37 tools, a large one is crippled by 10. See the
+prompt — a small model drowns in 37 base tools (opt-in capabilities add more), a large one is crippled by 10. See the
 [MCP guide](guides/mcp.md#tool-surfaces) and the
 [changelog](https://github.com/Neguiolidas/Conscio/blob/main/CHANGELOG.md).
 
@@ -62,7 +62,7 @@ Advocate, Skeptic Engineer, Douche Reviewer — hostile pressure to validate
 premises, deterministic fallback + optional LLM). Each squad is a closed
 namespace with its own EventBus event types; the Council (`engine.council()`)
 is untouched. A new mode tier **high** sits between `balanced` and `ultra`
-(21 tools) and trades determinism vs LLM: high = all voices deterministic with
+(27 tools) and trades determinism vs LLM: high = all voices deterministic with
 minimal LLM opt-in, ultra = all voices with full LLM support. The two squad
 wrappers (`conscio_squad_experts`, `conscio_squad_opositors`) replace what
 would have been 8 individual voice tools — a 75% reduction in MCP tool-list
@@ -78,8 +78,10 @@ next tool call; and a token-authenticated HTTP bridge carries messages between
 machines over Tailscale. On top of it sits the **Agent's Hall** — named groups
 with per-member functions (leader, reviewer, researcher, security, optimizer,
 architect, executor, observer, devil's advocate), fan-out messaging and
-ownership transfer. `--enable-relay` adds 5 tools and `--can-create-halls` 7
-more, on top of whatever surface the mode serves. See the
+ownership transfer. `--enable-relay` adds one
+dispatcher tool, `conscio_relay`, carrying 5 operations, and `--can-create-halls`
+one more, `conscio_hall`, carrying 7, on top of whatever surface the mode
+serves. See the
 [relay guide](RELAY.md).
 
 ## Install

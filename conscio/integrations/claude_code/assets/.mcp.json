@@ -7,7 +7,7 @@
         "PYTHONIOENCODING": "utf-8"
       },
       "args": [
-        "--from", "conscio==4.6.5", "conscio-mcp",
+        "--from", "conscio==4.6.6", "conscio-mcp",
         "--storage", "${CLAUDE_PLUGIN_DATA}/space",
         "--default-model", "claude-opus-5"
       ]
