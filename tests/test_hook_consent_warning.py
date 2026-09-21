@@ -118,3 +118,38 @@ def test_running_the_remedy_closes_the_warning(tmp_path):
     assert r.returncode == 0, r.stderr
 
     assert hook.consent_warning(space, atual) is None   # depois: cala
+
+
+def test_the_remedy_closes_a_two_capability_warning(tmp_path):
+    """O caso REAL do A3: o cache 4.5.4 carrega --enable-relay E
+    --can-create-halls, entao o aviso imprime DOIS comandos. So os dois
+    juntos fecham o loop -- rodar um deixa o outro falando, e e isso que
+    este teste fixa.
+    """
+    import shlex
+    import subprocess
+    import sys
+
+    cache = tmp_path / "cache"
+    _cache_irmao(cache, "4.5.4", ["--storage", "x", "--enable-relay",
+                                  "--can-create-halls"])
+    atual = _cache_irmao(cache, "4.6.5", ["--storage", "x"])
+    space = tmp_path / "space"; space.mkdir()
+    hook = _hook()
+
+    aviso = hook.consent_warning(space, atual)
+    assert aviso is not None
+    comandos = aviso.split("to restore it: ")[1].split("; ")
+    assert len(comandos) == 2, comandos
+
+    def _rodar(cmd):
+        argv = shlex.split(cmd)
+        assert argv[0] == "conscio"
+        r = subprocess.run([sys.executable, "-m", "conscio.cli", *argv[1:]],
+                           capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+
+    _rodar(comandos[0])
+    assert hook.consent_warning(space, atual) is not None   # metade: ainda fala
+    _rodar(comandos[1])
+    assert hook.consent_warning(space, atual) is None       # as duas: cala
