@@ -199,3 +199,15 @@ def test_a_symlinked_home_does_not_hide_the_ghost(tmp_path, monkeypatch):
 
     _card(_A, real / "consciousness")          # the same place, spelled differently
     assert resolve_live_space().source == "default"
+
+
+def test_an_all_whitespace_argument_is_not_a_space_name(space_env):
+    """`--storage "   "` would otherwise name a space with three spaces.
+
+    Note what this does NOT cover: a caller that wrapped an empty string before
+    calling. `Path("")` is `PosixPath(".")` from the moment it is built, and no
+    check here can tell that from someone who meant the working directory. That
+    one is held by the contract, not by this guard.
+    """
+    assert resolve_live_space("   ").source == "default"
+    assert resolve_live_space("\t\n ").source == "default"

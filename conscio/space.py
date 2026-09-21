@@ -179,7 +179,14 @@ def resolve_live_space(
     Raises :class:`AmbiguousSpace` when several agents published and nothing
     chose between them.
     """
-    if explicit:
+    # `.strip()` catches an all-whitespace argument — `--storage "   "` would
+    # otherwise become a space literally named with three spaces. It does NOT
+    # rescue a caller that wrapped an empty string first: `Path("")` is already
+    # `PosixPath(".")` at construction, and no test downstream can tell that
+    # apart from someone who meant the working directory. That case is held by
+    # the contract instead — callers pass the raw value and let this wrap it —
+    # and guarded by test_no_caller_hands_the_resolver_an_empty_path_object.
+    if explicit is not None and str(explicit).strip():
         return LiveSpace(Path(explicit).expanduser(), "explicit")
 
     from_env = os.environ.get(SPACE_ENV, "").strip()
