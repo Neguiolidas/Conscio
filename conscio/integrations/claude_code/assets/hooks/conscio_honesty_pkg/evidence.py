@@ -220,7 +220,13 @@ def _targets(shape, entrada: str) -> list[str] | None:
 
 def check(conn, claim: Claim, session_id: str,
           limit: int = WINDOW) -> tuple[str, str]:
-    """Devolve ``(outcome, evidence_pointer)``.
+    """Devolve ``(outcome, receipt)``.
+
+    O segundo elemento e RECIBO, nao ponteiro: existe SEMPRE, do vocabulario
+    fechado ``obs:<id>``, ``absent/scanned=<n>``, ``why:no_act``,
+    ``why:no_obs``, ``why:budget``, ``why:window``, ``why:unreadable``,
+    ``why:blind_interp``. O recibo e registro, nunca veredito -- o outcome
+    nao muda por causa dele.
 
     A evidencia e o TRACO DO ATO, nunca a mencao da ancora. Uma observacao so
     conta quando a ferramenta executa a classe, a entrada identifica o ato, a
@@ -228,8 +234,9 @@ def check(conn, claim: Claim, session_id: str,
     falha. Casar apenas a ancora aceitava texto escrito pelo proprio afirmante
     -- inventar um sha e digita-lo num comando dava VERIFIED.
 
-    O ponteiro so existe quando VERIFIED: contestacao aponta para ausencia, e
-    ausencia nao tem endereco.
+    O ponteiro ``obs:<id>`` so existe quando VERIFIED: contestacao aponta
+    para ausencia, e ausencia nao tem endereco -- so a largura do que foi
+    varrido.
 
     O filtro por ferramenta roda no SQL, antes de descomprimir blob: as
     centenas de leituras inertes de uma sessao (Read, LS, Grep) deixam de
@@ -242,7 +249,7 @@ def check(conn, claim: Claim, session_id: str,
     """
     cls = CLASSES_BY_NAME.get(claim.cls_name)
     if cls is None or not cls.acts:
-        return o.UNSUPPORTED, ""          # classe sem ato definido: nao olho
+        return o.UNSUPPORTED, "why:no_act"  # classe sem ato definido: nao olho
 
     deadline = time.monotonic() + BUDGET_MS / 1000.0
     # Traz tambem a variante marcada como falha: normalizar exige ver o nome
@@ -258,7 +265,7 @@ def check(conn, claim: Claim, session_id: str,
         " ORDER BY id DESC LIMIT ?",
         (session_id, *tools, limit + 1)).fetchall()
     if not rows:
-        return o.UNSUPPORTED, ""          # nao consegui olhar
+        return o.UNSUPPORTED, "why:no_obs"  # nao consegui olhar
 
     esgotado = ilegivel = cego = False
     for oid, raw_tool, in_h, out_h in rows:
@@ -297,7 +304,15 @@ def check(conn, claim: Claim, session_id: str,
                 return o.VERIFIED, f"obs:{oid}"
 
     if esgotado or ilegivel or cego or len(rows) > limit:
-        # A sessao nao coube no orcamento: o que nao foi lido pode conter a
-        # prova, e ausencia so e POSITIVA quando olhamos tudo.
-        return o.UNSUPPORTED, ""
-    return o.CONTRADICTED, ""
+        # A ORDEM e contrato, e o criterio e DESENHO -> AMBIENTE:
+        # no_act/no_obs sao shape e corpus (desenho), budget/window sao config
+        # e sessao (ambiente), unreadable/blind_interp sao formato e runtime
+        # (circunstancia). Dois motivos verdadeiros nao podem produzir recibos
+        # diferentes em execucoes diferentes.
+        for ativo, motivo in ((esgotado, "budget"),
+                              (len(rows) > limit, "window"),
+                              (ilegivel, "unreadable"),
+                              (cego, "blind_interp")):
+            if ativo:
+                return o.UNSUPPORTED, f"why:{motivo}"
+    return o.CONTRADICTED, f"absent/scanned={len(rows)}"

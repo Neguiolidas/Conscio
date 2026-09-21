@@ -98,7 +98,7 @@ def test_anchor_outside_a_saturated_window_is_unsupported(tmp_path):
         _obs(conn, f"cmd {i}", f"out {i}")
     got, ptr = check(conn, _claim(), "s1", limit=5)
     assert got == o.UNSUPPORTED
-    assert ptr == ""
+    assert ptr == "why:window"
 
 
 # ── v4.6.3: a evidencia e a POSICAO DE ARGUMENTO do ato ────────────────
