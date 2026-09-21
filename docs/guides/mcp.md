@@ -101,31 +101,38 @@ and reads it back to confirm), but the reconnect above is still yours to do.
 ## Tool surfaces
 
 Every tool schema the server advertises costs context before the first prompt —
-about 3360 tokens at `ultra`. A small model drowns in 37 tools; a large one is
+about 3550 tokens at `ultra` (cl100k_base, counted over the advertised tool
+definitions). A small model drowns in 37 base tools (opt-in capabilities add more); a large one is
 crippled by 10. Four nested surfaces size the list to the model:
 
 | Surface | Tools served | Advertised schema |
 |---|---|---|
-| `lite` | 10 | ~570 tokens, descriptions flattened to ≤120 chars |
-| `balanced` | 19 | ~1640 tokens |
-| `high` | 21 | ~1900 tokens |
-| `ultra` (default) | 37 | ~3360 tokens |
+| `lite` | 10 | ~630 tokens, descriptions flattened to ≤120 chars |
+| `balanced` | 19 | ~1720 tokens |
+| `high` | 27 | ~2640 tokens |
+| `ultra` (default) | 37 | ~3550 tokens |
 
 **`lite`** — `advisory`, `events`, `feed`, `health`, `intercept`, `mode`, `note`,
 `recall`, `remember`, `state`.
 **`balanced`** adds — `cognitive_cycle`, `context_budget`, `council`, `decide`,
 `handoff`, `kg_query`, `recall_observations`, `verify`, `wings_search`.
-**`high`** adds — `squad_experts`, `squad_opositors` (two squad wrapper tools
-that expose Expert and Opositor voices via parameterised `voices` arrays; see
-[Squads](#squads) below). Each wrapper replaces what would be 4 individual
-voice tools — a 75% token saving over a per-voice surface.
-**`ultra`** adds the remaining 16 base tools documented below.
+**`high`** adds — `acceptance_criteria`, `delivery_check`, `eval_harness`,
+`evaluate`, `investigate`, `rules_distill` and the two squad wrapper tools
+`squad_experts`, `squad_opositors` (which expose Expert and Opositor voices via
+parameterised `voices` arrays; see [Squads](#squads) below). Each wrapper
+replaces what would be 4 individual voice tools — a 75% token saving over a
+per-voice surface.
+**`ultra`** adds the remaining 10 base tools documented below.
 
-Flag-gated tools sit on top of whatever surface is served: `--enable-relay` adds
-5 (`relay_send`, `relay_read`, `relay_inbox`, `relay_broadcast`, `relay_peers`)
-and `--can-create-halls` adds 7 more (`hall_create`, `join`,
-`leave`, `list`, `members`, `send`, `manage`). At `ultra` with both, the maximum
-served is 49.
+Flag-gated tools sit on top of whatever surface is served, one dispatcher each:
+`--enable-relay` adds `conscio_relay` (`send`, `inbox`, `read`, `broadcast`,
+`peers`) and `--can-create-halls` adds `conscio_hall` (`create`, `list`, `join`,
+`leave`, `members`, `send`, `manage`). Every operation keeps its own callable
+name (`conscio_relay_send`, `conscio_hall_join`, …) as a dispatch-only alias:
+`tools/call` accepts it, `tools/list` never advertises it. With act (5 tools,
+and only when the host sends its tool manifest in `initialize`), review (1
+dispatcher, plus `conscio_poll_reviews` when act is on), relay and halls
+together, the maximum advertised at `ultra` is 46.
 
 The sets nest, so raising the surface never removes a tool. Three properties
 follow from how the filter is applied:

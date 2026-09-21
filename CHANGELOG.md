@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.6.6] - 2026-09-21 — Identity travels with the consent
+
+4.6.5 moved the opt-in capabilities into the space so a plugin update would stop
+erasing them, and left the *identity* conditioned on `args.enable_relay`. On the
+marketplace path — the one that carries no flag — that exposed the relay
+**blind**: the tools were advertised and could not match a single message.
+
+### Fixed
+
+- **The marketplace path served the relay with an empty sender.** Measured on
+  the same space, with three messages addressed to its identity and zero flags:
+  before, `relay_peers.self` returned `""` and `relay_inbox` returned 0 of 3;
+  after, `self` is the space's `instance_id` and the inbox returns 3. The
+  condition is now the RESOLVED capability, never the flag.
+
+- **The blind path also pointed at the wrong database.** With no identity the
+  mailbox fell back to the *home's* `~/.conscio/liaison.db` instead of the
+  space's. Measured by resolving both paths: `default_db()` →
+  `<home>/.conscio/liaison.db`, `resolve_db(space)` → `<space>/liaison.db`.
+  (Measured as a pointer; the write to the global db was not reproduced.)
+
+- **The remedy named a command that wrote to another space.** The `SessionStart`
+  warning told the reader to run `conscio capabilities enable relay` with no
+  `--storage`, so the consent landed in `~/.conscio/consciousness` while the
+  warning had just read the plugin's space. The command now carries the space it
+  read; with two lost capabilities it names both.
+
+- **The wiring, not just the function.** Six of the seven tests call
+  `resolve_identity()` directly, so reverting the fix to the flag leaves them
+  green and only
+  `test_mcp_identity_wiring.py::test_main_wires_the_identity_from_the_space`
+  red — and `main()` is where the original bug lived. Measured by sabotage.
+
+### Added
+
+- **Every verdict carries why it is what it is.** `check()` collapsed six
+  distinct situations into `(UNSUPPORTED, "")`, an empty receipt that made "I
+  could not look" indistinguishable from "there is nothing there". The receipt
+  is now a closed vocabulary — `why:no_act`, `why:no_obs`, `why:budget`,
+  `why:window`, `why:unreadable`, `why:blind_interp`, plus `obs:<id>` for
+  VERIFIED and `absent/scanned=<n>` for CONTRADICTED — with a fixed precedence
+  (shape → corpus → config → session → format → runtime) so that two true
+  motives cannot produce different receipts on different runs. The receipt is
+  never a verdict: the outcome does not change because of it.
+
+- **A hedged claim is not an assertion, and the gate is a family.** That
+  "talvez" and "poderia" did not leak was an accident of conjugation, not
+  coverage. The families are doubt, belief, supposition, hypothesis and
+  appearance, in both languages, with the complementiser rule that keeps `acho
+  que` a belief while `achei o arquivo` stays a finding. Measured on the corpus
+  in `tests/test_honesty_modality.py`: **28 modalized phrases blocked, 13 true
+  ones preserved**. Breaking the gate on purpose turns 28 red and keeps 13
+  green.
+
+### The numbers that did not survive re-measurement
+
+The report describing this cycle said "18 modalized against 12 true" and "51
+messages blind". Re-measured here: the corpus holds **28 and 13** (counted from
+`ast`, not from prose), and the blind inbox was reproduced with a locally built
+corpus of three. The write to the global `liaison.db` was not reproduced at all.
+
+### Docs corrected against the running server
+
+Counted by starting the server and listing the advertised surface: `lite` 10,
+`balanced` 19, `high` **27**, `ultra` 37. The guide said 21 for `high` and that
+`ultra` adds "the remaining 16" (it adds 10). The flag paragraph said
+`--enable-relay` adds 5 tools and `--can-create-halls` 7 more; each adds **one**
+dispatcher tool — `conscio_relay` with 5 operations, `conscio_hall` with 7 — and
+the per-operation names stay callable but unadvertised. Maximum advertised with
+act, review, relay and halls together: **46**, not 49.
+
+---
+
 ## [4.6.5] - 2026-09-20 — Consent speaks instead of being guessed
 
 4.6.4 moved opt-in capabilities out of the cached `.mcp.json` and into the

@@ -106,20 +106,26 @@ use first that responds → persist to `~/.config/conscio/config.json`. Runtime:
 **Propose-only by default** — Conscio perceives, reflects, recalls, and audits
 proposed actions, but never executes. The host stays sovereign over execution.
 
-### Tool surfaces — `--mode lite|balanced|ultra`
+### Tool surfaces — `--mode lite|balanced|high|ultra`
 
 Every advertised tool schema costs the host context before the first prompt
-(~3100 tokens at `ultra`). Three nested surfaces size the list to the model:
+(~3550 tokens at `ultra`, counted with `cl100k_base` over the advertised tool
+definitions). Four nested surfaces size the list to the model:
 
 | Surface | Tools served | Advertised schema |
 |---|---|---|
-| `lite` | 10 | ~570 tokens, descriptions flattened to ≤120 chars |
-| `balanced` | 18 | ~1520 tokens |
-| `ultra` (default) | 35 | ~3100 tokens |
+| `lite` | 10 | ~630 tokens, descriptions flattened to ≤120 chars |
+| `balanced` | 19 | ~1720 tokens |
+| `high` | 27 | ~2640 tokens |
+| `ultra` (default) | 37 | ~3550 tokens |
 
 `lite` — `advisory`, `events`, `feed`, `health`, `intercept`, `mode`, `note`,
-`recall`, `remember`, `state`. `balanced` adds `context_budget`, `council`, `decide`,
-`handoff`, `kg_query`, `recall_observations`, `verify`, `wings_search`.
+`recall`, `remember`, `state`. `balanced` adds `cognitive_cycle`,
+`context_budget`, `council`, `decide`, `handoff`, `kg_query`,
+`recall_observations`, `verify`, `wings_search`. `high` adds
+`acceptance_criteria`, `delivery_check`, `eval_harness`, `evaluate`,
+`investigate`, `rules_distill` and the two squad wrappers. `ultra` adds the
+remaining 10 base tools.
 
 Precedence is `--mode` > the persisted choice (`<storage>/mcp_mode`) > default.
 `conscio_mode` switches at runtime and is present in every surface — in `lite` it
@@ -152,24 +158,28 @@ is still callable by name through `tools/call`.
 
 ### Review (opt-in `--enable-hermes-review --reviewer <id>`)
 
-Cross-agent review channel: `conscio_reviews`, `conscio_review_approve`,
-`conscio_review_reject`, `conscio_poll_reviews`.
+Cross-agent review channel, advertised as one dispatcher: `conscio_review` with
+`op=` `reviews` | `approve` | `reject` | `poll`. The per-operation names
+(`conscio_reviews`, `conscio_review_approve`, `conscio_review_reject`,
+`conscio_poll_reviews`) stay callable as dispatch-only aliases — `tools/call`
+accepts them, `tools/list` advertises only the dispatcher.
 
 ### Relay (opt-in `--enable-relay --relay-peer <id>`)
 
-Cross-agent messaging: `conscio_relay_send`, `conscio_relay_inbox`,
-`conscio_relay_read`, `conscio_relay_broadcast`, `conscio_relay_peers`.
-Reserved-type isolation from review channel. Payload cap 64KB, retention
-7 days after read.
+Cross-agent messaging, advertised as one dispatcher: `conscio_relay` with `op=`
+`send` | `inbox` | `read` | `broadcast` | `peers`. The per-operation names stay
+callable as dispatch-only aliases. Reserved-type isolation from review channel.
+Payload cap 64KB, retention 7 days after read.
 
 **v4.5 (Agents + Halls):**
 - Peers vêm do registro (`agents.list_agents`), não só da allowlist; `--relay-peer`
   é seed/fallback.
 - O envelope carrega identidade (`_meta.from`: modelo/familia/runtime/papel) do
   runtime, não do corpo.
-- Agent's Hall (opt-in `--enable-relay --can-create-halls`): `conscio_hall_create`,
-  `conscio_hall_list`, `conscio_hall_join`, `conscio_hall_leave`,
-  `conscio_hall_members`, `conscio_hall_send`.
+- Agent's Hall (opt-in `--enable-relay --can-create-halls`), advertised as one
+  dispatcher: `conscio_hall` with `op=` `create` | `list` | `join` | `leave` |
+  `members` | `send` | `manage`. The per-operation names stay callable as
+  dispatch-only aliases.
 - Observatório read-only: `/api/agents`, `/api/halls`, `/api/mailboxes`.
 
 ### v3.3 — Gate tools

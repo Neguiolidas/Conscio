@@ -244,13 +244,108 @@ _CLAUSE_END = re.compile(
 _LOOKBACK = 400
 
 
-def _is_mine_and_affirmative(text: str, start: int) -> bool:
-    """A oracao imediatamente antes do verbo nega ou atribui a outro?"""
+def _clause_before(text: str, start: int) -> str:
+    """A oração imediatamente antes de ``start``, cortada no delimitador."""
     janela = text[max(0, start - _LOOKBACK):start]
     cortes = list(_CLAUSE_END.finditer(janela))
-    if cortes:
-        janela = janela[cortes[-1].end():]
-    return _NOT_MINE.search(janela) is None
+    return janela[cortes[-1].end():] if cortes else janela
+
+
+def _is_mine_and_affirmative(text: str, start: int) -> bool:
+    """A oração imediatamente antes do verbo nega ou atribui a outro?"""
+    return _NOT_MINE.search(_clause_before(text, start)) is None
+
+
+#: Modalidade: a afirmacao e minha, e sobre mim, e mesmo assim nao e asserção.
+#: FAMILIA POR RADICAL, nao conjugacao enumerada -- medido: um rascunho com
+#: `ach(?:o|ei|amos)` e `cre(?:io|mos)` deixava passar as duas frases
+#: adversariais do Hermet ("Duvida se executei", "Acredito que executei"),
+#: porque faltavam `duvid*` e `acredit*`. Os verbos de crenca exigem o
+#: complementizador "que": em pt, "achei o arquivo" e ENCONTRAR, nao crenca.
+#: `(?<!sem )` porque "sem duvida" e CERTEZA -- hoje inalcancavel (`sem` ja
+#: esta no _NOT_MINE), mantido para o dia em que aquela lista mudar. O
+#: `(?<!no )` ingles NAO e redundante: "No doubt I committed" chega aqui.
+#:
+#: LIMITE DECLARADO: hedge DEPOIS do verbo ("criei x.py, acho eu") fica de
+#: fora. A janela olha para tras porque e la que a modalidade mora em quase
+#: todo caso real. Cegueira aceita, do lado que nao acusa.
+#:
+#: RADICAL SO ONDE NAO COLIDE. Medido: `cre\w*`, `ach\w*` e `doubt\w*` matavam
+#: seis claims verdadeiras por casar dentro de palavra comum sem relacao --
+#: "credito", "creche", "crescimento" (contem "cre"), "achado" (contem "ach"),
+#: "doubtless" (contem "doubt"). A familia por radical continua valendo para
+#: os verbos onde ela nao colide (`duvid*`, `acredit*`, `suspeit*`, `supon*`,
+#: `presum*`) -- o principio serve so para nao perder CONJUGACAO, nunca para
+#: um radical curto engolir substantivo/adverbio alheio. Onde colide, a lista
+#: enumera as formas conjugadas do verbo em vez do radical.
+#:
+#: ENUMERACAO TEM DE SER COMPLETA, OU VIRA VAZAMENTO. Medido depois do ajuste
+#: anterior: a lista enumerada cobria so as formas finitas e esquecia o
+#: GERUNDIO -- "Estou achando que commitei", "Estou imaginando que criei",
+#: "Estou crendo que commitei" sao prosa comum e nenhuma casava, entao a
+#: claim nascia. Faltar uma forma numa enumeracao nao e cautela, e vazamento:
+#: aqui o erro cai do lado que ACUSA (claim nasce apesar da frase estar
+#: modalizada), o pior desfecho que este gate pode produzir -- pior que a
+#: cegueira aceita acima. Por isso `ando` entra em achar/imaginar e `ndo`
+#: entra em crer; qualquer lista nova nesta secao tem de incluir o gerundio
+#: antes de ser considerada completa.
+#:
+#: POR ISSO AS LISTAS SAO VERBOSAS DE PROPOSITO. `ach(?:o|a|as|amos|am|ei|ou
+#: |aram|ava|avam|aria|ariam|ando)`, `cre(?:io|s|mos|em|ia|iam|ndo)` e
+#: `ach*`, `cre*`, `imagin*` e `pens*` sao enumeracao de forma
+#: conjugada, nao radical, porque o radical curto colide com substantivo e
+#: advervio alheio ("credito", "creche", "crescimento", "achado", medidos).
+#: Uma enumeracao que esquece uma forma e VAZAMENTO, e vazamento aqui cai do
+#: lado que ACUSA: quem marcou incerteza seria contestado como se tivesse
+#: afirmado. Por isso NAO "arrumar" estas listas de volta para um radical curto:
+#: isso reabriria os kills de claim verdadeira em UNHEDGED. A lista verbosa e a
+#: correcao, nao o problema.
+#:
+#: `doubt(?:s|ful)?`: "doubtful" e a mesma duvida com sufixo adjetival e
+#: vazava ("It's doubtful I committed abc1234"). "doubtless" continua FORA
+#: por construcao, nao por seguranca: depois de "doubt" vem "l", que nao e
+#: limite de palavra nem um dos sufixos aceitos, entao nenhuma alternativa
+#: casa. Deliberado -- "doubtless" e CERTEZA, nao duvida, e tem de continuar
+#: rendendo claim (ver UNHEDGED).
+#:
+#: `teria` ancorado no fim da janela, agora tolerando ATE DUAS palavras de
+#: parentetico antes do fim (`\bteria[\s,]*(?:\w+[\s,]+){0,2}$`): medido,
+#: "Teria, honestamente, commitado abc1234" tem uma palavra entre o hedge e
+#: o verbo, e a ancora rigida anterior (`\bteria\s*$`) matava essa claim
+#: verdadeira. O teto de DUAS e deliberado -- NAO AUMENTAR: a regressao que a
+#: ancora corrige ("O relatorio que eu teria revisado ficou pronto, e
+#: commitei abc1234") tem QUATRO palavras entre o hedge e o verbo da claim
+#: seguinte; um teto maior que dois volta a matar essa claim.
+_HEDGE = re.compile(
+    r"\b(?:talvez|possivelmente|provavelmente|aparentemente"
+    r"|supon\w*|presum\w*|parece\s+que"
+    r"|(?<!sem )d[uú]vid\w*"
+    r"|(?:acredit\w*|suspeit\w*)\s+que"
+    r"|ach(?:o|a|as|e|em|amos|am|ei|ou|aram|ava|avam|[aá]vamos|aria|ariam|ar[ií]amos|ando)\s+que"
+    r"|cre(?:io|s|mos|em|ia|iam|[ií][aá]mos|ndo)\s+que|cr[eê]\s+que"
+    r"|imagin(?:o|a|as|e|em|amos|am|ei|ou|aram|ava|avam|[aá]vamos|aria|ariam|ar[ií]amos|ando)\s+que"
+    r"|pens(?:o|a|as|e|em|amos|am|ei|ou|aram|ava|avam|[aá]vamos|aria|ariam|ar[ií]amos|ando)\s+que"
+    r"|dev(?:e|ia)\s+ter|poderia\s+ter"
+    r"|maybe|perhaps|probably|apparently|supposedly|presumably|seems"
+    r"|(?<!no )doubt(?:s|ful)?"
+    r"|thinks?|thought|believes?|believed|i\s+guess|i\s+assume|i\s+suspect"
+    r"|might\s+have|could\s+have|would\s+have)\b"
+    r"|\bteria[\s,]*(?:\w+[\s,]+){0,2}$", re.IGNORECASE)
+
+
+#: LIMITE DECLARADO (medido depois do commit anterior): hedge preso a um verbo
+#: ANTERIOR, separado so por virgula ou "e"/"and", ainda mata uma claim
+#: verdadeira mais adiante: "Acho que o time ganhou, e commitei abc1234" nao
+#: rende claim nenhuma, mas a mesma frase com ponto final ("...ganhou.
+#: Commitei abc1234") rende uma. A janela de oracao corta em `. ; \n` e
+#: conjuncao de contraste, nao em virgula -- comportamento herdado de
+#: `_NOT_MINE`. Mudar a janela mudaria tambem o portao de negacao, fora do
+#: escopo deste ajuste. O erro cai do lado que nao acusa.
+
+
+def _is_unhedged(text: str, start: int) -> bool:
+    """A oração modaliza o verbo? Modalizada, não é asserção."""
+    return _HEDGE.search(_clause_before(text, start)) is None
 
 
 def _is_valid_anchor(anchor: str) -> bool:
@@ -348,6 +443,8 @@ def find_claims(text: str) -> list[Claim]:
                 continue                  # a mensagem CITA, nao afirma
             if not _is_assertion(text or "", m.end()):
                 continue                  # pergunta nao e asserção
+            if not _is_unhedged(text or "", m.start()):
+                continue                  # modalizada nao e asserção
             if _is_mine_and_affirmative(text or "", m.start()):
                 found.append(Claim(cls.name, anchor, m.span()))
     return found

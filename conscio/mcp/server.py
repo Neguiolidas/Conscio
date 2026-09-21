@@ -1768,6 +1768,29 @@ def _sync_structure_at_startup(engine, workspace) -> str:
         return f"skip:{exc}"
 
 
+def resolve_identity(storage, *, hermes_review: bool, relay_on: bool,
+                     liaison_db_arg: str = "") -> tuple[str, Path | None]:
+    """Identity for a server that will expose relay or review tools.
+
+    Keyed on the RESOLVED capability, never on the CLI flag. v4.6.5 moved
+    consent into the space and left this condition on ``args.enable_relay``,
+    so the marketplace path -- which carries no flag -- exposed relay tools
+    with an empty sender: ``mailbox.inbox(db, "")`` matches nothing and
+    ``halls.create_hall(owner="")`` would own nothing.
+
+    ``halls`` is deliberately absent from the condition: ``Bindings`` derives
+    ``can_create_halls = can_create_halls and relay``, because a hall delivers
+    through the relay mailbox. Halls without relay is already off, so adding it
+    here would load an identity for a configuration that serves no tool.
+    """
+    if not (hermes_review or relay_on):
+        return "", None
+    from conscio.noosphere.identity import load_or_create
+    self_id = load_or_create(storage).instance_id
+    return self_id, mailbox.resolve_db(storage, liaison_db_arg,
+                                       self_id=self_id)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
     from conscio.installer.binding import validate_binding  # R6
@@ -1819,15 +1842,16 @@ def main(argv: list[str] | None = None) -> int:
     structure_status = _sync_structure_at_startup(engine, workspace)
     seen = SeenStore(Path(engine.storage) / "mcp_seen.db")
     seen.prune(args.seen_max_rows, args.seen_max_age_days)
-    self_instance_id = ""
-    liaison_db = None
-    if args.enable_hermes_review or args.enable_relay:
-        from conscio.noosphere.identity import load_or_create
-        self_instance_id = load_or_create(engine.storage).instance_id
-        # v4.5.4 C1: db privado dentro do espaço do agente; o db compartilhado
-        # do legado migra uma vez, só as linhas deste id.
-        liaison_db = mailbox.resolve_db(engine.storage, args.liaison_db,
-                                        self_id=self_instance_id)
+    # v4.6.6: a capacidade resolvida decide, nao a flag. O caminho do
+    # marketplace nao carrega --enable-relay: o consentimento mora no espaco
+    # desde a v4.6.5, e a identidade tinha ficado presa na flag.
+    relay_on = capabilities.resolve_capability(engine.storage, "relay",
+                                               args.enable_relay)
+    halls_on = capabilities.resolve_capability(engine.storage, "halls",
+                                               args.can_create_halls)
+    self_instance_id, liaison_db = resolve_identity(
+        engine.storage, hermes_review=args.enable_hermes_review,
+        relay_on=relay_on, liaison_db_arg=args.liaison_db)
     tool_mode = modes.resolve_mode(engine.storage, "lite" if args.lite else args.mode)
     bindings = Bindings(engine, seen, adapter_name=adapter_name,
                         workspace_id=workspace.id, act_flag=args.enable_act,
@@ -1835,8 +1859,7 @@ def main(argv: list[str] | None = None) -> int:
                         reviewers=tuple(args.reviewer),
                         self_instance_id=self_instance_id,
                         liaison_db=liaison_db,
-                        relay=capabilities.resolve_capability(
-                            engine.storage, "relay", args.enable_relay),
+                        relay=relay_on,
                         relay_peers=tuple(args.relay_peer),
                         auto_review=args.auto_review,
                         mode=tool_mode,
@@ -1844,16 +1867,15 @@ def main(argv: list[str] | None = None) -> int:
                         identity_familia=args.identity_familia,
                         identity_runtime=args.identity_runtime,
                         identity_papel=args.identity_papel,
-                        can_create_halls=capabilities.resolve_capability(
-                            engine.storage, "halls", args.can_create_halls))
+                        can_create_halls=halls_on)
     mode = "act" if args.enable_act else "propose-only"
     if args.enable_hermes_review:
         if args.reviewer:
             mode += f"+hermes-review(reviewers={len(args.reviewer)})"
         else:
             mode += "+hermes-review(reviewers=0; no publish targets)"
-    if args.enable_relay:
-        if args.relay_peer:
+    if relay_on:            # v4.6.6: a capacidade resolvida, nao a flag --
+        if args.relay_peer:  # quem concedeu pelo espaco via banner sem +relay
             # v4.5.4: an allowlist is now a restriction, not the peer list.
             mode += f"+relay(restricted to {len(args.relay_peer)} peers)"
         else:
