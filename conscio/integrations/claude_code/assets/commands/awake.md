@@ -11,6 +11,8 @@ that, print this line, and stop:
 
     pipx install conscio && conscio install
 
-Otherwise: run `conscio daemon --storage "$CONSCIO_SPACE" --awake` (use the
-space this host was configured with). Report the resulting PID. Awake enables
-proactive cognition; only run it intentionally.
+Otherwise: run `conscio daemon --awake`. It resolves this host's live space on
+its own — from the directory card the running agent publishes — so no path needs
+to be passed here. Add `--storage <path>` only if the user names a different
+space. Report the resulting PID. Awake enables proactive cognition; only run it
+intentionally.
