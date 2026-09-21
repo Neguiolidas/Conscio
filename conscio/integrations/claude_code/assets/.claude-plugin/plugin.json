@@ -1,6 +1,6 @@
 {
   "name": "conscio",
-  "version": "4.6.6",
+  "version": "4.6.7",
   "description": "Persistent memory, reflection and an agent society for Claude Code.",
   "author": {"name": "Neguiolidas"},
   "homepage": "https://github.com/Neguiolidas/Conscio",
