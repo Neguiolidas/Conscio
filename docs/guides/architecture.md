@@ -102,7 +102,7 @@ execution over MCP (`act`) is deferred to v2.0.1.
 
 Three modules of advisory, deterministic tools backed by EventBus events:
 
-- **Gates** (`conscio.gates`) — ADRs with `decide`, 3-voice `council`,
+- **Gates** (`conscio.gates`) — ADRs with `decide`, 4-voice `council`,
   autonomous-loop `loop_gate`, pre-close `delivery_check`, read-before-act
   `investigate`. All guarded by `_check_closed()`.
 - **Pipelines** (`conscio.pipelines`) — intent-driven `acceptance_criteria`,

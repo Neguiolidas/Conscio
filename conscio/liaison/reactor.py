@@ -136,12 +136,21 @@ def dispatch(db: Path, *, self_id: str, peers: Iterable[str],
     # own db is what I see; the card is what THEY read to reach me.
     me = agents.get_agent(db, self_id) or {} if db.exists() else {}
     try:
+        # v4.6.8: o reactor é o escritor CEGO — ele não sabe a identidade do
+        # agente, então NÃO escreve nada sobre ela. A sentinela None do
+        # publish_self preserva o que o servidor que sabe escreveu; escrever ""
+        # (o valor do db vazio) apagaria campos ricos, exatamente a classe de
+        # apagamento medida em produção contra o artefato 4.6.7.
+        me_model = str(me.get("model") or "") if me.get("model") else None
+        me_familia = str(me.get("familia") or "") if me.get("familia") else None
+        me_runtime = str(me.get("runtime") or "") if me.get("runtime") else None
+        me_papel = str(me.get("papel") or "") if me.get("papel") else None
         directory.publish_self(
             self_id,
-            modelo=str(me.get("model") or ""),
-            familia=str(me.get("familia") or ""),
-            runtime=str(me.get("runtime") or ""),
-            papel=str(me.get("papel") or ""),
+            modelo=me_model,
+            familia=me_familia,
+            runtime=me_runtime,
+            papel=me_papel,
             min_interval=CARD_REFRESH_S)
     except Exception as exc:                  # invisible is bad, fatal is worse
         log.warning("card publish failed: %s", exc)

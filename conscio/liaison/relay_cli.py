@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -129,6 +130,257 @@ def _cmd_forget(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_version(v: str) -> tuple[int, ...]:
+    """Parse version string into a numeric tuple padded to at least 3 elements."""
+    nums = [int(x) for x in re.findall(r"\d+", str(v))]
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums)
+
+
+def _resolve_installed_version() -> str:
+    """Resolve the currently installed version of conscio."""
+    try:
+        import conscio
+
+        v = getattr(conscio, "__version__", None)
+        if v:
+            return str(v)
+    except Exception:
+        pass
+    try:
+        import importlib.metadata
+
+        return str(importlib.metadata.version("conscio"))
+    except Exception:
+        pass
+    return "0.0.0"
+
+
+def _detect_version_from_cmdline_flags(args: list[str]) -> str | None:
+    """(a) --report-version <ver> or --report-version=<ver> in cmdline."""
+    for i, arg in enumerate(args):
+        if arg == "--report-version" and i + 1 < len(args):
+            v = args[i + 1].strip().strip("'\"")
+            if v and not v.startswith("-"):
+                return v
+        elif arg.startswith("--report-version="):
+            v = arg.split("=", 1)[1].strip().strip("'\"")
+            if v:
+                return v
+    for arg in args:
+        m = re.search(r"--report-version(?:=|\s+)([^\s]+)", arg)
+        if m:
+            return m.group(1).strip().strip("'\"")
+    return None
+
+
+def _detect_version_from_uvx(args: list[str]) -> str | None:
+    """(b) uvx --from conscio==<ver> (or @<ver>) in cmdline."""
+    pattern = re.compile(
+        r"(?:^|[\s=/])conscio(?:==|@)([0-9]+(?:\.[0-9]+)*(?:[a-zA-Z0-9_\.-]*))"
+    )
+    for arg in args:
+        m = pattern.search(arg)
+        if m:
+            return m.group(1).strip().strip("'\"")
+    return None
+
+
+def _detect_version_from_dist_info(candidate_paths: list[Path]) -> str | None:
+    """(c) Python virtualenv / package dist-info resolved by walking up parent directories.
+
+    Looks for `lib/python*/site-packages/conscio-*.dist-info`.
+    """
+    version_pattern = re.compile(
+        r"^conscio-([0-9]+(?:\.[0-9]+)*[a-zA-Z0-9_\.-]*)\.dist-info$"
+    )
+    for cp in candidate_paths:
+        try:
+            dirs_to_check: list[Path] = []
+            if cp.is_dir():
+                dirs_to_check.append(cp)
+            dirs_to_check.extend(cp.parents)
+            for d in dirs_to_check:
+                dist_infos: list[Path] = []
+                lib_dir = d / "lib"
+                if lib_dir.is_dir():
+                    dist_infos.extend(
+                        lib_dir.glob("python*/site-packages/conscio-*.dist-info")
+                    )
+                    dist_infos.extend(
+                        lib_dir.glob("site-packages/conscio-*.dist-info")
+                    )
+                sp_dir = d / "site-packages"
+                if sp_dir.is_dir():
+                    dist_infos.extend(sp_dir.glob("conscio-*.dist-info"))
+                if "packages" in d.name:
+                    dist_infos.extend(d.glob("conscio-*.dist-info"))
+
+                for di in dist_infos:
+                    if not di.exists():
+                        continue
+                    meta_file = di / "METADATA"
+                    if meta_file.is_file():
+                        try:
+                            for line in meta_file.read_text(
+                                encoding="utf-8", errors="replace"
+                            ).splitlines():
+                                if line.startswith("Version:"):
+                                    ver = line.split(":", 1)[1].strip()
+                                    if ver:
+                                        return ver
+                        except OSError:
+                            pass
+                    m = version_pattern.match(di.name)
+                    if m:
+                        return m.group(1)
+        except OSError:
+            continue
+    return None
+
+
+def find_stale_processes(
+    installed_version: str | None = None,
+    proc_root: Path | str = Path("/proc"),
+) -> list[dict]:
+    """Scan proc_root for live Conscio processes running an older version.
+
+    Excludes self. Detects running version via:
+      (a) --report-version <ver> in cmdline
+      (b) uvx --from conscio==<ver> (or @<ver>) in cmdline
+      (c) Python virtualenv / package dist-info resolved by walking up parent directories.
+
+    Returns a list of dicts with:
+      - pid: int
+      - name: str
+      - running_version: str
+      - installed_version: str
+    """
+    proc_path = Path(proc_root)
+    if not proc_path.exists() or not proc_path.is_dir():
+        return []
+
+    target_version = (
+        installed_version
+        if installed_version is not None
+        else _resolve_installed_version()
+    )
+    parsed_target = _parse_version(target_version)
+    self_pid = os.getpid()
+
+    stale: list[dict] = []
+
+    try:
+        entries = list(proc_path.iterdir())
+    except OSError:
+        return []
+
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            pid = int(entry.name)
+        except ValueError:
+            continue
+
+        if pid == self_pid:
+            continue
+
+        try:
+            comm_path = entry / "comm"
+            comm = ""
+            if comm_path.is_file():
+                comm = comm_path.read_text(
+                    encoding="utf-8", errors="replace"
+                ).strip()
+
+            cmdline_path = entry / "cmdline"
+            cmdline_args: list[str] = []
+            if cmdline_path.is_file():
+                raw = cmdline_path.read_bytes()
+                cmdline_args = [
+                    a
+                    for a in raw.decode("utf-8", errors="replace").split("\x00")
+                    if a
+                ]
+
+            if not cmdline_args and not comm:
+                continue
+
+            exe_path = entry / "exe"
+            exe_str = ""
+            candidate_paths: list[Path] = []
+            if exe_path.is_symlink():
+                try:
+                    exe_str = os.readlink(exe_path)
+                    candidate_paths.append(Path(exe_str))
+                except OSError:
+                    pass
+                try:
+                    candidate_paths.append(exe_path.resolve())
+                except OSError:
+                    pass
+            elif exe_path.exists():
+                try:
+                    if exe_path.is_file():
+                        content = exe_path.read_text(
+                            encoding="utf-8", errors="replace"
+                        ).strip()
+                        if content.startswith("/"):
+                            candidate_paths.append(Path(content))
+                    candidate_paths.append(exe_path.resolve())
+                except OSError:
+                    pass
+
+            for arg in cmdline_args:
+                if "/" in arg:
+                    candidate_paths.append(Path(arg))
+
+            is_conscio = (
+                "conscio" in comm.lower()
+                or any("conscio" in a.lower() for a in cmdline_args)
+                or (exe_str and "conscio" in exe_str.lower())
+                or any(
+                    a == "--report-version" or a.startswith("--report-version=")
+                    for a in cmdline_args
+                )
+            )
+
+            running_ver = _detect_version_from_cmdline_flags(cmdline_args)
+            if not running_ver:
+                running_ver = _detect_version_from_uvx(cmdline_args)
+            if not running_ver:
+                running_ver = _detect_version_from_dist_info(candidate_paths)
+
+            if not is_conscio or not running_ver:
+                continue
+
+            parsed_running = _parse_version(running_ver)
+            if parsed_running < parsed_target:
+                proc_name = (
+                    comm
+                    if comm
+                    else (
+                        Path(cmdline_args[0]).name
+                        if cmdline_args
+                        else "conscio"
+                    )
+                )
+                stale.append(
+                    {
+                        "pid": pid,
+                        "name": proc_name,
+                        "running_version": running_ver,
+                        "installed_version": target_version,
+                    }
+                )
+        except (OSError, ValueError):
+            continue
+
+    return sorted(stale, key=lambda x: x["pid"])
+
+
 def _cmd_doctor(args: argparse.Namespace) -> int:
     """Three questions, no journal: am I published, is anything parked in my
     spool, and does the directory know anybody at all."""
@@ -159,6 +411,18 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
 
     remotes = relay_transport.load_remotes()
     print(f"paired remotes: {len(remotes)}")
+
+    proc_root = getattr(args, "proc_root", Path("/proc"))
+    installed_ver = getattr(args, "installed_version", None)
+    stale = find_stale_processes(
+        installed_version=installed_ver, proc_root=proc_root
+    )
+    for sp in stale:
+        print(
+            f"AVISO: processo {sp['pid']} ({sp['name']}) roda versao "
+            f"{sp['running_version']} < instalada {sp['installed_version']}, "
+            f"reinicie apos upgrade para nao apagar campos novos"
+        )
 
     for p in problems:
         print(f"PROBLEM: {p}", file=sys.stderr)
@@ -272,6 +536,10 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("doctor", help="why is nothing arriving?")
     p.add_argument("--id", default="", help="my instance id")
+    p.add_argument("--installed-version", default=None, help=argparse.SUPPRESS)
+    p.add_argument(
+        "--proc-root", type=Path, default=Path("/proc"), help=argparse.SUPPRESS
+    )
     p.set_defaults(fn=_cmd_doctor)
 
     p = sub.add_parser("service", help="print a systemd user unit")

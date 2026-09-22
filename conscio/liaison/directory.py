@@ -99,10 +99,11 @@ def publish(card: dict) -> None:
     write_atomic(_card_path(cid), json.dumps(payload, ensure_ascii=False))
 
 
-def publish_self(instance_id: str, *, modelo: str = "", familia: str = "",
-                 runtime: str = "", papel: str = "",
-                 capabilities: tuple[str, ...] = ("relay",),
-                 url: str = "", space: str = "",
+def publish_self(instance_id: str, *, modelo: str | None = None,
+                 familia: str | None = None,
+                 runtime: str | None = None, papel: str | None = None,
+                 capabilities: tuple[str, ...] | None = None,
+                 url: str = "", space: str | None = None,
                  min_interval: float = 0.0) -> bool:
     """Publica/refresca MEU cartão. Devolve True se escreveu.
 
@@ -115,38 +116,52 @@ def publish_self(instance_id: str, *, modelo: str = "", familia: str = "",
     throttle sai do próprio cartão (e não de estado em memória) para que um
     restart não vire uma rajada de republicações.
 
-    Chaves DO AGENTE (halls) sobrevivem ao refresh: são dele, não do processo
-    que republica. `space` (v4.6.7) é uma delas — ver a nota abaixo, porque a
-    regra dele NÃO é a mesma das outras.
+    v4.6.8 — READ-MODIFY-WRITE COM SENTINELA. O contrato tem três faces,
+    todas medidas contra o artefato 4.6.7 (três classes de apagamento):
+
+    * ``None`` (default) = "não sei, preserva". Um escritor que não conhece o
+      campo — o reactor republicando cego — nunca apaga o que o servidor que
+      sabe escreveu. Vale para modelo/familia/runtime/papel/capabilities/space
+      e para QUALQUER chave futura que já esteja no cartão.
+    * Valor explícito (não-None) = "eu sei, escreve". O servidor que resolveu
+      a identidade e o espaço vence o valor velho.
+    * Chaves desconhecidas do cartão antigo sobrevivem por construção: o card
+      NOVO nasce do VELHO, não do zero.
+
+    Isto subsume as duas regras ad-hoc anteriores (o laço de halls e o bloco
+    `herdado` do space) numa só: quem não passa, não mexe.
     """
     old = get(instance_id) or {}
     if min_interval > 0:
         age = time.time() - float(old.get("updated_at") or 0.0)
         if 0 <= age < min_interval:
             return False
-    card = {
+    # v4.6.8: o card novo nasce do VELHO — chaves que esta versão não conhece
+    # sobrevivem por construção, não por lista nominal.
+    card = dict(old)
+    card.update({
         "instance_id": instance_id,
         "spool": str(spool_dir(instance_id)),
         # cartão local nunca leva url: quem me alcança de fora usa o
         # remotes.json do lado dele (conscio relay pair).
         "url": url,
-        "modelo": modelo, "familia": familia,
-        "runtime": runtime, "papel": papel,
-        "capabilities": list(capabilities), "updated_at": time.time(),
-    }
-    for key in ("halls", "halls_declined"):
-        if old.get(key):
-            card[key] = old[key]
-    # v4.6.7: `space` é chave do AGENTE, como halls — mas com a precedência
-    # invertida, e por isso fora do laço acima. Ali o valor velho sempre vence,
-    # o que é correto para halls porque halls nunca está no cartão novo. Para
-    # `space` o valor novo tem de vencer quando vier: acrescentar "space"
-    # àquela tupla congelaria o campo para sempre no primeiro valor publicado.
-    # Só quem RESOLVEU um espaço (o servidor) passa o argumento; quem republica
-    # sem saber (o reactor) herda, e nunca apaga nem rebaixa para o default.
-    herdado = str(old.get("space", "") or "")
-    if space or herdado:
-        card["space"] = space or herdado
+        "updated_at": time.time(),
+    })
+    # Sentinela: só quem sabe escreve. None = preserva o que já está no card.
+    if modelo is not None:
+        card["modelo"] = modelo
+    if familia is not None:
+        card["familia"] = familia
+    if runtime is not None:
+        card["runtime"] = runtime
+    if papel is not None:
+        card["papel"] = papel
+    if capabilities is not None:
+        card["capabilities"] = list(capabilities)
+    # space: valor explícito vence (o servidor que RESOLVEU um espaço);
+    # None/omitido preserva — o reactor cego herda, nunca apaga.
+    if space is not None:
+        card["space"] = space
     publish(card)
     return True
 

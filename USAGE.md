@@ -186,6 +186,8 @@ Payload cap 64KB, retention 7 days after read.
 
 - `conscio_decide(question, options)` — structural decision with ADR
 - `conscio_council(question)` — 3-voice deterministic review (architect, skeptic, pragmatist)
+  (historical: at the time the council had 3 deterministic voices plus an
+  optional LLM Critic; the critic became the 4th voice by v3.7.0)
 - `conscio_loop_gate(world_state)` — act/block gate: last reflection, rationalization scan, proposal freshness
 - `conscio_delivery_check()` — verifies blockers, staleness, rationalization before shutdown
 - `conscio_investigate(topic)` — hypothesis scan over recent events
@@ -483,7 +485,7 @@ every message wastes tokens and adds latency. These rules prevent that.
 | Debugging (investigate) | `investigate` | Hypothesis scan over recent events |
 | Multi-step delivery | `loop_gate` + `delivery_check` | Block before acting on stale/rationalized plans |
 | Self-review of output | `evaluate` | 5-axis rubric (accuracy, completeness, clarity, actionability, conciseness) |
-| High-risk irreversible action | `council` | 3-voice review before committing |
+| High-risk irreversible action | `council` | 4-voice review before committing |
 
 ### DO NOT call Conscio for
 

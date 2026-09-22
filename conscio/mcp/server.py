@@ -834,11 +834,14 @@ class Bindings:
             # either way. No engine simply means no space to publish — the card
             # still goes out, and the field is left to whatever already held it.
             storage = getattr(getattr(self, "engine", None), "storage", None)
+            # v4.6.8: o servidor SABE a identidade (sempre escreve) e o espaço
+            # (escreve quando resolveu). Sem storage, space=None preserva o
+            # campo — escrever "" apagaria o que um servidor anterior resolveu.
             directory.publish_self(
                 self.self_instance_id,
                 modelo=self.identity_model, familia=self.identity_familia,
                 runtime=self.identity_runtime, papel=self.identity_papel,
-                space=str(storage) if storage else "")
+                space=str(storage) if storage else None)
             self.card_error = ""
         except Exception as exc:
             self.card_error = f"cartão não publicado: {exc}"
