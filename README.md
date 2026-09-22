@@ -14,7 +14,7 @@ nothing else). It is built to make small, local models and frontier models punch
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v4.6.7` "The CLI learns where the live space is":** the agent now publishes `space` on its directory card and one resolver answers for every CLI entrypoint, refusing rather than guessing when several agents published. Adds `conscio relay forget` to retire an address that outlived its agent.
+**Latest release — `v4.6.8` "The council keeps its word; the card survives the writer that doesn't know":** the council is now deterministic by contract — an attached LLM adapter can never alter a vote — and `publish_self` became a sentinel read-modify-write: `None` preserves what the knowing server wrote, so a blind heartbeat republish can no longer erase identity, capabilities, or fields this version doesn't know. `conscio relay doctor` now warns when a live process still runs an older version after an upgrade.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 

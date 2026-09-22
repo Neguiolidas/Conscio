@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [4.6.8] - UNRELEASED — The council keeps its word; the card survives the writer that doesn't know
+## [4.6.8] - 2026-09-22 — The council keeps its word; the card survives the writer that doesn't know
 
 Two production-measured contracts land together. First, the council was
 always *meant* to be deterministic — the critic's automatic LLM path made an
