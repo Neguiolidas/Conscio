@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.6.8] - UNRELEASED — The council keeps its word; the card survives the writer that doesn't know
+
+Two production-measured contracts land together. First, the council was
+always *meant* to be deterministic — the critic's automatic LLM path made an
+attached adapter alter votes and made LLM availability a de-facto
+prerequisite for the 4th voice. Second, `publish_self` rebuilt the relay
+card from scratch on every republish: one blind call from the heartbeat
+writer erased identity fields, reverted capabilities to the parameter
+default, and dropped any key this version doesn't know — three erasure
+classes, measured against the published 4.6.7 artifact.
+
+### Changed
+
+- **Council is deterministic by contract.** The critic voice never consults
+  an LLM adapter; `conscio.gates._get_adapter` removed as dead code. Proof:
+  an `ExplodingAdapter` attached to an awake engine — any adapter call fails
+  `test_council_never_calls_llm_adapter` — plus a live-engine test that runs
+  `eng.council()` end-to-end through the ModeRouter in all four output modes.
+  Optional LLM analysis remains available in squads via `use_llm=True`;
+  the council never calls it.
+
+- **`publish_self` is now a sentinel read-modify-write.** `None` (the new
+  default) means "I don't know — preserve"; an explicit non-None value means
+  "I know — write". The new card is born from the old one, so keys this
+  version doesn't know survive by construction, not by nominal list. This
+  subsumes the two ad-hoc rules (the halls loop and the space `herdado`
+  block) into one: who doesn't pass, doesn't touch. Space keeps its 4.6.7
+  precedence — explicit wins, blind inherits.
+
+- **The blind writer writes `None`, not `""`.** The reactor — the heartbeat
+  writer this fix exists for — converted a missing db identity to `""`
+  *before* calling `publish_self`, and an empty string is non-None, so the
+  sentinel let it through and the erasure continued for the real production
+  case. Reactors now pass `None` when the db doesn't know a field; the
+  server passes `space=None` when it has no storage to resolve.
+
+### Added
+
+- **`conscio relay doctor` warns about stale live processes.** After an
+  upgrade, any long-running process still on the old version keeps writing
+  cards with old rules (empty strings, no sentinel) and can erase fields the
+  new version introduced. The doctor scans `/proc` for live Conscio
+  processes, resolves the running version three ways (`--report-version` flag,
+  `uvx --from conscio==` pin, venv dist-info walk), and prints an actionable
+  warning per stale process. Measured live on this machine: it found five
+  survivors of the last reboot running 4.5.0 against an installed 4.6.7.
+
+### Docs
+
+- Council docs swept against the code: 4-voice deterministic everywhere.
+  The "Optional LLM Critic" sentence (a double lie — four voices, and no LLM)
+  removed from `docs/guides/mcp.md`; the surface-mode table `ultra` row
+  corrected; USAGE heuristic table 3→4; architecture guide 3→4; the stale
+  `gates.py` docstring that still promised "No LLM calls except
+  council.critic" fixed to state the actual contract.
+
+---
+
 ## [4.6.7] - 2026-09-21 — The CLI learns where the live space is
 
 The package never knew where the live space was. Hooks only got it right because
