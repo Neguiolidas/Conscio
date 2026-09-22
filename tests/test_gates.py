@@ -150,6 +150,19 @@ class TestCouncil:
         assert "analysis" in critic
         assert len(critic["analysis"]) > 0
 
+    def test_council_never_calls_llm_adapter(self, engine, monkeypatch):
+        """Council remains deterministic even when an adapter is available."""
+        class ExplodingAdapter:
+            def generate(self, *args, **kwargs):
+                raise AssertionError("Council must not call the LLM adapter")
+
+        engine.attach_adapter(ExplodingAdapter())
+        engine.wake()
+        result = council(engine, question="Should we use SQLite?")
+        critic = next(v for v in result["voices"] if v["role"] == "critic")
+        assert "LLM" not in critic["analysis"]
+        assert "deterministic" in critic["analysis"].lower()
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Task 3: loop_gate()

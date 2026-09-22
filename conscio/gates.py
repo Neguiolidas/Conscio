@@ -376,38 +376,11 @@ def _voice_critic(
     analysis_items = []
     concerns = []
 
-    # Try LLM path
-    adapter = _get_adapter(engine)
-    if adapter is not None:
-        try:
-            prompt = (
-                f"You are a critical reviewer. Analyze this decision for "
-                f"failure modes, blind spots, and worst-case scenarios.\n\n"
-                f"Question: {question}\n"
-                f"Context: {context}\n"
-                f"Options: {options or 'none specified'}\n\n"
-                f"List 2-3 specific failure modes. Be concise."
-            )
-            result = adapter.generate(prompt, max_tokens=256, temperature=0.3)
-            analysis_text = result.text[:200]
-            analysis_items.append(f"LLM analysis: {analysis_text}")
-            # Only escalate to a concern when the LLM actually names a risk.
-            # A clean LLM endorsement should not be force-loaded into a hold.
-            _risk_tokens = ("fail", "risk", "can't", "cannot", "broken", "crash",
-                            "danger", "incompatible", "breaks", "regression",
-                            "unsafe", "reject", "veto", "problem", "corrupt",
-                            "deadlock", "race", "leak", "bottlen", "edge")
-            lowered = analysis_text.lower()
-            if any(tok in lowered for tok in _risk_tokens):
-                concerns.append("LLM identified risk(s) — review before proceeding")
-        except Exception:
-            # LLM failed — fall back to deterministic
-            analysis_items.append("LLM unavailable — using deterministic fallback")
-            concerns = _critic_deterministic(engine, question, context, options)
-    else:
-        analysis_items.append("No adapter attached — using deterministic analysis")
-        concerns = _critic_deterministic(engine, question, context, options)
-
+    # Council is deterministic by contract. LLM analysis remains an optional
+    # future integration point, but an attached adapter must never alter this
+    # council's votes or make its availability a prerequisite.
+    analysis_items.append("Deterministic analysis")
+    concerns = _critic_deterministic(engine, question, context, options)
     analysis_items.extend(concerns)
     vote = "veto" if len(concerns) >= 2 else ("hold" if concerns else "proceed")
 
@@ -449,17 +422,6 @@ def _critic_deterministic(
     # council toward hold/veto. Let a clean critic be a clean proceed.
 
     return concerns
-
-
-def _get_adapter(engine: ConsciousnessEngine):
-    """Get the LLM adapter from the engine if awake and attached."""
-    if not engine.awake:
-        return None
-    pipeline = getattr(engine, "_act_pipeline", None)
-    if pipeline is None:
-        return None
-    adapter = getattr(pipeline, "adapter", None)
-    return adapter
 
 
 # ── loop_gate() ───────────────────────────────────────────────────────
