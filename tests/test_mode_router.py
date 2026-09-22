@@ -224,3 +224,47 @@ def test_format_evaluate_names_the_weakest_axis_in_compact_modes(tmp_storage):
     axes = {a["axis"]: a["score"] for a in report["axes"]}
     assert out["weakest"] == min(axes, key=lambda k: axes[k])
     assert out["strongest"] == max(axes, key=lambda k: axes[k])
+
+
+def test_format_council_live_engine_deterministic(tmp_storage):
+    """Verify that a real council() call with deterministic critic works end-to-end with ModeRouter."""
+    from conscio.agency import MockAdapter
+    from conscio.engine import ConsciousnessEngine
+
+    eng = ConsciousnessEngine(model_name="test", storage_path=str(tmp_storage))
+    try:
+        eng.attach_adapter(MockAdapter())
+        eng.wake()
+        council_res = eng.council(question="Should we deploy to prod?", context="critical system")
+
+        critic_voice = next(v for v in council_res["voices"] if v["role"] == "critic")
+        assert "Deterministic analysis" in critic_voice["analysis"]
+        assert "LLM analysis" not in critic_voice["analysis"]
+
+        for comp in ("minimal", "compact", "full", "agent_host"):
+            ctrl = tmp_storage / "daemon_control.json"
+            ctrl.write_text(json.dumps({"prompt_complexity": comp}))
+            router = ModeRouter(tmp_storage)
+            formatted = router.format_council(council_res)
+
+            if comp == "minimal":
+                assert formatted["mode"] == "deterministic"
+                assert "recommendation" in formatted
+                assert "votes" in formatted
+            elif comp == "compact":
+                assert formatted["mode"] == "deterministic"
+                assert "recommendation" in formatted
+                assert len(formatted["voices"]) == 4
+                critic_compact = next(v for v in formatted["voices"] if v["role"] == "critic")
+                assert "top_concern" in critic_compact
+                assert "analysis" not in critic_compact
+            elif comp == "full":
+                assert formatted["mode"] == "deterministic"
+                critic_full = next(v for v in formatted["voices"] if v["role"] == "critic")
+                assert "Deterministic analysis" in critic_full["analysis"]
+            elif comp == "agent_host":
+                assert formatted["mode"] == "agent_host"
+                assert formatted["question"] == "Should we deploy to prod?"
+    finally:
+        eng.close()
+
