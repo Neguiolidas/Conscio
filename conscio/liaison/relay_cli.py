@@ -217,6 +217,8 @@ def _detect_version_from_dist_info(candidate_paths: list[Path]) -> str | None:
                 if "packages" in d.name:
                     dist_infos.extend(d.glob("conscio-*.dist-info"))
 
+                dist_infos = _sort_dist_infos(dist_infos)
+                dist_infos = _sort_dist_infos(dist_infos)
                 for di in dist_infos:
                     if not di.exists():
                         continue
@@ -237,6 +239,42 @@ def _detect_version_from_dist_info(candidate_paths: list[Path]) -> str | None:
                         return m.group(1)
         except OSError:
             continue
+    return None
+
+
+def _sort_dist_infos(dist_infos: list[Path]) -> list[Path]:
+    """Deeper (venv-own) dist-infos first: the process's own site-packages
+    is the truth about what IT loaded; random parents are guesses.
+
+    Measured false positive on a multi-install machine: the walk returned a
+    stale ~/.local dist-info for a process running the repo-editable copy.
+    """
+    return sorted(dist_infos, key=lambda p: len(p.parts), reverse=True)
+
+
+def _detect_version_from_interpreter(exe: Path) -> str | None:
+    """(b+) Ask the target's own interpreter what conscio it resolves.
+
+    Runs a subprocess of the process's interpreter (/proc/<pid>/exe) that
+    imports conscio and prints __version__. This is the process's REAL
+    resolution order — its venv's sys.path — instead of guessing from a
+    dist-info walk that can find any of several coinstalled copies.
+
+    Best effort: dead interpreter, no conscio importable, or timeout all
+    return None (the caller falls through to the walk).
+    """
+    import subprocess
+    try:
+        result = subprocess.run(
+            [str(exe), "-c", "import conscio; print(conscio.__version__)"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            ver = result.stdout.strip()
+            if ver and re.fullmatch(r"[0-9]+(\.[0-9]+)*", ver):
+                return ver
+    except (OSError, subprocess.TimeoutExpired):
+        pass
     return None
 
 
@@ -350,6 +388,8 @@ def find_stale_processes(
             running_ver = _detect_version_from_cmdline_flags(cmdline_args)
             if not running_ver:
                 running_ver = _detect_version_from_uvx(cmdline_args)
+            if not running_ver:
+                running_ver = _detect_version_from_interpreter(Path(exe_str)) if exe_str else None
             if not running_ver:
                 running_ver = _detect_version_from_dist_info(candidate_paths)
 
