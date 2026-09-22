@@ -298,10 +298,14 @@ def _arg_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
     _bind_vault_dir(args.vault_dir)
-    # Default matches ConsciousnessEngine.DEFAULT_STORAGE (engine.py:133); kept as
-    # a literal so the Hub stays engine-free (no engine import at launch).
-    storage = (Path(args.storage) if args.storage
-               else Path.home() / ".hermes" / "consciousness")
+    # v4.6.7: this was a literal — ~/.hermes/consciousness — with a comment
+    # claiming it matched ConsciousnessEngine.DEFAULT_STORAGE. It did not: the
+    # engine went neutral (~/.conscio/consciousness) and this copy stayed
+    # behind, so on any neutral install the Hub wrote its daemon control file
+    # where no daemon reads, and the awake toggle was the silent no-op its own
+    # --storage help warns about. The resolver keeps the Hub engine-free.
+    from ..space import resolve_live_space
+    storage = resolve_live_space(args.storage).path
     try:
         srv = make_server(args.host, args.port, args.token,
                           storage=storage,

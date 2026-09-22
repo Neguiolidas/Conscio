@@ -492,7 +492,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args = _arg_parser().parse_args(argv)
     from .installer.binding import validate_binding  # R6
-    validate_binding(args.storage)
+    from .space import resolve_live_space
+
+    # v4.6.7: resolve ONCE, here, and use the result for everything below.
+    # The daemon is the sharpest case of the whole family: it is long-lived, it
+    # mints an identity through load_or_create, and `/conscio:awake` invokes it
+    # with no --storage at all. Resolving inside the engine instead would put
+    # the answer one layer below the point where the operator's intent is known.
+    storage = str(resolve_live_space(args.storage).path)
+    validate_binding(storage)
 
     # ── pidfile FIRST: a second daemon must fail before doing any expensive
     # work (opening the DB, building sensors, waking the engine). Field report
@@ -505,7 +513,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # _acquire_pidfile (with its liveness check) runs again at run() and is the
     # authoritative one for the single-daemon invariant.
     from .daemon import _pid_alive
-    _pf = Path(args.storage) / "daemon.pid" if args.storage else None
+    # Always a real path now. Previously this was None whenever --storage was
+    # absent, which silently disabled the single-daemon invariant for exactly
+    # the callers that pass no space — `/conscio:awake` among them.
+    _pf = Path(storage) / "daemon.pid"
     if _pf is not None and _pf.exists():
         try:
             _old = int(_pf.read_text().strip())
@@ -536,7 +547,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     or cfg.get("sensors", "host"))
     awake = args.awake if args.awake is not None else cfg.get("awake", False)
 
-    engine = ConsciousnessEngine(model, storage_path=args.storage,
+    engine = ConsciousnessEngine(model, storage_path=storage,
                                   base_url=args.base_url)
 
     # ── attach adapter (CLI overrides config) ──

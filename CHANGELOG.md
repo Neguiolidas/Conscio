@@ -7,6 +7,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.6.7] - 2026-09-21 — The CLI learns where the live space is
+
+The package never knew where the live space was. Hooks only got it right because
+Claude Code injects `--storage "${CLAUDE_PLUGIN_DATA}/space"` into every line of
+`hooks.json` — measured: zero references to `plugins/data` or
+`CLAUDE_PLUGIN_ROOT` exist anywhere in `conscio/**/*.py`. That correctness was
+borrowed from the host and did not survive a bare shell, so everything a person
+typed fell through to the neutral default and answered, confidently, about a
+space nobody runs.
+
+Measured before and after on the same fixture:
+
+| | before | after |
+|---|---|---|
+| `conscio relay quarantine` | `total: 0` | `total: 1` |
+| db embedded in the unit `relay service` prints | the home's | the live space |
+| `conscio capabilities` | names the default | names the live space |
+
+### Added
+
+- **`conscio.space.resolve_live_space()` — one resolver**, four declared rungs:
+  `--storage`, `CONSCIO_SPACE`, the directory card, then the neutral default,
+  which is no longer invisible because provenance returns with the path. It
+  lives in its own module because reading a card from `noosphere/paths.py` would
+  close an import cycle through `liaison.directory → agents → mailbox`.
+
+- **`space` on the directory card**: the agent that holds a space publishes
+  where it is. Only the MCP server writes it — the reactor, the card's other
+  writer, has no access to a space and so cannot publish a wrong one.
+
+- **`--storage` on `relay quarantine`, `relay service`, `tick`, `watcher` and
+  `reactor`**, which had only `--liaison-db`.
+
+- **`conscio relay forget <id>`** — retire a peer's address from this machine's
+  directory. A card can outlive whatever published it, and `directory.forget`
+  had no way for an operator to reach it, so the remedy was editing JSON by
+  hand. It touches neither the space nor the identity, and an agent that is
+  merely idle republishes on its next heartbeat: it cannot silence a live peer,
+  only retire a dead one.
+
+- **A guard over `assets/commands/*.md`**: no shipped command may consume a
+  `$CONSCIO_*` variable, because nothing sets one for a slash command.
+
+### Fixed
+
+- **`/conscio:awake` ran `conscio daemon --storage "$CONSCIO_SPACE"`, and
+  nothing in the repository ever set that variable.** Every link measured: the
+  flag expanded empty; `installer/binding.py` waves an empty storage through as
+  *"default storage; nothing to validate"*; the engine falls to its own default
+  and `mkdir`s it; `daemon.py` then mints an identity there. A shipped command
+  started long-lived proactive cognition against the dead space.
+
+- **The daemon never reached the resolver**, so the fix above was not enough on
+  its own. Resolving once at the top also gives it a real pidfile, where before
+  it was `None` whenever no space was passed — silently disabling the
+  single-daemon invariant for exactly the callers that pass none.
+
+- **Fourteen call sites** across `cli.py`, `noosphere/cli.py`, the four relay
+  modules, `daemon.py`, `observatory/server.py` and `hub/server.py` resolved a
+  space or a database without knowing where the live one was. `noosphere id` was
+  the sharpest: it reaches `identity.load_or_create`, which *writes* — forging a
+  second identity for the agent in a space nobody reads.
+
+- **The Hub defaulted to a `~/.hermes` path** under a comment claiming it
+  matched the engine's. It had not matched since the engine went neutral, so on
+  such an install the Hub wrote its daemon control file where no daemon reads
+  and the awake toggle silently did nothing.
+
+- **`relay service` and the relay modules now expand `~`** in an explicit
+  `--liaison-db`, which they previously took literally. An all-whitespace
+  `--storage` is no longer taken as a space name.
+
+### Upgrading — read this if you run a service or share a machine
+
+**A command may now refuse instead of answering.** When more than one agent on a
+machine has published a space, nothing picks between them: the command says so
+and lists the candidates. Name the one you mean with `--storage`, or set
+`CONSCIO_SELF_ID`. Silently choosing was the defect being fixed.
+
+A systemd unit generated before this release carries no identity, so on a
+multi-agent machine the reactor exits at boot rather than deliver to the wrong
+mailbox — loudly, with the remedy in the message. Regenerate it with
+`conscio relay service --id <your id>`, which now bakes the identity in.
+
+Only agents running this release publish a space at all, so this appears the
+first time a second agent is upgraded. A card written before this release
+carries none, and the resolver never considers it.
+
+Service entrypoints (`conscio-reactor`, `conscio-observatory`) let the refusal
+propagate rather than exiting quietly, so the reason lands in the journal. Only
+`conscio <subcommand>` prints it as a plain message.
+
+### Notes
+
+- A card may steer the resolver only past three filters, each catching what the
+  others let through: it must not name the default space (by construction the
+  artifact of this bug), its space must still exist (the one unambiguous sign an
+  agent is gone rather than idle), and that space's `instance.json` must agree
+  about who owns it. Card *age* is deliberately not consulted: `is_live` is "só
+  para exibição — nunca para endereçar", and a week away would otherwise retire
+  a perfectly live space.
+
+- A card cannot *clear* its space, only replace it: an absent value inherits
+  rather than erases, which is what stops a background republish — knowing no
+  space — from wiping what the server wrote. An address that outlived its agent
+  is retired with `relay forget` instead.
+
+- This release does not remove identities already minted in a default space. It
+  closes the factory; clearing the yard is a separate, destructive decision.
+
+---
+
 ## [4.6.6] - 2026-09-21 — Identity travels with the consent
 
 4.6.5 moved the opt-in capabilities into the space so a plugin update would stop

@@ -826,10 +826,19 @@ class Bindings:
         self._card_ts = now
         try:
             # membership (halls) é do agente e sobrevive ao republish (Task 3b)
+            # v4.6.7: o servidor é o único escritor autoritativo do espaço —
+            # ele é o único destes processos que o resolveu. O reactor publica
+            # sem o argumento e herda o valor já no cartão.
+            # `self.engine` itself may be absent: a Bindings built for card
+            # publishing alone has no engine, and an agent must stay findable
+            # either way. No engine simply means no space to publish — the card
+            # still goes out, and the field is left to whatever already held it.
+            storage = getattr(getattr(self, "engine", None), "storage", None)
             directory.publish_self(
                 self.self_instance_id,
                 modelo=self.identity_model, familia=self.identity_familia,
-                runtime=self.identity_runtime, papel=self.identity_papel)
+                runtime=self.identity_runtime, papel=self.identity_papel,
+                space=str(storage) if storage else "")
             self.card_error = ""
         except Exception as exc:
             self.card_error = f"cartão não publicado: {exc}"

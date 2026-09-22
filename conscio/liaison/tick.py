@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 from . import relay
-from .mailbox import default_db
+from .mailbox import resolve_db
 
 SELF_ID_ENV = "CONSCIO_SELF_ID"
 
@@ -171,7 +171,10 @@ def main(argv: list[str] | None = None) -> int:
                     " private cursor (host supervisor / cron / systemd).",
     )
     p.add_argument("--liaison-db", default=None,
-                   help="path to liaison.db (default: $CONSCIO_HOME/liaison.db)")
+                   help="path to liaison.db (default: <live space>/liaison.db)")
+    p.add_argument("--storage", default="",
+                   help="space to act on (default: the live space,"
+                        " resolved from the directory card)")
     p.add_argument("--self-id", default="",
                    help=f"our provider instance id (or env {SELF_ID_ENV})")
     p.add_argument("--relay-peer", action="append", default=[],
@@ -187,8 +190,15 @@ def main(argv: list[str] | None = None) -> int:
                         " per-surface summary)")
     args = p.parse_args(argv)
 
-    db = Path(args.liaison_db) if args.liaison_db else default_db()
+    from ..space import resolve_live_space
+    # v4.6.7: the live space, not $CONSCIO_HOME/liaison.db.
+    # v4.6.7: the identity must be resolved BEFORE the space, because it is
+    # what names which agent is meant when several published one. A unit
+    # generated with --self-id would otherwise hit AmbiguousSpace and die at
+    # boot on a multi-agent machine — carrying the answer but not using it.
     self_id = _resolve_self_id(args.self_id)
+    db = resolve_db(resolve_live_space(args.storage, self_id).path,
+                    args.liaison_db)
     peers = list(dict.fromkeys(args.relay_peer or []))
 
     if not self_id:

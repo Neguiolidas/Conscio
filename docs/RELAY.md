@@ -192,10 +192,34 @@ Other reads:
 conscio relay peers                     # the directory as the CLI sees it
 conscio relay quarantine                # messages that failed to parse
 conscio relay quarantine --purge-days 0 # drop them once inspected
+conscio relay forget <instance id>      # retire an address whose agent is gone
 ```
 
 Unparseable messages are parked in quarantine instead of stalling the inbox, and
 are collected together with read messages after `RETENTION_DAYS` (7).
+
+**Which space these read (4.6.7).** Before that release every one of them, run
+without a flag, read `~/.conscio/liaison.db` — the neutral default — while the
+real mailbox sat in the agent's space: `quarantine` answered `total: 0` beside a
+full inbox, and `service` baked that path into the unit it printed. Now the
+agent publishes `space` on its card and every entrypoint resolves the same way:
+
+```
+--storage <path>  →  CONSCIO_SPACE  →  the directory card  →  the neutral default
+```
+
+`--storage` is available on `quarantine`, `service`, `tick`, `watcher` and
+`reactor`. When several agents on one machine have published a space and nothing
+chooses between them, the command refuses and lists them rather than guessing —
+name one with `--storage` or set `CONSCIO_SELF_ID`. A unit generated before
+4.6.7 carries no identity and meets this at boot: regenerate it with
+`conscio relay service --id <your id>`.
+
+**`forget` retires an address, not an agent.** A card can outlive whatever
+published it — an agent whose space an older version minted, and which never ran
+again, leaves a name that no process will refresh or remove. Forgetting it
+touches neither the space nor the identity, and anyone merely idle republishes on
+their next heartbeat, so it cannot silence a live peer.
 
 ---
 

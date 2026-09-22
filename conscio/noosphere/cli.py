@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 from . import audit, catalog, identity, importer, publish, quarantine, record_publish
-from .paths import quarantine_db_path, resolve_noosphere, resolve_storage
+from .paths import quarantine_db_path, resolve_noosphere
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -66,17 +67,37 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _cmd_publish(args) -> int:
-    res = publish.run(storage=args.storage, noosphere=args.noosphere)
+    res = publish.run(storage=str(_live(args.storage)), noosphere=args.noosphere)
     print(f"published {res.published} (skipped {res.skipped} already present, "
           f"{res.considered} proven considered, {res.malformed} malformed)")
     return 0
 
 
 def _cmd_import(args) -> int:
-    res = importer.run(storage=args.storage, noosphere=args.noosphere)
+    res = importer.run(storage=str(_live(args.storage)), noosphere=args.noosphere)
     print(f"quarantined {res.quarantined}, rejected {res.rejected}, "
           f"skipped {res.skipped} already present")
     return 0
+
+
+def _live(explicit: str) -> Path:
+    """v4.6.7: the live space, not the neutral default.
+
+    `_cmd_id` reaches `identity.load_or_create`, which MINTS an identity when
+    the space has none — so resolving wrong here does not merely read the wrong
+    place, it manufactures a second identity for this agent in a space nobody
+    reads, and the relay card for it is published to the machine.
+
+    Every handler resolves here and passes the RESULT down, rather than handing
+    `args.storage` to a library function that would resolve it itself. Those
+    functions keep their `storage=None -> default` behaviour, which is right for
+    a library; what was wrong was the CLI passing "" straight through, so the
+    resolution happened one layer below where the operator's intent was known.
+    `publish`, `importer`, `record_publish` and `audit` all reach
+    `load_or_create` too, so this was four more minting paths, not just a read.
+    """
+    from ..space import resolve_live_space
+    return resolve_live_space(explicit).path
 
 
 def _cmd_list(args) -> int:
@@ -84,7 +105,7 @@ def _cmd_list(args) -> int:
         for cr in catalog.read_all(resolve_noosphere(args.noosphere)):
             print(f"{cr.origin_label}  {cr.content_sha256[:12]}  {cr.goal_text}")
     else:
-        qdb = quarantine_db_path(resolve_storage(args.storage))
+        qdb = quarantine_db_path(_live(args.storage))
         for qr in quarantine.list_rows(qdb):
             print(f"#{qr.id}  {qr.origin_label}  [{qr.import_status}/"
                   f"{qr.revalidation_result}]  {qr.goal_text}")
@@ -93,7 +114,7 @@ def _cmd_list(args) -> int:
 
 def _cmd_show(args) -> int:
     if args.quarantine is not None:
-        qdb = quarantine_db_path(resolve_storage(args.storage))
+        qdb = quarantine_db_path(_live(args.storage))
         qrow = quarantine.get(qdb, int(args.quarantine))
         if qrow is None:
             print("not found")
@@ -126,7 +147,7 @@ def _cmd_show(args) -> int:
 
 
 def _cmd_id(args) -> int:
-    storage = resolve_storage(args.storage)
+    storage = _live(args.storage)
     ident = (identity.set_label(storage, args.set_label)
              if args.set_label is not None
              else identity.load_or_create(storage))
@@ -135,14 +156,14 @@ def _cmd_id(args) -> int:
 
 
 def _cmd_publish_record(args) -> int:
-    res = record_publish.run(storage=args.storage, noosphere=args.noosphere)
+    res = record_publish.run(storage=str(_live(args.storage)), noosphere=args.noosphere)
     print(f"published {res.published} (skipped {res.skipped} already present, "
           f"{res.entries} entries)")
     return 0
 
 
 def _cmd_audit(args) -> int:
-    rep = audit.run(storage=args.storage, noosphere=args.noosphere,
+    rep = audit.run(storage=str(_live(args.storage)), noosphere=args.noosphere,
                     instance=(args.instance or None))
     if not rep.peers and not rep.rejected_bundles:
         print("no peer records found")
