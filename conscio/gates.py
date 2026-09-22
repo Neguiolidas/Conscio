@@ -2,7 +2,8 @@
 
 All functions are deterministic, stdlib-only, and advisory. They inspect
 engine state and EventBus history, emit gate events, and return structured
-dicts. No LLM calls except council.critic (opt-in via awake adapter).
+dicts. All council voices and gate functions are deterministic; optional LLM
+adapters remain available to other pipelines such as squads.
 
 Tools:
     decide()        — Architecture Decision Record (ADR)

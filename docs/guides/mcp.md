@@ -305,8 +305,10 @@ Create an Architecture Decision Record. `status` is one of `proposed`,
 
 ### `conscio_council(question, context?)`
 
-Convene a 3-voice deterministic council (Arquiteto, Cético, Pragmatista).
-Optional LLM Critic if Awake Mode is active. Returns votes + majority verdict.
+Convene a 4-voice deterministic council (Arquiteto, Cético, Pragmatista,
+Crítico). All four voices are deterministic — the Council never calls an LLM,
+regardless of Awake Mode or any attached adapter (LLM-assisted analysis exists
+only in the squads, via `use_llm`). Returns votes + majority verdict.
 
 ### `conscio_loop_gate(verifiable?, budget_ok?, has_tools?)`
 
@@ -565,7 +567,7 @@ Parameters and return shape match `squad_experts`. Event emitted:
 | `lite` | 4 voices (det) | — | — |
 | `balanced` | 4 voices (det) | optimizer, auditor (det) | — |
 | `high` | 4 voices (det) | all 4 (det) | caustic, douche_reviewer (det) |
-| `ultra` | 4 voices (det+LLM critic) | all 4 (LLM opt-in) | all 4 (LLM opt-in) |
+| `ultra` | 4 voices (det) | all 4 (LLM opt-in) | all 4 (LLM opt-in) |
 
 > The Council is unaffected by the squad system — `engine.council()` and
 > `conscio_council` remain the same API with the same 4 voices.
