@@ -15,6 +15,7 @@ Tools:
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 import shutil
@@ -217,6 +218,17 @@ def council(
         },
     }
     engine.event_bus.emit("council:convened", "consciousness", result)
+    # v4.7 P1: capture the decision with provenance — the verdict arrives
+    # later via OutcomeStore.resolve() when the task's real outcome is known.
+    # Best-effort: capture must never sink the council; a failure is logged.
+    try:
+        from .outcomes import capture_council_outcome
+        store = getattr(engine, "outcome_store", None)
+        if store is not None:
+            capture_council_outcome(store, result)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "council outcome capture failed", exc_info=True)
     return result
 
 

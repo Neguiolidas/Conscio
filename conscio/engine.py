@@ -301,6 +301,11 @@ class ConsciousnessEngine:
         self.monologue = InnerMonologue(self.ctx)
         self.world = WorldModel(self.storage)
         self.meta = MetaCognition(self.storage)
+        # v4.7 P1: decision outcome store — council (and later evaluate/
+        # squads/coherence) capture decisions here; verdicts arrive via
+        # resolve() when the real outcome is known.
+        from .outcomes import OutcomeStore
+        self.outcome_store = OutcomeStore(self.storage / "outcomes.db")
 
         # Convert drive strengths from string keys
         drives = None
@@ -1926,6 +1931,12 @@ class ConsciousnessEngine:
                 mod.close()
             except Exception:
                 pass
+        # v4.7: close the outcome store too
+        try:
+            if getattr(self, "outcome_store", None) is not None:
+                self.outcome_store.close()
+        except Exception:
+            pass
         # v3.8: close DeepMiner obs.db (idempotent)
         obs_db = getattr(self, "_obs_db", None)
         if obs_db is not None:
