@@ -65,14 +65,28 @@ class TestConfidenceValueContract:
                               samples=50, metric="ece")
         assert cv.samples == 50
 
+    def test_none_rejects_lower_is_better(self):
+        with pytest.raises(ValueError):
+            ConfidenceValue(category="none", value=None, samples=0, lower_is_better=True)
+
+    def test_lower_is_better_defaults_per_metric(self):
+        cv_ece = ConfidenceValue.measured(0.1, samples=10, metric="ece")
+        assert cv_ece.lower_is_better is True
+        cv_brier = ConfidenceValue.measured(0.2, samples=10, metric="brier")
+        assert cv_brier.lower_is_better is True
+        cv_acc = ConfidenceValue.measured(0.9, samples=10, metric="accuracy")
+        assert cv_acc.lower_is_better is False
+        cv_asserted = ConfidenceValue.asserted(0.8, samples=5)
+        assert cv_asserted.lower_is_better is False
+
     def test_serialization_round_trip(self):
-        cv = ConfidenceValue(category="measured", value=0.88,
-                             samples=50, metric="ece")
+        cv = ConfidenceValue.measured(0.88, samples=50, metric="ece")
         import json
         d = json.loads(cv.to_json())
         assert d["category"] == "measured"
         assert d["value"] == 0.88
         assert d["samples"] == 50
+        assert d["lower_is_better"] is True
 
 
 class TestECE:

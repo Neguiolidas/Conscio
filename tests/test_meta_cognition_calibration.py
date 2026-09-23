@@ -45,6 +45,7 @@ class TestMetaCognitionColdStart:
         assert cv.value is None
         assert cv.metric is None
         assert cv.samples == 0
+        assert cv.lower_is_better is False
 
     def test_empty_calibration_score_is_none(self, meta):
         # Cold start must return None, NEVER a fake 0.5 prior
@@ -128,6 +129,7 @@ class TestMetaCognitionMeasuredCalibration:
         assert cv.category == "measured"
         assert cv.metric == "ece"
         assert cv.samples == 10
+        assert cv.lower_is_better is True
         assert cv.value == pytest.approx(0.0, abs=1e-6)
 
         score = meta.calibration_score()
@@ -163,6 +165,7 @@ class TestAdversarialMutantWithTeeth:
         assert cv.category == "measured"
         assert cv.metric == "ece"
         assert cv.samples == 10
+        assert cv.lower_is_better is True
 
         # ECE must punish this: ECE is ~0.9, strictly in (0.7, 1.0]
         assert 0.7 < cv.value <= 1.0

@@ -37,6 +37,7 @@ class ConfidenceValue:
     category: ConfidenceCategory
     samples: int
     metric: str | None = None
+    lower_is_better: bool = False
 
     def __post_init__(self) -> None:
         if self.category == "none":
@@ -47,6 +48,9 @@ class ConfidenceValue:
             if self.metric is not None:
                 raise ValueError(
                     "category 'none' cannot carry a metric")
+            if self.lower_is_better:
+                raise ValueError(
+                    "category 'none' cannot have lower_is_better=True")
         else:
             if self.value is None:
                 raise ValueError(
@@ -69,20 +73,27 @@ class ConfidenceValue:
     @classmethod
     def none(cls, samples: int = 0) -> ConfidenceValue:
         """Honest absence: no numeric claim, no fabricated prior."""
-        return cls(category="none", value=None, samples=samples)
+        return cls(category="none", value=None, samples=samples, lower_is_better=False)
 
     @classmethod
-    def asserted(cls, value: float, samples: int = 0) -> ConfidenceValue:
-        return cls(category="asserted", value=value, samples=samples)
+    def asserted(cls, value: float, samples: int = 0,
+                 lower_is_better: bool = False) -> ConfidenceValue:
+        return cls(category="asserted", value=value, samples=samples,
+                   lower_is_better=lower_is_better)
 
     @classmethod
-    def derived(cls, value: float, samples: int = 0) -> ConfidenceValue:
-        return cls(category="derived", value=value, samples=samples)
+    def derived(cls, value: float, samples: int = 0,
+                lower_is_better: bool = False) -> ConfidenceValue:
+        return cls(category="derived", value=value, samples=samples,
+                   lower_is_better=lower_is_better)
 
     @classmethod
-    def measured(cls, value: float, samples: int, metric: str) -> ConfidenceValue:
+    def measured(cls, value: float, samples: int, metric: str,
+                 lower_is_better: bool | None = None) -> ConfidenceValue:
+        if lower_is_better is None:
+            lower_is_better = metric in ("ece", "brier")
         return cls(category="measured", value=value, samples=samples,
-                   metric=metric)
+                   metric=metric, lower_is_better=lower_is_better)
 
     def to_json(self) -> str:
         return json.dumps({
@@ -90,6 +101,7 @@ class ConfidenceValue:
             "value": self.value,
             "samples": self.samples,
             "metric": self.metric,
+            "lower_is_better": self.lower_is_better,
         }, ensure_ascii=False)
 
     def as_gate_input(self) -> float:
