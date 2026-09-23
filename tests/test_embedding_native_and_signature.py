@@ -54,6 +54,33 @@ def test_native_default_backend_empty(monkeypatch):
     assert ep.backend == "native"
 
 
+def _fake_st_module(monkeypatch, encode_side_effect=None):
+    """Inject a fake sentence_transformers into sys.modules.
+
+    mock.patch("sentence_transformers.SentenceTransformer") fails with
+    ModuleNotFoundError when the real package is absent (CI installs only
+    the light deps). Injecting a fake module keeps the contract test
+    runnable everywhere: the code under test does
+    ``from sentence_transformers import SentenceTransformer`` at call time.
+    """
+    import sys
+    import types
+    fake = types.ModuleType("sentence_transformers")
+
+    class _FakeST:
+        def __init__(self, name, *a, **k):
+            if encode_side_effect is not None:
+                raise encode_side_effect
+            self._name = name
+
+        def encode(self, text, *a, **k):
+            return [0.5] * 384
+
+    fake.SentenceTransformer = _FakeST
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake)
+    return fake
+
+
 def test_native_default_never_probes_network_even_if_daemons_run(monkeypatch):
     """Mutant 5: Ollama/LM Studio running on local ports must NOT be probed or selected.
 
@@ -70,15 +97,12 @@ def test_native_default_never_probes_network_even_if_daemons_run(monkeypatch):
     with mock.patch("conscio.session_rag.OllamaEmbedder", return_value=ollama_mock) as patch_ollama, \
          mock.patch("conscio.session_rag.OpenAICompatibleEmbedder", return_value=openai_mock) as patch_openai:
         ep = EmbeddingProvider()
-        # Mock sentence_transformers so native succeeds
-        fake_st_model = mock.MagicMock()
-        del fake_st_model.embed
-        fake_st_model.encode.return_value = [0.5] * 384
-
-        with mock.patch("sentence_transformers.SentenceTransformer", return_value=fake_st_model):
-            embedder = ep.get_embedder()
-            assert embedder is fake_st_model
-            assert ep.active_backend == "native"
+        # Inject a fake sentence_transformers so native succeeds — the
+        # real package is optional (CI does not install heavy deps).
+        _fake_st_module(monkeypatch)
+        embedder = ep.get_embedder()
+        assert embedder is not None
+        assert ep.active_backend == "native"
 
         # Neither Ollama nor OpenAI was probed or instantiated!
         assert patch_ollama.call_count == 0
@@ -97,10 +121,12 @@ def test_native_default_missing_fails_clearly_without_network_fallback(monkeypat
 
     with mock.patch("conscio.session_rag.OllamaEmbedder", return_value=ollama_mock) as patch_ollama:
         ep = EmbeddingProvider()
-        with mock.patch("sentence_transformers.SentenceTransformer", side_effect=ImportError("No module")):
-            embedder = ep.get_embedder()
-            assert embedder is None
-            assert ep.embed("test") is None
+        # Simulate the package being broken/missing at import time inside
+        # the native path — the provider must fail clearly, no fallback.
+        _fake_st_module(monkeypatch, encode_side_effect=ImportError("No module"))
+        embedder = ep.get_embedder()
+        assert embedder is None
+        assert ep.embed("test") is None
 
         # Even though native failed, Ollama was NEVER probed!
         assert patch_ollama.call_count == 0

@@ -3,17 +3,25 @@
 </p>
 
 <p align="center">
-  <b>A Consciousness System One Framework — context-aware memory, introspection,
-goal generation, and an audited agency layer that lets a model act on its own
-conclusions under hard safety gates. Decisions are measured, not asserted.</b>
+  <b>A Consciousness System One Framework.</b><br>
+  The fast, intuitive judgment layer for AI agents — the System One a model
+  is missing — built as deterministic, measured cognition: memory,
+  introspection, goals, an audited agency layer, and confidence that carries
+  its own evidence.
 </p>
 
 > *"The first step toward consciousness is knowing what you are and what limits you."*
 
-Conscio runs **local-first** and **zero-dep at the core** (`numpy` + stdlib `sqlite3`,
-nothing else). It is built to make small, local models and frontier models punch above their size — by
-giving them memory, self-judgment, and procedural skill — and to prove that claim by
-measurement, not assertion.
+**System One** is the fast, intuitive judgment every agent needs and no model
+has: the instant read on "is this safe?", "do I know this?", "am I sure?".
+LLMs generate text; they do not decide. Conscio is the missing layer — a
+local-first, deterministic framework that **decides instead of generating**:
+it recalls, weighs, gates and commits with numbers that carry their own
+evidence (`measured`, `derived`, `asserted`, or honestly `none`). It makes
+small, local models and frontier models punch above their size by giving them
+memory, self-judgment and procedural skill — and proves every claim by
+measurement, not assertion. Local-first and zero-dep at the core
+(`numpy` + stdlib `sqlite3`, nothing else).
 
 **Latest release — `v4.7.0` "Calibration you can trust":** every confidence number now carries its nature — `none`, `asserted`, `derived`, or `measured` (ECE/Brier against recorded outcomes) — and fabricated priors are gone: cold start returns `None`, a gate raises on absence, and four unanimous vetoes now read as full agreement with a `veto` recommendation. The act fast-path no longer launders global calibration into per-action safety; it uses a per-tool Beta posterior from the ledger. Embeddings are native-only by default — `CONSCIO_EMBED_BACKEND` opts into Ollama/LM Studio — and the vector store rejects mixed-model signatures before they corrupt recall.
 
@@ -87,10 +95,11 @@ non-negotiable (see [Safety rules](#safety-rules-non-negotiable)).
 
 ## When to use Conscio
 
-Conscio is a cognitive refinement layer, not a fact database. Calling it on every
-message wastes tokens and adds latency.
+Conscio is the agent's **System One judgment call**, not a fact database and
+not another LLM round-trip. Calling it on every message wastes tokens and
+adds latency; calling it at the moment of commitment is what it exists for.
 
-**Call Conscio when the cost of being wrong is high:**
+**Invoke System One when the cost of being wrong is high:**
 
 | Situation | Tool |
 |---|---|
@@ -101,8 +110,9 @@ message wastes tokens and adds latency.
 | Self-review of output | `evaluate` |
 | High-risk irreversible action | `council` |
 
-**Do NOT call Conscio for** factual lookup, casual conversation, simple mechanical
-tasks, one-shot tool calls, or anything with no decision or judgment involved.
+**Do NOT invoke System One for** factual lookup, casual conversation, simple
+mechanical tasks, one-shot tool calls, or anything with no decision or
+judgment involved — those never need intuition, just execution.
 
 **Decision rule:** cost of reversal. Cheap to undo → skip Conscio. Expensive to undo
 → Conscio pays for itself.
@@ -118,6 +128,15 @@ Full trigger table: [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules).
 - **Reflects continuously** — a passive inner-monologue loop that observes, assesses
   confidence, and summarizes (`engine.reflect` — advisory, never acts), at a depth
   ReflectionGate adapts.
+- **Feels agreement, not just votes** — the four-voice council measures agreement by
+  vote entropy: four unanimous vetoes are full agreement that the answer is no.
+- **Judges its own quality** — confidence calibration measured against recorded
+  outcomes (ECE/Brier), blind-spot detection, and coherence metrics that *name the
+  dimensions they could not measure* rather than scoring them silently. Every
+  number carries its category: `measured`, `derived`, `asserted`, or `none`.
+- **Sizes up risk in milliseconds** — a per-tool Beta posterior over the ledger
+  answers "is this action safe for THIS tool?" without a single LLM call;
+  absence of history is honest `none`, never a fabricated prior.
 - **Generates its own goals**, driven by curiosity, maintenance, and evolution.
 - **Acts under audit** — an opt-in agency layer (`engine.act`) that proposes, audits,
   risk-gates, and only then executes, with a human gate for anything risky.
@@ -136,8 +155,10 @@ Full trigger table: [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules).
   bulk-indexes a directory.
 - **Organizes memory in wings and rooms** — a wing → room → drawer hierarchy with FK
   enforcement and filtered search.
-- **Embeds natively** — a 3-tier fallback: Ollama → OpenAI-compatible →
-  sentence-transformers all-MiniLM-L6-v2 (384-dim, in-process, no daemon).
+- **Embeds natively** — native-first by default: sentence-transformers
+  all-MiniLM-L6-v2 (384-dim, in-process, no daemon). Ollama/LM Studio are
+  explicit opt-ins (`CONSCIO_EMBED_BACKEND`), never silent takeovers, and
+  the vector store rejects mixed-model signatures before they corrupt recall.
 - **Remembers what its tools saw** — every tool call the host makes is captured into a
   separate `obs.db` and searchable later at zero LLM tokens, so a compaction stops
   costing you the work that preceded it.
