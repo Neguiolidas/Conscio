@@ -23,6 +23,15 @@ below is measured against the live codebase.
   defect: tests proved the method worked; nothing proved a production
   path called it). Ghost resolves and invalid outcomes are visible errors.
 
+- **Host identity derived from environment presence.** When neither the
+  `--identity-*` flags nor the env vars are set, the server now knows its
+  host from the PRESENCE of host-specific environment keys (ZCode,
+  Antigravity, Claude Code, Hermes, OpenCode). The golden rule, born from
+  a live audit that found shell tokens in a server's environ: detection
+  reads key NAMES only — values are never read. No recognizable signal
+  means empty identity with `source=none` (the v4.7 absence contract —
+  never a guess). Family derives strictly from the model name; no forced
+  fallbacks. Final precedence: CLI flag > env var > host derivation > empty.
 - **`CONSCIO_IDENTITY_MODEL` / `_FAMILIA` / `_RUNTIME` / `_PAPEL` env
   vars** — per-host identity for hosts that cannot override MCP args
   (plugin-shipped configs). Precedence: CLI flag > env var > empty. Without
@@ -41,6 +50,18 @@ below is measured against the live codebase.
   to mask.
 - **`conscio/USAGE.md` resynced from the root** — the packaged copy had
   drifted (297 vs 580 lines).
+
+### Fixed (bug-hunt round)
+
+- **Evaluate Clarity no longer inflates on a broken detector.** The
+  contradiction counter's `except: pass` silently reported a clean score
+  when the world read failed; the failure now logs and the axis reports
+  the count as UNMEASURED.
+- **HNSW signature metadata opens with busy_timeout** — concurrent agents
+  validating the vector signature no longer die on `database is locked`.
+- **Relay token and tick cursor writes are atomic** (tmp+rename) — a crash
+  mid-write can no longer leave a truncated token or a torn cursor that
+  silently re-ingests the window.
 
 ### Changed (docs — the standing rigor rule)
 

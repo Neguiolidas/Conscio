@@ -389,3 +389,10 @@ conscio.meta_cognition.MetaCognition.brier_score
 conscio.outcomes.OutcomeStore.get_by_event_id
 conscio.vector_backend.VectorBackend.get_signature
 conscio.vector_backend.SqliteVecBackend.get_signature
+
+# v4.7.1 identity surface — HostIdentity.is_empty is the absence-contract
+# predicate used by callers to branch on source=none; resolve_identity_env
+# is the tier-2 resolver (flag > env) wired in main() and kept as the
+# public API even though resolve_full_identity wraps it.
+conscio.mcp.host_identity.HostIdentity.is_empty
+conscio.mcp.server.resolve_identity_env

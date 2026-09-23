@@ -379,6 +379,7 @@ When neither CLI flags nor `CONSCIO_IDENTITY_*` variables are provided, Conscio 
 - Override: `storage_path=` / `--storage`; the CLI and daemon also read
   `$CONSCIO_HOME` (the library default does not; `$HERMES_HOME` is a legacy
   override that preserves pre-4.5.3 installs)
+
 - Vault (API keys): `CONSCIO_VAULT_DIR` (no fallback to global)
 
 ## Python modules — common APIs

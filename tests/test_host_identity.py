@@ -43,7 +43,7 @@ class TestHostIdentityDerivation:
         env = {
             "ZCODE_APP_VERSION": "3.14.3",
             "ZCODE_PLUGIN_ID": "conscio@conscio",
-            "ZCODE_PLUGIN_DATA": "/home/ubuntu/.zcode/cli/plugins/data/conscio@conscio",
+            "ZCODE_PLUGIN_DATA": "${HOME}/.zcode/cli/plugins/data/conscio@conscio",
         }
         ident = derive_host_identity(env=env)
         assert ident.runtime == "zcode"
@@ -93,7 +93,7 @@ class TestHostIdentityDerivation:
     def test_claude_code_host_detection_without_forced_familia(self):
         # Native Claude Code signals
         env = {
-            "CLAUDE_PLUGIN_ROOT": "/home/ubuntu/.claude/plugins/cache/conscio",
+            "CLAUDE_PLUGIN_ROOT": "${HOME}/.claude/plugins/cache/conscio",
             "CLAUDECODE": "1",
         }
         ident = derive_host_identity(env=env)
@@ -108,8 +108,8 @@ class TestHostIdentityDerivation:
         env = {
             "ZCODE_APP_VERSION": "3.14.3",
             "ZCODE_PLUGIN_ID": "conscio@conscio",
-            "CLAUDE_PLUGIN_DATA": "/home/ubuntu/.zcode/cli/plugins/data/conscio@conscio",
-            "CLAUDE_PLUGIN_ROOT": "/home/ubuntu/.zcode/cli/plugins/cache/conscio/conscio/4.7.0",
+            "CLAUDE_PLUGIN_DATA": "${HOME}/.zcode/cli/plugins/data/conscio@conscio",
+            "CLAUDE_PLUGIN_ROOT": "${HOME}/.zcode/cli/plugins/cache/conscio/conscio/4.7.0",
         }
         ident = derive_host_identity(env=env)
         assert ident.runtime == "zcode"
@@ -118,7 +118,7 @@ class TestHostIdentityDerivation:
     def test_hermes_host_detection(self):
         env = {
             "HERMES_SESSION_ID": "20260905_192135_d405c347",
-            "HERMES_HOME": "/home/ubuntu/.hermes",
+            "HERMES_HOME": "${HOME}/.hermes",
         }
         ident = derive_host_identity(env=env)
         assert ident.runtime == "hermes"
@@ -129,7 +129,7 @@ class TestHostIdentityDerivation:
 
     def test_opencode_host_detection(self):
         env = {
-            "OPENCODE_CONFIG_DIR": "/home/ubuntu/.config/opencode",
+            "OPENCODE_CONFIG_DIR": "${HOME}/.config/opencode",
         }
         ident = derive_host_identity(env=env)
         assert ident.runtime == "opencode"
@@ -260,7 +260,7 @@ class TestMutantProtection:
         env = {
             "USER": "ubuntu",
             "SHELL": "/bin/bash",
-            "HOME": "/home/ubuntu",
+            "HOME": "${HOME}",
         }
         ident = derive_host_identity(env=env)
         assert ident.source == "none"
