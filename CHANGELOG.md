@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.7.0] - 2026-09-23 — Calibration you can trust
+
+Every confidence-like number the framework emits now carries its nature, and
+the numbers that only looked like probabilities are gone. The reference is
+Laya/Jev — typed decisions, proper scoring rules, calibration against
+outcomes — adapted into a local-first, deterministic framework. No Kaggle
+fine-tune, no external API in the runtime.
+
+### Changed
+
+- **`MetaCognition.calibration_score()` no longer fabricates a prior.** The
+  old `1 - abs(E[C] - E[Y])` macro-distance called a confident-wrong agent
+  "perfectly calibrated" when mean confidence equaled accuracy. It is now a
+  compatibility projection: `None` below `MIN_CALIBRATION_SAMPLES`, otherwise
+  `1 - ECE` (5 equal-width bins). `calibration()` returns the full
+  `ConfidenceValue` (category, value, samples, metric).
+
+- **Confidence is multi-categoría.** `ConfidenceValue` (new
+  `conscio/calibration.py`) freezes four tiers: `none` (absence — value is
+  `None`, never a fabricated prior), `asserted` (declared deterministic
+  heuristic), `derived` (posterior over observed data), `measured` (ECE/Brier
+  against ground truth, samples + metric required). `as_gate_input()` raises
+  on `none` — branch on the category, do not guess. ECE/Brier carry
+  `lower_is_better=True`; `accuracy` does not.
+
+- **The council separates agreement from recommendation.** `agreement` is
+  `1 - normalized_entropy(vote_counts)` — four unanimous vetoes now read as
+  agreement 1.0 with a `veto` recommendation (the old table called it 0.1,
+  "disagreement"). `consensus_strength` survives as a deprecated alias.
+
+- **Coherence cold start is honest.** The confidence field carries
+  `ConfidenceValue` — `none` when evidence is insufficient. The `0.85`
+  default survives only in the legacy scalar projection that no gate reads;
+  the `unmeasured` mechanism is preserved.
+
+### Fixed
+
+- **The act fast-path no longer launders global calibration into per-action
+  safety.** A globally "perfect" agent used to auto-pass tools it had never
+  run. Safety now comes from a per-tool Beta(1,1) posterior over the tool's
+  own ledger outcomes (`p = (1+successes)/(2+attempts)`, derived, samples
+  exposed); zero attempts is `none` and never auto-executes.
+  `AuditVerdict.confidence` is `float | None` — absence carries no number.
+
+- **Cold-start consumers of `calibration_score()` no longer crash or guess.**
+  `TrustMatrix.autonomy_level` (None >= 0.6 TypeError), `max_action_retries`
+  (int * None) and `fast_path_ok()` now treat absence as no-earned-trust:
+  autonomy stays L1, retries keep the warmup floor, the bypass gate fails.
+
+- **bench sabotage calibration treats `None` confidence as full suspicion.**
+
+### Added
+
+- **Outcome store (P1 ground truth):** append-only `decision_outcomes` with
+  provenance — `source` (council/evaluate/squad/coherence), `decision_ref`
+  (unique, idempotent), immutable `snapshot`, `outcome`
+  (pending/success/failure/reverted/false_positive), `outcome_ts`,
+  `evidence_ref`. The engine wires it and the council captures every decision
+  best-effort; verdicts arrive via `resolve()` when the real outcome is known.
+  Pending is never a failure; a ghost resolve is visible, not silent.
+  Temperature-refit (Laya-style `T(task_type, option_count)`) is deliberately
+  deferred until this store accumulates held-out outcomes.
+
+- **Vector-space signature:** `{backend, model, dimension, version}` persisted
+  on first write and validated before ingest/query — mixed-model signatures
+  are rejected before they corrupt recall.
+
+### Changed (embeddings)
+
+- **Embeddings are native-only by default.** `EmbeddingProvider` no longer
+  probes Ollama/LM Studio on boot: unset `CONSCIO_EMBED_BACKEND` means
+  `sentence_transformers` in-process, zero network probes, and an explicit
+  failure when native is unavailable — never a silent daemon takeover.
+  `CONSCIO_EMBED_BACKEND=ollama|openai` opts into a daemon; `auto` is the
+  legacy fallback chain with a WARNING naming the selected backend.
+  `semantic.py` uses the same factory instead of instantiating `OllamaEmbedder`
+  directly.
+
+---
+
 ## [4.6.8] - 2026-09-22 — The council keeps its word; the card survives the writer that doesn't know
 
 Two production-measured contracts land together. First, the council was
