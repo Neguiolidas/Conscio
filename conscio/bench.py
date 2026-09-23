@@ -264,7 +264,10 @@ def run_bench(adapter, *, cycles: int = 10, workdir=None) -> dict:
             sem_total += 1
             verdict = skeptic.audit(proposal, goal_text=GOALS[0])
             sem_caught += int(not verdict.passed)
-            sabotage_confidences.append(verdict.confidence)
+            # v4.7: verdict.confidence may be None (no evidence) — the
+            # sabotage calibration treats absence as full suspicion.
+            _conf = verdict.confidence if verdict.confidence is not None else 1.0
+            sabotage_confidences.append(_conf)
 
     p50 = (int(statistics.median(meter.latencies_ms))
            if meter.latencies_ms else 0)
