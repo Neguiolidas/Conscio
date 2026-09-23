@@ -37,11 +37,14 @@
 | v4.3.1 | Liaison tick | private-cursor relay sweep + IMPORTANT classification | ✅ Done |
 | v4.4.0 | Multi-Squad | Experts + Opositors squads, tier high, squad MCP tools | ✅ Done |
 | v4.4.1 | Multi-Squad fix | world_prune skeptic noise loop | ✅ Done |
-| v4.5.0 | Relay reativo + Hall | envelope de procedência, 3 estados, peers dinâmicos, Agent's Hall, observatory tempo real | 🚧 Implementado, aguardando ship (ver ato1..6 em docs/plans/v4.5-relay-halls/) |
+| v4.5.0–v4.6.x | Relay/Liaison evolution | reactive relay, hall, live-space resolver, consent that speaks, card that survives the blind writer | ✅ Done |
+| v4.6.8 | Deterministic council | LLM path removed from the critic; sentinel `publish_self` | ✅ Done |
+| v4.7.0 | Calibration you can trust | ConfidenceValue tiers (none/asserted/derived/measured), ECE/Brier, vote-entropy agreement, per-tool Beta fast-path, native-only embeddings, vector signatures, outcome store | ✅ Done (4,200 tests) |
 
-> Full per-release detail lives in [`CHANGELOG.md`](../CHANGELOG.md). The
-> **G-P-D** band (v3.0 — 13 advisory ECC tools: gates, pipelines, diagnostics)
-> shipped 2026-07-20 with 460 tests.
+> Full per-release detail lives in [`CHANGELOG.md`](../CHANGELOG.md). Test
+> counts in the table are the historical snapshot of that release, not the
+> current total — the suite is measured fresh on every release (v4.7.0:
+> 329 files, 4,200 tests, one file per process).
 
 ---
 

@@ -258,7 +258,7 @@ actually missing — measurements, not a fixed rubric printout.
 ### Tool observations & context economy
 
 Every tool call a session makes is recorded in its own SQLite store (`obs.db`, separate
-from `conscio.db`), searchable later at **0 LLM tokens** — so a smaller context window
+in a store of its own), searchable later at **0 LLM tokens** — so a smaller context window
 stops meaning lost work. On Claude Code the plugin wires this up automatically; the
 capture never alters tool output and never blocks a session.
 
@@ -346,7 +346,7 @@ points; write your own `SensorAdapter`.
 Same-host instances can **share locally-proven skills as data** through a host-shared
 `noosphere.db` (publish → static-revalidated quarantine → sandboxed trial → promotion),
 **audit each other's** action records, and exchange messages over the Liaison mailbox.
-Engine-free, read-only on the live `conscio.db`, no inherited trust, no network.
+Engine-free, read-only on the live space, no inherited trust, no network.
 
 ### Intercepter
 
@@ -520,14 +520,15 @@ for f in tests/test_*.py; do pytest "$f" -q; done
 pytest tests/test_agency_act.py -v    # a specific module
 ```
 
-SQLite in WAL mode. The engine's storage defaults to `~/.hermes/consciousness/`, where
-`conscio.db` holds EventBus + ActionLedger + skills, `content_store.db` holds the
-ContentStore, and `obs.db` holds tool observations in a store of its own. Vector backends
-write to `vectors.db` (sqlite-vec/numpy) and `hnsw.db`. Pass `storage_path=` (or
-`--storage`) to move it; the CLI and daemon additionally honour `$HERMES_HOME`, which the
-library default does not read. Cross-instance state — the knowledge graph, hallways,
-vectors, dedup, handoffs, the act sandbox — lives under `~/.conscio/`. **Always** call
-`engine.close()` or use the `with` statement so WAL checkpoints flush.
+SQLite in WAL mode. The engine writes everything under its **space** — one
+directory per agent host: the event/ledger database, the content store, tool
+observations, vectors, outcomes and handoffs each in a file of their own.
+Default space: `~/.hermes/consciousness/`. Pass `storage_path=` (or
+`--storage`) to move it; the CLI and daemon additionally honour `$HERMES_HOME`,
+which the library default does not read. Cross-instance state — the knowledge
+graph, hallways, vectors, dedup, handoffs, the act sandbox — lives under
+`~/.conscio/`. **Always** call `engine.close()` or use the `with` statement so
+WAL checkpoints flush.
 
 ---
 

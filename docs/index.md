@@ -26,7 +26,7 @@ verify, continuous loop, strategic compact, decision ledger), and
 deterministic, EventBus-backed, and exported from the `conscio` namespace.
 
 **v3.8** ("DeepMiner") adds an agnostic tool-observation store in its own
-`obs.db` (SQLite + FTS5), isolated from `conscio.db`: `observe()` captures raw
+`obs.db` (SQLite + FTS5), in a store of its own: `observe()` captures raw
 tool calls fire-and-forget, `recall_observations()` returns an FTS5 snippet
 window around each hit, and `compress_observations()` turns a session's most
 recent work into a handoff — all deterministic, at **0 LLM tokens**. Measured

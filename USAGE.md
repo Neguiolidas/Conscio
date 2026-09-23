@@ -202,7 +202,7 @@ Payload cap 64KB, retention 7 days after read.
 ## DeepMiner — agnostic tool observation (v3.8)
 
 Capture raw tool calls into an isolated `obs.db` (SQLite + FTS5) and turn them
-into a searchable handoff — all at **0 LLM tokens**, separate from `conscio.db`.
+into a searchable handoff — all at **0 LLM tokens**, in a store of its own.
 
 ```python
 from conscio.engine import ConsciousnessEngine
@@ -324,12 +324,14 @@ Override via `~/.config/conscio/config.json`:
 ```
 Or env: `CONSCIO_CONTEXT_WINDOW=1048576`.
 
-## DB
+## Storage
 
-- Default: `~/.conscio/consciousness/conscio.db` (SQLite WAL + FTS5)
-- Tool observations: `~/.conscio/consciousness/obs.db` (separate store)
+- Everything the engine writes lives under its **space** — one directory per
+  agent host, holding the event/ledger database, content store, tool
+  observations, vectors, outcomes and handoffs in separate files.
+- Default space: `~/.hermes/consciousness/`
 - Cross-instance state (KG, hallways, vectors, handoff, sandbox): `~/.conscio/`
-- Per-host: `~/.conscio/instances/<slug>/`
+- Per-host spaces: `~/.conscio/instances/<slug>/`
 - Override: `storage_path=` / `--storage`; the CLI and daemon also read
   `$CONSCIO_HOME` (the library default does not; `$HERMES_HOME` is a legacy
   override that preserves pre-4.5.3 installs)
