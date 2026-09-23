@@ -93,13 +93,14 @@ class Goal:
         self.metadata = metadata or {}
         self.meta_score: float = 0.0  # MetaCognition-adjusted score (0-1)
 
-    def compute_meta_score(self, confidence: float, calibration: float) -> float:
+    def compute_meta_score(self, confidence: float, calibration: float | None) -> float:
         """
         Adjust goal priority based on MetaCognition confidence and calibration.
 
         High confidence + high calibration = trust the goal (boost).
         Low confidence = be cautious (reduce).
         High confidence + low calibration = overconfident (penalize).
+        When calibration is None (uncalibrated / cold start), neutral factor 1.0 (no penalty).
 
         Returns the computed score (0-1).
         """
@@ -110,8 +111,10 @@ class Goal:
         conf_factor = 0.5 + 0.5 * confidence  # range 0.5-1.0
 
         # Calibration penalty: overconfident → reduce
-        # calibration = accuracy / confidence; <1 means overconfident
-        cal_penalty = max(0.0, 1.0 - (1.0 - calibration) * 0.5)
+        if calibration is None:
+            cal_penalty = 1.0
+        else:
+            cal_penalty = max(0.0, 1.0 - (1.0 - calibration) * 0.5)
 
         self.meta_score = min(1.0, base * conf_factor * cal_penalty)
         return self.meta_score
@@ -409,7 +412,7 @@ class GoalGenerator:
                 return g.executable
         return True
 
-    def score_all_goals(self, confidence: float, calibration: float) -> None:
+    def score_all_goals(self, confidence: float, calibration: float | None) -> None:
         """
         Apply MetaCognition confidence/calibration to all active goals.
         Updates each goal's meta_score in place.

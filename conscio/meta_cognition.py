@@ -14,9 +14,13 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from .calibration import (
+    MIN_CALIBRATION_SAMPLES,
+    ConfidenceValue,
+    brier,
+    ece,
+)
 from .guards import atomic_write_text, read_json_dict
-
-MIN_CALIBRATION_SAMPLES = 5   # below this, calibration_score() is a prior, not a measurement
 
 
 class MetaCognition:
@@ -98,7 +102,11 @@ class MetaCognition:
         return False
 
     def average_confidence(self, task_type: str = "") -> float:
-        """Get average confidence, optionally filtered by task type."""
+        """Get average confidence, optionally filtered by task type.
+
+        DESCRIPTIVE STATISTIC ONLY — not a gate input. Never feed directly
+        to an authorization or safety gate without wrapping in a category.
+        """
         entries = self._data["confidence_history"]
         if task_type:
             entries = [e for e in entries if e["task_type"] == task_type]
@@ -107,45 +115,79 @@ class MetaCognition:
         return sum(e["confidence"] for e in entries) / len(entries)
 
     def accuracy(self, task_type: str = "") -> float:
-        """Get accuracy (success rate) for completed tasks."""
-        entries = self._resolved_entries()
-        if task_type:
-            entries = [e for e in entries if e["task_type"] == task_type]
+        """Get accuracy (success rate) for completed tasks.
+
+        DESCRIPTIVE STATISTIC ONLY — not a gate input. Never feed directly
+        to an authorization or safety gate without wrapping in a category.
+        """
+        entries = self._resolved_entries(task_type)
         if not entries:
             return 0.5
         successes = sum(1 for e in entries if e["outcome"] == "success")
         return successes / len(entries)
 
-    def calibration_score(self) -> float:
+    def calibration(self, task_type: str = "") -> ConfidenceValue:
+        """Compute Expected Calibration Error (ECE) against ground truth.
+
+        Returns a ConfidenceValue with category:
+        - 'none' (value=None, metric=None) if binary resolved samples < MIN_CALIBRATION_SAMPLES.
+        - 'measured' (metric='ece', value=ECE) if samples >= MIN_CALIBRATION_SAMPLES.
+
+        Pending records are filtered; partial records are excluded from binary metrics.
         """
-        How well-calibrated is the agent's confidence?
-        
-        Perfect calibration: confidence matches accuracy.
-        Returns 0-1 where 1 = perfectly calibrated.
+        entries = self._binary_resolved_entries(task_type)
+        n = len(entries)
+        if n < MIN_CALIBRATION_SAMPLES:
+            return ConfidenceValue.none(samples=n)
+        confidences = [e["confidence"] for e in entries]
+        outcomes = [e["outcome"] == "success" for e in entries]
+        err = ece(confidences, outcomes, bins=5)
+        return ConfidenceValue.measured(value=err, samples=n, metric="ece")
+
+    def calibration_score(self, task_type: str = "") -> float | None:
+        """Compatibility projection: returns 1.0 - ECE, or None if insufficient data.
+
+        Returns None when samples < MIN_CALIBRATION_SAMPLES — never fabricates 0.5.
+        1.0 = perfectly calibrated (ECE = 0.0).
         """
-        entries = self._resolved_entries()
+        cv = self.calibration(task_type)
+        if cv.category != "measured" or cv.value is None:
+            return None
+        return 1.0 - cv.value
+
+    def brier_score(self, task_type: str = "") -> float | None:
+        """Brier score over binary resolved outcomes, or None if insufficient data."""
+        entries = self._binary_resolved_entries(task_type)
         if len(entries) < MIN_CALIBRATION_SAMPLES:
-            return 0.5  # Not enough data
+            return None
+        confidences = [e["confidence"] for e in entries]
+        outcomes = [e["outcome"] == "success" for e in entries]
+        return brier(confidences, outcomes)
 
-        # Simple calibration: compare average confidence with accuracy
-        avg_conf = sum(e["confidence"] for e in entries) / len(entries)
-        acc = self.accuracy()
-        # Distance from perfect calibration (0 = perfect, 1 = worst)
-        distance = abs(avg_conf - acc)
-        return 1.0 - distance
+    def has_calibration_evidence(self, task_type: str = "") -> bool:
+        """True when calibration is measured rather than unmeasured/none."""
+        return len(self._binary_resolved_entries(task_type)) >= MIN_CALIBRATION_SAMPLES
 
-    def has_calibration_evidence(self) -> bool:
-        """True when calibration_score() reflects outcomes rather than the 0.5 prior.
-
-        v3.9.4: the 0.5 returned below MIN_CALIBRATION_SAMPLES is indistinguishable
-        from a genuinely mediocre calibration. Callers that care about the
-        difference (coherence's `unmeasured`) ask here instead of guessing.
-        """
-        return len(self._resolved_entries()) >= MIN_CALIBRATION_SAMPLES
-
-    def _resolved_entries(self) -> list[dict]:
+    def _resolved_entries(self, task_type: str = "") -> list[dict]:
         """Confidence records whose outcome is known — pending ones prove nothing."""
-        return [e for e in self._data["confidence_history"] if e["outcome"] != "pending"]
+        entries = [e for e in self._data["confidence_history"] if e["outcome"] != "pending"]
+        if task_type:
+            entries = [e for e in entries if e["task_type"] == task_type]
+        return entries
+
+    def _binary_resolved_entries(self, task_type: str = "") -> list[dict]:
+        """Binary resolved confidence records (success/failure).
+
+        Pending records are filtered; partial records are excluded from binary
+        metrics (ECE and Brier).
+        """
+        entries = [
+            e for e in self._data["confidence_history"]
+            if e["outcome"] in ("success", "failure")
+        ]
+        if task_type:
+            entries = [e for e in entries if e["task_type"] == task_type]
+        return entries
 
     # --- Blind Spot Detection ---
 
@@ -254,8 +296,9 @@ class MetaCognition:
         parts = []
         avg = self.average_confidence()
         cal = self.calibration_score()
+        cal_str = f"{cal:.0%}" if cal is not None else "none"
 
-        parts.append(f"Confidence: {avg:.0%} | Calibration: {cal:.0%}")
+        parts.append(f"Confidence: {avg:.0%} | Calibration: {cal_str}")
 
         if self._data["blind_spots"]:
             spots = ", ".join(self._data["blind_spots"][:3])
