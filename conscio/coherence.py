@@ -25,6 +25,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .calibration import ConfidenceValue
+
 # --- Tunable constants (one-line knobs, like v0.5 LAYER_EPSILON) -------------
 
 _WEIGHTS = {
@@ -93,6 +95,20 @@ class CoherenceReport:
     dissonances: list
     dominant: Dissonance | None
     unmeasured: tuple[str, ...] = ()
+    confidence: ConfidenceValue | None = None
+
+    def __post_init__(self) -> None:
+        if self.confidence is None:
+            if len(self.unmeasured) == 4:
+                conf = ConfidenceValue.none(samples=0)
+            elif len(self.unmeasured) > 0:
+                conf = ConfidenceValue.asserted(
+                    value=self.score,
+                    samples=4 - len(self.unmeasured),
+                )
+            else:
+                conf = ConfidenceValue.asserted(value=self.score, samples=4)
+            object.__setattr__(self, "confidence", conf)
 
     def marker(self) -> str:
         """Heartbeat/state marker text.
@@ -227,4 +243,12 @@ class CoherenceEngine:
             ("temporal", _has_temporal_evidence(recent_events or [])),
         ) if not measured)
 
-        return CoherenceReport(score, dims, dissonances, dominant, unmeasured)
+        measured_count = 4 - len(unmeasured)
+        if len(unmeasured) == 4:
+            confidence = ConfidenceValue.none(samples=0)
+        elif len(unmeasured) > 0:
+            confidence = ConfidenceValue.asserted(value=score, samples=measured_count)
+        else:
+            confidence = ConfidenceValue.asserted(value=score, samples=4)
+
+        return CoherenceReport(score, dims, dissonances, dominant, unmeasured, confidence)

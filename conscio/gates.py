@@ -15,6 +15,7 @@ Tools:
 
 from __future__ import annotations
 
+import math
 import re
 import shutil
 from datetime import datetime, timezone
@@ -190,20 +191,14 @@ def council(
     else:
         recommendation = "hold"  # 2-2 or ambiguous → not ready
 
-    # Consensus strength: how aligned the voices are (1.0 = unanimous).
-    # Conservative signal: veto and hold are dissent; proceed needs near-total.
-    if proceeds == 4:
-        consensus_strength = 1.0
-    elif proceeds == 3 and holds == 1:
-        consensus_strength = 0.75
-    elif proceeds == 3 and vetoes == 1:
-        consensus_strength = 0.6
-    elif proceeds == 2 and holds == 2:
-        consensus_strength = 0.4
-    elif holds >= 2 or vetoes >= 1:
-        consensus_strength = 0.2 if vetoes == 0 else 0.1
-    else:
-        consensus_strength = 0.5
+    agreement_val = round(_compute_vote_agreement(votes), 4)
+    agreement = {
+        "value": agreement_val,
+        "category": "asserted",
+        "method": "vote_entropy",
+    }
+    recommendation_category = "asserted"
+    consensus_strength = agreement_val  # deprecated alias of agreement["value"]
 
     dissenting = [v["role"] for v in voices if v["vote"] != recommendation]
 
@@ -211,6 +206,8 @@ def council(
         "question": question,
         "voices": voices,
         "recommendation": recommendation,
+        "recommendation_category": recommendation_category,
+        "agreement": agreement,
         "consensus_strength": consensus_strength,
         "dissenting_voices": dissenting,
         "votes_summary": {
@@ -221,6 +218,31 @@ def council(
     }
     engine.event_bus.emit("council:convened", "consciousness", result)
     return result
+
+
+def _compute_vote_agreement(votes: list[str]) -> float:
+    """Compute agreement as 1 - normalized_entropy(vote_counts).
+
+    Categories: proceed, hold, veto (K=3).
+    Unanimous votes (all proceed, all hold, or all veto) yield entropy 0.0 -> agreement 1.0.
+    Uniform distribution yields max entropy ln(3) -> agreement 0.0.
+    """
+    if not votes:
+        return 0.0
+    n = len(votes)
+    counts = [votes.count("proceed"), votes.count("hold"), votes.count("veto")]
+    # If all votes belong to a single category, agreement is exactly 1.0
+    if any(c == n for c in counts):
+        return 1.0
+    k = 3  # proceed, hold, veto
+    max_entropy = math.log(k)
+    entropy = 0.0
+    for c in counts:
+        if c > 0:
+            p = c / n
+            entropy -= p * math.log(p)
+    normalized_entropy = entropy / max_entropy
+    return max(0.0, min(1.0, 1.0 - normalized_entropy))
 
 
 def _voice_architect(
