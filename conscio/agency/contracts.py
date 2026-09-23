@@ -90,7 +90,10 @@ class AuditVerdict:
     verdict: str                                # "PASS" | "FAIL"
     reasons: list[str] = field(default_factory=list)
     risk_flags: list[str] = field(default_factory=list)
-    confidence: float = 0.5     # checklist: agreement ratio; open: model-reported
+    # v4.7: None = no confidence evidence (e.g. fast-path fell through with
+    # no tool history). Absence is not 0.5 — it means "this verdict carries
+    # no probability claim".
+    confidence: float | None = 0.5
     audited: bool = True        # False = LOW-risk fast path skipped the LLM
 
     @property

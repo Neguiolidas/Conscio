@@ -112,6 +112,18 @@ class ActionLedger:
         self._conn.commit()
         return int(cur.lastrowid or 0)
 
+    def tool_outcome_counts(self, tool: str) -> tuple[int, int]:
+        """(attempts, successes) of executed rows for one tool (v4.7).
+
+        Feeds the per-tool Beta posterior in act. Counts only rows with a
+        non-null ok; status != 'executed' never happened.
+        """
+        row = self._conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(ok), 0) FROM actions"
+            " WHERE tool=? AND status='executed' AND ok IS NOT NULL",
+            (tool,)).fetchone()
+        return int(row[0]), int(row[1])
+
     def update_execution(self, row_id: int, *, ok: bool, output: str,
                          error: str, duration_ms: int, status: str) -> None:
         self._conn.execute(

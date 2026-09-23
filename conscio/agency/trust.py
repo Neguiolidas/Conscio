@@ -49,7 +49,12 @@ class TrustMatrix:
 
     def max_action_retries(self, task_type: str) -> int:
         penalty = min(len(self.meta.frequent_errors(min_count=2)), 2)
-        raw = (1 + round(2 * self.meta.calibration_score()
+        # v4.7: calibration_score() may be None on cold start; the warmup
+        # floor below still grants new tools their one try, so a None here
+        # contributes 0 extra retries rather than crashing.
+        _cal = self.meta.calibration_score()
+        _cal = _cal if _cal is not None else 0.0
+        raw = (1 + round(2 * _cal
                          * self.meta.accuracy(task_type)) - penalty)
         result = max(0, min(RETRY_CEILING, raw))
         if self.ledger.count(task_type) < WARMUP_MIN_ROWS:
@@ -90,7 +95,12 @@ class TrustMatrix:
     # ── earned autonomy L1/L2/L3 (spec 5.7) ──
 
     def autonomy_level(self, task_type: str) -> int:
+        # v4.7: calibration_score() is None on cold start — absence is not
+        # a low score and not a high one; without measured calibration the
+        # agent earns no autonomy above L1. (A None >= 0.6 crashed here.)
         calibration = self.meta.calibration_score()
+        if calibration is None:
+            return 1
         accuracy = self.meta.accuracy(task_type)
         if not (calibration >= 0.6 and accuracy >= L2_ACCURACY
                 and self.ledger.count(task_type) >= AUTONOMY_MIN_ROWS):
@@ -111,8 +121,13 @@ class TrustMatrix:
         return self.trips_since_fn(self.ledger.nth_recent_ts(AUTONOMY_WINDOW))
 
     def fast_path_ok(self) -> bool:
-        """LOW-risk audit bypass gate (spec §5.6 risk gating)."""
-        return self.meta.calibration_score() >= 0.75
+        """LOW-risk audit bypass gate (spec §5.6 risk gating).
+
+        v4.7: None (no calibration evidence) fails the gate — an unmeasured
+        agent earns no bypass.
+        """
+        score = self.meta.calibration_score()
+        return score is not None and score >= 0.75
 
     def close(self) -> None:
         self._conn.close()
