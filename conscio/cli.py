@@ -233,6 +233,28 @@ def _build_parser() -> argparse.ArgumentParser:
                                   help="space dir (default: ~/.conscio)")
     p_honesty_recent.add_argument("--limit", type=int, default=20,
                                   help="rows to show (default: 20)")
+
+    # v4.7: decision outcomes — the ground-truth loop for calibration
+    p_outcomes = sub.add_parser(
+        "outcomes", help="list and resolve captured decision outcomes")
+    p_outcomes_sub = p_outcomes.add_subparsers(dest="outcomes_command",
+                                               metavar="<subcommand>")
+    p_out_list = p_outcomes_sub.add_parser(
+        "list", help="list captured decisions and their outcomes")
+    p_out_list.add_argument("--storage", default="",
+                            help="space dir (default: live space)")
+    p_out_list.add_argument("--limit", type=int, default=20,
+                            help="rows to show (default: 20)")
+    p_out_res = p_outcomes_sub.add_parser(
+        "resolve", help="attach the real outcome to a captured decision")
+    p_out_res.add_argument("--storage", default="",
+                           help="space dir (default: live space)")
+    p_out_res.add_argument("decision_ref",
+                           help="the decision_ref shown by `outcomes list`")
+    p_out_res.add_argument("outcome",
+                           help="success | failure | reverted | false_positive")
+    p_out_res.add_argument("--evidence", default="",
+                           help="free-form evidence reference (run id, PR, ticket)")
     p_honesty_recent.add_argument(
         "--outcome", default="",
         help="show only this outcome (VERIFIED/CONTRADICTED/UNSUPPORTED)")
@@ -1079,6 +1101,60 @@ def _cmd_search(query: str, k: int, category: str | None,
         eng.close()
 
 
+def _cmd_outcomes(args) -> int:
+    """List and resolve decision outcomes (v4.7 calibration ground truth).
+
+    The council (and later evaluate/squads/coherence) captures decisions as
+    pending; this CLI closes the loop by attaching what actually happened.
+    Without a production resolver, every capture stays pending forever and
+    calibration can never be measured against reality.
+    """
+    from .outcomes import OUTCOMES, OutcomeStore
+
+    storage = Path(_storage(getattr(args, "storage", "")))
+    cmd = getattr(args, "outcomes_command", "")
+    if cmd not in ("list", "resolve"):
+        print("usage: conscio outcomes <list|resolve> [...]")
+        return 0
+
+    db_path = storage / "outcomes.db"
+    if not db_path.is_file():
+        print(f"no decisions recorded yet: {db_path} does not exist")
+        return 0
+    store = OutcomeStore(db_path)
+    try:
+        if cmd == "list":
+            conn = store._conn
+            rows = conn.execute(
+                "SELECT decision_ref, source, outcome, evidence_ref"
+                " FROM decision_outcomes ORDER BY event_id DESC LIMIT ?",
+                (args.limit,)).fetchall()
+            if not rows:
+                print("no decisions recorded yet")
+                return 0
+            print(f"{'decision_ref':<42} {'source':<10} {'outcome':<14} evidence")
+            for ref, source, outcome, evidence in rows:
+                print(f"{ref:<42} {source:<10} {outcome:<14} {evidence or ''}")
+            return 0
+
+        # resolve
+        outcome = args.outcome
+        if outcome not in OUTCOMES:
+            print(f"invalid outcome {outcome!r}; expected one of"
+                  f" {sorted(OUTCOMES)}")
+            return 1
+        ok = store.resolve(args.decision_ref, outcome,
+                           evidence_ref=args.evidence or "")
+        if not ok:
+            print(f"decision {args.decision_ref!r} not found"
+                  f" (or already resolved)")
+            return 1
+        print(f"resolved {args.decision_ref!r} -> {outcome}")
+        return 0
+    finally:
+        store.close()
+
+
 def _cmd_honesty(args) -> int:
     """Le o registro de honestidade sem depender do E3 nem da superficie MCP.
 
@@ -1235,6 +1311,9 @@ def _main(argv: list[str] | None = None) -> int:
         return _cmd_capabilities(args)
     if args.command == "honesty":
         return _cmd_honesty(args)
+
+    if args.command == "outcomes":
+        return _cmd_outcomes(args)
 
     if args.command == "observatory":
         return _cmd_observatory(host=args.host, port=args.port,

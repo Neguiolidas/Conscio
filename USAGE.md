@@ -23,7 +23,7 @@ pip install conscio
 pip install -e ".[dev]"
 ```
 
-This installs 6 console scripts:
+This installs 8 console scripts:
 
 - `conscio` — main CLI
 - `conscio-mcp` — MCP stdio server (the "embodiment" surface)
@@ -31,6 +31,8 @@ This installs 6 console scripts:
 - `conscio-hub` — localhost HTTP control plane
 - `conscio-observatory` — read-only state viewer
 - `conscio-bench` — inference backend benchmark
+- `conscio-reactor` — relay reactor (background delivery watcher)
+- `conscio-relay-bridge` — relay network bridge
 
 ## Quickstart — Python API
 
@@ -329,7 +331,8 @@ Or env: `CONSCIO_CONTEXT_WINDOW=1048576`.
 - Everything the engine writes lives under its **space** — one directory per
   agent host, holding the event/ledger database, content store, tool
   observations, vectors, outcomes and handoffs in separate files.
-- Default space: `~/.hermes/consciousness/`
+- Library default space: `~/.conscio/consciousness/` — the CLI and daemon
+  resolve the *live* space of the installed host instead (`conscio info`)
 - Cross-instance state (KG, hallways, vectors, handoff, sandbox): `~/.conscio/`
 - Per-host spaces: `~/.conscio/instances/<slug>/`
 - Override: `storage_path=` / `--storage`; the CLI and daemon also read
@@ -471,7 +474,12 @@ export CONSCIO_EMBED_MODEL=nomic-embed-text-v1.5
 export CONSCIO_EMBED_DIM=768
 ```
 
-Fallback chain: Ollama → OpenAI-compatible API → sentence_transformers (native) → None.
+Native-first by default: sentence_transformers runs in-process and no
+network is probed. Ollama and OpenAI-compatible daemons are explicit
+opt-ins via `CONSCIO_EMBED_BACKEND=ollama|openai`; `auto` is the legacy
+fallback chain and logs a WARNING naming the selected backend. With no
+backend available, embedding returns None (semantic recall degrades) —
+explicit, never a silent daemon takeover.
 
 ## When to call Conscio (MCP trigger rules)
 

@@ -23,8 +23,8 @@ data plane only — a foreign skill arrives as inert, audited data.
 
 | Path | Scope |
 |------|-------|
-| `$HERMES_HOME/consciousness/conscio.db` | per-instance live DB (read-only to the noosphere) |
-| `$HERMES_HOME/consciousness/instance.json` | per-instance identity (uuid + label) |
+| the live space (`conscio info` resolves it) | per-instance event/ledger DB (read-only to the noosphere) |
+| the live space / `instance.json` | per-instance identity (uuid + label) |
 | `$HERMES_HOME/consciousness/noosphere_quarantine.db` | per-instance import quarantine |
 | `$HERMES_HOME/noosphere.db` | **host-shared** catalog (override with `--noosphere`) |
 

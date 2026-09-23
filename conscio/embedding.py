@@ -118,9 +118,16 @@ class EmbeddingProvider:
                     self.active_backend = "native"
                     return model
             except ImportError:
-                logger.debug("sentence_transformers not installed — skipping")
+                # v4.7: this is the default path on a bare `pip install conscio`
+                # (sentence-transformers is an optional dep) — the user must
+                # LEARN that semantic recall is off, not discover it silently.
+                logger.warning(
+                    "native embedding unavailable: sentence_transformers is "
+                    "not installed — semantic recall is DISABLED. Install it "
+                    "(pip install sentence-transformers) or opt into a "
+                    "daemon with CONSCIO_EMBED_BACKEND=ollama|openai.")
             except Exception as e:
-                logger.debug(f"sentence_transformers failed: {e}")
+                logger.warning(f"native embedding failed: {e}")
             return None
 
         if self.backend == "ollama":
@@ -203,9 +210,11 @@ class EmbeddingProvider:
                     )
                     return model
             except ImportError:
-                logger.debug("sentence_transformers not installed — skipping")
+                logger.warning(
+                    "native embedding unavailable in auto mode: "
+                    "sentence_transformers is not installed")
             except Exception as e:
-                logger.debug(f"sentence_transformers failed: {e}")
+                logger.warning(f"native embedding failed in auto mode: {e}")
 
             logger.warning(
                 "CONSCIO_EMBED_BACKEND=auto is a deprecated fallback mode; "

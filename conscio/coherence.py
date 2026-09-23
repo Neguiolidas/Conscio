@@ -127,9 +127,18 @@ class CoherenceReport:
 # --- Dimension scorers (each → [0, 1]) ---------------------------------------
 
 def epistemic_score(meta) -> float:
-    """Confidence vs accuracy calibration. meta.calibration_score() is [0,1]."""
+    """Confidence vs accuracy calibration.
+
+    v4.7 contract: calibration_score() is ``None`` on cold start — absence
+    of evidence, not a mediocre score. The None branch is explicit; the
+    except is a last-resort guard for unexpected engine shapes, and it must
+    never mask the type contract.
+    """
     try:
-        return _clamp(meta.calibration_score())
+        score = meta.calibration_score()
+        if score is None:
+            return 0.5          # cold start: neutral epistemic, flagged as unmeasured upstream
+        return _clamp(score)
     except Exception:
         return 0.5
 

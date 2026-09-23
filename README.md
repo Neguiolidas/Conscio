@@ -523,12 +523,14 @@ pytest tests/test_agency_act.py -v    # a specific module
 SQLite in WAL mode. The engine writes everything under its **space** — one
 directory per agent host: the event/ledger database, the content store, tool
 observations, vectors, outcomes and handoffs each in a file of their own.
-Default space: `~/.hermes/consciousness/`. Pass `storage_path=` (or
-`--storage`) to move it; the CLI and daemon additionally honour `$HERMES_HOME`,
-which the library default does not read. Cross-instance state — the knowledge
-graph, hallways, vectors, dedup, handoffs, the act sandbox — lives under
-`~/.conscio/`. **Always** call `engine.close()` or use the `with` statement so
-WAL checkpoints flush.
+The library default is `~/.conscio/consciousness/`; the CLI and daemon
+resolve the *live* space of the installed host instead (see
+`conscio info`). Pass `storage_path=` (or `--storage`) to move it;
+`$CONSCIO_HOME` overrides for CLI/daemon, and `$HERMES_HOME` is honoured as
+a legacy fallback for pre-4.5.3 installs. Cross-instance state — the
+knowledge graph, hallways, vectors, dedup, handoffs, the act sandbox —
+lives under `~/.conscio/`. **Always** call `engine.close()` or use the
+`with` statement so WAL checkpoints flush.
 
 ---
 
