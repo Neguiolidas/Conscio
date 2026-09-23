@@ -13,9 +13,9 @@ anchor terms `offline`/`crashed`/`unreachable` define the pole; novel synonyms
 land near it).
 
 Offline-degradable + dependency-free: cosine is pure Python (no numpy); the
-default Ollama embedder is imported LAZILY (from .session_rag) only on first
-use, so `import conscio.semantic` pulls in nothing heavy. available() probes
-once and caches; everything degrades to lexical when False.
+default embedder is imported LAZILY (via EmbeddingProvider from .embedding)
+only on first use, so `import conscio.semantic` pulls in nothing heavy.
+available() probes once and caches; everything degrades to lexical when False.
 
 Theory: Claude_Sentience (Dave Shapiro) — ontological coherence.
 """
@@ -47,7 +47,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
 class SemanticEngine:
     """Embedder wrapper + cosine + cached antonym-axis pole vectors.
 
-    The Ollama embedder and any numpy use are avoided unless semantics actually
+    The unified embedder and any numpy use are avoided unless semantics actually
     fire; an explicitly injected embedder (e.g. a test stub) is trusted as-is.
     """
 
@@ -64,8 +64,8 @@ class SemanticEngine:
     def _get_embedder(self):
         if self._embedder is None:
             try:
-                from .session_rag import OllamaEmbedder
-                self._embedder = OllamaEmbedder()
+                from .embedding import EmbeddingProvider
+                self._embedder = EmbeddingProvider()
             except Exception as e:
                 logger.debug("semantic: embedder import failed: %s", e)
                 self._embedder = None
@@ -80,7 +80,10 @@ class SemanticEngine:
             self._available = False
             return False
         try:
-            self._available = bool(emb.embed("ping"))
+            if hasattr(emb, "available"):
+                self._available = bool(emb.available())
+            else:
+                self._available = bool(emb.embed("ping"))
         except Exception as e:
             logger.debug("semantic: availability check failed: %s", e)
             self._available = False
@@ -96,6 +99,8 @@ class SemanticEngine:
             return []
         try:
             vec = emb.embed(key)
+            if vec is None:
+                vec = []
         except Exception as e:
             logger.debug("semantic: embed failed for text: %s", e)
             vec = []
