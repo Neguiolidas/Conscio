@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -29,6 +30,8 @@ import sys
 from pathlib import Path
 
 from . import relay
+
+logger = logging.getLogger(__name__)
 from .mailbox import resolve_db
 
 SELF_ID_ENV = "CONSCIO_SELF_ID"
@@ -159,9 +162,12 @@ def advance_private_cursor(cursor_path: Path, msg_ids: list[int]) -> None:
     try:
         cp = Path(cursor_path)
         cp.parent.mkdir(parents=True, exist_ok=True)
-        cp.write_text(str(max(int(i) for i in msg_ids)), encoding="utf-8")
-    except (OSError, ValueError):
-        pass
+        # Bug-hunt: torn cursor write = re-ingest of the whole window.
+        # tmp+rename via guards; a failed advance still logs, never silent.
+        from ..guards import atomic_write_text
+        atomic_write_text(cp, str(max(int(i) for i in msg_ids)))
+    except (OSError, ValueError) as exc:
+        logger.warning("cursor advance failed (%s): %s", cursor_path, exc)
 
 
 def main(argv: list[str] | None = None) -> int:

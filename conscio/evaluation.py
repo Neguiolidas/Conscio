@@ -19,6 +19,10 @@ This is a read-only diagnostic — never modifies state, never emits events.
 """
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -275,6 +279,7 @@ def _score_clarity(engine: ConsciousnessEngine) -> AxisScore:
     # NOTE: world_model.add_entity() overwrites on re-add same name, so
     # contradictions must be detected from state_log (history) not duplicates.
     contradiction_n = 0
+    detector_failed = False
     try:
         entities = engine.world.list_entities(limit=20)
         for e in entities:
@@ -286,22 +291,30 @@ def _score_clarity(engine: ConsciousnessEngine) -> AxisScore:
                     contradiction_n += 1
         # Also use engine's own contradiction detector on STATE pairs (not name pairs)
         # — but since add_entity overwrites, we rely on state_log above.
-    except Exception:
-        pass
+    except Exception as exc:
+        # Bug-hunt: a broken detector used to pass silently, inflating
+        # Clarity. The failure must be visible and the axis must say the
+        # contradiction count is unmeasured — never a quiet clean score.
+        logger.warning("contradiction detector failed: %s", exc)
+        detector_failed = True
 
     # Penalty: each contradiction docks clarity by 0.1 (capped at 0.3).
     effective = score_val - min(contradiction_n * 0.1, 0.3)
     score = _band(effective)
 
     evidence_parts = [f"coherence={score_val:.2f}"]
-    if contradiction_n:
+    if detector_failed:
+        evidence_parts.append("contradiction count UNMEASURED — detector failed")
+    elif contradiction_n:
         evidence_parts.append(f"{contradiction_n} contradiction(s) in world model")
     else:
         evidence_parts.append("no contradictions detected")
     evidence = "; ".join(evidence_parts)
 
     improvement = ""
-    if score < 5:
+    if detector_failed:
+        improvement = "Contradiction detector failed — clarity score is partial; investigate the world model read error."
+    elif score < 5:
         if contradiction_n:
             improvement = f"Reconcile {contradiction_n} contradiction(s) using engine.dream() reconcile phase."
         elif score_val < 0.7:

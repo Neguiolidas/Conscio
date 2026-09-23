@@ -212,7 +212,10 @@ def read_or_create_token(path: Path) -> str:
         pass
     tok = secrets.token_urlsafe(32)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(tok, encoding="utf-8")
+    # Bug-hunt: token written non-atomically; a crash mid-write left a
+    # truncated token in the shared relay state. tmp+rename via guards.
+    from ..guards import atomic_write_text
+    atomic_write_text(path, tok)
     try:
         os.chmod(path, 0o600)
     except OSError:

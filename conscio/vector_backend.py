@@ -973,8 +973,12 @@ class HNSWBackend:
         self._init_index()
 
     def _meta_conn(self) -> sqlite3.Connection:
+        # Bug-hunt: no busy_timeout made concurrent signature validation
+        # explode with 'database is locked' — the multi-agent house is the
+        # normal case, not the exception.
         meta_path = str(self.db_path.with_suffix(".meta.db"))
-        conn = sqlite3.connect(meta_path)
+        conn = sqlite3.connect(meta_path, timeout=10)
+        conn.execute("PRAGMA busy_timeout=10000")
         conn.execute("CREATE TABLE IF NOT EXISTS id_map (hnsw_id INT, original_id TEXT, category TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS vector_space_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         return conn
@@ -1174,7 +1178,8 @@ class HNSWBackend:
             if self._index is not None:
                 self._index.save_index(str(self.db_path))
                 meta_path = str(self.db_path.with_suffix(".meta.db"))
-                conn = sqlite3.connect(meta_path)
+                conn = sqlite3.connect(meta_path, timeout=10)
+                conn.execute("PRAGMA busy_timeout=10000")
                 conn.execute("CREATE TABLE IF NOT EXISTS id_map (hnsw_id INT, original_id TEXT, category TEXT)")
                 conn.execute("DELETE FROM id_map")
                 for hnsw_id, orig_id in self._id_map.items():
