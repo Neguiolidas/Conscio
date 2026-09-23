@@ -1803,8 +1803,30 @@ def resolve_identity(storage, *, hermes_review: bool, relay_on: bool,
                                        self_id=self_id)
 
 
+def resolve_identity_env(*, model: str, familia: str, runtime: str,
+                         papel: str) -> tuple[str, str, str, str]:
+    """Fill absent identity flags from CONSCIO_IDENTITY_* env vars.
+
+    Precedence: CLI flag > env var > "" (today's default). Hosts that cannot
+    override MCP args (e.g. plugin-shipped configs) set the env instead —
+    per-host identity without touching the shared asset (the Agnes/ZCode
+    gap, relay #778: the server republishes with explicit "" and wipes a
+    rich card when no flag and no env is present).
+    """
+    env = os.environ
+    return (
+        model or env.get("CONSCIO_IDENTITY_MODEL", ""),
+        familia or env.get("CONSCIO_IDENTITY_FAMILIA", ""),
+        runtime or env.get("CONSCIO_IDENTITY_RUNTIME", ""),
+        papel or env.get("CONSCIO_IDENTITY_PAPEL", ""),
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
+    ident = resolve_identity_env(
+        model=args.identity_model, familia=args.identity_familia,
+        runtime=args.identity_runtime, papel=args.identity_papel)
     from conscio.installer.binding import validate_binding  # R6
     validate_binding(args.storage)
     try:
@@ -1875,10 +1897,10 @@ def main(argv: list[str] | None = None) -> int:
                         relay_peers=tuple(args.relay_peer),
                         auto_review=args.auto_review,
                         mode=tool_mode,
-                        identity_model=args.identity_model,
-                        identity_familia=args.identity_familia,
-                        identity_runtime=args.identity_runtime,
-                        identity_papel=args.identity_papel,
+                        identity_model=ident[0],
+                        identity_familia=ident[1],
+                        identity_runtime=ident[2],
+                        identity_papel=ident[3],
                         can_create_halls=halls_on)
     mode = "act" if args.enable_act else "propose-only"
     if args.enable_hermes_review:
