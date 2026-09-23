@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 from conscio.context_manager import ConsciousnessState
 from conscio.prompt_zones import build_zoned_prompt
 
+from ..calibration import ConfidenceValue
 from .adapter import InferenceAdapter
 from .breaker import CircuitBreaker
 from .contracts import (
@@ -254,6 +255,21 @@ class ActPipeline:
     _SKEPTIC_SKIP_TOOLS = frozenset({
         "think", "memory_note", "host_health", "world_prune"})
 
+    def tool_success_confidence(self, tool: str) -> ConfidenceValue:
+        """Derived per-tool success posterior from the ledger (v4.7).
+
+        Beta(1,1) prior over the tool's recorded ok/fail outcomes:
+        p = (1 + successes) / (2 + attempts). Zero attempts is `none` —
+        absence has no decision weight; the caller branches on category
+        (as_gate_input raises on none). Never the global calibration score:
+        historical self-assessment says nothing about THIS tool's safety.
+        """
+        attempts, successes = self.ledger.tool_outcome_counts(tool)
+        if attempts == 0:
+            return ConfidenceValue.none(samples=0)
+        p = (1 + successes) / (2 + attempts)
+        return ConfidenceValue.derived(value=p, samples=attempts)
+
     def _audit(self, spec, proposal: ActionProposal,
                goal_text: str) -> AuditVerdict:
         # v3.1: skip skeptic for inherently safe tools (no side effects)
@@ -264,10 +280,22 @@ class ActPipeline:
                 risk_flags=["skip:safe_tool"])
         if (spec.risk is Risk.LOW and self.trust is not None
                 and self.trust.fast_path_ok()):
-            return AuditVerdict(
-                verdict="PASS", audited=False, reasons=[],
-                confidence=self.trust.meta.calibration_score()
-                if getattr(self.trust, "meta", None) is not None else 0.75)
+            # v4.7: the fast-path needs the TOOL's own posterior, never the
+            # global calibration score. Zero history -> no confident PASS;
+            # fall through flagged. A derived posterior above the gate
+            # passes with its own evidence attached.
+            cv = self.tool_success_confidence(proposal.tool)
+            if cv.category == "derived":
+                gate_val = cv.as_gate_input()
+                if gate_val >= 0.85:
+                    return AuditVerdict(
+                        verdict="PASS", audited=False, reasons=[],
+                        confidence=gate_val,
+                        risk_flags=[f"fast_path:derived_beta:{cv.samples}"])
+            return AuditVerdict(verdict="PASS", audited=False,
+                                reasons=["no_tool_history"],
+                                confidence=None,
+                                risk_flags=["fast_path:insufficient_evidence"])
         if self.skeptic is None:               # F1 wiring: no audit available
             return AuditVerdict(verdict="PASS", audited=False)
         return self.skeptic.audit(

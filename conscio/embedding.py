@@ -26,6 +26,29 @@ LARGE_MODEL = "nomic-embed-text-v1.5"
 LARGE_DIMENSION = 768
 
 
+VALID_BACKENDS = ("native", "ollama", "openai", "auto")
+
+
+def resolve_embed_backend(backend: str | None = None) -> str:
+    """Resolve backend name from parameter or CONSCIO_EMBED_BACKEND env var.
+
+    Unset / empty defaults to 'native'.
+    Valid: 'native', 'ollama', 'openai', 'auto'.
+    Raises ValueError for any unrecognized backend at boundary.
+    """
+    if backend is None:
+        b = os.environ.get("CONSCIO_EMBED_BACKEND", "").strip().lower()
+    else:
+        b = backend.strip().lower()
+    if not b:
+        return "native"
+    if b not in VALID_BACKENDS:
+        raise ValueError(
+            f"Unknown CONSCIO_EMBED_BACKEND: {b!r}. Valid options: {list(VALID_BACKENDS)}"
+        )
+    return b
+
+
 def _resolve_model() -> tuple[str, int]:
     """Resolve model name + dimension from env vars or defaults."""
     model = os.environ.get("CONSCIO_EMBED_MODEL", DEFAULT_MODEL)
@@ -36,34 +59,37 @@ def _resolve_model() -> tuple[str, int]:
 
 
 class EmbeddingProvider:
-    """Unified embedder with lazy fallback chain.
+    """Unified embedder with native-first policy.
 
-    Fallback order:
-    1. Ollama (if running locally)
-    2. OpenAI-compatible API (LM Studio, etc.)
-    3. sentence_transformers (NATIVE, no daemon — default: all-MiniLM-L6-v2)
-    4. None
-
-    The sentence_transformers fallback is truly self-contained: loads the model
-    from HF cache (no network needed after first download), runs in-process.
-
-    Default: all-MiniLM-L6-v2 (384-dim, ~90MB cached).
-    Optional: nomic-embed-text-v1.5 (768-dim, ~600MB) via CONSCIO_EMBED_MODEL env.
+    Modes via CONSCIO_EMBED_BACKEND:
+    - native (default/unset): sentence_transformers in-process only (all-MiniLM-L6-v2),
+      ZERO network probes to Ollama/LM Studio.
+    - ollama: Ollama local daemon only.
+    - openai: OpenAI-compatible API (LM Studio local) only.
+    - auto: legacy fallback chain (Ollama -> OpenAI -> sentence_transformers)
+      with explicit WARNING in logs.
     """
 
-    def __init__(self, force_no_network: bool = False):
+    def __init__(self, force_no_network: bool = False, backend: str | None = None):
         model_name, dim = _resolve_model()
         self.model_name = model_name
         self.default_dimension = dim
+        self.backend = resolve_embed_backend(backend)
+        self.active_backend: str | None = None
         self._force_no_network = force_no_network
-        self._embedder = None  # injected by tests or auto-probed on first use
-        # v3.6: whether the fallback chain has already been probed once. Without
-        # this, a failed probe (no Ollama/OpenAI-compat/sentence-transformers)
-        # was silently retried on EVERY embed() call — each one paying the same
-        # network-timeout cost. Never exercised in a hot path before v3.6 wired
-        # EmbeddingPipeline into ContentStore.index()/HybridRetriever by
-        # default, at which point it becomes a real per-call latency hit.
+        self._embedder = None  # injected by tests or probed on first use
+        # v3.6: whether the embedder has already been probed once. Without
+        # this, a failed probe was silently retried on EVERY embed() call.
         self._probed = False
+
+    def get_signature(self) -> dict[str, str | int]:
+        """Return the vector-space signature for this provider."""
+        return {
+            "backend": self.active_backend or self.backend,
+            "model": self.model_name,
+            "dimension": self.default_dimension,
+            "version": "1.0",
+        }
 
     def get_embedder(self):
         """Probe available embedder lazily, at most once. Returns None if
@@ -77,40 +103,115 @@ class EmbeddingProvider:
             return None
         self._probed = True
 
-        # Try Ollama first (matches existing SessionRAG default)
-        try:
-            from .session_rag import OllamaEmbedder
-            ed = OllamaEmbedder()
-            v = ed.embed("test")
-            if v and len(v) == self.default_dimension:
-                self._embedder = ed
-                return ed
-        except Exception as e:
-            logger.debug(f"OllamaEmbedder unavailable: {e}")
+        if self.backend == "native":
+            # sentence_transformers (NATIVE, no daemon, no network probe)
+            try:
+                from sentence_transformers import SentenceTransformer
+                model = SentenceTransformer(self.model_name)
+                v = model.encode("test")
+                if hasattr(v, "tolist"):
+                    v = v.tolist()
+                elif hasattr(v, "__iter__"):
+                    v = list(v)
+                if v and len(v) == self.default_dimension:
+                    self._embedder = model
+                    self.active_backend = "native"
+                    return model
+            except ImportError:
+                logger.debug("sentence_transformers not installed — skipping")
+            except Exception as e:
+                logger.debug(f"sentence_transformers failed: {e}")
+            return None
 
-        # Try OpenAI compatible (LM Studio local)
-        try:
-            from .session_rag import OpenAICompatibleEmbedder
-            ed = OpenAICompatibleEmbedder()
-            v = ed.embed("test")
-            if v and len(v) == self.default_dimension:
-                self._embedder = ed
-                return ed
-        except Exception as e:
-            logger.debug(f"OpenAICompatibleEmbedder unavailable: {e}")
+        if self.backend == "ollama":
+            # Explicit opt-in Ollama
+            try:
+                from .session_rag import OllamaEmbedder
+                ed = OllamaEmbedder()
+                v = ed.embed("test")
+                if v and len(v) == self.default_dimension:
+                    self._embedder = ed
+                    self.active_backend = "ollama"
+                    return ed
+            except Exception as e:
+                logger.debug(f"OllamaEmbedder unavailable: {e}")
+            return None
 
-        # Try sentence_transformers (NATIVE, no daemon)
-        try:
-            from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer(self.model_name)
-            v = model.encode("test").tolist()
-            if v and len(v) == self.default_dimension:
-                self._embedder = model
-                return model
-        except ImportError:
-            logger.debug("sentence_transformers not installed — skipping")
-        except Exception as e:
-            logger.debug(f"sentence_transformers failed: {e}")
+        if self.backend == "openai":
+            # Explicit opt-in OpenAI / LM Studio
+            try:
+                from .session_rag import OpenAICompatibleEmbedder
+                ed = OpenAICompatibleEmbedder()
+                v = ed.embed("test")
+                if v and len(v) == self.default_dimension:
+                    self._embedder = ed
+                    self.active_backend = "openai"
+                    return ed
+            except Exception as e:
+                logger.debug(f"OpenAICompatibleEmbedder unavailable: {e}")
+            return None
+
+        if self.backend == "auto":
+            # Legacy fallback chain with explicit deprecation WARNING
+            # 1. Try Ollama
+            try:
+                from .session_rag import OllamaEmbedder
+                ed = OllamaEmbedder()
+                v = ed.embed("test")
+                if v and len(v) == self.default_dimension:
+                    self._embedder = ed
+                    self.active_backend = "ollama"
+                    logger.warning(
+                        "CONSCIO_EMBED_BACKEND=auto is a deprecated fallback mode; "
+                        "selected backend: ollama"
+                    )
+                    return ed
+            except Exception as e:
+                logger.debug(f"OllamaEmbedder unavailable: {e}")
+
+            # 2. Try OpenAI compatible (LM Studio)
+            try:
+                from .session_rag import OpenAICompatibleEmbedder
+                ed = OpenAICompatibleEmbedder()
+                v = ed.embed("test")
+                if v and len(v) == self.default_dimension:
+                    self._embedder = ed
+                    self.active_backend = "openai"
+                    logger.warning(
+                        "CONSCIO_EMBED_BACKEND=auto is a deprecated fallback mode; "
+                        "selected backend: openai"
+                    )
+                    return ed
+            except Exception as e:
+                logger.debug(f"OpenAICompatibleEmbedder unavailable: {e}")
+
+            # 3. Try sentence_transformers (NATIVE)
+            try:
+                from sentence_transformers import SentenceTransformer
+                model = SentenceTransformer(self.model_name)
+                v = model.encode("test")
+                if hasattr(v, "tolist"):
+                    v = v.tolist()
+                elif hasattr(v, "__iter__"):
+                    v = list(v)
+                if v and len(v) == self.default_dimension:
+                    self._embedder = model
+                    self.active_backend = "native"
+                    logger.warning(
+                        "CONSCIO_EMBED_BACKEND=auto is a deprecated fallback mode; "
+                        "selected backend: native"
+                    )
+                    return model
+            except ImportError:
+                logger.debug("sentence_transformers not installed — skipping")
+            except Exception as e:
+                logger.debug(f"sentence_transformers failed: {e}")
+
+            logger.warning(
+                "CONSCIO_EMBED_BACKEND=auto is a deprecated fallback mode; "
+                "no backend available"
+            )
+            return None
 
         return None
 

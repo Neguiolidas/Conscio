@@ -379,3 +379,13 @@ from conscio.mcp.schemas import HALL_TOOL_DEFS, RELAY_TOOL_DEFS
 
 HALL_TOOL_DEFS
 RELAY_TOOL_DEFS
+
+# v4.7 calibration surface — used by tests and future consumers; the
+# methods are the public API of their modules (get_signature feeds the
+# vector-space validation path, brier_score is the P2 refit input,
+# get_by_event_id is the capture-hook lookup).
+conscio.embedding.EmbeddingProvider.get_signature
+conscio.meta_cognition.MetaCognition.brier_score
+conscio.outcomes.OutcomeStore.get_by_event_id
+conscio.vector_backend.VectorBackend.get_signature
+conscio.vector_backend.SqliteVecBackend.get_signature

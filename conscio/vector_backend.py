@@ -125,6 +125,10 @@ class VectorBackend:
     def with_engine(
         db_path: str | Path | None = None,
         dimension: int = 768,
+        backend: str | None = None,
+        model: str | None = None,
+        version: str = "1.0",
+        signature: dict[str, Any] | None = None,
     ) -> VectorBackend | SqliteVecBackend | HNSWBackend:
         """Factory: pick the vector backend based on CONSCIO_VEC_BACKEND env var.
 
@@ -145,19 +149,40 @@ class VectorBackend:
         if not engine and hnsw_path and _HAS_HNSW and hnsw_path.exists():
             logger.info("Auto-detected HNSW index (hnsw.db), using HNSWBackend")
             try:
-                return HNSWBackend(db_path=hnsw_path, dimension=dimension)
+                return HNSWBackend(
+                    db_path=hnsw_path,
+                    dimension=dimension,
+                    backend=backend,
+                    model=model,
+                    version=version,
+                    signature=signature,
+                )
             except Exception:
                 logger.warning("HNSW backend init failed, falling back", exc_info=True)
 
         if engine == "hnsw":
             try:
-                return HNSWBackend(db_path=hnsw_path, dimension=dimension)
+                return HNSWBackend(
+                    db_path=hnsw_path,
+                    dimension=dimension,
+                    backend=backend,
+                    model=model,
+                    version=version,
+                    signature=signature,
+                )
             except (ImportError, Exception):
                 logger.warning("HNSW backend init failed, falling back to numpy", exc_info=True)
 
         if engine == "sqlite_vec":
             try:
-                return SqliteVecBackend(db_path=db_path, dimension=dimension)
+                return SqliteVecBackend(
+                    db_path=db_path,
+                    dimension=dimension,
+                    backend=backend,
+                    model=model,
+                    version=version,
+                    signature=signature,
+                )
             except Exception:
                 logger.warning("sqlite-vec backend init failed, falling back to numpy", exc_info=True)
 
@@ -172,32 +197,73 @@ class VectorBackend:
                 if "vec_chunks" in tables:
                     logger.info("Auto-detected sqlite-vec schema, using SqliteVecBackend")
                     try:
-                        return SqliteVecBackend(db_path=db_path, dimension=dimension)
+                        return SqliteVecBackend(
+                            db_path=db_path,
+                            dimension=dimension,
+                            backend=backend,
+                            model=model,
+                            version=version,
+                            signature=signature,
+                        )
                     except Exception:
                         logger.warning("sqlite-vec backend init failed, falling back to numpy", exc_info=True)
             except Exception:
                 pass
 
-        return VectorBackend(db_path=db_path, dimension=dimension)
+        return VectorBackend(
+            db_path=db_path,
+            dimension=dimension,
+            backend=backend,
+            model=model,
+            version=version,
+            signature=signature,
+        )
 
-    def __init__(self, db_path: str | Path | None = None, dimension: int = 768):
+    def __init__(
+        self,
+        db_path: str | Path | None = None,
+        dimension: int = 768,
+        backend: str | None = None,
+        model: str | None = None,
+        version: str = "1.0",
+        signature: dict[str, Any] | None = None,
+    ):
         self.db_path = Path(db_path) if db_path else Path.home() / ".conscio" / "runtime" / "vec.db"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.dimension = dimension
+        if signature is not None:
+            self.signature = {
+                "backend": str(signature.get("backend", "native")),
+                "model": str(signature.get("model", "all-MiniLM-L6-v2")),
+                "dimension": int(signature.get("dimension", dimension)),
+                "version": str(signature.get("version", "1.0")),
+            }
+            self.dimension = self.signature["dimension"]
+        else:
+            b = backend or os.environ.get("CONSCIO_EMBED_BACKEND", "").strip().lower() or "native"
+            m = model or os.environ.get("CONSCIO_EMBED_MODEL", "all-MiniLM-L6-v2")
+            v = str(version or "1.0")
+            self.signature = {
+                "backend": b,
+                "model": m,
+                "dimension": int(dimension),
+                "version": v,
+            }
+            self.dimension = int(dimension)
+
         self._lock = threading.Lock()
         self._conn: sqlite3.Connection | None = None
         self._init_db()
-        # Auto-detect dimension from existing data so a fresh VectorBackend
-        # pointing at a populated DB adopts the stored dimension instead of
-        # rejecting every search with a mismatch error.
-        try:
-            row = self._conn_get().execute(
-                "SELECT dimension FROM vectors LIMIT 1"
-            ).fetchone()
-            if row and row[0] and row[0] != self.dimension:
-                self.dimension = row[0]
-        except Exception:
-            pass
+        # Auto-detect dimension from existing data if signature wasn't explicitly provided
+        if signature is None and dimension == 768:
+            try:
+                row = self._conn_get().execute(
+                    "SELECT dimension FROM vectors LIMIT 1"
+                ).fetchone()
+                if row and row[0] and row[0] != self.dimension:
+                    self.dimension = row[0]
+                    self.signature["dimension"] = row[0]
+            except Exception:
+                pass
 
     def _conn_get(self) -> sqlite3.Connection:
         if self._conn is None:
@@ -217,6 +283,10 @@ class VectorBackend:
                     dimension INTEGER NOT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS vector_space_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
                 """
             )
             # Migration: `category` was added in v3.6 so category-scoped recall
@@ -229,6 +299,57 @@ class VectorBackend:
                 "CREATE INDEX IF NOT EXISTS idx_vectors_category ON vectors(category)"
             )
             conn.commit()
+
+    def get_signature(self) -> dict[str, Any] | None:
+        """Read the stored vector space signature from metadata, if present."""
+        with self._lock:
+            conn = self._conn_get()
+            rows = conn.execute("SELECT key, value FROM vector_space_meta").fetchall()
+            if not rows:
+                return None
+            meta = {r[0]: r[1] for r in rows}
+            if "dimension" in meta:
+                try:
+                    meta["dimension"] = int(meta["dimension"])
+                except (ValueError, TypeError):
+                    pass
+            return meta
+
+    def _validate_or_persist_signature(
+        self, conn: sqlite3.Connection, check_only: bool = False
+    ) -> None:
+        """Validate that current signature matches stored metadata, or persist on first write."""
+        rows = conn.execute("SELECT key, value FROM vector_space_meta").fetchall()
+        if rows:
+            stored = {r[0]: r[1] for r in rows}
+            if "dimension" in stored:
+                try:
+                    stored["dimension"] = int(stored["dimension"])
+                except (ValueError, TypeError):
+                    pass
+            for key in ("backend", "model", "dimension", "version"):
+                if key in stored and key in self.signature:
+                    stored_val = stored[key]
+                    curr_val = self.signature[key]
+                    if key == "dimension":
+                        stored_val = int(stored_val)
+                        curr_val = int(curr_val)
+                    else:
+                        stored_val = str(stored_val)
+                        curr_val = str(curr_val)
+                    if stored_val != curr_val:
+                        raise ValueError(
+                            f"Incompatible vector space signature: stored {key}={stored_val!r}, "
+                            f"got {curr_val!r} (stored: {stored}, current: {self.signature})"
+                        )
+        else:
+            if not check_only:
+                with conn:
+                    for k, v in self.signature.items():
+                        conn.execute(
+                            "INSERT OR REPLACE INTO vector_space_meta (key, value) VALUES (?, ?)",
+                            (k, str(v)),
+                        )
 
     def close(self) -> None:
         with self._lock:
@@ -249,9 +370,10 @@ class VectorBackend:
 
     def add(self, id: str, vec: list[float], category: str | None = None) -> None:
         """Insert or replace a single vector (one transaction)."""
-        row = self._row_for(id, vec, category)
         with self._lock:
             conn = self._conn_get()
+            self._validate_or_persist_signature(conn, check_only=False)
+            row = self._row_for(id, vec, category)
             with conn:
                 conn.execute(
                     "INSERT OR REPLACE INTO vectors (id, embedding, dimension, category)"
@@ -264,20 +386,13 @@ class VectorBackend:
         items: Iterable[tuple[str, Sequence[float]]],
         category: str | None = None,
     ) -> int:
-        """Insert or replace many vectors in ONE transaction.
-
-        The per-vector `add()` pays a full commit (fsync + WAL frame) per chunk,
-        which dominates ingest wall-clock once a document produces hundreds of
-        chunks. Every vector is validated *before* anything is written, so a bad
-        vector aborts the batch instead of leaving it half-applied.
-
-        Returns the number of vectors written.
-        """
-        rows = [self._row_for(id_, vec, category) for id_, vec in items]
-        if not rows:
-            return 0
+        """Insert or replace many vectors in ONE transaction."""
         with self._lock:
             conn = self._conn_get()
+            self._validate_or_persist_signature(conn, check_only=False)
+            rows = [self._row_for(id_, vec, category) for id_, vec in items]
+            if not rows:
+                return 0
             with conn:
                 conn.executemany(
                     "INSERT OR REPLACE INTO vectors (id, embedding, dimension, category)"
@@ -287,14 +402,7 @@ class VectorBackend:
         return len(rows)
 
     def ensure_dimension(self, dim: int) -> bool:
-        """Reconcile the configured dimension with what the embedder produces.
-
-        The configured dimension is a *guess* derived from env vars; the model
-        actually loaded may disagree (e.g. an Ollama model that returns 1024).
-        When the store is still empty there is nothing to be consistent with, so
-        adopt the real dimension instead of rejecting every single write.
-        Otherwise report the conflict (False) and let the caller decide.
-        """
+        """Reconcile the configured dimension with what the embedder produces."""
         if dim == self.dimension:
             return True
         with self._lock:
@@ -307,6 +415,14 @@ class VectorBackend:
             dim, self.dimension,
         )
         self.dimension = dim
+        self.signature["dimension"] = dim
+        with self._lock:
+            conn = self._conn_get()
+            with conn:
+                conn.execute(
+                    "UPDATE vector_space_meta SET value = ? WHERE key = 'dimension'",
+                    (str(dim),)
+                )
         return True
 
     # ── Read ────────────────────────────────────────────────────────
@@ -393,6 +509,7 @@ class VectorBackend:
 
         with self._lock:
             conn = self._conn_get()
+            self._validate_or_persist_signature(conn, check_only=True)
             cur = conn.execute(sql, params)
             while True:
                 rows = cur.fetchmany(_SCAN_BATCH)
@@ -487,10 +604,36 @@ class SqliteVecBackend:
     category, so the public API stays string-id based.
     """
 
-    def __init__(self, db_path: str | Path | None = None, dimension: int = 768):
+    def __init__(
+        self,
+        db_path: str | Path | None = None,
+        dimension: int = 768,
+        backend: str | None = None,
+        model: str | None = None,
+        version: str = "1.0",
+        signature: dict[str, Any] | None = None,
+    ):
         self.db_path = Path(db_path) if db_path else Path.home() / ".conscio" / "runtime" / "vec.db"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.dimension = dimension
+        if signature is not None:
+            self.signature = {
+                "backend": str(signature.get("backend", "native")),
+                "model": str(signature.get("model", "all-MiniLM-L6-v2")),
+                "dimension": int(signature.get("dimension", dimension)),
+                "version": str(signature.get("version", "1.0")),
+            }
+            self.dimension = self.signature["dimension"]
+        else:
+            b = backend or os.environ.get("CONSCIO_EMBED_BACKEND", "").strip().lower() or "native"
+            m = model or os.environ.get("CONSCIO_EMBED_MODEL", "all-MiniLM-L6-v2")
+            v = str(version or "1.0")
+            self.signature = {
+                "backend": b,
+                "model": m,
+                "dimension": int(dimension),
+                "version": v,
+            }
+            self.dimension = int(dimension)
         self._lock = threading.Lock()
         self._conn: sqlite3.Connection | None = None
         self._init_db()
@@ -537,6 +680,7 @@ class SqliteVecBackend:
                     m = re.search(r"float\[(\d+)\]", schema[0])
                     if m and int(m.group(1)) != self.dimension:
                         self.dimension = int(m.group(1))
+                        self.signature["dimension"] = self.dimension
             except Exception:
                 pass
             # vec0 with aux columns: id and category stored directly in the
@@ -547,7 +691,62 @@ class SqliteVecBackend:
                 f"embedding float[{self.dimension}] distance_metric=cosine,"
                 f"id TEXT, category TEXT)"
             )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS vector_space_meta ("
+                "key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
             conn.commit()
+
+    def get_signature(self) -> dict[str, Any] | None:
+        """Read the stored vector space signature from metadata, if present."""
+        with self._lock:
+            conn = self._conn_get()
+            rows = conn.execute("SELECT key, value FROM vector_space_meta").fetchall()
+            if not rows:
+                return None
+            meta = {r[0]: r[1] for r in rows}
+            if "dimension" in meta:
+                try:
+                    meta["dimension"] = int(meta["dimension"])
+                except (ValueError, TypeError):
+                    pass
+            return meta
+
+    def _validate_or_persist_signature(
+        self, conn: sqlite3.Connection, check_only: bool = False
+    ) -> None:
+        """Validate that current signature matches stored metadata, or persist on first write."""
+        rows = conn.execute("SELECT key, value FROM vector_space_meta").fetchall()
+        if rows:
+            stored = {r[0]: r[1] for r in rows}
+            if "dimension" in stored:
+                try:
+                    stored["dimension"] = int(stored["dimension"])
+                except (ValueError, TypeError):
+                    pass
+            for key in ("backend", "model", "dimension", "version"):
+                if key in stored and key in self.signature:
+                    stored_val = stored[key]
+                    curr_val = self.signature[key]
+                    if key == "dimension":
+                        stored_val = int(stored_val)
+                        curr_val = int(curr_val)
+                    else:
+                        stored_val = str(stored_val)
+                        curr_val = str(curr_val)
+                    if stored_val != curr_val:
+                        raise ValueError(
+                            f"Incompatible vector space signature: stored {key}={stored_val!r}, "
+                            f"got {curr_val!r} (stored: {stored}, current: {self.signature})"
+                        )
+        else:
+            if not check_only:
+                with conn:
+                    for k, v in self.signature.items():
+                        conn.execute(
+                            "INSERT OR REPLACE INTO vector_space_meta (key, value) VALUES (?, ?)",
+                            (k, str(v)),
+                        )
 
     def close(self) -> None:
         with self._lock:
@@ -571,6 +770,7 @@ class SqliteVecBackend:
         vec_blob = self._serialize_for_vec0(vec)
         with self._lock:
             conn = self._conn_get()
+            self._validate_or_persist_signature(conn, check_only=False)
             with conn:
                 # Check if id already exists, delete if so (vec0 doesn't support OR REPLACE)
                 existing = conn.execute(
@@ -601,6 +801,7 @@ class SqliteVecBackend:
             return 0
         with self._lock:
             conn = self._conn_get()
+            self._validate_or_persist_signature(conn, check_only=False)
             count = 0
             with conn:
                 for id_, vec_blob in validated:
@@ -624,6 +825,7 @@ class SqliteVecBackend:
             dim, self.dimension,
         )
         self.dimension = dim
+        self.signature["dimension"] = dim
         # Recreate the vec0 virtual table with the new dimension
         with self._lock:
             conn = self._conn_get()
@@ -632,6 +834,10 @@ class SqliteVecBackend:
                 f"CREATE VIRTUAL TABLE vec_chunks USING vec0("
                 f"embedding float[{self.dimension}] distance_metric=cosine,"
                 f"id TEXT, category TEXT)"
+            )
+            conn.execute(
+                "UPDATE vector_space_meta SET value = ? WHERE key = 'dimension'",
+                (str(dim),)
             )
             conn.commit()
         return True
@@ -656,6 +862,7 @@ class SqliteVecBackend:
         vec_blob = self._serialize_for_vec0(query)
         with self._lock:
             conn = self._conn_get()
+            self._validate_or_persist_signature(conn, check_only=True)
             if category is not None:
                 # With aux columns, category filter is inside vec0 — 27% faster
                 # than the JOIN approach because vec0 filters internally.
@@ -718,6 +925,10 @@ class HNSWBackend:
         max_elements: int = 1_000_000,
         ef_construction: int = 400,
         M: int = 32,
+        backend: str | None = None,
+        model: str | None = None,
+        version: str = "1.0",
+        signature: dict[str, Any] | None = None,
     ):
         if not _HAS_HNSW:
             raise ImportError(
@@ -731,7 +942,25 @@ class HNSWBackend:
             raise ImportError("HNSWBackend requires numpy")
         self.db_path = Path(db_path) if db_path else Path.home() / ".conscio" / "runtime" / "hnsw.db"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.dimension = dimension
+        if signature is not None:
+            self.signature = {
+                "backend": str(signature.get("backend", "native")),
+                "model": str(signature.get("model", "all-MiniLM-L6-v2")),
+                "dimension": int(signature.get("dimension", dimension)),
+                "version": str(signature.get("version", "1.0")),
+            }
+            self.dimension = self.signature["dimension"]
+        else:
+            b = backend or os.environ.get("CONSCIO_EMBED_BACKEND", "").strip().lower() or "native"
+            m = model or os.environ.get("CONSCIO_EMBED_MODEL", "all-MiniLM-L6-v2")
+            v = str(version or "1.0")
+            self.signature = {
+                "backend": b,
+                "model": m,
+                "dimension": int(dimension),
+                "version": v,
+            }
+            self.dimension = int(dimension)
         self.max_elements = max_elements
         self.ef_construction = ef_construction
         self.M = M
@@ -743,21 +972,77 @@ class HNSWBackend:
         self._next_id = 0
         self._init_index()
 
+    def _meta_conn(self) -> sqlite3.Connection:
+        meta_path = str(self.db_path.with_suffix(".meta.db"))
+        conn = sqlite3.connect(meta_path)
+        conn.execute("CREATE TABLE IF NOT EXISTS id_map (hnsw_id INT, original_id TEXT, category TEXT)")
+        conn.execute("CREATE TABLE IF NOT EXISTS vector_space_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        return conn
+
+    def get_signature(self) -> dict[str, Any] | None:
+        with self._lock:
+            conn = self._meta_conn()
+            rows = conn.execute("SELECT key, value FROM vector_space_meta").fetchall()
+            conn.close()
+            if not rows:
+                return None
+            meta = {r[0]: r[1] for r in rows}
+            if "dimension" in meta:
+                try:
+                    meta["dimension"] = int(meta["dimension"])
+                except (ValueError, TypeError):
+                    pass
+            return meta
+
+    def _validate_or_persist_signature(self, check_only: bool = False) -> None:
+        conn = self._meta_conn()
+        rows = conn.execute("SELECT key, value FROM vector_space_meta").fetchall()
+        if rows:
+            stored = {r[0]: r[1] for r in rows}
+            if "dimension" in stored:
+                try:
+                    stored["dimension"] = int(stored["dimension"])
+                except (ValueError, TypeError):
+                    pass
+            conn.close()
+            for key in ("backend", "model", "dimension", "version"):
+                if key in stored and key in self.signature:
+                    stored_val = stored[key]
+                    curr_val = self.signature[key]
+                    if key == "dimension":
+                        stored_val = int(stored_val)
+                        curr_val = int(curr_val)
+                    else:
+                        stored_val = str(stored_val)
+                        curr_val = str(curr_val)
+                    if stored_val != curr_val:
+                        raise ValueError(
+                            f"Incompatible vector space signature: stored {key}={stored_val!r}, "
+                            f"got {curr_val!r} (stored: {stored}, current: {self.signature})"
+                        )
+        else:
+            if not check_only:
+                with conn:
+                    for k, v in self.signature.items():
+                        conn.execute(
+                            "INSERT OR REPLACE INTO vector_space_meta (key, value) VALUES (?, ?)",
+                            (k, str(v)),
+                        )
+            conn.close()
+
     def _init_index(self) -> None:
         assert hnswlib is not None  # guaranteed by __init__ check
         self._index = hnswlib.Index(space="cosine", dim=self.dimension)  # type: ignore[reportOptionalMemberAccess]
         index_path = str(self.db_path)
         if Path(index_path).exists():
             self._index.load_index(index_path)
-            meta_path = str(self.db_path.with_suffix(".meta.db"))
-            if Path(meta_path).exists():
-                conn = sqlite3.connect(meta_path)
-                for row in conn.execute("SELECT hnsw_id, original_id, category FROM id_map"):
-                    self._id_map[row[0]] = row[1]
-                    self._reverse_map[row[1]] = row[0]
-                    self._categories[row[0]] = row[2]
-                self._next_id = max(self._id_map.keys(), default=-1) + 1
-                conn.close()
+            conn = self._meta_conn()
+            for row in conn.execute("SELECT hnsw_id, original_id, category FROM id_map"):
+                self._id_map[row[0]] = row[1]
+                self._reverse_map[row[1]] = row[0]
+                self._categories[row[0]] = row[2]
+            self._next_id = max(self._id_map.keys(), default=-1) + 1
+            conn.close()
         else:
             self._index.init_index(
                 max_elements=self.max_elements,
@@ -772,6 +1057,7 @@ class HNSWBackend:
                 f"Dimension mismatch: expected {self.dimension}, got {len(vec)}"
             )
         with self._lock:
+            self._validate_or_persist_signature(check_only=False)
             if id in self._reverse_map:
                 hnsw_id = self._reverse_map[id]
             else:
@@ -818,6 +1104,7 @@ class HNSWBackend:
         if not ids_list:
             return 0
         with self._lock:
+            self._validate_or_persist_signature(check_only=False)
             data = np.ascontiguousarray(vecs_list, dtype=np.float32)  # type: ignore[reportOptionalMemberAccess]
             labels = np.array(ids_list, dtype=np.int64)  # type: ignore[reportOptionalMemberAccess]
             self._index.add_items(data, labels)
@@ -829,12 +1116,20 @@ class HNSWBackend:
         if self._id_map:
             return False
         self.dimension = dim
+        self.signature["dimension"] = dim
         self._index = hnswlib.Index(space="cosine", dim=dim)  # type: ignore[reportOptionalMemberAccess]
         self._index.init_index(
             max_elements=self.max_elements,
             ef_construction=self.ef_construction,
             M=self.M,
         )
+        conn = self._meta_conn()
+        with conn:
+            conn.execute(
+                "UPDATE vector_space_meta SET value = ? WHERE key = 'dimension'",
+                (str(dim),)
+            )
+        conn.close()
         return True
 
     def search(
@@ -848,10 +1143,10 @@ class HNSWBackend:
             raise ValueError(
                 f"Dimension mismatch: expected {self.dimension}, got {len(query)}"
             )
-        if limit <= 0 or not self._id_map:
-            return []
-
         with self._lock:
+            self._validate_or_persist_signature(check_only=True)
+            if limit <= 0 or not self._id_map:
+                return []
             self._index.set_ef(max(limit * 16, 256))
             q = np.ascontiguousarray([query], dtype=np.float32)  # type: ignore[reportOptionalMemberAccess]
             labels, distances = self._index.knn_query(q, k=min(limit * 4, len(self._id_map)))

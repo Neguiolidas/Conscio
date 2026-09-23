@@ -1,10 +1,11 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Neguiolidas/Conscio/main/docs/assets/conscio-banner.webp" alt="Conscio — a self-awareness framework for AI agents" width="820">
+  <img src="https://raw.githubusercontent.com/Neguiolidas/Conscio/main/docs/assets/conscio-banner.webp" alt="Conscio — A Consciousness System One Framework" width="820">
 </p>
 
 <p align="center">
-  <b>Context-aware memory, introspection, goal generation, and an audited agency
-layer that lets a model act on its own conclusions under hard safety gates.</b>
+  <b>A Consciousness System One Framework — context-aware memory, introspection,
+goal generation, and an audited agency layer that lets a model act on its own
+conclusions under hard safety gates. Decisions are measured, not asserted.</b>
 </p>
 
 > *"The first step toward consciousness is knowing what you are and what limits you."*
@@ -14,7 +15,7 @@ nothing else). It is built to make small, local models and frontier models punch
 giving them memory, self-judgment, and procedural skill — and to prove that claim by
 measurement, not assertion.
 
-**Latest release — `v4.6.8` "The council keeps its word; the card survives the writer that doesn't know":** the council is now deterministic by contract — an attached LLM adapter can never alter a vote — and `publish_self` became a sentinel read-modify-write: `None` preserves what the knowing server wrote, so a blind heartbeat republish can no longer erase identity, capabilities, or fields this version doesn't know. `conscio relay doctor` now warns when a live process still runs an older version after an upgrade.
+**Latest release — `v4.7.0` "Calibration you can trust":** every confidence number now carries its nature — `none`, `asserted`, `derived`, or `measured` (ECE/Brier against recorded outcomes) — and fabricated priors are gone: cold start returns `None`, a gate raises on absence, and four unanimous vetoes now read as full agreement with a `veto` recommendation. The act fast-path no longer launders global calibration into per-action safety; it uses a per-tool Beta posterior from the ledger. Embeddings are native-only by default — `CONSCIO_EMBED_BACKEND` opts into Ollama/LM Studio — and the vector store rejects mixed-model signatures before they corrupt recall.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 
