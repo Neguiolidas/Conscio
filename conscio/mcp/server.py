@@ -1822,9 +1822,36 @@ def resolve_identity_env(*, model: str, familia: str, runtime: str,
     )
 
 
+def resolve_full_identity(*, model: str, familia: str, runtime: str,
+                          papel: str, env: os._Environ | dict | None = None) -> tuple[str, str, str, str]:
+    """Complete 4-tier identity precedence: flag > env > host derivation > "".
+
+    Fills absent identity fields using resolve_identity_env(), then derives any
+    remaining empty fields from the process environment via derive_host_identity().
+    Familia is derived strictly from a known model name (never forced).
+    """
+    e = os.environ if env is None else env
+    # Step 1: flag > CONSCIO_IDENTITY_* env
+    m = model or e.get("CONSCIO_IDENTITY_MODEL", "")
+    f = familia or e.get("CONSCIO_IDENTITY_FAMILIA", "")
+    r = runtime or e.get("CONSCIO_IDENTITY_RUNTIME", "")
+    p = papel or e.get("CONSCIO_IDENTITY_PAPEL", "")
+
+    # Step 2: host derivation for any remaining empty fields
+    if not (m and f and r and p):
+        from .host_identity import derive_familia_from_model, derive_host_identity
+        derived = derive_host_identity(e)
+        m = m or derived.model
+        f = f or derived.familia or (derive_familia_from_model(m) if m else "")
+        r = r or derived.runtime
+        p = p or derived.papel
+
+    return (m, f, r, p)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
-    ident = resolve_identity_env(
+    ident = resolve_full_identity(
         model=args.identity_model, familia=args.identity_familia,
         runtime=args.identity_runtime, papel=args.identity_papel)
     from conscio.installer.binding import validate_binding  # R6
