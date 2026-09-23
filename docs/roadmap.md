@@ -41,6 +41,52 @@
 | v4.6.8 | Deterministic council | LLM path removed from the critic; sentinel `publish_self` | ✅ Done |
 | v4.7.0 | Calibration you can trust | ConfidenceValue tiers (none/asserted/derived/measured), ECE/Brier, vote-entropy agreement, per-tool Beta fast-path, native-only embeddings, vector signatures, outcome store | ✅ Done (4,200 tests) |
 
+## Candidate directions (from the idea banks + post-4.7.0 audits)
+
+Distilled from `docs/v4.6-ideas.md` and `docs/v4.7-ideas.md` — a menu, not a
+commitment. Every item still passes through scope, ADR, TDD and a hostile gate
+before entering a version.
+
+**Trust & verification (highest leverage):**
+- **Durable shadow receipts + session-window gate** — the honesty pipeline
+  records the full decision receipt (evidence found / window-truncated /
+  unavailable / contradictory / human-overruled), and a contestation only
+  exits shadow mode when the query covered the required session window.
+  4.7.0's `OutcomeStore` is the substrate; this closes the loop.
+- **Execution verification (A6/A9)** — claims about artifacts are only
+  accepted when checkable against the real artifact; outcome feedback
+  calibrates skills and confidence. The most defensible flagship direction.
+- **Provenance chain (A4)** — reconstruct the full causal chain of any
+  decision (event → reflection → council → decision) with chained hashes.
+
+**Maturation:**
+- **Per-runtime evidence producers** — the honesty hook works on Claude Code;
+  Hermes needs an equivalent tool-call observation producer so its claims can
+  ever leave UNSUPPORTED.
+- **Promotion of rules by proven repetition** + verified offline retrospectives
+  (learn only from what demonstrably worked).
+- **Persistent essence (A7)** — a compaction-proof core of values, preferences
+  and irreversible decisions that survives resets and model swaps.
+
+**Multi-agent:**
+- **Distributed consensus (A1)** — collective decision with accountability
+  across heterogeneous runtimes; Relay + Council growing together.
+- **Task ownership (epics) in Relay/Hall** and a multi-model council (C2).
+- **Knowledge commons (A8)** — curated conclusions published, peer-evaluated
+  by outcome, reputation-driven.
+
+**Infrastructure:**
+- **Content-keyed cache as internal API (D1)**; regex-first/LLM-last policy
+  (D2); opt-in blocking delivery gate (D3, advisory until false-positive
+  rates are measured).
+- **Decision-model support** — local typed-decision provider following the
+  embedding pattern (native-first, opt-in, no daemon hijack), so a Laya/Jev-
+  style model can plug in without any external dependency.
+
+**Explicitly not absorbing:** framework skill dumps the LLM already knows;
+second control panes; instincts without scope/confidence/evidence; blocking
+gates before false positives are measured.
+
 > Full per-release detail lives in [`CHANGELOG.md`](../CHANGELOG.md). Test
 > counts in the table are the historical snapshot of that release, not the
 > current total — the suite is measured fresh on every release (v4.7.0:
