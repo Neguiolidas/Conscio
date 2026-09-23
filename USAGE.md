@@ -326,6 +326,47 @@ Override via `~/.config/conscio/config.json`:
 ```
 Or env: `CONSCIO_CONTEXT_WINDOW=1048576`.
 
+## Host Identity & Card Publication
+
+The MCP server (`conscio-mcp`) publishes an identity card to the mesh directory.
+When agents communicate or review proposals across instances, the card identifies
+the instance model, family, runtime, and role.
+
+Identity resolution follows a strict 4-tier precedence:
+
+$$\text{CLI flag } (--\text{identity-*}) > \text{ Environment } (\text{CONSCIO\_IDENTITY\_*}) > \text{ Host Derivation } > \text{ "" (empty)}$$
+
+### Environment variables
+
+For hosts that cannot customize MCP CLI arguments directly (e.g. plugins or containerized runners), identity can be declared via environment variables without touching shared assets:
+
+| Variable | Description | Example |
+|---|---|---|
+| `CONSCIO_IDENTITY_MODEL` | Explicit model name | `gemini-3.8-flash`, `claude-opus-5`, `agnes-3.0-flash` |
+| `CONSCIO_IDENTITY_FAMILIA` | Model family | `gemini`, `claude`, `agnes`, `glm`, `deepseek`, `openai`, `qwen` |
+| `CONSCIO_IDENTITY_RUNTIME` | Host runtime environment | `antigravity`, `claude-code`, `zcode`, `hermes`, `opencode` |
+| `CONSCIO_IDENTITY_PAPEL` | Fleet role | `executor` (default), `orchestrator`, `architect` |
+
+CLI flags (`--identity-model`, `--identity-familia`, `--identity-runtime`, `--identity-papel`) override these variables.
+
+### Host Derivation (Automatic fallback)
+
+When neither CLI flags nor `CONSCIO_IDENTITY_*` variables are provided, Conscio derives host identity purely from the process environment:
+
+- **Strict presence detection**: Conscio only checks for the **presence** of host-specific keys in `os.environ` (never reading sensitive values, preventing cross-shell contamination and credential leakage).
+- **Supported host runtimes**:
+  - `zcode`: Detected via `ZCODE_PLUGIN_DATA` or `ZCODE_PLUGIN_ID` (primary), `ZCODE_APP_VERSION` (fallback).
+  - `antigravity`: Detected via `CHROME_DEVTOOLS_MCP_JS`, `AGY_BROWSER_*` (primary), `ANTIGRAVITY_AGENT` (fallback).
+  - `claude-code`: Detected via `CLAUDECODE` or `CLAUDE_CODE` (or `CLAUDE_PLUGIN_*` when not ZCode).
+  - `hermes`: Detected via `HERMES_HOME`, `HERMES_SESSION_ID`, or `HERMES_AGENT`.
+  - `opencode`: Detected via `OPENCODE_CONFIG_DIR`, `OPENCODE_SERVER`, or `OPENCODE_PROJECT`.
+- **Model and family rules**:
+  - Model is **never** guessed from generic environment variables; it remains empty unless explicitly declared via flag or `CONSCIO_IDENTITY_MODEL`.
+  - Family (`familia`) is derived strictly from a known model name using declarative prefix mapping (`claude`, `gemini`, `agnes`, `glm`, `deepseek`, `openai`, `qwen`). Without a verified model, `familia` remains empty.
+  - Role (`papel`) defaults to `executor` only when a host runtime is positively detected.
+- **None contract**: When no host signals are detected, Conscio outputs an empty identity with `source="none"` (honoring the contract: absence is not a prior, never invent values).
+
+
 ## Storage
 
 - Everything the engine writes lives under its **space** — one directory per

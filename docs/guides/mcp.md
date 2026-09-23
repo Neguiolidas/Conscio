@@ -572,6 +572,28 @@ Parameters and return shape match `squad_experts`. Event emitted:
 > The Council is unaffected by the squad system — `engine.council()` and
 > `conscio_council` remain the same API with the same 4 voices.
 
+## Host Identity & Card Publication
+
+The MCP server publishes an identity card to the mesh directory on startup.
+The card communicates the instance model, family, runtime, and fleet role.
+
+Resolution follows a strict 4-tier precedence:
+
+$$\text{CLI flag } (--\text{identity-*}) > \text{ Environment } (\text{CONSCIO\_IDENTITY\_*}) > \text{ Host Derivation } > \text{ \"\" (empty)}$$
+
+1. **CLI Flags**: `--identity-model`, `--identity-familia`, `--identity-runtime`, `--identity-papel`.
+2. **Environment Variables**: `CONSCIO_IDENTITY_MODEL`, `CONSCIO_IDENTITY_FAMILIA`, `CONSCIO_IDENTITY_RUNTIME`, `CONSCIO_IDENTITY_PAPEL`. Useful for hosts where MCP arguments cannot be customized per instance.
+3. **Host Derivation**: Evaluates only the **presence** of host environment keys (never reads values):
+   - `zcode`: Detected via `ZCODE_PLUGIN_DATA` or `ZCODE_PLUGIN_ID` (primary), `ZCODE_APP_VERSION` (fallback).
+   - `antigravity`: Detected via `CHROME_DEVTOOLS_MCP_JS`, `AGY_BROWSER_*` (primary), `ANTIGRAVITY_AGENT` (fallback).
+   - `claude-code`: Detected via `CLAUDECODE` or `CLAUDE_CODE` (or `CLAUDE_PLUGIN_*` when not ZCode).
+   - `hermes`: Detected via `HERMES_HOME`, `HERMES_SESSION_ID`, or `HERMES_AGENT`.
+   - `opencode`: Detected via `OPENCODE_CONFIG_DIR`, `OPENCODE_SERVER`, or `OPENCODE_PROJECT`.
+   - Model is never derived from generic environment variables.
+   - Family is derived only when a model is verified via prefix mapping (`claude`, `gemini`, `agnes`, `glm`, `deepseek`, `openai`, `qwen`).
+   - Papel defaults to `executor` only when a host runtime is detected.
+4. **Empty fallback**: Absence of signals produces `source="none"` and empty fields without inventing values.
+
 ## Common pitfalls
 
 1. **Invalid `type` / `category`** raises `ValueError` before any DB write. Check
