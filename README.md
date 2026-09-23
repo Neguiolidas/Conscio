@@ -23,7 +23,7 @@ memory, self-judgment and procedural skill — and proves every claim by
 measurement, not assertion. Local-first and zero-dep at the core
 (`numpy` + stdlib `sqlite3`, nothing else).
 
-**Latest release — `v4.7.0` "Calibration you can trust":** every confidence number now carries its nature — `none`, `asserted`, `derived`, or `measured` (ECE/Brier against recorded outcomes) — and fabricated priors are gone: cold start returns `None`, a gate raises on absence, and four unanimous vetoes now read as full agreement with a `veto` recommendation. The act fast-path no longer launders global calibration into per-action safety; it uses a per-tool Beta posterior from the ledger. Embeddings are native-only by default — `CONSCIO_EMBED_BACKEND` opts into Ollama/LM Studio — and the vector store rejects mixed-model signatures before they corrupt recall.
+**Latest release — `v4.7.1` "The audit lands; the loop closes":** the hostile post-ship audit landed as fixes, not as quiet polish: `conscio outcomes list/resolve` closes the calibration loop by attaching real outcomes to captured decisions, identity env vars (`CONSCIO_IDENTITY_*`) give every host a per-host card without touching the shared asset, a missing embedding backend now logs a WARNING with the remedy instead of failing silently, and every doc the audit caught stale — CONTRIBUTING, USAGE, storage defaults — was rewritten against measured truth.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 

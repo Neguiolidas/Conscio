@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.7.1] - 2026-09-23 — The audit lands; the loop closes
+
+Post-ship audit round (hostile, by the Gemini executor and verified by the
+orchestrator): 14 findings, 12 fixed, 2 routed to the roadmap. Everything
+below is measured against the live codebase.
+
+### Added
+
+- **Decision-outcome CLI — the calibration loop closes.** `conscio outcomes
+  list` and `conscio outcomes resolve <ref> <outcome> --evidence ...`
+  attach the real outcome to captured decisions. Before this, every council
+  capture stayed pending forever — nothing in production could resolve
+  them, making measured calibration unreachable outside tests (the orphan
+  defect: tests proved the method worked; nothing proved a production
+  path called it). Ghost resolves and invalid outcomes are visible errors.
+
+- **`CONSCIO_IDENTITY_MODEL` / `_FAMILIA` / `_RUNTIME` / `_PAPEL` env
+  vars** — per-host identity for hosts that cannot override MCP args
+  (plugin-shipped configs). Precedence: CLI flag > env var > empty. Without
+  them, a server boot republishes the card with explicit empty strings and
+  wipes the identity an agent published by hand.
+
+### Fixed
+
+- **Native embedding failure is no longer silent.** A bare `pip install
+  conscio` without `sentence-transformers` had semantic recall off with
+  only a debug-level log. Now: WARNING naming the remedy (install the
+  package or opt into a daemon via `CONSCIO_EMBED_BACKEND`).
+- **Coherence epistemic score honors the None contract.** Cold start
+  (calibration `None`) was a `TypeError` swallowed by a bare `except`;
+  it is now an explicit branch — absence is a contract, not an exception
+  to mask.
+- **`conscio/USAGE.md` resynced from the root** — the packaged copy had
+  drifted (297 vs 580 lines).
+
+### Changed (docs — the standing rigor rule)
+
+- **CONTRIBUTING.md rewritten against measured truth:** one test file per
+  process (the old `pytest tests/ -q` OOMs), test counts re-measured per
+  release instead of frozen numbers, pyright (not mypy), line length 100,
+  the ConfidenceValue contract, native-first embeddings, and the
+  fake-module-in-`sys.modules` pattern for optional dependencies.
+- **USAGE.md:** 8 console scripts (reactor + relay-bridge were missing);
+  native-first embedding policy (the fallback-chain text was stale);
+  storage defaults corrected (library default vs the CLI's live-space
+  resolution; `$HERMES_HOME` is legacy).
+- **Docs speak spaces, not internal filenames.** Storage sections describe
+  the space — one directory per agent host, one file per concern — and no
+  longer cite internal database filenames.
+- **docs/roadmap.md** extended to 4.7.0 with the measured suite count and
+  a candidate-directions section distilled from the idea banks (durable
+  shadow receipts, execution verification, provenance chain, distributed
+  consensus, per-runtime evidence producers, decision-model support).
+
+---
+
 ## [4.7.0] - 2026-09-23 — Calibration you can trust
 
 Every confidence-like number the framework emits now carries its nature, and
