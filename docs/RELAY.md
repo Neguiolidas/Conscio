@@ -186,6 +186,11 @@ paired with, and does the directory know anybody at all. A missing card is
 reported as a problem — an agent invisible to its peers while believing it is
 published was the failure mode this release exists to kill.
 
+Since v4.7.2 it also lists, per local agent, what is waiting unconsumed, since
+when and from whom. Agents silent for 3+ days are flagged `DORMANT`, and a
+spool holding mail with no card behind it is flagged. This section is
+informational: a backlog is state, not a fault of the machine running doctor.
+
 Other reads:
 
 ```bash

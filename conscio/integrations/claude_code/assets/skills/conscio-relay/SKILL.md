@@ -78,8 +78,11 @@ conscio relay forget <instance id>      # retire an address whose agent is gone
 
 Answers, with no log archaeology: is my card published, how many messages are
 parked in my spool, how many remotes am I paired with, does the directory know
-anybody. A missing card is reported as a problem — an agent invisible to its
-peers while believing it is published is the classic silent failure.
+anybody, and — per local agent — what is waiting unconsumed and since when.
+A missing card is reported as a problem — an agent invisible to its peers
+while believing it is published is the classic silent failure. A peer silent
+for 3+ days is `DORMANT`: broadcasts skip it, and a direct send to it returns a
+`warning` instead of a silent "ok".
 
 ## Symptoms → causes (do not improvise around these)
 

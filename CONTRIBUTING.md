@@ -30,7 +30,7 @@ pip install -e ".[dev]"
 
 ## Testing
 
-- **~4,200 tests** (329 files) — all must pass before merge; the count is
+- **~4,250 tests** (333 files) — all must pass before merge; the count is
   re-measured on every release, so trust `pytest --collect-only -q` over any
   number printed in docs
 - Run tests **one file per process** (see above)

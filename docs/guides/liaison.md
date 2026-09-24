@@ -69,13 +69,15 @@ conscio-mcp --enable-relay --relay-peer <hermes_instance_id>
 
 Five tools (registered only with `--enable-relay`):
 
-- `conscio_relay_send {to, type, payload}` → `{ok, id}` — send a directed message
+- `conscio_relay_send {to, type, payload}` → `{ok, id, to, warning?}` — send a directed message
   to a trusted peer. `to` must be an allowed peer: any agent when the
   `--relay-peer` roster is empty, or a listed one when it is not (see
   *Discovery* below); `type` is free-form but the two review types
   (`review_request`/`review_verdict`) are reserved; `payload` is a JSON object
   capped at 64 KB. A message for an agent that is currently down is deposited in
-  that agent's spool and ingested on its next tool call.
+  that agent's spool and ingested on its next tool call. If the peer is a local
+  agent silent for 3+ days (v4.7.2), the send still goes through but carries a
+  `warning` saying the message is parked until it comes back.
 - `conscio_relay_inbox {limit?}` → `{messages: [{id, from_instance, type, payload, ts}]}`
   — peek unread messages from trusted peers. Review-channel rows are excluded;
   rows from non-peers (or oversized) are skipped.
@@ -86,11 +88,13 @@ Five tools (registered only with `--enable-relay`):
   `known: false` is a peer named on the command line that never published a
   card here (addressable, but nothing is known about it); `reachability` is
   `local` (shared spool), `remote` (published a URL) or `unknown`.
-- `conscio_relay_broadcast {type, payload}` → `{ok, sent: [{to, id}], errors: [{to, reason}]}`
+- `conscio_relay_broadcast {type, payload}` → `{ok, sent: [{to, id}], errors: [{to, reason}], skipped: [{to, reason}]}`
   (v2.8.2) — fan a message out to **every** `--relay-peer`. Same contract as
   `relay_send` applied per peer (reserved types / oversized payloads rejected);
   best-effort — a failing peer lands in `errors`, never aborting the rest. A
-  mailbox write, never an act.
+  local peer silent for 3+ days is left out and listed in `skipped` (v4.7.2);
+  remote and card-less peers are never judged dormant. A mailbox write, never
+  an act.
 
 Properties:
 
