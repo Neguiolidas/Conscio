@@ -23,7 +23,7 @@ memory, self-judgment and procedural skill — and proves every claim by
 measurement, not assertion. Local-first and zero-dep at the core
 (`numpy` + stdlib `sqlite3`, nothing else).
 
-**Latest release — `v4.7.2` "Mail that nobody reads is now visible":** `relay doctor` shows, per local agent, what is waiting unconsumed, since when and from whom, flags dormant agents and spools nobody will ingest — and no longer executes every binary in `/proc` to guess versions. Broadcast skips peers silent for 3+ days and says so in `skipped`; a direct send to one delivers with a `warning`. Dead cards are finally collected in production, and a paired remote never is.
+**Latest release — `v4.7.3` "The doctor asks the process, not the disk":** `relay doctor` now asks each process's own interpreter — the one it actually invoked, not the symlink-resolved base Python — which Conscio it really loads, reproducing its `sys.path[0]`, `PYTHON*` env and isolation flags, and flags a process that started before the code on disk was written, so an in-place upgrade can no longer masquerade as up-to-date.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 

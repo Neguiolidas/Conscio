@@ -228,6 +228,24 @@ def test_cmd_doctor_prints_aviso(tmp_path, capsys):
     assert expected_aviso in out.out
 
 
+def test_cmd_doctor_explains_process_older_than_its_code(tmp_path, capsys, monkeypatch):
+    """v4.7.3: same version on disk, older code in memory -> say why, not '<'."""
+    monkeypatch.setattr(relay_cli, "find_stale_processes", lambda **kw: [{
+        "pid": 7, "name": "python3", "running_version": "<4.7.2",
+        "installed_version": "4.7.2", "reason": "code_newer_than_process",
+        "started": 1_000_000.0, "code_mtime": 1_000_500.0, "module_file": "/x"}])
+    directory.publish({"instance_id": "test-agent",
+                       "spool": str(directory.spool_dir("test-agent")), "url": ""})
+
+    rc = relay_cli.main(["doctor", "--id", "test-agent", "--proc-root", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    line = next(ln for ln in out.splitlines() if ln.startswith("AVISO: processo 7"))
+    assert "antes do codigo que carregaria hoje (4.7.2, gravado" in line
+    assert "roda codigo anterior, reinicie" in line
+    assert "<4.7.2 <" not in line
+
+
 def test_cmd_doctor_no_aviso_when_healthy(tmp_path, capsys):
     proc_root = tmp_path / "proc"
     _make_proc_process(
@@ -280,8 +298,8 @@ def test_interpreter_probe_never_runs_a_non_conscio_process(tmp_path, monkeypatc
     process in /proc — zcode, antigravity, gnome-keyring-daemon got spawned
     with `-c`, and forking daemons outlived the 5s kill."""
     probed: list[str] = []
-    monkeypatch.setattr(relay_cli, "_detect_version_from_interpreter",
-                        lambda exe: probed.append(str(exe)) or None)
+    monkeypatch.setattr(relay_cli, "_probe_interpreter",
+                        lambda exe, **kw: probed.append(str(exe)) or relay_cli._Probe())
     proc_root = tmp_path / "proc"
     _make_proc_process(proc_root, pid=501, cmdline_args=["zcode", "--type=gpu"],
                        comm="zcode", exe_target="/opt/ZCode/zcode")
@@ -295,8 +313,8 @@ def test_interpreter_probe_only_runs_python_binaries(tmp_path, monkeypatch):
     """A conscio-looking cmdline does not make the binary a Python: for
     `claude`, `-c` is --continue, and would resume a real session."""
     probed: list[str] = []
-    monkeypatch.setattr(relay_cli, "_detect_version_from_interpreter",
-                        lambda exe: probed.append(str(exe)) or None)
+    monkeypatch.setattr(relay_cli, "_probe_interpreter",
+                        lambda exe, **kw: probed.append(str(exe)) or relay_cli._Probe())
     proc_root = tmp_path / "proc"
     _make_proc_process(proc_root, pid=601, cmdline_args=["claude", "--mcp", "conscio"],
                        comm="claude", exe_target="/usr/local/bin/claude")

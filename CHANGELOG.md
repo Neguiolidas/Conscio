@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+## [4.7.3] - 2026-09-24 — The doctor asks the process, not the disk
+
+Found by the post-update test of 4.7.2 (2026-09-24): 4 of the 7
+restart warnings from `relay doctor` were false, the answer changed with the
+directory the doctor ran from, and a reactor running code from 09-22 was not
+listed at all.
+
+### Fixed
+- **`relay doctor` asks the interpreter the process actually runs.** The
+  version probe used `/proc/<pid>/exe`, the symlink-resolved base interpreter,
+  which does not see the venv (uv tool, uvx archive, `.venv`). It now invokes
+  `cmdline[0]` (resolved on the process's own `PATH`) and reproduces that
+  process's `sys.path[0]`, `PYTHON*` env and `-I`/`-P` flags. The doctor's own
+  `PYTHONPATH` and cwd no longer leak into the answer.
+- **The dist-info fallback stops at the process's own install.** For a Python
+  executable, the parent directories are the base interpreter's install
+  (under uv they reached `~/.local` and an unrelated dist-info), so only path
+  arguments are walked now. This also covers an interpreter replaced on
+  disk (`(deleted)`). Editable dist-infos are skipped: their `Version` is
+  the install-time one, not the loaded code (measured: 4.7.1 and 3.8.2 for
+  processes loading 4.7.2).
+
+### Added
+- **`relay doctor` flags a process older than its code on disk.** An
+  in-place upgrade or an editable repo after a bump leaves the disk at the
+  new version while the process runs the old one. The disk version check
+  missed it. The doctor now compares the process start (`btime` + field 22 of
+  `/proc/<pid>/stat`) with the mtime of the module it would import, with 2 s
+  slack, and says `iniciou <data>, antes do codigo que carregaria hoje`.
+  Entries carry `reason` (`older_version` | `code_newer_than_process`).
+
+---
+
 ## [4.7.2] - 2026-09-24 — Mail that nobody reads is now visible
 
 Patch from the relay message audit of 2026-09-24 (Hermes, Antigravity,

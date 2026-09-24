@@ -23,6 +23,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 from . import directory, mailbox, relay_transport
 
@@ -218,9 +219,8 @@ def _detect_version_from_dist_info(candidate_paths: list[Path]) -> str | None:
                     dist_infos.extend(d.glob("conscio-*.dist-info"))
 
                 dist_infos = _sort_dist_infos(dist_infos)
-                dist_infos = _sort_dist_infos(dist_infos)
                 for di in dist_infos:
-                    if not di.exists():
+                    if not di.exists() or _is_editable_dist_info(di):
                         continue
                     meta_file = di / "METADATA"
                     if meta_file.is_file():
@@ -240,6 +240,20 @@ def _detect_version_from_dist_info(candidate_paths: list[Path]) -> str | None:
         except OSError:
             continue
     return None
+
+
+def _is_editable_dist_info(di: Path) -> bool:
+    """An editable install's Version is the one at INSTALL time, not the code
+    it loads (it points at a source tree). Measured 2026-09-24: ~/.local said
+    4.7.1 and the repo .venv said 3.8.2 while both loaded the repo's 4.7.2."""
+    import json
+    try:
+        data = json.loads((di / "direct_url.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return bool(isinstance(data, dict)
+                and isinstance(data.get("dir_info"), dict)
+                and data["dir_info"].get("editable"))
 
 
 def _sort_dist_infos(dist_infos: list[Path]) -> list[Path]:
@@ -264,30 +278,230 @@ def _is_python_exe(exe: str) -> bool:
     return bool(_PYTHON_EXE_RE.match(Path(exe).name))
 
 
-def _detect_version_from_interpreter(exe: Path) -> str | None:
+class _Probe(NamedTuple):
+    """What the target's own interpreter resolves for `import conscio`.
+
+    importable: True  -> resolved; version and module_file are set.
+                False -> the interpreter ran and conscio is NOT importable
+                         there: the process is a wrapper (a watchdog, a
+                         launcher), not Conscio itself.
+                None  -> inconclusive (missing binary, crash, timeout).
+    """
+
+    version: str | None = None
+    module_file: str | None = None
+    importable: bool | None = None
+
+
+# Runs inside the TARGET's interpreter. argv[1] is the sys.path[0] the target
+# had (or "" for none): `-c` would otherwise put the probe's cwd there, and
+# the answer would depend on where doctor was launched from — measured
+# 2026-09-24: from the repo root every interpreter "had" the repo's conscio.
+_PROBE_SCRIPT = (
+    "import sys\n"
+    "p0 = sys.argv[1]\n"
+    "if sys.path and sys.path[0] == '':\n"
+    "    del sys.path[0]\n"
+    "if p0:\n"
+    "    sys.path.insert(0, p0)\n"
+    "try:\n"
+    "    import conscio\n"
+    "except ImportError:\n"
+    "    print('conscio-probe\\t-')\n"
+    "    raise SystemExit(0)\n"
+    "print('conscio-probe\\t%s\\t%s' % (getattr(conscio, '__version__', ''),"
+    " getattr(conscio, '__file__', '') or ''))\n"
+)
+
+# Environment that changes what an interpreter imports. The probe carries the
+# TARGET's values, never doctor's own.
+_PROBE_ENV_KEYS = ("PYTHONPATH", "PYTHONHOME", "PYTHONNOUSERSITE",
+                   "PYTHONSAFEPATH", "PYTHONUSERBASE", "PYTHONPLATLIBDIR", "HOME")
+
+
+def _probe_interpreter(
+    exe: Path | str,
+    path0: str | None = None,
+    env: dict[str, str] | None = None,
+    flags: str = "",
+) -> _Probe:
     """(b+) Ask the target's own interpreter what conscio it resolves.
 
-    Runs a subprocess of the process's interpreter (/proc/<pid>/exe) that
-    imports conscio and prints __version__. This is the process's REAL
-    resolution order — its venv's sys.path — instead of guessing from a
-    dist-info walk that can find any of several coinstalled copies.
-
-    Best effort: dead interpreter, no conscio importable, or timeout all
-    return None (the caller falls through to the walk).
+    `exe` must be the interpreter AS THE PROCESS INVOKED IT (see
+    `_process_interpreter`), `path0` its sys.path[0], `env` its environment,
+    `flags` its isolation flags (-s/-E/-I/-P). Best effort, 5s timeout.
     """
     import subprocess
+    cmd = [str(exe)]
+    if flags:
+        cmd.append("-" + flags)
+    cmd += ["-c", _PROBE_SCRIPT, path0 or ""]
     try:
-        result = subprocess.run(
-            [str(exe), "-c", "import conscio; print(conscio.__version__)"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.returncode == 0:
-            ver = result.stdout.strip()
-            if ver and re.fullmatch(r"[0-9]+(\.[0-9]+)*", ver):
-                return ver
-    except (OSError, subprocess.TimeoutExpired):
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                timeout=5, cwd="/", env=env)
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return _Probe()
+    if result.returncode != 0:
+        return _Probe()
+    for line in reversed(result.stdout.splitlines()):
+        if not line.startswith("conscio-probe\t"):
+            continue
+        parts = line.split("\t")
+        if parts[1:] == ["-"]:
+            return _Probe(importable=False)
+        ver = parts[1].strip() if len(parts) > 1 else ""
+        if not re.fullmatch(r"[0-9]+(\.[0-9]+)*", ver):
+            return _Probe()
+        mod = parts[2].strip() if len(parts) > 2 else ""
+        return _Probe(ver, mod or None, True)
+    return _Probe()
+
+
+def _detect_version_from_interpreter(
+    exe: Path | str,
+    path0: str | None = None,
+    env: dict[str, str] | None = None,
+) -> str | None:
+    """Version-only view of `_probe_interpreter` (None when unknown)."""
+    return _probe_interpreter(exe, path0, env).version
+
+
+def _read_proc_environ(entry: Path) -> dict[str, str] | None:
+    try:
+        raw = (entry / "environ").read_bytes()
+    except OSError:
+        return None
+    env: dict[str, str] = {}
+    for item in raw.split(b"\0"):
+        key, sep, val = item.partition(b"=")
+        if sep:
+            env[key.decode("utf-8", "replace")] = val.decode("utf-8", "replace")
+    return env
+
+
+def _read_proc_cwd(entry: Path) -> str | None:
+    try:
+        cwd = os.readlink(entry / "cwd")
+    except OSError:
+        return None
+    return cwd if os.path.isabs(cwd) and not cwd.endswith(" (deleted)") else None
+
+
+def _absolute_arg(arg: str, cwd: str | None) -> str | None:
+    """A path argument as the PROCESS saw it: relative paths are relative to
+    ITS cwd, not doctor's. Unknown cwd -> None (never guess)."""
+    if os.path.isabs(arg):
+        return arg
+    return os.path.normpath(os.path.join(cwd, arg)) if cwd else None
+
+
+def _process_interpreter(
+    args: list[str], exe_str: str, cwd: str | None, env: dict[str, str] | None,
+) -> str | None:
+    """The interpreter AS THE PROCESS INVOKED IT: cmdline[0], not /proc/<pid>/exe.
+
+    exe is the symlink-RESOLVED binary. For a venv (uv tool, uvx archive,
+    .venv) that is the BASE interpreter, which does not see the venv's
+    site-packages — the v4.6.9 probe asked the wrong Python. Measured
+    2026-09-24 after the 4.7.2 ship: 4 of 7 doctor warnings were false, among
+    them the reporting MCP itself (uvx archive with 4.7.2, reported 4.7.1).
+    Invoking the venv's own bin/python (unresolved) activates pyvenv.cfg.
+    """
+    if args and _is_python_exe(args[0]):
+        a0 = args[0]
+        cand: str | None = None
+        if "/" in a0:
+            cand = _absolute_arg(a0, cwd)
+        elif env and env.get("PATH"):
+            import shutil
+            path = os.pathsep.join(
+                p for p in env["PATH"].split(os.pathsep) if os.path.isabs(p))
+            cand = shutil.which(a0, path=path) if path else None
+        if cand and os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return exe_str if _is_python_exe(exe_str) else None
+
+
+def _interpreter_invocation(
+    args: list[str], cwd: str | None, env: dict[str, str] | None,
+) -> tuple[str | None, str]:
+    """(sys.path[0], isolation flags) the target interpreter started with.
+
+    Python's rule ("Interface options"): `-m`, `-c`, `-` or interactive put
+    the cwd first; a script puts its symlink-resolved directory; `-I`, `-P`
+    and PYTHONSAFEPATH put nothing. Flags -s/-E/-I/-P are replayed so the
+    probe sees the same site-packages the process sees.
+    """
+    safe = bool(env and env.get("PYTHONSAFEPATH"))
+    flags = ""
+    i = 1
+    while i < len(args):
+        a = args[i]
+        if a == "-":
+            return (None if safe else cwd), flags
+        if a.startswith("--"):
+            if a == "--check-hash-based-pycs":
+                i += 1
+            i += 1
+            continue
+        if a.startswith("-"):
+            for j, ch in enumerate(a[1:], start=1):
+                if ch in "sEIP":
+                    flags += ch
+                    safe = safe or ch in "IP"
+                elif ch in "mc":
+                    return (None if safe else cwd), flags
+                elif ch in "WX":
+                    if j == len(a) - 1:
+                        i += 1  # the option's value is the next arg
+                    break
+            i += 1
+            continue
+        if safe:
+            return None, flags
+        script = _absolute_arg(a, cwd)
+        return (os.path.dirname(os.path.realpath(script)) if script else None), flags
+    return (None if safe else cwd), flags
+
+
+def _probe_env(target_env: dict[str, str] | None) -> dict[str, str]:
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith("PYTHON") and k != "HOME"}
+    env["HOME"] = os.environ.get("HOME", "")
+    if target_env:
+        for key in _PROBE_ENV_KEYS:
+            if key in target_env:
+                env[key] = target_env[key]
+    if not env["HOME"]:
+        del env["HOME"]
+    return env
+
+
+def _boot_time(proc_root: Path) -> float | None:
+    try:
+        for line in (proc_root / "stat").read_text(encoding="utf-8").splitlines():
+            if line.startswith("btime "):
+                return float(line.split()[1])
+    except (OSError, ValueError, IndexError):
         pass
     return None
+
+
+def _proc_start_time(entry: Path, btime: float | None) -> float | None:
+    """Epoch start of a process: btime + starttime (field 22) / CLK_TCK."""
+    if btime is None:
+        return None
+    try:
+        stat = (entry / "stat").read_text(encoding="utf-8")
+        fields = stat[stat.rindex(")") + 2:].split()
+        return btime + int(fields[19]) / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+# Tolerance between a file's mtime and a process start: btime has 1s
+# resolution, and an installer finishes writing just before it launches.
+_START_SLACK_S = 2.0
 
 
 def find_stale_processes(
@@ -299,13 +513,18 @@ def find_stale_processes(
     Excludes self. Detects running version via:
       (a) --report-version <ver> in cmdline
       (b) uvx --from conscio==<ver> (or @<ver>) in cmdline
-      (c) Python virtualenv / package dist-info resolved by walking up parent directories.
+      (b+) the process's own interpreter, invoked as the process invoked it
+           (cmdline[0], its sys.path[0], its PYTHON* env), importing conscio
+      (c) last resort: a non-editable dist-info found by walking up from the
+          process's path arguments.
 
     Returns a list of dicts with:
       - pid: int
       - name: str
-      - running_version: str
+      - running_version: str ("<X" when the process predates X on disk)
       - installed_version: str
+      - reason: "older_version" | "code_newer_than_process"
+        (the latter adds started, code_mtime, module_file)
     """
     proc_path = Path(proc_root)
     if not proc_path.exists() or not proc_path.is_dir():
@@ -318,6 +537,7 @@ def find_stale_processes(
     )
     parsed_target = _parse_version(target_version)
     self_pid = os.getpid()
+    btime = _boot_time(proc_path)
 
     stale: list[dict] = []
 
@@ -358,17 +578,19 @@ def find_stale_processes(
             if not cmdline_args and not comm:
                 continue
 
+            cwd = _read_proc_cwd(entry)
+
             exe_path = entry / "exe"
             exe_str = ""
-            candidate_paths: list[Path] = []
+            exe_paths: list[Path] = []
             if exe_path.is_symlink():
                 try:
                     exe_str = os.readlink(exe_path)
-                    candidate_paths.append(Path(exe_str))
+                    exe_paths.append(Path(exe_str))
                 except OSError:
                     pass
                 try:
-                    candidate_paths.append(exe_path.resolve())
+                    exe_paths.append(exe_path.resolve())
                 except OSError:
                     pass
             elif exe_path.exists():
@@ -378,14 +600,18 @@ def find_stale_processes(
                             encoding="utf-8", errors="replace"
                         ).strip()
                         if content.startswith("/"):
-                            candidate_paths.append(Path(content))
-                    candidate_paths.append(exe_path.resolve())
+                            exe_paths.append(Path(content))
+                    exe_paths.append(exe_path.resolve())
                 except OSError:
                     pass
 
+            # Path arguments as the process saw them (relative to ITS cwd).
+            arg_paths: list[Path] = []
             for arg in cmdline_args:
                 if "/" in arg:
-                    candidate_paths.append(Path(arg))
+                    absolute = _absolute_arg(arg, cwd)
+                    if absolute:
+                        arg_paths.append(Path(absolute))
 
             is_conscio = (
                 "conscio" in comm.lower()
@@ -410,33 +636,77 @@ def find_stale_processes(
             running_ver = _detect_version_from_cmdline_flags(cmdline_args)
             if not running_ver:
                 running_ver = _detect_version_from_uvx(cmdline_args)
-            if not running_ver and _is_python_exe(exe_str):
-                running_ver = _detect_version_from_interpreter(Path(exe_str))
+            probe = _Probe()
             if not running_ver:
-                running_ver = _detect_version_from_dist_info(candidate_paths)
+                env = _read_proc_environ(entry)
+                interp = _process_interpreter(cmdline_args, exe_str, cwd, env)
+                if interp:
+                    path0, flags = _interpreter_invocation(cmdline_args, cwd, env)
+                    probe = _probe_interpreter(
+                        interp, path0=path0, env=_probe_env(env), flags=flags)
+                    running_ver = probe.version
+            if not running_ver:
+                # Last resort. v4.7.3: the parents of a PYTHON exe are the
+                # base interpreter's install — walking up from uv's
+                # ~/.local/share/uv/python/... reached ~/.local and returned
+                # an unrelated dist-info (another Python version, editable).
+                # They count only when the exe is not a Python at all.
+                # A deleted interpreter (brew/uv replaced it under a live
+                # process) is still a Python: its parents are the same base
+                # install, even though it can no longer be probed.
+                exe_is_python = _is_python_exe(exe_str.removesuffix(" (deleted)"))
+                walk = arg_paths if exe_is_python else arg_paths + exe_paths
+                running_ver = _detect_version_from_dist_info(walk)
 
             if not running_ver:
                 continue
 
-            parsed_running = _parse_version(running_ver)
-            if parsed_running < parsed_target:
-                proc_name = (
-                    comm
-                    if comm
-                    else (
-                        Path(cmdline_args[0]).name
-                        if cmdline_args
-                        else "conscio"
-                    )
+            proc_name = (
+                comm
+                if comm
+                else (
+                    Path(cmdline_args[0]).name
+                    if cmdline_args
+                    else "conscio"
                 )
+            )
+            if _parse_version(running_ver) < parsed_target:
                 stale.append(
                     {
                         "pid": pid,
                         "name": proc_name,
                         "running_version": running_ver,
                         "installed_version": target_version,
+                        "reason": "older_version",
                     }
                 )
+                continue
+
+            # v4.7.3: the probe reads the DISK. A process started before the
+            # code it would import today was written (pip/uv upgrade in place,
+            # editable repo after a bump) still runs the old code in memory:
+            # exactly the "restart after upgrade" case, which doctor could
+            # never see. Measured 2026-09-24: the freebuff reactor, up since
+            # 09-22, was not even listed.
+            started = _proc_start_time(entry, btime)
+            if probe.module_file and started is not None:
+                try:
+                    code_mtime = os.stat(probe.module_file).st_mtime
+                except OSError:
+                    code_mtime = None
+                if code_mtime is not None and code_mtime > started + _START_SLACK_S:
+                    stale.append(
+                        {
+                            "pid": pid,
+                            "name": proc_name,
+                            "running_version": f"<{running_ver}",
+                            "installed_version": target_version,
+                            "reason": "code_newer_than_process",
+                            "started": started,
+                            "code_mtime": code_mtime,
+                            "module_file": probe.module_file,
+                        }
+                    )
         except (OSError, ValueError):
             continue
 
@@ -540,6 +810,16 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         installed_version=installed_ver, proc_root=proc_root
     )
     for sp in stale:
+        if sp.get("reason") == "code_newer_than_process":
+            print(
+                f"AVISO: processo {sp['pid']} ({sp['name']}) iniciou "
+                f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(sp['started']))}, "
+                f"antes do codigo que carregaria hoje "
+                f"({sp['running_version'][1:]}, gravado "
+                f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(sp['code_mtime']))}): "
+                f"roda codigo anterior, reinicie para nao apagar campos novos"
+            )
+            continue
         print(
             f"AVISO: processo {sp['pid']} ({sp['name']}) roda versao "
             f"{sp['running_version']} < instalada {sp['installed_version']}, "
