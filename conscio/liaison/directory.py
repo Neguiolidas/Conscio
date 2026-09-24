@@ -22,13 +22,22 @@ from .agents import STALE_AFTER_S
 RELAY_ROOT_ENV = "CONSCIO_RELAY_ROOT"
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 PRUNE_AFTER_DAYS = 30.0
+# v4.7.2: silent this long, a LOCAL card stops receiving broadcasts. Measured
+# 2026-09-24: 8fb1197f had been silent 20 days and was still collecting fan-out
+# (10 messages parked, the newest 68h old) — nobody would ever read them. Three
+# days clears a weekend away; a direct send still goes through, with a warning.
+DORMANT_AFTER_S = 3 * 86400.0
 
 __all__ = [
+    "DORMANT_AFTER_S",
     "RELAY_ROOT_ENV",
     "STALE_AFTER_S",
+    "dormant_for",
     "forget",
     "get",
     "is_live",
+    "is_remote",
+    "orphan_spools",
     "peers",
     "peers_dir",
     "prune",
@@ -206,6 +215,57 @@ def is_live(card: dict | None, now: float | None = None) -> bool:
     return (time.time() if now is None else now) - ts <= STALE_AFTER_S
 
 
+def is_remote(card: dict | None) -> bool:
+    """Peer on another machine (written by `relay pair`): it has a url and no
+    local spool. Nothing on THIS machine heartbeats it — its `updated_at` is
+    the pairing time — so its age says nothing about whether it is alive."""
+    return bool(card and card.get("url") and not card.get("spool"))
+
+
+def _age(card: dict, now: float) -> float:
+    try:
+        return now - float(card.get("updated_at") or 0.0)
+    except (TypeError, ValueError):
+        return float("inf")
+
+
+def dormant_for(card: dict | None, now: float | None = None) -> float | None:
+    """Seconds a LOCAL card has been silent past DORMANT_AFTER_S, else None.
+
+    None for a missing card (a named or remote peer is not "dormant", it is
+    unknown here) and for any remote card (see `is_remote`)."""
+    if not card or is_remote(card):
+        return None
+    age = _age(card, time.time() if now is None else now)
+    return age if age > DORMANT_AFTER_S else None
+
+
+def orphan_spools() -> list[tuple[str, int]]:
+    """(id, parked) for every spool holding messages for an id with NO card.
+
+    Read-only, for `relay doctor`. Nobody ingests these: the card that would
+    lead an agent to its spool is gone. Alias symlinks are skipped — they point
+    at a real id's spool, which is counted under that id."""
+    root = relay_root() / "spool"
+    out: list[tuple[str, int]] = []
+    try:
+        entries = sorted(root.iterdir())
+    except OSError:
+        return out
+    for entry in entries:
+        if entry.is_symlink() or not entry.is_dir() or not valid_id(entry.name):
+            continue
+        if get(entry.name) is not None:
+            continue
+        try:
+            n = sum(1 for _ in entry.glob("*.json"))
+        except OSError:
+            continue
+        if n:
+            out.append((entry.name, n))
+    return out
+
+
 def forget(instance_id: str) -> bool:
     try:
         _card_path(instance_id).unlink()
@@ -215,14 +275,22 @@ def forget(instance_id: str) -> bool:
 
 
 def prune(max_age_days: float = PRUNE_AFTER_DAYS) -> int:
-    """Coleta cartao de agente extinto."""
-    cutoff = time.time() - max_age_days * 86400
+    """Coleta cartao de agente extinto.
+
+    v4.7.2: remote cards are never collected — their age is the pairing time,
+    so pruning them would silently unpair a live machine 30 days after
+    `relay pair`. And the age is re-read right before the unlink: an agent that
+    comes back after a month republishes, and must not lose the fresh card to a
+    decision taken on the stale one."""
+    cutoff_s = max_age_days * 86400
     removed = 0
     for card in peers():
-        try:
-            ts = float(card.get("updated_at") or 0.0)
-        except (TypeError, ValueError):
-            ts = 0.0
-        if ts < cutoff and forget(str(card.get("instance_id", ""))):
+        cid = str(card.get("instance_id", ""))
+        if is_remote(card) or _age(card, time.time()) <= cutoff_s:
+            continue
+        fresh = get(cid)
+        if fresh is None or is_remote(fresh) or _age(fresh, time.time()) <= cutoff_s:
+            continue
+        if forget(cid):
             removed += 1
     return removed

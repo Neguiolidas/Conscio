@@ -23,7 +23,7 @@ memory, self-judgment and procedural skill — and proves every claim by
 measurement, not assertion. Local-first and zero-dep at the core
 (`numpy` + stdlib `sqlite3`, nothing else).
 
-**Latest release — `v4.7.1` "The audit lands; the loop closes":** the hostile post-ship audit landed as fixes, not as quiet polish: `conscio outcomes list/resolve` closes the calibration loop by attaching real outcomes to captured decisions, identity env vars (`CONSCIO_IDENTITY_*`) give every host a per-host card without touching the shared asset, a missing embedding backend now logs a WARNING with the remedy instead of failing silently, and every doc the audit caught stale — CONTRIBUTING, USAGE, storage defaults — was rewritten against measured truth.
+**Latest release — `v4.7.2` "Mail that nobody reads is now visible":** `relay doctor` shows, per local agent, what is waiting unconsumed, since when and from whom, flags dormant agents and spools nobody will ingest — and no longer executes every binary in `/proc` to guess versions. Broadcast skips peers silent for 3+ days and says so in `skipped`; a direct send to one delivers with a `warning`. Dead cards are finally collected in production, and a paired remote never is.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 

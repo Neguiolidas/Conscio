@@ -252,6 +252,18 @@ def _sort_dist_infos(dist_infos: list[Path]) -> list[Path]:
     return sorted(dist_infos, key=lambda p: len(p.parts), reverse=True)
 
 
+_PYTHON_EXE_RE = re.compile(r"^python(\d+(\.\d+)*)?$")
+
+
+def _is_python_exe(exe: str) -> bool:
+    """Only a Python interpreter may be probed with `-c "import conscio"`:
+    for any other binary `-c` means something else, and running it has side
+    effects (v4.7.2). A " (deleted)" suffix from /proc means the file is gone."""
+    if not exe or exe.endswith(" (deleted)"):
+        return False
+    return bool(_PYTHON_EXE_RE.match(Path(exe).name))
+
+
 def _detect_version_from_interpreter(exe: Path) -> str | None:
     """(b+) Ask the target's own interpreter what conscio it resolves.
 
@@ -385,15 +397,25 @@ def find_stale_processes(
                 )
             )
 
+            # v4.7.2: filter BEFORE any detection. The interpreter probe
+            # executes `<exe> -c ...`, and it used to run for EVERY process in
+            # /proc: doctor spawned zcode, antigravity, rustdesk, pipewire,
+            # gnome-keyring-daemon... with `-c` (for `claude`, `-c` is
+            # --continue). Daemons that fork outlived the 5s kill — stray
+            # gnome-keyring-daemons measured 2026-09-24 — and ~5s per
+            # non-python process made doctor hang for minutes.
+            if not is_conscio:
+                continue
+
             running_ver = _detect_version_from_cmdline_flags(cmdline_args)
             if not running_ver:
                 running_ver = _detect_version_from_uvx(cmdline_args)
-            if not running_ver:
-                running_ver = _detect_version_from_interpreter(Path(exe_str)) if exe_str else None
+            if not running_ver and _is_python_exe(exe_str):
+                running_ver = _detect_version_from_interpreter(Path(exe_str))
             if not running_ver:
                 running_ver = _detect_version_from_dist_info(candidate_paths)
 
-            if not is_conscio or not running_ver:
+            if not running_ver:
                 continue
 
             parsed_running = _parse_version(running_ver)
@@ -419,6 +441,64 @@ def find_stale_processes(
             continue
 
     return sorted(stale, key=lambda x: x["pid"])
+
+
+def _fmt_age(seconds: float) -> str:
+    if seconds >= 86400:
+        return f"{seconds / 86400:.0f}d"
+    if seconds >= 3600:
+        return f"{seconds / 3600:.0f}h"
+    return f"{max(seconds, 0) / 60:.0f}min"
+
+
+def _report_mailboxes(cards: list[dict]) -> None:
+    """v4.7.2: per LOCAL agent, what is waiting unconsumed and since when.
+
+    The question every "why doesn't X answer" session started with, answered
+    by hand with sqlite one-liners (2026-09-24: Hermes had 3 messages from a
+    new peer parked 20h, filtered out by a stale allowlist; 8fb1197f had 10
+    broadcasts nobody would ever read). Informational, never a PROBLEM: a
+    backlog is state, not a fault of the machine running doctor. Review types
+    are left out — their own channel consumes them, not the wake path."""
+    from . import relay
+    now = time.time()
+    print("mailboxes (unconsumed, per local agent):")
+    for card in sorted(cards, key=lambda c: str(c.get("instance_id", ""))):
+        cid = str(card.get("instance_id", ""))
+        if directory.is_remote(card):
+            continue
+        space = str(card.get("space") or "")
+        rows = [r for r in (mailbox.waiting(mailbox.db_in_space(Path(space)), cid)
+                            if space else [])
+                if r.get("type") not in relay.RESERVED_TYPES]
+        try:
+            parked = sum(1 for _ in directory.spool_dir(cid).glob("*.json"))
+        except (OSError, ValueError):
+            parked = 0
+        silent = directory.dormant_for(card, now)
+        # A card without runtime (freebuff) still says who it is by its space:
+        # ~/.conscio/instances/<name>. A generic ".../space" says nothing.
+        fallback = Path(space).name if space and Path(space).name != "space" else "?"
+        label = str(card.get("runtime") or card.get("familia") or fallback)
+        tag = f" DORMANT {_fmt_age(silent)}" if silent is not None else ""
+        if not rows and not parked:
+            print(f"  {cid[:8]} {label}: empty{tag}")
+            continue
+        line = f"  {cid[:8]} {label}: {len(rows)} waiting"
+        if rows:
+            senders: dict[str, int] = {}
+            for r in rows:
+                s = str(r.get("from_instance", ""))[:8]
+                senders[s] = senders.get(s, 0) + 1
+            by = ", ".join(f"{s}×{n}" for s, n in sorted(senders.items()))
+            line += f", oldest {_fmt_age(now - float(rows[0]['ts']))} ({by})"
+        if parked:
+            line += f", {parked} parked in spool"
+        print(line + tag)
+    for oid, n in directory.orphan_spools():
+        print(f"AVISO: spool {oid[:8]} holds {n} message(s) and has no card — "
+              f"nobody will ingest them (`relay forget` left it, or the agent "
+              f"never published)")
 
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
@@ -451,6 +531,8 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
 
     remotes = relay_transport.load_remotes()
     print(f"paired remotes: {len(remotes)}")
+
+    _report_mailboxes(cards)
 
     proc_root = getattr(args, "proc_root", Path("/proc"))
     installed_ver = getattr(args, "installed_version", None)

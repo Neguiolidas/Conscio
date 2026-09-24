@@ -503,7 +503,8 @@ RELAY_TOOL_DEFS: list[dict] = [
      "inputSchema": _IDS_INPUT},
     {"name": "conscio_relay_broadcast",
      "description": "Send a free-form message to ALL trusted relay peers "
-                    "(fan-out; review types excluded).",
+                    "(fan-out; review types excluded). Peers silent for "
+                    "3+ days are skipped and listed in `skipped`.",
      "inputSchema": _RELAY_BROADCAST_INPUT},
     {"name": "conscio_relay_peers",
      "description": "List reachable relay peers (id + identity + liveness). "

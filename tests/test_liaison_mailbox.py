@@ -372,3 +372,26 @@ def test_dedupe_never_swallows_distinct_traffic(tmp_path):
     _spool_in(db, frm="old", mid=None, spool_id="a4")  # legacy, no _meta.id
     _spool_in(db, frm="old", mid=None, spool_id="a5")  # ...never deduped
     assert len(mailbox.inbox(db, "me")) == 5
+
+
+# ── v4.7.2: waiting() — the read-only view `relay doctor` uses ───────────────
+
+def test_waiting_lists_unconsumed_oldest_first_without_payload(tmp_path):
+    db = tmp_path / "liaison.db"
+    a = mailbox.send(db, from_instance="X", to_instance="me", type="chat",
+                     payload={"text": "segredo"})
+    b = mailbox.send(db, from_instance="Y", to_instance="me", type="note",
+                     payload={})
+    mailbox.send(db, from_instance="X", to_instance="other", type="chat",
+                 payload={})
+    mailbox.mark_read(db, [b])
+    rows = mailbox.waiting(db, "me")
+    assert [r["id"] for r in rows] == [a]
+    assert rows[0]["from_instance"] == "X"
+    assert "payload" not in rows[0]
+
+
+def test_waiting_never_creates_the_db(tmp_path):
+    db = tmp_path / "nope" / "liaison.db"
+    assert mailbox.waiting(db, "me") == []
+    assert not db.exists()

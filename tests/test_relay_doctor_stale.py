@@ -273,3 +273,75 @@ def test_default_installed_version(tmp_path):
     assert stale[0]["pid"] == 123
     assert stale[0]["running_version"] == "0.0.1"
     assert stale[0]["installed_version"] != ""
+
+
+def test_interpreter_probe_never_runs_a_non_conscio_process(tmp_path, monkeypatch):
+    """v4.7.2: the probe executes `<exe> -c ...`. It used to run for EVERY
+    process in /proc — zcode, antigravity, gnome-keyring-daemon got spawned
+    with `-c`, and forking daemons outlived the 5s kill."""
+    probed: list[str] = []
+    monkeypatch.setattr(relay_cli, "_detect_version_from_interpreter",
+                        lambda exe: probed.append(str(exe)) or None)
+    proc_root = tmp_path / "proc"
+    _make_proc_process(proc_root, pid=501, cmdline_args=["zcode", "--type=gpu"],
+                       comm="zcode", exe_target="/opt/ZCode/zcode")
+    _make_proc_process(proc_root, pid=502, cmdline_args=["python3", "server.py"],
+                       comm="python3", exe_target="/usr/bin/python3.12")
+    find_stale_processes(installed_version="4.6.8", proc_root=proc_root)
+    assert probed == []
+
+
+def test_interpreter_probe_only_runs_python_binaries(tmp_path, monkeypatch):
+    """A conscio-looking cmdline does not make the binary a Python: for
+    `claude`, `-c` is --continue, and would resume a real session."""
+    probed: list[str] = []
+    monkeypatch.setattr(relay_cli, "_detect_version_from_interpreter",
+                        lambda exe: probed.append(str(exe)) or None)
+    proc_root = tmp_path / "proc"
+    _make_proc_process(proc_root, pid=601, cmdline_args=["claude", "--mcp", "conscio"],
+                       comm="claude", exe_target="/usr/local/bin/claude")
+    _make_proc_process(proc_root, pid=602,
+                       cmdline_args=["python3", "-m", "conscio.liaison.reactor"],
+                       comm="python3", exe_target="/usr/bin/python3.12")
+    _make_proc_process(proc_root, pid=603,
+                       cmdline_args=["python3", "-m", "conscio.mcp.server"],
+                       comm="python3", exe_target="/usr/bin/python3.12 (deleted)")
+    find_stale_processes(installed_version="4.6.8", proc_root=proc_root)
+    assert probed == ["/usr/bin/python3.12"]
+
+
+# ── v4.7.2: doctor answers "what is waiting, for whom, since when" ───────────
+
+def test_cmd_doctor_reports_mailboxes_dormancy_and_orphans(tmp_path, capsys):
+    import time as _t
+
+    from conscio.liaison import mailbox, spool
+    proc_root = tmp_path / "proc"
+    proc_root.mkdir()
+    space = tmp_path / "instances" / "freebuff"
+    space.mkdir(parents=True)
+    directory.publish({"instance_id": "me", "spool": str(directory.spool_dir("me")),
+                       "url": "", "runtime": "claude-code"})
+    directory.publish({"instance_id": "hermes-1",
+                       "spool": str(directory.spool_dir("hermes-1")), "url": "",
+                       "space": str(space)})
+    directory.publish({"instance_id": "ghost",
+                       "spool": str(directory.spool_dir("ghost")), "url": "",
+                       "runtime": "old", "updated_at": _t.time() - 20 * 86400})
+    db = mailbox.db_in_space(space)
+    mailbox.send(db, from_instance="me", to_instance="hermes-1", type="chat",
+                 payload={"text": "oi"})
+    mailbox.send(db, from_instance="me", to_instance="hermes-1",
+                 type="review_request", payload={})       # own channel: not counted
+    spool.deposit("ghost", {"from_instance": "me", "type": "chat", "payload": {}})
+    spool.deposit("gone", {"from_instance": "me", "type": "chat", "payload": {}})
+
+    rc = relay_cli.main(["doctor", "--id", "me", "--proc-root", str(proc_root),
+                         "--installed-version", "4.7.2"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "hermes-1 freebuff: 1 waiting" in out           # label from the space
+    assert "(me×1)" in out
+    assert "ghost old: 0 waiting, 1 parked in spool DORMANT 20d" in out
+    assert "me claude-code: empty" in out
+    assert "AVISO: spool gone holds 1 message(s) and has no card" in out

@@ -608,7 +608,7 @@ def test_relay_broadcast_empty_allowlist(tmp_path):
                          relay=True, relay_peers=(), liaison_db=db)
     try:
         r = b._relay_broadcast({"type": "note", "payload": {"x": 1}})
-        assert r == {"ok": True, "sent": [], "errors": []}
+        assert r == {"ok": True, "sent": [], "errors": [], "skipped": []}
     finally:
         seen.close()
         eng.close()
@@ -1152,3 +1152,73 @@ def test_hall_dispatch_routes_and_hides_seven_tools(tmp_path):
         assert len(members["members"]) == 2
     finally:
         seenA.close(); engA.close(); seenB.close(); engB.close()
+
+
+# ── v4.7.2: dormant peers — skipped by broadcast, warned on direct send ──────
+
+def _publish_aged(cid, days, **kw):
+    from conscio.liaison import directory
+    card = {"instance_id": cid, "spool": str(directory.spool_dir(cid)),
+            "url": "", "updated_at": time.time() - days * 86400}
+    card.update(kw)
+    directory.publish(card)
+
+
+def test_relay_broadcast_skips_dormant_peer_and_says_so(tmp_path):
+    """2026-09-24: 8fb1197f, dead for 20 days, still got every broadcast."""
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B", "C"), liaison_db=db)
+    _publish("B")
+    _publish_aged("C", days=20)
+    try:
+        r = b._relay_broadcast({"type": "note", "payload": {"hi": 1}})
+        assert {s["to"] for s in r["sent"]} == {"B"}
+        assert [s["to"] for s in r["skipped"]] == ["C"]
+        assert "20d" in r["skipped"][0]["reason"]
+        assert r["errors"] == []
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_broadcast_never_skips_a_paired_remote(tmp_path):
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("R",), liaison_db=db)
+    _publish_aged("R", days=60, spool="", url="http://10.0.0.2:8789")
+    try:
+        r = b._relay_broadcast({"type": "note", "payload": {}})
+        assert r["skipped"] == []
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_send_to_dormant_peer_delivers_with_warning(tmp_path):
+    """Named explicitly = honoured. But "ok" alone would read as "seen"."""
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("C",), liaison_db=db)
+    _publish_aged("C", days=5)
+    try:
+        r = b._relay_send({"to": "C", "type": "note", "payload": {"x": 1}})
+        assert r["ok"] is True
+        assert "5d" in r["warning"]
+        assert spool.ingest(tmp_path / "C.db", "C") == 1
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_send_to_live_peer_has_no_warning(tmp_path):
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B",), liaison_db=db)
+    _publish("B")
+    try:
+        r = b._relay_send({"to": "B", "type": "note", "payload": {}})
+        assert r["ok"] is True and "warning" not in r
+    finally:
+        seen.close()
+        eng.close()

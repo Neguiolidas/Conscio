@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.7.2] - 2026-09-24 — Mail that nobody reads is now visible
+
+Patch from the relay message audit of 2026-09-24 (Hermes, Antigravity,
+zcode, Claude): messages were parked for days with nobody knowing, and the
+tool meant to answer "why doesn't X answer" hung instead.
+
+### Fixed
+
+- **`relay doctor` executed arbitrary binaries.** The version probe ran
+  `<exe> -c "import conscio; ..."` for EVERY process in /proc, before even
+  checking whether it was Conscio. zcode, antigravity and gnome-keyring-daemon
+  were spawned with `-c`, forking daemons outlived the 5s kill (9 stray
+  processes measured), and doctor hung for minutes. Only Conscio processes
+  are inspected now, and only Python interpreters are probed (for `claude`,
+  `-c` is `--continue`). Deleted binaries are never executed.
+- **Broadcast fed dead peers.** A card silent for 20 days still received
+  every broadcast. Local peers silent past 3 days are skipped and listed in
+  the new `skipped` field. Paired remotes are never judged: their age is
+  the pairing time.
+- **Direct send to a dormant peer said only "ok".** It still delivers (the
+  sender named the peer), but now returns a `warning` with how long it has
+  been silent.
+- **`directory.prune` never ran in production.** It existed and was
+  tested, but nothing called it. It now runs on the send path with the rest
+  of retention, never collects a paired remote, and re-reads the card
+  right before deleting it (an agent that came back is not collected).
+- **Phantom space from an unsubstituted plugin variable.** Codex installed
+  the Claude Code plugin and ran its `.mcp.json` verbatim: it does not
+  substitute `${CLAUDE_PLUGIN_DATA}`, so `conscio-mcp` received the literal
+  string and created a `${CLAUDE_PLUGIN_DATA}/space` directory relative to
+  its working directory — inside the repo, untracked, one `git add .` away
+  from committing a database. `conscio-mcp` now refuses a `--storage` that
+  still contains `${VAR}` or `$VAR`: it exits 2, names the variable, and
+  creates nothing. Hosts that substitute the variable (Claude Code, zcode)
+  are unaffected.
+
+### Added
+
+- **`relay doctor` reports mailboxes.** For each local agent: unconsumed
+  messages, the oldest one's age, by sender; messages parked in the spool;
+  DORMANT state. It also warns about spools with mail but no card (nobody
+  will ingest them). Read-only: `mailbox.waiting` opens the db with
+  `mode=ro`, never creates a schema, never quarantines.
+
+### Changed
+
+- `relay_broadcast` returns `skipped` alongside `sent`/`errors`.
+
+---
+
 ## [4.7.1] - 2026-09-23 — The audit lands; the loop closes
 
 Post-ship audit round (hostile, by the Gemini executor and verified by the

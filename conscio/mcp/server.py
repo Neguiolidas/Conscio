@@ -561,21 +561,35 @@ class Bindings:
                            to_instance=to, type=mtype, payload=payload,
                            identity=identity)
         self._retention_tick()
-        return {"ok": True, "id": mid, "to": to}
+        out: dict = {"ok": True, "id": mid, "to": to}
+        # v4.7.2: a direct send to a dormant peer is honoured — the sender
+        # named it — but not silently: "ok" alone reads as "it will be seen".
+        from ..liaison import directory
+        silent = directory.dormant_for(directory.get(to))
+        if silent is not None:
+            out["warning"] = (f"{to} has been silent for {silent / 86400:.0f}d;"
+                              " the message is parked until it comes back")
+        return out
 
     def _retention_tick(self) -> None:
         """R2 best-effort retention, on the send path.
 
-        Two tables age, not one: read messages AND quarantine. The quarantine
-        had no collector until v4.5.4 (A7) — a malformed sender could grow it
-        without bound, and nobody would notice because nothing reads it on the
-        happy path. Never raises: retention must not break delivery."""
+        Three things age, not one: read messages, quarantine, and — since
+        v4.7.2 — the directory. The quarantine had no collector until v4.5.4
+        (A7); `directory.prune` existed and was tested, but nothing in
+        production ever called it, so extinct cards kept attracting mail.
+        Never raises: retention must not break delivery."""
         try:
             mailbox.purge_read(self.liaison_db, relay.RETENTION_DAYS)
             mailbox.purge_quarantine(self.liaison_db,
                                      older_than_days=relay.RETENTION_DAYS)
         except Exception as exc:
             print(f"liaison: relay purge failed: {exc}", file=sys.stderr)
+        try:
+            from ..liaison import directory
+            directory.prune()
+        except Exception as exc:
+            print(f"liaison: directory prune failed: {exc}", file=sys.stderr)
 
     def _deliver_to_peer(self, to: str, mtype: str, payload: dict,
                          identity: dict | None,
@@ -617,7 +631,12 @@ class Bindings:
     def _relay_broadcast(self, args: dict) -> dict:
         """v2.8.2: fan-out a relay message to ALL allowlisted peers. Best-effort
         per peer (a failing peer never aborts the rest); a mailbox write, never
-        host_act -> daemon-perceives/server-acts holds."""
+        host_act -> daemon-perceives/server-acts holds.
+
+        v4.7.2: a LOCAL peer silent past DORMANT_AFTER_S is skipped and listed
+        in `skipped`, never dropped quietly. Remote and card-less peers are
+        not judged: their age is unknowable from here."""
+        from ..liaison import directory
         mtype = str(args.get("type", ""))
         payload = args.get("payload", {})
         self._ensure_registered()                     # v4.5: presença
@@ -625,7 +644,13 @@ class Bindings:
         identity = self._identity() or None           # v4.5: envelope
         sent: list[dict] = []
         errors: list[dict] = []
-        for peer in peers:
+        skipped: list[dict] = []
+        for peer in sorted(peers):
+            silent = directory.dormant_for(directory.get(peer))
+            if silent is not None:
+                skipped.append({"to": peer, "reason":
+                                f"dormant: silent for {silent / 86400:.0f}d"})
+                continue
             try:
                 relay.validate_send(to=peer, type=mtype, payload=payload,
                                     peers=peers)
@@ -649,7 +674,7 @@ class Bindings:
             sent.append({"to": peer, "id": mid})
         if sent:                                  # best-effort retention, once
             self._retention_tick()
-        return {"ok": True, "sent": sent, "errors": errors}
+        return {"ok": True, "sent": sent, "errors": errors, "skipped": skipped}
 
     def _relay_dispatch(self, args: dict) -> dict:
         """E3 (ADR-20260913133108-1fac9c): one dispatcher for the five relay
@@ -1851,11 +1876,21 @@ def resolve_full_identity(*, model: str, familia: str, runtime: str,
 
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
+    from conscio.installer.binding import unexpanded_variable, validate_binding
+    var = unexpanded_variable(args.storage)
+    if var:                                        # v4.7.2: before any mkdir
+        print(f"conscio-mcp: --storage {args.storage!r} still contains the "
+              f"variable {var}, so the host that launched this server did not "
+              "substitute it (Claude Code and zcode do; other hosts running "
+              "the plugin asset may not). Refusing to start rather than "
+              f"create a phantom space under {os.getcwd()}. Give this host an "
+              "absolute --storage path in its own MCP config.",
+              file=sys.stderr)
+        return 2
     ident = resolve_full_identity(
         model=args.identity_model, familia=args.identity_familia,
         runtime=args.identity_runtime, papel=args.identity_papel)
-    from conscio.installer.binding import validate_binding  # R6
-    validate_binding(args.storage)
+    validate_binding(args.storage)                 # R6
     try:
         model_name = _resolve_model(args)
     except ValueError:

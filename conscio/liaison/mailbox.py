@@ -353,6 +353,34 @@ def inbox(db: Path, to_instance: str, *, types: list[str] | None = None,
     return out
 
 
+def waiting(db: Path, to_instance: str) -> list[dict]:
+    """Unconsumed messages addressed to `to_instance`, oldest first: id,
+    from_instance, type, ts. No payload.
+
+    v4.7.2, for `relay doctor`. Opened read-only on purpose: a diagnosis must
+    not create the schema, and must not quarantine as a side effect the way
+    `inbox` does. Missing/corrupt/locked db -> []."""
+    db = Path(db)
+    if not db.exists():
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return []
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+        rows = conn.execute(
+            "SELECT id, from_instance, type, ts FROM messages"
+            " WHERE to_instance=? AND read_ts IS NULL ORDER BY id",
+            [to_instance]).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
 def thread(db: Path, a: str, b: str, *, limit: int = 20) -> list[dict]:
     """Last-N messages exchanged between instances a and b (BOTH directions),
     returned chronologically (oldest-first). Pure read; missing/corrupt/locked
