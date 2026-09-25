@@ -249,3 +249,119 @@ def test_b5_dangling_pointer_refuses(tmp_path):
         repair_pointer=False,
         announcement="",
     )
+
+
+def test_b3_same_id_two_copies_asks(tmp_path):
+    plugin_dir = tmp_path / "plugin"
+    storage = plugin_dir / "space"
+    storage.mkdir(parents=True, exist_ok=True)
+    slug = "claude-code"
+    durable = INSTANCES_ROOT() / slug
+    durable.mkdir(parents=True, exist_ok=True)
+
+    shared_id = "aaaa1111-2222-3333-4444-555566667777"
+    for path in (storage, durable):
+        (path / "instance.json").write_text(
+            json.dumps({"schema": 1, "instance_id": shared_id, "label": "test", "created_ts": 1000.0}),
+            encoding="utf-8",
+        )
+
+    env = {"CLAUDE_PLUGIN_DATA": str(plugin_dir)}
+    res = resolve_space(storage, env=env)
+
+    assert res.kind == "B3"
+    assert res.target is None
+    assert res.repair_pointer is False
+    assert (
+        "two copies of the same identity for claude-code; they may have diverged (interrupted cross-fs copy or manual copy)"
+        in res.reason
+    )
+
+
+def test_b3_conflicting_ids_asks(tmp_path):
+    plugin_dir = tmp_path / "plugin"
+    storage = plugin_dir / "space"
+    storage.mkdir(parents=True, exist_ok=True)
+    slug = "claude-code"
+    durable = INSTANCES_ROOT() / slug
+    durable.mkdir(parents=True, exist_ok=True)
+
+    plugin_id = "11112222-aaaa-bbbb-cccc-111122223333"
+    durable_id = "88889999-xxxx-yyyy-zzzz-888899990000"
+    (storage / "instance.json").write_text(
+        json.dumps({"schema": 1, "instance_id": plugin_id, "label": "test", "created_ts": 1000.0}),
+        encoding="utf-8",
+    )
+    (durable / "instance.json").write_text(
+        json.dumps({"schema": 1, "instance_id": durable_id, "label": "test", "created_ts": 1000.0}),
+        encoding="utf-8",
+    )
+
+    env = {"CLAUDE_PLUGIN_DATA": str(plugin_dir)}
+    res = resolve_space(storage, env=env)
+
+    assert res.kind == "B3"
+    assert res.target is None
+    assert res.repair_pointer is False
+    assert (
+        "identity conflict for claude-code: plugin copy (id 11112222) and durable copy (id 88889999) belong to different identities"
+        in res.reason
+    )
+
+
+def test_b4_evidence_without_space_asks(tmp_path):
+    plugin_dir = tmp_path / "plugin"
+    storage = plugin_dir / "space"
+    slug = "claude-code"
+    durable = INSTANCES_ROOT() / slug
+
+    # Case 1: Tombstone migrated-from.json exists in durable dir, but instance.json does NOT exist
+    durable.mkdir(parents=True, exist_ok=True)
+    (durable / "migrated-from.json").write_text(
+        json.dumps({
+            "schema": 1,
+            "origin": str(storage),
+            "runtime": "claude-code",
+            "slug": slug,
+            "migrated_ts": 1000.0,
+        }),
+        encoding="utf-8",
+    )
+
+    env = {"CLAUDE_PLUGIN_DATA": str(plugin_dir)}
+    res = resolve_space(storage, env=env)
+
+    assert res.kind == "B4"
+    assert res.target is None
+    assert res.repair_pointer is False
+    assert f"evidence of a previous identity for {slug} was found" in res.reason
+    assert (
+        "but no live space exists. Not minting silently — resolve with 'conscio space migrate' or delete the evidence explicitly."
+        in res.reason
+    )
+
+    # Case 2: No tombstone, but card in relay peers directory exists
+    (durable / "migrated-from.json").unlink()
+    from conscio.liaison import directory
+    peers_dir = directory.peers_dir()
+    peers_dir.mkdir(parents=True, exist_ok=True)
+    card_id = "test-peer-id-1234"
+    (peers_dir / f"{card_id}.json").write_text(
+        json.dumps({
+            "instance_id": card_id,
+            "runtime": "claude-code",
+            "familia": "claude",
+            "modelo": "claude-3-7-sonnet",
+        }),
+        encoding="utf-8",
+    )
+
+    res2 = resolve_space(storage, env=env)
+    assert res2.kind == "B4"
+    assert res2.target is None
+    assert res2.repair_pointer is False
+    assert f"evidence of a previous identity for {slug} was found" in res2.reason
+    assert (
+        "but no live space exists. Not minting silently — resolve with 'conscio space migrate' or delete the evidence explicitly."
+        in res2.reason
+    )

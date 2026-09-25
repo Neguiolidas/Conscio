@@ -236,8 +236,79 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
             announcement=announcement,
         )
 
+    if plugin_has_instance and durable_has_instance:
+        # B3: Two space copies found
+        plugin_id = ""
+        durable_id = ""
+        try:
+            if plugin_inst_path is not None:
+                p_data = json.loads(plugin_inst_path.read_text(encoding="utf-8"))
+                plugin_id = str(p_data.get("instance_id", ""))
+        except Exception:
+            pass
+        try:
+            d_data = json.loads(durable_inst_path.read_text(encoding="utf-8"))
+            durable_id = str(d_data.get("instance_id", ""))
+        except Exception:
+            pass
+
+        if plugin_id and durable_id and plugin_id == durable_id:
+            reason = (
+                f"two copies of the same identity for {slug}; "
+                "they may have diverged (interrupted cross-fs copy or manual copy)"
+            )
+        else:
+            p_id8 = plugin_id[:8] if plugin_id else "unknown"
+            d_id8 = durable_id[:8] if durable_id else "unknown"
+            reason = (
+                f"identity conflict for {slug}: plugin copy (id {p_id8}) and durable copy (id {d_id8}) "
+                "belong to different identities"
+            )
+        return SpaceResolution(
+            kind="B3",
+            target=None,
+            reason=reason,
+            repair_pointer=False,
+            announcement="",
+        )
+
     if not plugin_has_instance and not durable_has_instance:
-        # B6: Fresh mint on durable space
+        # B4: Evidence of previous identity without live space
+        # Check in strict order: 1. Durable tombstone, 2. Directory peer card
+        tombstone = durable_target / "migrated-from.json"
+        if tombstone.exists():
+            return SpaceResolution(
+                kind="B4",
+                target=None,
+                reason=(
+                    f"evidence of a previous identity for {slug} was found (tombstone at {tombstone}), "
+                    "but no live space exists. Not minting silently — resolve with 'conscio space migrate' "
+                    "or delete the evidence explicitly."
+                ),
+                repair_pointer=False,
+                announcement="",
+            )
+
+        try:
+            from ..liaison import directory
+            for card in directory.peers():
+                if card.get("runtime") == runtime or card.get("slug") == slug:
+                    cid = card.get("instance_id", "unknown")
+                    return SpaceResolution(
+                        kind="B4",
+                        target=None,
+                        reason=(
+                            f"evidence of a previous identity for {slug} was found (relay card {cid}), "
+                            "but no live space exists. Not minting silently — resolve with 'conscio space migrate' "
+                            "or delete the evidence explicitly."
+                        ),
+                        repair_pointer=False,
+                        announcement="",
+                    )
+        except Exception:
+            pass
+
+        # B6: Fresh mint on durable space (only when nothing exists)
         return SpaceResolution(
             kind="B6",
             target=durable_target,
@@ -246,7 +317,7 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
             announcement="",
         )
 
-    # Fallback placeholder (B3/B4 will be handled in subsequent tasks)
+    # Fallback for unexpected states
     return SpaceResolution(
         kind="unhandled",
         target=None,
