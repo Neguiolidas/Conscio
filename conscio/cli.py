@@ -184,6 +184,23 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="operate the relay: pair/peers/quarantine/doctor "
                         "(see: conscio relay --help)")
 
+    p_space = sub.add_parser("space", help="manage conscious spaces (durable space)")
+    p_space_sub = p_space.add_subparsers(dest="space_command", metavar="<subcommand>")
+    p_space_mig = p_space_sub.add_parser(
+        "migrate", help="migrate legacy plugin space to durable space"
+    )
+    p_space_mig.add_argument(
+        "--slug", default=None, help="space slug to migrate (default: auto-detect from host runtime)"
+    )
+    p_space_mig.add_argument(
+        "--quiet-minutes", type=int, default=10,
+        help="require no files modified in legacy path for N minutes (default: 10)"
+    )
+    p_space_mig.add_argument(
+        "--proc-root", default="/proc",
+        help="path to /proc filesystem (default: /proc)"
+    )
+
     p_ingest = sub.add_parser(
         "ingest",
         help="ingest a file or directory into ContentStore (+ vector search)")
@@ -1315,12 +1332,17 @@ def _main(argv: list[str] | None = None) -> int:
     if args.command == "outcomes":
         return _cmd_outcomes(args)
 
-    if args.command == "observatory":
-        return _cmd_observatory(host=args.host, port=args.port,
-                                root=args.root, token=args.token,
-                                storage=args.storage,
-                                noosphere=args.noosphere,
-                                liaison_db=args.liaison_db)
+    if args.command == "space":
+        if getattr(args, "space_command", None) == "migrate":
+            from .installer.migrate_cmd import migrate_space_cmd
+            return migrate_space_cmd(
+                slug=args.slug,
+                quiet_minutes=args.quiet_minutes,
+                proc_root=Path(args.proc_root),
+            )
+        parser.print_help()
+        return 2
+
     parser.print_help()
     return 2
 
