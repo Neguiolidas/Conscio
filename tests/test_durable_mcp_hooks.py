@@ -9,8 +9,16 @@ from unittest.mock import patch
 
 import pytest
 
+from conscio.installer.durable import (
+    plugin_data_dir,
+    plugin_pointer_path,
+    plugin_refused_marker_path,
+    resolve_space,
+    write_refused_marker,
+)
 from conscio.installer.spaces import INSTANCES_ROOT
 from conscio.mcp import server
+from conscio.obsstore import resolve_hook_storage
 
 HOOKS_DIR = (
     Path(__file__).resolve().parent.parent
@@ -312,4 +320,84 @@ def test_server_without_storage_skips_s1_and_preserves_none(tmp_path, monkeypatc
         call_kwargs = mock_engine.call_args.kwargs
         assert call_kwargs.get("storage_path") is None
         assert list(cwd_path.iterdir()) == []
+
+
+def test_hook_explicit_storage_ignores_plugin_root_pointer_and_refusal(tmp_path, monkeypatch):
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir(parents=True, exist_ok=True)
+    plugin_dir = tmp_path / "plugin"
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    other_target = tmp_path / "other_target"
+    other_target.mkdir(parents=True, exist_ok=True)
+
+    # Poison plugin dir with foreign pointer and refusal marker
+    (plugin_dir / "space-pointer.json").write_text(
+        json.dumps({
+            "schema": 1,
+            "target": str(other_target),
+            "runtime": "claude-code",
+            "slug": "claude-code",
+            "migrated_ts": 1000.0,
+        }),
+        encoding="utf-8",
+    )
+    (plugin_dir / "space-refused.json").write_text(
+        json.dumps({"schema": 1, "state": "B5", "reason": "foreign refusal", "ts": 1000.0}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("CLAUDE_PLUGIN_DATA", str(plugin_dir))
+    explicit_storage = fake_home / "meu-espaco"
+    explicit_storage.mkdir(parents=True, exist_ok=True)
+
+    # 1. resolve_hook_storage must return explicit_storage, not other_target or None
+    hook_res = resolve_hook_storage(explicit_storage)
+    assert hook_res == explicit_storage
+
+    # 2. Server's resolve_space and hook must agree on the same target
+    server_res = resolve_space(explicit_storage)
+    assert server_res.target == explicit_storage
+    assert hook_res == server_res.target
+
+    # 3. End-to-end hook execution via subprocess writes to explicit_storage
+    env = dict(os.environ)
+    env["CLAUDE_PLUGIN_DATA"] = str(plugin_dir)
+    payload = {
+        "session_id": "session-explicit",
+        "tool": "Bash",
+        "input": {"command": "echo test"},
+        "output": "test",
+    }
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(DEEPMINER_HOOK),
+            "post-tool-use",
+            "--obsstore",
+            str(OBSSTORE_HOOK),
+            "--storage",
+            str(explicit_storage),
+        ],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+    assert proc.returncode == 0
+    assert (explicit_storage / "obs.db").exists()
+
+
+def test_plugin_data_dir_none_for_non_bound_storage(tmp_path):
+    explicit_storage = tmp_path / "meu-espaco"
+    explicit_storage.mkdir(parents=True, exist_ok=True)
+
+    assert plugin_data_dir(explicit_storage) is None
+    assert plugin_pointer_path(explicit_storage) is None
+    assert plugin_refused_marker_path(explicit_storage) is None
+
+    # write_refused_marker should return None and not write anything inside explicit_storage
+    res = write_refused_marker(explicit_storage, "B5", "test reason")
+    assert res is None
+    assert not (explicit_storage / "space-refused.json").exists()
+
 

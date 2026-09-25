@@ -219,29 +219,29 @@ def find_refused_markers(
     return markers
 
 
-def plugin_data_dir(storage: Path | str, env: Mapping[str, str] | None = None) -> Path:
-    """Return the base plugin data directory for storage, or storage itself."""
+def plugin_data_dir(storage: Path | str, env: Mapping[str, str] | None = None) -> Path | None:
+    """Return the base plugin data directory for storage, or None if not plugin-bound."""
     storage_path = Path(storage).expanduser()
-    roots = plugin_data_roots(env)
+    roots = known_plugin_data_dirs(env=env, only_existing=False)
     for r in roots:
         try:
             if storage_path == r or storage_path.is_relative_to(r):
                 return r
         except (ValueError, OSError):
             continue
-    if storage_path.name == "space":
-        return storage_path.parent
-    return storage_path
+    return None
 
 
-def plugin_pointer_path(storage: Path | str, env: Mapping[str, str] | None = None) -> Path:
-    """Return the space-pointer.json path for storage."""
-    return plugin_data_dir(storage, env) / "space-pointer.json"
+def plugin_pointer_path(storage: Path | str, env: Mapping[str, str] | None = None) -> Path | None:
+    """Return the space-pointer.json path for storage, or None if not plugin-bound."""
+    p_dir = plugin_data_dir(storage, env)
+    return (p_dir / "space-pointer.json") if p_dir is not None else None
 
 
-def plugin_refused_marker_path(storage: Path | str, env: Mapping[str, str] | None = None) -> Path:
-    """Return the space-refused.json path for storage."""
-    return plugin_data_dir(storage, env) / "space-refused.json"
+def plugin_refused_marker_path(storage: Path | str, env: Mapping[str, str] | None = None) -> Path | None:
+    """Return the space-refused.json path for storage, or None if not plugin-bound."""
+    p_dir = plugin_data_dir(storage, env)
+    return (p_dir / "space-refused.json") if p_dir is not None else None
 
 
 def write_refused_marker(
@@ -250,9 +250,11 @@ def write_refused_marker(
     reason: str,
     env: Mapping[str, str] | None = None,
     ts: float | None = None,
-) -> Path:
-    """Atomically write space-refused.json schema 1."""
+) -> Path | None:
+    """Atomically write space-refused.json schema 1, or None if not plugin-bound."""
     marker_path = plugin_refused_marker_path(storage, env)
+    if marker_path is None:
+        return None
     marker_path.parent.mkdir(parents=True, exist_ok=True)
     if ts is None:
         ts = time.time()
@@ -269,12 +271,13 @@ def write_refused_marker(
 def remove_refused_marker(storage: Path | str, env: Mapping[str, str] | None = None) -> None:
     """Remove space-refused.json if present."""
     marker_path = plugin_refused_marker_path(storage, env)
-    try:
-        marker_path.unlink()
-    except FileNotFoundError:
-        pass
+    if marker_path is not None:
+        try:
+            marker_path.unlink()
+        except FileNotFoundError:
+            pass
     storage_path = Path(storage).expanduser()
-    if storage_path != marker_path.parent:
+    if marker_path is None or storage_path != marker_path.parent:
         try:
             (storage_path / "space-refused.json").unlink()
         except FileNotFoundError:

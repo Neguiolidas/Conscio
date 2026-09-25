@@ -75,6 +75,14 @@ def resolve_hook_storage(storage: str | Path | None) -> Path | None:
         except (ValueError, OSError):
             continue
 
+    # Gate: If NOT plugin-bound, explicit storage outside plugin data roots retains legacy behaviour.
+    # Never inspect pointers or plugin roots! Only check its own space-refused.json.
+    if not is_plugin_bound:
+        refused = storage_path / "space-refused.json"
+        if refused.exists():
+            return None
+        return storage_path
+
     plugin_dirs: list[Path] = list(plugin_roots)
     if storage_path.name == "space":
         plugin_dirs.append(storage_path.parent)
@@ -122,10 +130,6 @@ def resolve_hook_storage(storage: str | Path | None) -> Path | None:
         seen_refs.add(ref)
         if ref.exists():
             return None
-
-    # If NOT plugin-bound, explicit storage outside plugin data roots retains legacy behaviour
-    if not is_plugin_bound:
-        return storage_path
 
     # 2. If plugin-bound: check ~/.conscio/instances/.migrating-*
     base = os.environ.get("CONSCIO_BASE")

@@ -1919,12 +1919,13 @@ def main(argv: list[str] | None = None) -> int:
             slug = slugify(ident[2] or "default")
             with minting_lock(slug):
                 ptr_path = plugin_pointer_path(storage_arg)
-                write_pointer_atomic(
-                    ptr_path,
-                    target=res.target,
-                    runtime=ident[2] or "default",
-                    slug=slug,
-                )
+                if ptr_path:
+                    write_pointer_atomic(
+                        ptr_path,
+                        target=res.target,
+                        runtime=ident[2] or "default",
+                        slug=slug,
+                    )
 
     validate_binding(args.storage)                 # R6
     try:
