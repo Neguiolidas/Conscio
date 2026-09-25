@@ -357,15 +357,6 @@ def _probe_interpreter(
     return _Probe()
 
 
-def _detect_version_from_interpreter(
-    exe: Path | str,
-    path0: str | None = None,
-    env: dict[str, str] | None = None,
-) -> str | None:
-    """Version-only view of `_probe_interpreter` (None when unknown)."""
-    return _probe_interpreter(exe, path0, env).version
-
-
 def _read_proc_environ(entry: Path) -> dict[str, str] | None:
     try:
         raw = (entry / "environ").read_bytes()
@@ -645,6 +636,12 @@ def find_stale_processes(
                     probe = _probe_interpreter(
                         interp, path0=path0, env=_probe_env(env), flags=flags)
                     running_ver = probe.version
+            if probe.importable is False:
+                # v4.7.3: the interpreter answered that conscio is not
+                # importable there — the process is a wrapper (a watchdog, a
+                # launcher), not Conscio; the disk cannot contradict the
+                # process's own answer.
+                continue
             if not running_ver:
                 # Last resort. v4.7.3: the parents of a PYTHON exe are the
                 # base interpreter's install — walking up from uv's

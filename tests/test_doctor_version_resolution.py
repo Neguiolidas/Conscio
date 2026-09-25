@@ -35,7 +35,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from conscio.liaison import relay_cli
 from conscio.liaison.relay_cli import (
     _detect_version_from_dist_info,
-    _detect_version_from_interpreter,
     _interpreter_invocation,
     _is_editable_dist_info,
     _is_python_exe,
@@ -83,20 +82,20 @@ def _fake_proc(proc_root: Path, pid: int, args: list[str], exe: str,
 class TestInterpreterResolution:
     def test_detects_version_of_our_own_interpreter(self):
         """Level (b+): importing with OUR interpreter returns OUR version."""
-        ver = _detect_version_from_interpreter(Path(sys.executable))
+        ver = _probe_interpreter(Path(sys.executable)).version
         assert ver is not None
         # this test runs under the repo-editable install -> must be the package version
         import conscio
         assert ver == conscio.__version__
 
     def test_dead_interpreter_returns_none(self, tmp_path):
-        assert _detect_version_from_interpreter(tmp_path / "no-such-python") is None
+        assert _probe_interpreter(tmp_path / "no-such-python").version is None
 
     def test_interpreter_without_conscio_returns_none(self, tmp_path):
         fake = tmp_path / "fakepy"
         fake.write_text("#!/bin/sh\nexit 1\n")
         fake.chmod(0o755)
-        assert _detect_version_from_interpreter(fake) is None
+        assert _probe_interpreter(fake).version is None
 
 
 class TestDistInfoOrder:
@@ -230,3 +229,16 @@ class TestFindStaleProcesses:
         assert sp["running_version"] == "<4.7.2"
         assert sp["module_file"] == str(code)
         assert sp["started"] == started
+
+    def test_non_importable_process_not_judged_by_disk(self, tmp_path, monkeypatch):
+        """v4.7.3: the interpreter answered that conscio is NOT importable there
+        (a wrapper/watchdog, not Conscio) — a reachable dist-info on disk must
+        not resurrect the process as stale Conscio code."""
+        site = tmp_path / "libs" / "python3.12" / "site-packages"
+        _dist_info(site, "1.0.0")  # older than the target: it WOULD look stale
+        _fake_proc(tmp_path / "proc", 4245,
+                   [sys.executable, "-m", "conscio.liaison.reactor", str(site)],
+                   sys.executable)
+        monkeypatch.setattr(relay_cli, "_probe_interpreter",
+                            lambda exe, **kw: _Probe(importable=False))
+        assert find_stale_processes("4.7.2", proc_root=tmp_path / "proc") == []

@@ -30,6 +30,10 @@ listed at all.
   disk (`(deleted)`). Editable dist-infos are skipped: their `Version` is
   the install-time one, not the loaded code (measured: 4.7.1 and 3.8.2 for
   processes loading 4.7.2).
+- **A wrapper process is no longer judged by the disk.** When the interpreter
+  answered that conscio is not importable there (a watchdog or launcher, not
+  Conscio), the doctor now skips the process — a reachable dist-info can no
+  longer resurrect it as stale.
 
 ### Added
 - **`relay doctor` flags a process older than its code on disk.** An
@@ -39,6 +43,12 @@ listed at all.
   `/proc/<pid>/stat`) with the mtime of the module it would import, with 2 s
   slack, and says `iniciou <data>, antes do codigo que carregaria hoje`.
   Entries carry `reason` (`older_version` | `code_newer_than_process`).
+
+### Known limitation
+- A wrapper whose own venv also has conscio installed is still listed. The
+  interpreter truthfully answers "importable" and the cmdline carries
+  `conscio-mcp` after `--` (measured: the Hermes `mcp_stdio_watchdog.py`,
+  whose venv has 4.7.2). Its child is judged on its own. Planned for v4.8.
 
 ---
 
