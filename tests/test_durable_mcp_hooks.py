@@ -13,6 +13,7 @@ from conscio.installer.durable import (
     plugin_data_dir,
     plugin_pointer_path,
     plugin_refused_marker_path,
+    remove_refused_marker,
     resolve_space,
     write_refused_marker,
 )
@@ -410,6 +411,18 @@ def test_plugin_data_dir_none_for_non_bound_storage(tmp_path):
     res = write_refused_marker(explicit_storage, "B5", "test reason")
     assert res is None
     assert not (explicit_storage / "space-refused.json").exists()
+
+
+def test_remove_refused_marker_preserves_user_file_in_non_bound_storage(tmp_path):
+    explicit_storage = tmp_path / "meu-espaco"
+    explicit_storage.mkdir(parents=True, exist_ok=True)
+    planted_file = explicit_storage / "space-refused.json"
+    planted_file.write_text(json.dumps({"user": "important-data"}), encoding="utf-8")
+
+    remove_refused_marker(explicit_storage)
+
+    assert planted_file.exists()
+    assert json.loads(planted_file.read_text(encoding="utf-8")) == {"user": "important-data"}
 
 
 def test_server_pointer_repair_uses_resolver_slug_and_runtime(tmp_path, monkeypatch):

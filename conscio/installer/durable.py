@@ -271,19 +271,19 @@ def write_refused_marker(
 
 
 def remove_refused_marker(storage: Path | str, env: Mapping[str, str] | None = None) -> None:
-    """Remove space-refused.json if present."""
+    """Remove space-refused.json if present in plugin data directory."""
     marker_path = plugin_refused_marker_path(storage, env)
     if marker_path is not None:
         try:
             marker_path.unlink()
         except FileNotFoundError:
             pass
-    storage_path = Path(storage).expanduser()
-    if marker_path is None or storage_path != marker_path.parent:
-        try:
-            (storage_path / "space-refused.json").unlink()
-        except FileNotFoundError:
-            pass
+        storage_path = Path(storage).expanduser()
+        if storage_path != marker_path.parent:
+            try:
+                (storage_path / "space-refused.json").unlink()
+            except FileNotFoundError:
+                pass
 
 
 def _find_pointer_file(storage: Path, root: Path | None = None) -> Path | None:
