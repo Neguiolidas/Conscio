@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import multiprocessing
 import os
-import time
 from pathlib import Path
 
 import pytest
@@ -31,12 +30,11 @@ def isolate_environment(tmp_path, monkeypatch):
             monkeypatch.delenv(k, raising=False)
 
 
-def _boot_worker(slug: str, queue: multiprocessing.Queue, env_vars: dict[str, str]):
+def _boot_worker(slug: str, queue: multiprocessing.Queue, env_vars: dict[str, str], barrier: multiprocessing.Barrier):
     for k, v in env_vars.items():
         os.environ[k] = v
     try:
-        # Small jitter to ensure concurrent contention on the flock
-        time.sleep(0.01)
+        barrier.wait()
         d, ident, created = ensure_space(slug)
         queue.put({"success": True, "instance_id": ident.instance_id, "created": created, "target": str(d)})
     except Exception as exc:
@@ -50,9 +48,10 @@ def test_b6_two_concurrent_boots_one_identity(tmp_path):
         "CONSCIO_BASE": os.environ["CONSCIO_BASE"],
     }
     queue: multiprocessing.Queue = multiprocessing.Queue()
+    barrier = multiprocessing.Barrier(2)
 
-    p1 = multiprocessing.Process(target=_boot_worker, args=(slug, queue, env_vars))
-    p2 = multiprocessing.Process(target=_boot_worker, args=(slug, queue, env_vars))
+    p1 = multiprocessing.Process(target=_boot_worker, args=(slug, queue, env_vars, barrier))
+    p2 = multiprocessing.Process(target=_boot_worker, args=(slug, queue, env_vars, barrier))
 
     p1.start()
     p2.start()
