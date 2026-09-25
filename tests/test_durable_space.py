@@ -311,6 +311,36 @@ def test_b3_conflicting_ids_asks(tmp_path):
     )
 
 
+def test_b3_unreadable_instance_json(tmp_path):
+    """Item 6: Corrupted instance.json in B3 reports (unreadable), not (unknown)."""
+    plugin_dir = tmp_path / "plugin"
+    storage = plugin_dir / "space"
+    storage.mkdir(parents=True, exist_ok=True)
+    slug = "claude-code"
+    durable = INSTANCES_ROOT() / slug
+    durable.mkdir(parents=True, exist_ok=True)
+
+    # Corrupted json in plugin copy -> unreadable
+    (storage / "instance.json").write_text("NOT_VALID_JSON{", encoding="utf-8")
+    (durable / "instance.json").write_text(
+        json.dumps({"schema": 1, "instance_id": "88889999-xxxx-yyyy-zzzz", "label": "test"}),
+        encoding="utf-8",
+    )
+
+    env = {"CLAUDE_PLUGIN_DATA": str(plugin_dir)}
+    res = resolve_space(storage, env=env)
+
+    assert res.kind == "B3"
+    assert "plugin copy (id unreadable)" in res.reason
+    assert "durable copy (id 88889999)" in res.reason
+
+    # Valid JSON but missing instance_id field -> (unknown)
+    (storage / "instance.json").write_text(json.dumps({"schema": 1}), encoding="utf-8")
+    res2 = resolve_space(storage, env=env)
+    assert res2.kind == "B3"
+    assert "plugin copy (id unknown)" in res2.reason
+
+
 def test_b4_evidence_without_space_asks(tmp_path):
     plugin_dir = tmp_path / "plugin"
     storage = plugin_dir / "space"
@@ -399,6 +429,49 @@ def test_b4_directory_peers_failure_refuses(tmp_path, monkeypatch):
     assert not durable.exists()
 
 
+def test_b4_remote_peer_card_is_skipped(tmp_path):
+    """Item 5: Remote peer card (with url and no spool) is skipped in B4, falling through to B6."""
+    from conscio.liaison import directory
+
+    plugin_dir = tmp_path / "plugin"
+    storage = plugin_dir / "space"
+
+    peers_dir = directory.peers_dir()
+    peers_dir.mkdir(parents=True, exist_ok=True)
+    card_id = "remote-peer-card-1"
+    (peers_dir / f"{card_id}.json").write_text(
+        json.dumps({
+            "instance_id": card_id,
+            "runtime": "claude-code",
+            "familia": "claude",
+            "url": "https://remote-host:8443",
+            "spool": None,
+        }),
+        encoding="utf-8",
+    )
+
+    env = {"CLAUDE_PLUGIN_DATA": str(plugin_dir)}
+
+    # Remote card with same runtime + nothing else -> B6 (mints)
+    res_remote = resolve_space(storage, env=env)
+    assert res_remote.kind == "B6"
+    assert res_remote.repair_pointer is True
+
+    # Same card as local (remove url or add spool) -> B4
+    (peers_dir / f"{card_id}.json").write_text(
+        json.dumps({
+            "instance_id": card_id,
+            "runtime": "claude-code",
+            "familia": "claude",
+            "spool": "/path/to/spool",
+        }),
+        encoding="utf-8",
+    )
+    res_local = resolve_space(storage, env=env)
+    assert res_local.kind == "B4"
+    assert res_local.target is None
+
+
 def test_boot_during_lock_refuses(tmp_path):
     plugin_dir = tmp_path / "plugin"
     storage = plugin_dir / "space"
@@ -446,6 +519,7 @@ def _lock_concurrency_worker(slug, env_vars, event_locked, event_step1_done, eve
 
 
 def test_boot_during_lock_concurrency_with_event(tmp_path):
+    # remover os eventos transforma o teste em falso-verde
     plugin_dir = tmp_path / "plugin"
     slug = "claude-code"
     lock_file = INSTANCES_ROOT() / f".migrating-{slug}"

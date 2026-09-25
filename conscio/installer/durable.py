@@ -455,19 +455,21 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
 
     if plugin_has_instance and durable_has_instance:
         # B3: Two space copies found
-        plugin_id = ""
-        durable_id = ""
-        try:
-            if plugin_inst_path is not None:
+        plugin_id = None
+        plugin_unreadable = False
+        durable_id = None
+        durable_unreadable = False
+        if plugin_inst_path is not None:
+            try:
                 p_data = json.loads(plugin_inst_path.read_text(encoding="utf-8"))
                 plugin_id = str(p_data.get("instance_id", ""))
-        except Exception:
-            pass
+            except Exception:
+                plugin_unreadable = True
         try:
             d_data = json.loads(durable_inst_path.read_text(encoding="utf-8"))
             durable_id = str(d_data.get("instance_id", ""))
         except Exception:
-            pass
+            durable_unreadable = True
 
         if plugin_id and durable_id and plugin_id == durable_id:
             reason = (
@@ -475,8 +477,20 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
                 "they may have diverged (interrupted cross-fs copy or manual copy)"
             )
         else:
-            p_id8 = plugin_id[:8] if plugin_id else "unknown"
-            d_id8 = durable_id[:8] if durable_id else "unknown"
+            if plugin_unreadable:
+                p_id8 = "unreadable"
+            elif plugin_id:
+                p_id8 = plugin_id[:8]
+            else:
+                p_id8 = "unknown"
+
+            if durable_unreadable:
+                d_id8 = "unreadable"
+            elif durable_id:
+                d_id8 = durable_id[:8]
+            else:
+                d_id8 = "unknown"
+
             reason = (
                 f"identity conflict for {slug}: plugin copy (id {p_id8}) and durable copy (id {d_id8}) "
                 "belong to different identities"
@@ -509,6 +523,8 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
         try:
             from ..liaison import directory
             for card in directory.peers():
+                if directory.is_remote(card):
+                    continue
                 if card.get("runtime") == runtime:
                     cid = card.get("instance_id", "unknown")
                     return SpaceResolution(
