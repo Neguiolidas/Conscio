@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import json
 import os
 import shutil
@@ -11,10 +12,12 @@ from pathlib import Path
 
 from conscio.installer.durable import (
     _write_json_atomic,
-    plugin_data_roots,
+    known_plugin_data_dirs,
+    migration_lock_path,
     plugin_pointer_path,
     remove_migration_lock,
     remove_refused_marker,
+    resolve_space,
     write_migration_lock,
     write_pointer_atomic,
 )
@@ -30,6 +33,42 @@ UNIT_MAP = {
     "zcode": "conscio-relay-reactor-zcode",
     "default": "conscio-relay-reactor",
 }
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _verify_trees_identical(src: Path, dst: Path) -> None:
+    for root, _dirs, files in os.walk(src):
+        rel = Path(root).relative_to(src)
+        for f in files:
+            src_f = Path(root) / f
+            dst_f = dst / rel / f
+            if not dst_f.is_file():
+                raise RuntimeError(f"cross-fs verification failed: missing {dst_f}")
+            if src_f.stat().st_size != dst_f.stat().st_size:
+                raise RuntimeError(f"cross-fs verification failed: size mismatch on {dst_f}")
+            if _sha256(src_f) != _sha256(dst_f):
+                raise RuntimeError(f"cross-fs verification failed: sha256 mismatch on {dst_f}")
+
+
+def _is_pid_alive(pid: int | None, proc_root: Path = Path("/proc")) -> bool:
+    if pid is None or pid <= 0:
+        return False
+    if proc_root != Path("/proc"):
+        return (proc_root / str(pid)).is_dir()
+    if (proc_root / str(pid)).is_dir():
+        return True
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError as err:
+        return err.errno == errno.EPERM
 
 
 def _find_active_legacy_procs(legacy_path: Path, proc_root: Path) -> list[dict]:
@@ -62,6 +101,28 @@ def _find_active_legacy_procs(legacy_path: Path, proc_root: Path) -> list[dict]:
     return active
 
 
+def _plugin_dir_matches_slug(p: Path, slug: str, env: Mapping[str, str]) -> bool:
+    slug_norm = slugify(slug)
+    p_str = str(p)
+    claude_env = env.get("CLAUDE_PLUGIN_DATA")
+    if claude_env:
+        try:
+            if Path(claude_env).expanduser().resolve() == p.resolve():
+                return slug_norm in ("claude", "claude-code")
+        except Exception:
+            pass
+    zcode_env = env.get("ZCODE_PLUGIN_DATA")
+    if zcode_env:
+        try:
+            if Path(zcode_env).expanduser().resolve() == p.resolve():
+                return slug_norm == "zcode"
+        except Exception:
+            pass
+    if slug_norm in ("claude", "claude-code") and ("claude" in p_str or "conscio-conscio" in p_str):
+        return True
+    return bool(slug_norm == "zcode" and "zcode" in p_str)
+
+
 def migrate_space_cmd(
     slug: str | None = None,
     quiet_minutes: int = 10,
@@ -72,87 +133,179 @@ def migrate_space_cmd(
     if env is None:
         env = os.environ
 
-    # Step 0: Slug determination
-    if not slug:
-        if "CLAUDE_PLUGIN_DATA" in env and "ZCODE_PLUGIN_DATA" not in env:
-            slug = "claude-code"
-        elif "ZCODE_PLUGIN_DATA" in env:
-            slug = "zcode"
+    # Step 0: Discovery of plugin folders & slug derivation
+    known_dirs = known_plugin_data_dirs(env=env, only_existing=True)
+
+    candidates_with_data: list[tuple[Path, Path]] = []
+    for p in known_dirs:
+        cand_space = p / "space"
+        if cand_space.is_dir() and any(cand_space.iterdir()):
+            candidates_with_data.append((p, cand_space))
+
+    plugin_dir: Path | None = None
+    legacy_path: Path | None = None
+
+    if slug:
+        slug_raw = slugify(slug)
+        if slug_raw == "codex":
+            print("conscio space migrate: codex has no recognized plugin folder yet.", file=sys.stderr)
+            return 3
+
+        matched = []
+        for p, s in candidates_with_data:
+            if _plugin_dir_matches_slug(p, slug_raw, env):
+                matched.append((p, s))
+
+        if matched:
+            plugin_dir, legacy_path = matched[0]
         else:
-            host_ident = derive_host_identity(env)
-            if host_ident.runtime:
-                slug = slugify(host_ident.runtime)
+            for p in known_dirs:
+                if _plugin_dir_matches_slug(p, slug_raw, env):
+                    plugin_dir = p
+                    legacy_path = p / "space"
+                    break
+            else:
+                print(f"conscio space migrate: no legacy space found for slug {slug}.", file=sys.stderr)
+                return 3
+        slug = slug_raw
+    else:
+        # No --slug passed: derive from found folder
+        if len(candidates_with_data) > 1:
+            print("conscio space migrate: multiple legacy spaces found. Pass --slug to specify which one to migrate:", file=sys.stderr)
+            for p, _ in candidates_with_data:
+                print(f"  {p}", file=sys.stderr)
+            return 3
+        elif len(candidates_with_data) == 1:
+            plugin_dir, legacy_path = candidates_with_data[0]
+            if _plugin_dir_matches_slug(plugin_dir, "claude-code", env):
+                slug = "claude-code"
+            elif _plugin_dir_matches_slug(plugin_dir, "zcode", env):
+                slug = "zcode"
+            else:
+                inst_file = legacy_path / "instance.json"
+                slug_found = None
+                if inst_file.is_file():
+                    try:
+                        data = json.loads(inst_file.read_text(encoding="utf-8"))
+                        slug_found = data.get("label") or data.get("runtime")
+                    except Exception:
+                        pass
+                if not slug_found:
+                    host_ident = derive_host_identity(env)
+                    slug_found = host_ident.runtime
+                slug = slug_found or "default"
+            slug = slugify(slug)
+        else:
+            # 0 candidates with space data
+            # Check if an in-flight migration lock exists for resumption
+            inst_root = space_dir("dummy").parent
+            stale_locks = []
+            if inst_root.is_dir():
+                for lock_cand in inst_root.iterdir():
+                    if lock_cand.name.startswith(".migrating-"):
+                        stale_locks.append(lock_cand)
 
-    if not slug:
-        print("conscio space migrate: cannot determine space slug. Pass --slug <name> explicitly.", file=sys.stderr)
-        return 3
+            if len(stale_locks) == 1:
+                lock_slug = stale_locks[0].name.removeprefix(".migrating-")
+                slug = slugify(lock_slug)
+                for p in known_dirs:
+                    if _plugin_dir_matches_slug(p, slug, env) or len(known_dirs) == 1:
+                        plugin_dir = p
+                        legacy_path = p / "space"
+                        break
+            else:
+                # Check Rule 6: instance.json directly in root
+                for p in known_dirs:
+                    if (p / "instance.json").is_file():
+                        print("conscio space migrate: legacy instance.json found directly in plugin root; moving entire plugin dir is prohibited.", file=sys.stderr)
+                        return 3
+                host_ident = derive_host_identity(env)
+                if host_ident.runtime == "codex":
+                    print("conscio space migrate: codex has no recognized plugin folder yet.", file=sys.stderr)
+                    return 3
+                print("conscio space migrate: cannot determine space slug. Pass --slug <name> explicitly.", file=sys.stderr)
+                return 3
 
-    slug = slugify(slug)
     durable_target = space_dir(slug)
 
-    # Locate legacy_path and plugin_dir
-    roots = plugin_data_roots(env)
-    legacy_path: Path | None = None
-    plugin_dir: Path | None = None
+    # Step 0 check: resolve_space and B3 collision check
+    if legacy_path and legacy_path.exists():
+        res = resolve_space(legacy_path, env=env)
+        if res.kind == "B3":
+            print(f"migration refused: {res.reason}", file=sys.stderr)
+            return 2
 
-    if roots:
-        for r in roots:
-            if (r / "space").is_dir():
-                legacy_path = r / "space"
-                plugin_dir = r
-                break
-            elif (r / "instance.json").is_file():
-                legacy_path = r
-                plugin_dir = r
-                break
-            else:
-                legacy_path = r / "space"
-                plugin_dir = r
-                break
-
-    if legacy_path is None:
-        if slug in ("claude", "claude-code"):
-            def_root = Path.home() / ".claude" / "plugins" / "data" / "conscio@conscio"
-            plugin_dir = def_root
-            legacy_path = def_root / "space"
-        elif slug == "zcode":
-            def_root = Path.home() / ".zcode" / "cli" / "plugins" / "data" / "conscio@conscio"
-            plugin_dir = def_root
-            legacy_path = def_root / "space"
-
-    if legacy_path is None or (not legacy_path.exists() and not durable_target.exists()):
-        print(f"conscio space migrate: no legacy space found for slug {slug}.", file=sys.stderr)
-        return 3
-
-    # Check if already migrated
-    pointer_file = plugin_dir / "space-pointer.json" if plugin_dir else None
-    if pointer_file and pointer_file.exists():
+    durable_inst = durable_target / "instance.json"
+    legacy_inst = legacy_path / "instance.json" if legacy_path else None
+    if durable_inst.is_file() and legacy_inst and legacy_inst.is_file():
         try:
-            data = json.loads(pointer_file.read_text(encoding="utf-8"))
-            if data.get("target") == str(durable_target) and durable_target.exists():
-                if legacy_path.exists() and not any(legacy_path.iterdir()):
-                    print(f"nothing to migrate: space for {slug} is already at {durable_target}")
-                    return 0
+            d_id = json.loads(durable_inst.read_text(encoding="utf-8")).get("instance_id")
+            l_id = json.loads(legacy_inst.read_text(encoding="utf-8")).get("instance_id")
+            if d_id and l_id and d_id != l_id:
+                print(
+                    f"migration refused: durable space {durable_target} (id {d_id}) "
+                    f"conflicts with legacy space (id {l_id})",
+                    file=sys.stderr,
+                )
+                return 2
         except Exception:
             pass
 
-    if legacy_path.exists() and not any(legacy_path.iterdir()) and durable_target.exists():
-        print(f"nothing to migrate: space for {slug} is already at {durable_target}")
-        return 0
+    # Check lock and crash resumption
+    lock_path = migration_lock_path(slug)
+    is_resumption = False
+
+    if lock_path.is_file():
+        pid = None
+        try:
+            lock_data = json.loads(lock_path.read_text(encoding="utf-8"))
+            pid = lock_data.get("pid")
+        except Exception:
+            pass
+
+        if _is_pid_alive(pid, proc_root=proc_root):
+            print(f"migration deferred: migration already in progress for {slug} (PID {pid} active)", file=sys.stderr)
+            return 2
+        else:
+            is_resumption = True
+            write_migration_lock(slug)
+    else:
+        # Check if already migrated (only when lock is absent)
+        pointer_file = plugin_pointer_path(legacy_path, env) if legacy_path else None
+        if pointer_file and pointer_file.is_file():
+            try:
+                data = json.loads(pointer_file.read_text(encoding="utf-8"))
+                if data.get("target") == str(durable_target) and durable_target.exists():
+                    if legacy_path and legacy_path.exists() and not any(legacy_path.iterdir()):
+                        print(f"nothing to migrate: space for {slug} is already at {durable_target}")
+                        return 0
+            except Exception:
+                pass
+
+        if legacy_path and legacy_path.exists() and not any(legacy_path.iterdir()) and durable_target.exists():
+            print(f"nothing to migrate: space for {slug} is already at {durable_target}")
+            return 0
+
+        # Step 1: Create lock BEFORE gates
+        write_migration_lock(slug)
 
     # Gate 1: Process-zero check
-    active_procs = _find_active_legacy_procs(legacy_path, proc_root)
-    if active_procs:
-        unit = UNIT_MAP.get(slug, f"conscio-relay-reactor-{slug}")
-        print(f"migration deferred: {len(active_procs)} active process(es) on the legacy path:", file=sys.stderr)
-        for proc in active_procs:
-            cmdline = proc["cmdline"]
-            cmd_trunc = cmdline[:60] + "..." if len(cmdline) > 60 else cmdline
-            print(f"  PID {proc['pid']}: {cmd_trunc} (systemctl --user stop {unit})", file=sys.stderr)
-        return 2
+    if legacy_path:
+        active_procs = _find_active_legacy_procs(legacy_path, proc_root)
+        if active_procs:
+            if not is_resumption:
+                remove_migration_lock(slug)
+            unit = UNIT_MAP.get(slug, f"conscio-relay-reactor-{slug}")
+            print(f"migration deferred: {len(active_procs)} active process(es) on the legacy path:", file=sys.stderr)
+            for proc in active_procs:
+                cmdline = proc["cmdline"]
+                cmd_trunc = cmdline[:60] + "..." if len(cmdline) > 60 else cmdline
+                print(f"  PID {proc['pid']}: {cmd_trunc} (systemctl --user stop {unit})", file=sys.stderr)
+            return 2
 
     # Gate 2: Mtime-quieto check
-    if quiet_minutes > 0 and legacy_path.exists():
+    print(f"gate: checking quiet minutes (threshold: {quiet_minutes} min)...", file=sys.stderr)
+    if quiet_minutes > 0 and legacy_path and legacy_path.exists():
         cutoff = time.time() - (quiet_minutes * 60)
         recent_mod = []
         for root_dir, _, files in os.walk(legacy_path):
@@ -164,14 +317,39 @@ def migrate_space_cmd(
                 except OSError:
                     pass
         if recent_mod:
+            if not is_resumption:
+                remove_migration_lock(slug)
             print(
                 f"migration deferred: files in legacy path were modified in the last {quiet_minutes} minute(s)",
                 file=sys.stderr,
             )
             return 2
 
-    # Step 1: Criar lock .migrating-<slug>
-    write_migration_lock(slug)
+    # Check collisions before moving anything (Ponto 4)
+    if legacy_path and legacy_path.exists():
+        collisions = []
+        for item in list(legacy_path.iterdir()):
+            dest = durable_target / item.name
+            if dest.exists():
+                if not is_resumption:
+                    collisions.append(item.name)
+                else:
+                    if dest.is_file() and item.is_file():
+                        if _sha256(dest) == _sha256(item):
+                            item.unlink()
+                        else:
+                            collisions.append(item.name)
+                    else:
+                        collisions.append(item.name)
+        if collisions:
+            if not is_resumption:
+                remove_migration_lock(slug)
+            print(
+                f"migration refused: items already exist in destination {durable_target}:\n"
+                f"  {', '.join(collisions)}",
+                file=sys.stderr,
+            )
+            return 1
 
     # Step 2: Backup rotativo de 2 gerações
     base_dir = durable_target.parent.parent
@@ -181,7 +359,7 @@ def migrate_space_cmd(
     backup_dest = backups_dir / f"pre-migrate-{ts}"
     backup_dest.mkdir(parents=True, exist_ok=True)
 
-    if legacy_path.exists():
+    if legacy_path and legacy_path.exists():
         for item in legacy_path.iterdir():
             if item.is_dir():
                 shutil.copytree(item, backup_dest / item.name)
@@ -197,46 +375,57 @@ def migrate_space_cmd(
         old_b = existing_backups.pop(0)
         shutil.rmtree(old_b)
 
-    # Step 3: Mover CONTEÚDO de space/ para durable_target
+    # Step 3 onwards: lock MUST remain if any failure occurs
     durable_target.mkdir(parents=True, exist_ok=True)
-    if legacy_path.exists():
-        for item in list(legacy_path.iterdir()):
-            dest = durable_target / item.name
-            try:
-                os.rename(str(item), str(dest))
-            except OSError as exc:
-                if exc.errno == errno.EXDEV:
-                    if item.is_dir():
-                        shutil.copytree(item, dest, dirs_exist_ok=True)
-                        shutil.rmtree(item)
+    try:
+        # Step 3: Move content
+        if legacy_path and legacy_path.exists():
+            for item in list(legacy_path.iterdir()):
+                dest = durable_target / item.name
+                try:
+                    os.rename(str(item), str(dest))
+                except OSError as exc:
+                    if exc.errno == errno.EXDEV:
+                        if item.is_dir():
+                            shutil.copytree(item, dest, dirs_exist_ok=True)
+                            _verify_trees_identical(item, dest)
+                            shutil.rmtree(item)
+                        else:
+                            shutil.copy2(item, dest)
+                            if _sha256(dest) != _sha256(item):
+                                raise RuntimeError(f"cross-fs verification failed for {item}")
+                            item.unlink()
                     else:
-                        shutil.copy2(item, dest)
-                        if dest.stat().st_size != item.stat().st_size:
-                            raise RuntimeError(f"cross-fs verification failed for {item}")
-                        item.unlink()
-                else:
-                    raise
-        legacy_path.mkdir(parents=True, exist_ok=True)
+                        raise
+            legacy_path.mkdir(parents=True, exist_ok=True)
 
-    # Step 4: Gravar lápide migrated-from.json na raiz durável
-    tombstone_payload = {
-        "schema": 1,
-        "origin": str(legacy_path.resolve()),
-        "runtime": slug,
-        "slug": slug,
-        "migrated_ts": time.time(),
-    }
-    _write_json_atomic(durable_target / "migrated-from.json", tombstone_payload)
+        # Step 4: Gravar lápide migrated-from.json na raiz durável
+        origin_str = str(legacy_path.resolve()) if legacy_path else str(durable_target)
+        tombstone_payload = {
+            "schema": 1,
+            "origin": origin_str,
+            "runtime": slug,
+            "slug": slug,
+            "migrated_ts": time.time(),
+        }
+        _write_json_atomic(durable_target / "migrated-from.json", tombstone_payload)
 
-    # Step 5: Gravar ponteiro space-pointer.json na pasta do plugin
-    pointer_path = plugin_pointer_path(legacy_path, env)
-    write_pointer_atomic(pointer_path, target=durable_target, runtime=slug, slug=slug)
+        # Step 5: Gravar ponteiro space-pointer.json na pasta do plugin
+        if legacy_path:
+            pointer_path = plugin_pointer_path(legacy_path, env)
+            write_pointer_atomic(pointer_path, target=durable_target, runtime=slug, slug=slug)
 
-    # Step 6: Apagar space-refused.json se existir
-    remove_refused_marker(legacy_path, env)
+        # Step 6: Apagar space-refused.json se existir
+        if legacy_path:
+            remove_refused_marker(legacy_path, env)
 
-    # Step 7: Remover lock .migrating-<slug>
-    remove_migration_lock(slug)
+        # Step 7: Remover lock .migrating-<slug>
+        remove_migration_lock(slug)
+
+    except Exception as exc:
+        print(f"migration failed at step 3+: lock {lock_path} preserved for boot protection: {exc}", file=sys.stderr)
+        print(f"to resume migration: conscio space migrate --slug {slug}", file=sys.stderr)
+        raise
 
     # Step 8: Imprimir units systemd regenerados apontando para o durável no stdout
     db_path = durable_target / "liaison.db"

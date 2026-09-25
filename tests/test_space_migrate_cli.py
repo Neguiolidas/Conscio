@@ -3,6 +3,7 @@ from __future__ import annotations
 import errno
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -219,3 +220,259 @@ def test_migrate_cross_fs_exdev(tmp_path, monkeypatch):
     durable_dir = base / "instances" / "claude-code"
     assert (durable_dir / "instance.json").exists()
     assert (durable_dir / "obs.db").read_text(encoding="utf-8") == "dummy-obs-db-data"
+
+
+def test_migrate_lock_taken_before_gates(tmp_path, monkeypatch):
+    """Ponto 2: Verify that migration lock is created BEFORE gate checking runs."""
+    _plugin_dir, _storage = _setup_plugin_space(tmp_path, monkeypatch)
+    base = Path(os.environ["CONSCIO_BASE"])
+    lock_file = base / "instances" / ".migrating-claude-code"
+
+    lock_existed_during_gate = []
+
+    from conscio.installer import migrate_cmd
+
+    orig_find_active = migrate_cmd._find_active_legacy_procs
+
+    def intercept_find_active(legacy_path, proc_root):
+        lock_existed_during_gate.append(lock_file.exists())
+        return orig_find_active(legacy_path, proc_root)
+
+    empty_proc = tmp_path / "empty_proc"
+    empty_proc.mkdir(parents=True, exist_ok=True)
+
+    with patch.object(migrate_cmd, "_find_active_legacy_procs", side_effect=intercept_find_active):
+        ret = cli.main(["space", "migrate", "--proc-root", str(empty_proc), "--quiet-minutes", "0"])
+
+    assert ret == 0
+    assert lock_existed_during_gate == [True]
+
+
+def test_migrate_crash_leaves_recoverable_state(tmp_path, monkeypatch):
+    """Ponto 3: A crash in Step 5 (writing pointer) leaves the lock file intact
+
+    so boot refusal protects the incomplete state instead of clearing the lock.
+    """
+    _plugin_dir, _storage = _setup_plugin_space(tmp_path, monkeypatch)
+    base = Path(os.environ["CONSCIO_BASE"])
+    lock_file = base / "instances" / ".migrating-claude-code"
+
+    from conscio.installer import migrate_cmd
+
+    def crash_write_pointer(*args, **kwargs):
+        raise RuntimeError("Simulated crash writing pointer")
+
+    empty_proc = tmp_path / "empty_proc"
+    empty_proc.mkdir(parents=True, exist_ok=True)
+
+    with (
+        patch.object(migrate_cmd, "write_pointer_atomic", side_effect=crash_write_pointer),
+        pytest.raises(RuntimeError, match="Simulated crash"),
+    ):
+        cli.main(["space", "migrate", "--proc-root", str(empty_proc), "--quiet-minutes", "0"])
+
+    # Lock must remain intact after crash in step 3+
+    assert lock_file.exists()
+    assert (base / "instances" / "claude-code").exists()
+
+
+def test_migrate_rerun_after_crash_repairs_not_exits_zero(tmp_path, monkeypatch):
+    """Ponto 3: When rerun after crash (durable populated, legacy empty, lock present with dead PID),
+
+    migrate must NOT exit 0 as 'nothing to migrate' leaving the lock.
+    Instead, it must repair: write pointer, remove lock, and complete cleanly.
+    """
+    plugin_dir, storage = _setup_plugin_space(tmp_path, monkeypatch)
+    base = Path(os.environ["CONSCIO_BASE"])
+    durable_dir = base / "instances" / "claude-code"
+    durable_dir.mkdir(parents=True, exist_ok=True)
+
+    # Move content to simulate crash after Step 3
+    (durable_dir / "instance.json").write_text((storage / "instance.json").read_text(encoding="utf-8"), encoding="utf-8")
+    (durable_dir / "obs.db").write_text("dummy-obs-db-data", encoding="utf-8")
+    for f in list(storage.iterdir()):
+        f.unlink()
+
+    # Dead PID lock exists
+    lock_file = base / "instances" / ".migrating-claude-code"
+    lock_file.write_text(json.dumps({"schema": 1, "pid": 999999, "started_ts": 1000.0}), encoding="utf-8")
+
+    empty_proc = tmp_path / "empty_proc"
+    empty_proc.mkdir(parents=True, exist_ok=True)
+
+    ret = cli.main(["space", "migrate", "--proc-root", str(empty_proc), "--quiet-minutes", "0"])
+    assert ret == 0
+
+    # Pointer must be repaired
+    pointer_file = plugin_dir / "space-pointer.json"
+    assert pointer_file.exists()
+
+    # Lock must be cleaned up
+    assert not lock_file.exists()
+
+
+def test_migrate_refuses_when_durable_has_other_identity(tmp_path, monkeypatch):
+    """Ponto 4: When durable exists with a DIFFERENT identity (B3), migrate must refuse
+
+    BEFORE moving anything and leave files intact.
+    """
+    _plugin_dir, storage = _setup_plugin_space(tmp_path, monkeypatch)
+    base = Path(os.environ["CONSCIO_BASE"])
+    durable_dir = base / "instances" / "claude-code"
+    durable_dir.mkdir(parents=True, exist_ok=True)
+    (durable_dir / "instance.json").write_text(
+        json.dumps({"schema": 1, "instance_id": "different-durable-id"}),
+        encoding="utf-8",
+    )
+
+    empty_proc = tmp_path / "empty_proc"
+    empty_proc.mkdir(parents=True, exist_ok=True)
+
+    ret = cli.main(["space", "migrate", "--proc-root", str(empty_proc), "--quiet-minutes", "0"])
+    assert ret == 2
+
+    # Nothing was moved
+    assert (storage / "instance.json").exists()
+    assert json.loads((durable_dir / "instance.json").read_text(encoding="utf-8"))["instance_id"] == "different-durable-id"
+
+
+def test_migrate_never_renames_over_populated_durable_file(tmp_path, monkeypatch):
+    """Ponto 4: If any item in legacy exists in durable with divergent content,
+
+    migration must stop BEFORE moving any file.
+    """
+    _plugin_dir, storage = _setup_plugin_space(tmp_path, monkeypatch)
+    base = Path(os.environ["CONSCIO_BASE"])
+    durable_dir = base / "instances" / "claude-code"
+    durable_dir.mkdir(parents=True, exist_ok=True)
+    # Matching instance.json
+    (durable_dir / "instance.json").write_text((storage / "instance.json").read_text(encoding="utf-8"), encoding="utf-8")
+    # Conflicting file
+    (durable_dir / "obs.db").write_text("durable-version-content", encoding="utf-8")
+
+    empty_proc = tmp_path / "empty_proc"
+    empty_proc.mkdir(parents=True, exist_ok=True)
+
+    ret = cli.main(["space", "migrate", "--proc-root", str(empty_proc), "--quiet-minutes", "0"])
+    assert ret != 0
+
+    # Overwrite did NOT happen
+    assert (durable_dir / "obs.db").read_text(encoding="utf-8") == "durable-version-content"
+    assert (storage / "obs.db").read_text(encoding="utf-8") == "dummy-obs-db-data"
+
+
+def test_migrate_directory_crossfs_verifies_before_rmtree(tmp_path, monkeypatch):
+    """Ponto 5: Cross-fs directory copy verifies full tree (names, sizes, sha256)
+
+    before rmtree is called; if destination verification fails, raises RuntimeError and leaves source intact.
+    """
+    _plugin_dir, storage = _setup_plugin_space(tmp_path, monkeypatch)
+    sub = storage / "subdir"
+    sub.mkdir()
+    (sub / "file.bin").write_bytes(b"data-1234567890")
+
+    empty_proc = tmp_path / "empty_proc"
+    empty_proc.mkdir(parents=True, exist_ok=True)
+
+    def fake_rename(src, dst):
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    orig_copytree = shutil.copytree
+
+    def corrupting_copytree(src, dst, *args, **kwargs):
+        res = orig_copytree(src, dst, *args, **kwargs)
+        # Corrupt copied file in destination
+        for f in Path(dst).rglob("*"):
+            if f.is_file():
+                f.write_bytes(b"corrupted-data-checksum-mismatch")
+                break
+        return res
+
+    with (
+        patch("os.rename", side_effect=fake_rename),
+        patch("shutil.copytree", side_effect=corrupting_copytree),
+        pytest.raises(RuntimeError, match="cross-fs verification failed"),
+    ):
+        cli.main(["space", "migrate", "--proc-root", str(empty_proc), "--quiet-minutes", "0"])
+
+    # Source directory must NOT have been deleted
+    assert (storage / "subdir").exists()
+    assert (storage / "subdir" / "file.bin").read_bytes() == b"data-1234567890"
+
+
+def test_migrate_fallback_finds_both_claude_layouts(tmp_path):
+    """Ponto 1: Without environment variables, fallback finds ~/.claude/plugins/data/conscio-conscio/space."""
+    fake_home = Path(os.environ["HOME"])
+    # Create the REAL host layout conscio-conscio
+    plugin_dir = fake_home / ".claude" / "plugins" / "data" / "conscio-conscio"
+    storage = plugin_dir / "space"
+    storage.mkdir(parents=True, exist_ok=True)
+    (storage / "instance.json").write_text(
+        json.dumps({"schema": 1, "instance_id": "claude-real-layout", "label": "claude-code"}),
+        encoding="utf-8",
+    )
+
+    empty_proc = tmp_path / "empty_proc"
+    empty_proc.mkdir(parents=True, exist_ok=True)
+
+    ret = cli.main(["space", "migrate", "--proc-root", str(empty_proc), "--quiet-minutes", "0"])
+    assert ret == 0
+
+    base = Path(os.environ["CONSCIO_BASE"])
+    assert (base / "instances" / "claude-code" / "instance.json").exists()
+
+
+def test_migrate_loop_skips_root_without_space_content(tmp_path):
+    """Ponto 6: Roots loop skips empty plugin roots and migrates the root that actually has space content."""
+    fake_home = Path(os.environ["HOME"])
+    # Empty root 1 (layout without content)
+    empty_root = fake_home / ".claude" / "plugins" / "data" / "conscio-conscio"
+    empty_root.mkdir(parents=True, exist_ok=True)
+
+    # Populated root 2 (zcode layout with content)
+    zcode_root = fake_home / ".zcode" / "cli" / "plugins" / "data" / "conscio@conscio"
+    storage = zcode_root / "space"
+    storage.mkdir(parents=True, exist_ok=True)
+    (storage / "instance.json").write_text(
+        json.dumps({"schema": 1, "instance_id": "zcode-instance-id", "label": "zcode"}),
+        encoding="utf-8",
+    )
+
+    empty_proc = tmp_path / "empty_proc"
+    empty_proc.mkdir(parents=True, exist_ok=True)
+
+    ret = cli.main(["space", "migrate", "--proc-root", str(empty_proc), "--quiet-minutes", "0"])
+    assert ret == 0
+
+    base = Path(os.environ["CONSCIO_BASE"])
+    assert (base / "instances" / "zcode" / "instance.json").exists()
+
+
+def test_migrate_rerun_with_dead_pid_lock_and_partial_durable_completes(tmp_path, monkeypatch):
+    """Resumption: when lock has dead PID and partial durable exists, rerun completes and exits 0."""
+    plugin_dir, storage = _setup_plugin_space(tmp_path, monkeypatch)
+    base = Path(os.environ["CONSCIO_BASE"])
+    durable_dir = base / "instances" / "claude-code"
+    durable_dir.mkdir(parents=True, exist_ok=True)
+
+    # Partially moved: instance.json moved to durable, obs.db still in storage
+    (durable_dir / "instance.json").write_text((storage / "instance.json").read_text(encoding="utf-8"), encoding="utf-8")
+    (storage / "instance.json").unlink()
+
+    # Dead PID lock
+    lock_file = base / "instances" / ".migrating-claude-code"
+    lock_file.write_text(json.dumps({"schema": 1, "pid": 888888, "started_ts": 1000.0}), encoding="utf-8")
+
+    empty_proc = tmp_path / "empty_proc"
+    empty_proc.mkdir(parents=True, exist_ok=True)
+
+    ret = cli.main(["space", "migrate", "--proc-root", str(empty_proc), "--quiet-minutes", "0"])
+    assert ret == 0
+
+    # obs.db moved to durable
+    assert (durable_dir / "obs.db").exists()
+    assert not (storage / "obs.db").exists()
+    # pointer written
+    assert (plugin_dir / "space-pointer.json").exists()
+    # lock removed
+    assert not lock_file.exists()
