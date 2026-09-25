@@ -573,7 +573,7 @@ def prune(
     conn: sqlite3.Connection,
     *,
     max_age_days: int = 30,
-    max_bytes: int = 2 * 1024 ** 3,
+    max_bytes: int = 3 * 1024 ** 3,
 ) -> dict:
     """Drop observations past the age window, then enforce the size cap.
 
