@@ -102,12 +102,36 @@ def derive_host_identity(env: Mapping[str, str] | None = None) -> HostIdentity:
 
     Evaluates process environment to identify the host runtime without
     reading sensitive values or generic model environment variables.
+
+    Precedence (A23 — fallback keys demoted to last resort):
+
+    1. ZCode PRIMARY keys (``ZCODE_PLUGIN_DATA`` / ``ZCODE_PLUGIN_ID``) — the
+       native ZCode injects them alongside the compat ``CLAUDE_PLUGIN_*``, so
+       the native case decides here.
+    2. Antigravity PRIMARY keys.
+    3. Claude Code (``CLAUDECODE`` / ``CLAUDE_PLUGIN_*``) — wins EVEN when
+       ``ZCODE_*`` are inherited from an ancestor ZCode session: the plugin
+       that actually contains the storage decides (A22 — a claude-mcp launched
+       from inside ZCode used to derive ``zcode``).
+    4. Hermes keys.
+    5. OpenCode keys.
+    6. ZCode FALLBACK keys — only when NO other host signal is present.
+    7. Antigravity FALLBACK keys — same rule.
+    8. No signal → ``source="none"`` (honest empty identity).
+
+    Rationale: FALLBACK keys are ambient signals inherited by ANY child of a
+    ZCode session (measured in A22 — 12 ``ZCODE_*`` vars in a claude process
+    env), so they can never outrank a plugin-scoped signal.
     """
     if env is None:
         env = os.environ
 
-    # 1. ZCode (testado primeiro: se tiver ZCODE_PLUGIN_*, é ZCode mesmo com compat Claude)
-    if any(k in env for k in _ZCODE_PRIMARY_KEYS) or any(k in env for k in _ZCODE_FALLBACK_KEYS):
+    # 1. ZCode — só as chaves PRIMÁRIAS (plugin-scoped). O ZCode nativo injeta
+    #    ZCODE_PLUGIN_DATA == CLAUDE_PLUGIN_DATA, então o caso nativo decide aqui.
+    #    (A23: as FALLBACK keys deixaram de decidir na frente — um claude/hermes
+    #    lançado DE DENTRO do ZCode herda ZCODE_APP_VERSION etc., e o derivador
+    #    marcava o host como zcode; medido no A22.)
+    if any(k in env for k in _ZCODE_PRIMARY_KEYS):
         return HostIdentity(
             model="",
             familia="",
@@ -116,8 +140,8 @@ def derive_host_identity(env: Mapping[str, str] | None = None) -> HostIdentity:
             source="zcode",
         )
 
-    # 2. Antigravity / Gemini
-    if any(k in env for k in _ANTIGRAVITY_PRIMARY_KEYS) or any(k in env for k in _ANTIGRAVITY_FALLBACK_KEYS):
+    # 2. Antigravity / Gemini — só as chaves PRIMÁRIAS (mesma regra do A23).
+    if any(k in env for k in _ANTIGRAVITY_PRIMARY_KEYS):
         return HostIdentity(
             model="",
             familia="",
@@ -127,7 +151,8 @@ def derive_host_identity(env: Mapping[str, str] | None = None) -> HostIdentity:
         )
 
     # 3. Claude Code nativo
-    # Presente se houver CLAUDECODE ou CLAUDE_PLUGIN_* sem presença de ZCode
+    # Presente se houver CLAUDECODE ou CLAUDE_PLUGIN_* — mesmo com ZCODE_* herdadas
+    # de um ancestral ZCode: o plugin que de fato contém o storage decide (A23).
     if any(k in env for k in _CLAUDE_NATIVE_KEYS) or any(k in env for k in _CLAUDE_PLUGIN_KEYS):
         return HostIdentity(
             model="",
@@ -157,7 +182,28 @@ def derive_host_identity(env: Mapping[str, str] | None = None) -> HostIdentity:
             source="opencode",
         )
 
-    # 6. Nenhum sinal de host identificado: contrato None/ausência estrito
+    # 6. FALLBACK ZCode (A23: último passo antes de source=none — só decide quando
+    #    NENHUM outro sinal de host estiver presente; herança de ancestral não conta).
+    if any(k in env for k in _ZCODE_FALLBACK_KEYS):
+        return HostIdentity(
+            model="",
+            familia="",
+            runtime="zcode",
+            papel="executor",
+            source="zcode",
+        )
+
+    # 7. FALLBACK Antigravity (mesma regra do A23).
+    if any(k in env for k in _ANTIGRAVITY_FALLBACK_KEYS):
+        return HostIdentity(
+            model="",
+            familia="",
+            runtime="antigravity",
+            papel="executor",
+            source="antigravity",
+        )
+
+    # 8. Nenhum sinal de host identificado: contrato None/ausência estrito
     return HostIdentity(
         model="",
         familia="",
