@@ -115,9 +115,9 @@ def test_known_plugin_dirs_ignores_unexpanded_and_relative(tmp_path, monkeypatch
 
 
 def test_stale_lock_listed_not_cleared(tmp_path, capsys):
-    """Spec Named Test 27: D5 stale migration lock with dead PID prints executable `rm`
+    """Spec Named Test 27: D5 stale migration lock with dead PID prints resume suggestion
 
-    and NEVER clears or modifies the lock file automatically.
+    via `conscio space migrate --slug <slug>` and NEVER clears or modifies the lock file automatically.
     """
     proc_root = tmp_path / "fake_proc"
     proc_root.mkdir(parents=True, exist_ok=True)
@@ -135,8 +135,10 @@ def test_stale_lock_listed_not_cleared(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 0
 
-    # Must suggest the rm command for operator
-    assert "rm " in out
+    # Must suggest resuming migration via migrate --slug <slug>
+    assert "conscio space migrate --slug claude-code" in out
+    assert "retoma a migracao" in out
+    assert "rm " not in out
     assert str(lock_file) in out
     assert "99999" in out
 
@@ -164,6 +166,7 @@ def test_active_lock_not_suggesting_rm(tmp_path, capsys):
     assert rc == 0
 
     assert f"rm {lock_file}" not in out
+    assert "conscio space migrate --slug" not in out
     assert lock_file.exists()
 
 

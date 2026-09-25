@@ -894,9 +894,11 @@ def _report_space_diagnostics(
                     pass
 
                 if not _is_pid_alive(pid, proc_root=proc_root):
+                    slug = entry.name.removeprefix(".migrating-")
                     print(
                         f"AVISO: lock de migracao orfao {entry} (pid {pid} morto) (D5).\n"
-                        f"  Sugestao: rm {entry}"
+                        f"  Sugestao: conscio space migrate --slug {slug}\n"
+                        f"            (o comando retoma a migracao de onde parou)"
                     )
                 else:
                     print(f"info: migracao em andamento em {entry} (pid {pid} ativo)")
