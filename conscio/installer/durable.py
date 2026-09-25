@@ -118,6 +118,8 @@ class SpaceResolution:
     reason: str
     repair_pointer: bool = False
     announcement: str = ""
+    slug: str = ""
+    runtime: str = ""
 
 
 def plugin_data_roots(env: Mapping[str, str] | None = None) -> list[Path]:
@@ -380,6 +382,8 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
             ),
             repair_pointer=False,
             announcement="",
+            slug=slug,
+            runtime=runtime,
         )
 
     # Precedence Step 2: Check pointer (B1 / B5)
@@ -396,6 +400,8 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
                     reason="",
                     repair_pointer=False,
                     announcement="",
+                    slug=slug,
+                    runtime=runtime,
                 )
             return SpaceResolution(
                 kind="B5",
@@ -407,6 +413,8 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
                 ),
                 repair_pointer=False,
                 announcement="",
+                slug=slug,
+                runtime=runtime,
             )
         except Exception as exc:
             return SpaceResolution(
@@ -415,6 +423,8 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
                 reason=f"corrupt space pointer at {pointer_file}: {exc}",
                 repair_pointer=False,
                 announcement="",
+                slug=slug,
+                runtime=runtime,
             )
 
     # Check existence of instance.json in plugin vs durable
@@ -431,6 +441,8 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
             reason="",
             repair_pointer=False,
             announcement="migration ready, run: conscio space migrate",
+            slug=slug,
+            runtime=runtime,
         )
 
     if not plugin_has_instance and durable_has_instance:
@@ -454,6 +466,8 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
             reason="",
             repair_pointer=True,
             announcement=announcement,
+            slug=slug,
+            runtime=runtime,
         )
 
     if plugin_has_instance and durable_has_instance:
@@ -504,6 +518,8 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
             reason=reason,
             repair_pointer=False,
             announcement="",
+            slug=slug,
+            runtime=runtime,
         )
 
     if not plugin_has_instance and not durable_has_instance:
@@ -521,6 +537,8 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
                 ),
                 repair_pointer=False,
                 announcement="",
+                slug=slug,
+                runtime=runtime,
             )
 
         try:
@@ -540,6 +558,8 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
                         ),
                         repair_pointer=False,
                         announcement="",
+                        slug=slug,
+                        runtime=runtime,
                     )
         except Exception as exc:
             exc_type = type(exc).__name__
@@ -553,6 +573,8 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
                 ),
                 repair_pointer=False,
                 announcement="",
+                slug=slug,
+                runtime=runtime,
             )
 
         # B6: Fresh mint on durable space (only when nothing exists)
@@ -562,6 +584,8 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
             reason="",
             repair_pointer=True,
             announcement="",
+            slug=slug,
+            runtime=runtime,
         )
 
     # Fallback for unexpected states
@@ -569,4 +593,6 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
         kind="unhandled",
         target=None,
         reason=f"unhandled state for slug {slug}",
+        slug=slug,
+        runtime=runtime,
     )

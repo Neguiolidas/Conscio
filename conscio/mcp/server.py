@@ -1916,14 +1916,15 @@ def main(argv: list[str] | None = None) -> int:
         args.storage = str(res.target)
 
         if res.repair_pointer:
-            slug = slugify(ident[2] or "default")
+            slug = res.slug or slugify(ident[2] or "default")
+            runtime = res.runtime or ident[2] or "default"
             with minting_lock(slug):
                 ptr_path = plugin_pointer_path(storage_arg)
                 if ptr_path:
                     write_pointer_atomic(
                         ptr_path,
                         target=res.target,
-                        runtime=ident[2] or "default",
+                        runtime=runtime,
                         slug=slug,
                     )
 

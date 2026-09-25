@@ -42,6 +42,17 @@ def isolate_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("CONSCIO_BASE", str(fake_base))
     monkeypatch.delenv("CLAUDE_PLUGIN_DATA", raising=False)
     monkeypatch.delenv("ZCODE_PLUGIN_DATA", raising=False)
+    for k in (
+        "CHROME_DEVTOOLS_MCP_JS",
+        "AGY_BROWSER_ACTIVE_PORT_FILE",
+        "AGY_BROWSER_WS_URL",
+        "ANTIGRAVITY_AGENT",
+        "ANTIGRAVITY_AGENTAPI_EXE",
+        "HERMES_HOME",
+        "HERMES_SESSION_ID",
+        "HERMES_AGENT",
+    ):
+        monkeypatch.delenv(k, raising=False)
     for k in list(os.environ.keys()):
         if k.startswith("CONSCIO_") and k != "CONSCIO_BASE":
             monkeypatch.delenv(k, raising=False)
@@ -399,5 +410,39 @@ def test_plugin_data_dir_none_for_non_bound_storage(tmp_path):
     res = write_refused_marker(explicit_storage, "B5", "test reason")
     assert res is None
     assert not (explicit_storage / "space-refused.json").exists()
+
+
+def test_server_pointer_repair_uses_resolver_slug_and_runtime(tmp_path, monkeypatch):
+    plugin_dir = tmp_path / "plugin"
+    storage = plugin_dir / "space"
+    storage.mkdir(parents=True, exist_ok=True)
+
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir(parents=True, exist_ok=True)
+    fake_base = fake_home / ".conscio"
+    fake_base.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("CONSCIO_BASE", str(fake_base))
+    monkeypatch.setenv("CLAUDE_PLUGIN_DATA", str(plugin_dir))
+    monkeypatch.setenv("CONSCIO_MODEL", "test-model")
+
+    with patch("conscio.mcp.server.ConsciousnessEngine") as mock_engine, \
+         patch("conscio.mcp.server.serve") as mock_serve:
+        inst = mock_engine.return_value
+        durable_space = fake_base / "instances" / "claude-code"
+        durable_space.mkdir(parents=True, exist_ok=True)
+        inst.storage = str(durable_space)
+        mock_serve.return_value = None
+
+        ret = server.main(["--storage", str(storage), "--identity-runtime", "different-runtime"])
+        assert ret == 0
+
+        ptr_file = plugin_dir / "space-pointer.json"
+        assert ptr_file.exists()
+        ptr_data = json.loads(ptr_file.read_text(encoding="utf-8"))
+        assert ptr_data.get("slug") == "claude-code"
+        assert ptr_data.get("runtime") == "claude-code"
+
 
 

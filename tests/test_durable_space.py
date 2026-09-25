@@ -60,6 +60,8 @@ def test_b6_fresh_mints(tmp_path):
         reason="",
         repair_pointer=True,
         announcement="",
+        slug="claude-code",
+        runtime="claude-code",
     )
 
 
@@ -222,6 +224,8 @@ def test_b1_pointer_valid(tmp_path):
         reason="",
         repair_pointer=False,
         announcement="",
+        slug="claude-code",
+        runtime="claude-code",
     )
 
 
@@ -250,6 +254,8 @@ def test_b5_dangling_pointer_refuses(tmp_path):
         reason=expected_reason,
         repair_pointer=False,
         announcement="",
+        slug="claude-code",
+        runtime="claude-code",
     )
 
 
