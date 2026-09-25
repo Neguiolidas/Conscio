@@ -114,6 +114,60 @@ def _get_ancestor_pids(self_pid: int, proc_root: Path) -> set[int]:
     return ancestors
 
 
+_SHELL_LAUNCHERS = frozenset({
+    "bash",
+    "sh",
+    "dash",
+    "zsh",
+    "fish",
+    "env",
+    "timeout",
+    "nohup",
+})
+
+
+def _read_proc_cmdline(p_entry: Path) -> tuple[str, list[str]] | None:
+    """Read and decode cmdline from a process entry in proc_root."""
+    cmdline_file = p_entry / "cmdline"
+    if not cmdline_file.is_file():
+        return None
+    try:
+        raw = cmdline_file.read_bytes()
+        args = [a for a in raw.decode("utf-8", errors="replace").split(chr(0)) if a]
+        cmdline_str = " ".join(args)
+        return cmdline_str, args
+    except Exception:
+        return None
+
+
+def _proc_has_open_fd_in_path(p_entry: Path, target_path: Path) -> bool:
+    """Check if process has any open file descriptor inside target_path."""
+    fd_dir = p_entry / "fd"
+    if not fd_dir.is_dir():
+        return False
+    try:
+        resolved_target = target_path.resolve()
+        for fd_entry in fd_dir.iterdir():
+            try:
+                link = os.readlink(fd_entry)
+                resolved_link = Path(link).resolve()
+                if resolved_link == resolved_target or resolved_link.is_relative_to(resolved_target):
+                    return True
+            except (OSError, ValueError):
+                continue
+    except (OSError, PermissionError):
+        pass
+    return False
+
+
+def _is_shell_launcher(args: list[str]) -> bool:
+    """Check if argv[0] basename belongs to a known shell or launcher."""
+    if not args:
+        return False
+    prog = Path(args[0].lstrip("-")).name
+    return prog in _SHELL_LAUNCHERS
+
+
 def _find_active_legacy_procs(legacy_path: Path, proc_root: Path) -> list[dict]:
     legacy_str = str(legacy_path.resolve())
     legacy_raw = str(legacy_path)
@@ -129,19 +183,30 @@ def _find_active_legacy_procs(legacy_path: Path, proc_root: Path) -> list[dict]:
             pid = int(p_entry.name)
         except ValueError:
             continue
+
+        cmdline_info = _read_proc_cmdline(p_entry)
+        if cmdline_info is None:
+            continue
+        cmdline_str, args = cmdline_info
+
+        if legacy_str not in cmdline_str and legacy_raw not in cmdline_str:
+            continue
+
         if pid in ancestor_pids:
-            continue
-        cmdline_file = p_entry / "cmdline"
-        if not cmdline_file.is_file():
-            continue
-        try:
-            raw = cmdline_file.read_bytes()
-            args = [a for a in raw.decode("utf-8", errors="replace").split(chr(0)) if a]
-            cmdline_str = " ".join(args)
-            if legacy_str in cmdline_str or legacy_raw in cmdline_str:
+            # Ancestor process matching legacy path:
+            # 1. Open fd inside legacy path -> ACTIVE (blocks)
+            if _proc_has_open_fd_in_path(p_entry, legacy_path):
                 active.append({"pid": pid, "cmdline": cmdline_str, "args": args})
-        except Exception:
-            continue
+                continue
+            # 2. Known shell / launcher -> SKIP (transport, e.g. H22)
+            if _is_shell_launcher(args):
+                continue
+            # 3. Otherwise -> ACTIVE (conservative: live conscio-mcp)
+            active.append({"pid": pid, "cmdline": cmdline_str, "args": args})
+        else:
+            # Non-ancestor process: always ACTIVE
+            active.append({"pid": pid, "cmdline": cmdline_str, "args": args})
+
     return active
 
 
