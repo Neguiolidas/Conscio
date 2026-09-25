@@ -7,15 +7,59 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..mcp.host_identity import derive_host_identity
 from .binding import unexpanded_variable
-from .spaces import slugify, space_dir
+from .spaces import minting_lock, slugify, space_dir
+
+__all__ = [
+    "SpaceResolution",
+    "minting_lock",
+    "plugin_data_roots",
+    "resolve_space",
+    "write_pointer_atomic",
+]
 
 _SUPPORTED_PLUGIN_ROOT_KEYS = ("CLAUDE_PLUGIN_DATA", "ZCODE_PLUGIN_DATA")
+
+
+def _write_json_atomic(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    blob = json.dumps(data, indent=2, sort_keys=True).encode("utf-8")
+    tmp = path.with_name(path.name + f".tmp.{os.getpid()}")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        written = 0
+        while written < len(blob):
+            written += os.write(fd, blob[written:])
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.replace(str(tmp), str(path))
+
+
+def write_pointer_atomic(
+    pointer_path: Path,
+    target: Path | str,
+    runtime: str,
+    slug: str,
+    migrated_ts: float | None = None,
+) -> None:
+    """Atomically write space-pointer.json schema 1."""
+    if migrated_ts is None:
+        migrated_ts = time.time()
+    payload = {
+        "schema": 1,
+        "target": str(target),
+        "runtime": runtime,
+        "slug": slug,
+        "migrated_ts": float(migrated_ts),
+    }
+    _write_json_atomic(pointer_path, payload)
 
 
 @dataclass(frozen=True)
