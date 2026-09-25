@@ -285,3 +285,31 @@ def test_hook_legacy_b0_writes_like_47(tmp_path):
     )
     assert proc.returncode == 0
     assert (storage / "obs.db").exists()
+
+
+def test_server_without_storage_skips_s1_and_preserves_none(tmp_path, monkeypatch):
+    cwd_path = tmp_path / "user_cwd"
+    cwd_path.mkdir()
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir(parents=True, exist_ok=True)
+    fake_base = fake_home / ".conscio"
+    fake_base.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("CONSCIO_BASE", str(fake_base))
+    monkeypatch.setenv("CONSCIO_MODEL", "test-model")
+    monkeypatch.chdir(cwd_path)
+
+    with patch("conscio.mcp.server.ConsciousnessEngine") as mock_engine, \
+         patch("conscio.mcp.server.serve") as mock_serve:
+        inst = mock_engine.return_value
+        default_storage = fake_base / "consciousness"
+        default_storage.mkdir(parents=True, exist_ok=True)
+        inst.storage = str(default_storage)
+        mock_serve.return_value = None
+
+        ret = server.main([])
+        assert ret == 0
+        call_kwargs = mock_engine.call_args.kwargs
+        assert call_kwargs.get("storage_path") is None
+        assert list(cwd_path.iterdir()) == []
+
