@@ -77,6 +77,43 @@ def test_known_plugin_data_dirs_discovery(tmp_path):
     assert claude_default in with_env
 
 
+def test_known_plugin_dirs_ignores_unexpanded_and_relative(tmp_path, monkeypatch):
+    """Adendo 2 ao G16: known_plugin_data_dirs ignores unexpanded variables and relative paths
+
+    even if ghost directories exist on disk in cwd.
+    """
+    fake_home = tmp_path / "fakehome"
+    monkeypatch.chdir(tmp_path)
+
+    # Create ghost directory with literal unexpanded variable name in cwd
+    ghost_unexpanded = tmp_path / "${CLAUDE_PLUGIN_DATA}"
+    ghost_unexpanded.mkdir(parents=True, exist_ok=True)
+
+    # Create relative ghost directory in cwd
+    ghost_relative = tmp_path / "relative_plugin_data"
+    ghost_relative.mkdir(parents=True, exist_ok=True)
+
+    # Create a valid absolute directory
+    valid_dir = tmp_path / "valid_plugin_data"
+    valid_dir.mkdir(parents=True, exist_ok=True)
+
+    env = {
+        "CLAUDE_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}",
+        "ZCODE_PLUGIN_DATA": "relative_plugin_data",
+    }
+
+    # Should ignore both ghost directories despite only_existing=True and them existing in cwd!
+    dirs = known_plugin_data_dirs(env=env, home=fake_home, only_existing=True)
+    assert ghost_unexpanded not in dirs
+    assert ghost_relative not in dirs
+    assert dirs == []
+
+    # Also test valid absolute path is still accepted
+    env["CLAUDE_PLUGIN_DATA"] = str(valid_dir)
+    dirs = known_plugin_data_dirs(env=env, home=fake_home, only_existing=True)
+    assert dirs == [valid_dir]
+
+
 def test_stale_lock_listed_not_cleared(tmp_path, capsys):
     """Spec Named Test 27: D5 stale migration lock with dead PID prints executable `rm`
 

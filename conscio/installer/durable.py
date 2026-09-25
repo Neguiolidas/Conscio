@@ -6,11 +6,14 @@ supporting seamless plugin survival across uninstalls, downgrades, and reinstall
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from ..mcp.host_identity import derive_host_identity
 from .binding import unexpanded_variable
@@ -125,7 +128,22 @@ def plugin_data_roots(env: Mapping[str, str] | None = None) -> list[Path]:
     for key in _SUPPORTED_PLUGIN_ROOT_KEYS:
         val = env.get(key)
         if val:
-            roots.append(Path(val).expanduser())
+            if unexpanded_variable(val):
+                logger.warning(
+                    "ignoring plugin data env var %s containing unexpanded variable: %r",
+                    key,
+                    val,
+                )
+                continue
+            p_val = Path(val).expanduser()
+            if not p_val.is_absolute():
+                logger.warning(
+                    "ignoring plugin data env var %s with non-absolute path: %r",
+                    key,
+                    val,
+                )
+                continue
+            roots.append(p_val)
     return roots
 
 
@@ -137,7 +155,7 @@ def known_plugin_data_dirs(
     """Return recognized plugin data directories from env and standard filesystem locations.
 
     Checks:
-    - Environment variables: CLAUDE_PLUGIN_DATA, ZCODE_PLUGIN_DATA
+    - Environment variables: CLAUDE_PLUGIN_DATA, ZCODE_PLUGIN_DATA (via plugin_data_roots)
     - Standard filesystem defaults relative to home (Path.home()):
       ~/.claude/plugins/data/conscio-conscio
       ~/.zcode/cli/plugins/data/conscio@conscio
@@ -154,10 +172,7 @@ def known_plugin_data_dirs(
     candidates: list[Path] = []
 
     # 1. From env vars
-    for key in _SUPPORTED_PLUGIN_ROOT_KEYS:
-        val = env.get(key)
-        if val:
-            candidates.append(Path(val).expanduser())
+    candidates.extend(plugin_data_roots(env))
 
     # 2. Standard filesystem paths relative to home
     candidates.append(home / ".claude" / "plugins" / "data" / "conscio-conscio")
