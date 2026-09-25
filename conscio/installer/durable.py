@@ -509,7 +509,7 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
         try:
             from ..liaison import directory
             for card in directory.peers():
-                if card.get("runtime") == runtime or card.get("slug") == slug:
+                if card.get("runtime") == runtime:
                     cid = card.get("instance_id", "unknown")
                     return SpaceResolution(
                         kind="B4",
@@ -522,8 +522,19 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
                         repair_pointer=False,
                         announcement="",
                     )
-        except Exception:
-            pass
+        except Exception as exc:
+            exc_type = type(exc).__name__
+            return SpaceResolution(
+                kind="B4",
+                target=None,
+                reason=(
+                    f"could not check the relay directory for a previous identity of {slug} "
+                    f"({exc_type}: {exc}); not minting silently — fix access to "
+                    "~/.conscio/relay/peers or run 'conscio space migrate'."
+                ),
+                repair_pointer=False,
+                announcement="",
+            )
 
         # B6: Fresh mint on durable space (only when nothing exists)
         return SpaceResolution(

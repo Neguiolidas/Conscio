@@ -369,6 +369,36 @@ def test_b4_evidence_without_space_asks(tmp_path):
     )
 
 
+def test_b4_directory_peers_failure_refuses(tmp_path, monkeypatch):
+    """Item 3: directory.peers exception causes B4 refusal instead of silent B6 minting."""
+    from conscio.liaison import directory
+
+    plugin_dir = tmp_path / "plugin"
+    storage = plugin_dir / "space"
+    slug = "claude-code"
+    durable = INSTANCES_ROOT() / slug
+
+    def broken_peers():
+        raise PermissionError("Access denied reading relay peers")
+
+    monkeypatch.setattr(directory, "peers", broken_peers)
+
+    env = {"CLAUDE_PLUGIN_DATA": str(plugin_dir)}
+    res = resolve_space(storage, env=env)
+
+    assert res.kind == "B4"
+    assert res.target is None
+    assert res.repair_pointer is False
+    expected_reason = (
+        f"could not check the relay directory for a previous identity of {slug} "
+        "(PermissionError: Access denied reading relay peers); not minting silently — "
+        "fix access to ~/.conscio/relay/peers or run 'conscio space migrate'."
+    )
+    assert res.reason == expected_reason
+    # Nothing was minted or written
+    assert not durable.exists()
+
+
 def test_boot_during_lock_refuses(tmp_path):
     plugin_dir = tmp_path / "plugin"
     storage = plugin_dir / "space"
