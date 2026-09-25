@@ -43,18 +43,35 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _verify_trees_identical(src: Path, dst: Path) -> None:
-    for root, _dirs, files in os.walk(src):
+def _are_files_identical(src: Path, dst: Path) -> bool:
+    if not (src.is_file() and dst.is_file()):
+        return False
+    if src.stat().st_size != dst.stat().st_size:
+        return False
+    return _sha256(src) == _sha256(dst)
+
+
+def _are_trees_identical(src: Path, dst: Path) -> bool:
+    if not (src.is_dir() and dst.is_dir()):
+        return False
+    src_files = {}
+    for root, _, files in os.walk(src):
         rel = Path(root).relative_to(src)
         for f in files:
-            src_f = Path(root) / f
-            dst_f = dst / rel / f
-            if not dst_f.is_file():
-                raise RuntimeError(f"cross-fs verification failed: missing {dst_f}")
-            if src_f.stat().st_size != dst_f.stat().st_size:
-                raise RuntimeError(f"cross-fs verification failed: size mismatch on {dst_f}")
-            if _sha256(src_f) != _sha256(dst_f):
-                raise RuntimeError(f"cross-fs verification failed: sha256 mismatch on {dst_f}")
+            p = Path(root) / f
+            src_files[rel / f] = (p.stat().st_size, _sha256(p))
+    dst_files = {}
+    for root, _, files in os.walk(dst):
+        rel = Path(root).relative_to(dst)
+        for f in files:
+            p = Path(root) / f
+            dst_files[rel / f] = (p.stat().st_size, _sha256(p))
+    return src_files == dst_files
+
+
+def _verify_trees_identical(src: Path, dst: Path) -> None:
+    if not _are_trees_identical(src, dst):
+        raise RuntimeError(f"cross-fs verification failed between {src} and {dst}")
 
 
 def _is_pid_alive(pid: int | None, proc_root: Path = Path("/proc")) -> bool:
@@ -325,18 +342,26 @@ def migrate_space_cmd(
             )
             return 2
 
-    # Check collisions before moving anything (Ponto 4)
+    # Check collisions before moving anything (Ponto 4 & Adendo 1)
     if legacy_path and legacy_path.exists():
         collisions = []
+        cleaned_up = []
         for item in list(legacy_path.iterdir()):
             dest = durable_target / item.name
             if dest.exists():
                 if not is_resumption:
                     collisions.append(item.name)
                 else:
-                    if dest.is_file() and item.is_file():
-                        if _sha256(dest) == _sha256(item):
+                    if item.is_file():
+                        if _are_files_identical(item, dest):
                             item.unlink()
+                            cleaned_up.append(item.name)
+                        else:
+                            collisions.append(item.name)
+                    elif item.is_dir():
+                        if _are_trees_identical(item, dest):
+                            shutil.rmtree(item)
+                            cleaned_up.append(item.name)
                         else:
                             collisions.append(item.name)
                     else:
@@ -350,6 +375,11 @@ def migrate_space_cmd(
                 file=sys.stderr,
             )
             return 1
+        if is_resumption and cleaned_up:
+            print(
+                f"resumption: cleaned up duplicate items already migrated to durable: {', '.join(cleaned_up)}",
+                file=sys.stderr,
+            )
 
     # Step 2: Backup rotativo de 2 gerações
     base_dir = durable_target.parent.parent
@@ -379,6 +409,7 @@ def migrate_space_cmd(
     durable_target.mkdir(parents=True, exist_ok=True)
     try:
         # Step 3: Move content
+        moved_items = []
         if legacy_path and legacy_path.exists():
             for item in list(legacy_path.iterdir()):
                 dest = durable_target / item.name
@@ -397,7 +428,13 @@ def migrate_space_cmd(
                             item.unlink()
                     else:
                         raise
+                moved_items.append(item.name)
             legacy_path.mkdir(parents=True, exist_ok=True)
+        if is_resumption:
+            print(
+                f"resumption: completed migration of remaining items: {', '.join(moved_items)}",
+                file=sys.stderr,
+            )
 
         # Step 4: Gravar lápide migrated-from.json na raiz durável
         origin_str = str(legacy_path.resolve()) if legacy_path else str(durable_target)

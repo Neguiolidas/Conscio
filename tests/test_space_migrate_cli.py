@@ -476,3 +476,64 @@ def test_migrate_rerun_with_dead_pid_lock_and_partial_durable_completes(tmp_path
     assert (plugin_dir / "space-pointer.json").exists()
     # lock removed
     assert not lock_file.exists()
+
+
+def test_migrate_resume_completes_item_by_item(tmp_path, monkeypatch):
+    """Adendo 1 ao G16: Resumption completes item-by-item:
+
+    (a) Item only in legacy -> moved to durable
+    (b) Item only in durable -> skipped / remains
+    (c) Item in both and identical -> duplicate removed from legacy, continues
+    Variant with item in both but different -> refuses and exits != 0.
+    """
+    plugin_dir, storage = _setup_plugin_space(tmp_path, monkeypatch)
+    base = Path(os.environ["CONSCIO_BASE"])
+    durable_dir = base / "instances" / "claude-code"
+    durable_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Item only in durable: instance.json
+    (durable_dir / "instance.json").write_text((storage / "instance.json").read_text(encoding="utf-8"), encoding="utf-8")
+    (storage / "instance.json").unlink()
+
+    # 2. Item in both places, IDENTICAL: state.json
+    (storage / "state.json").write_text(json.dumps({"counter": 42}), encoding="utf-8")
+    (durable_dir / "state.json").write_text(json.dumps({"counter": 42}), encoding="utf-8")
+
+    # 3. Item only in legacy: obs.db (created by _setup_plugin_space)
+
+    # 4. Dead PID lock
+    lock_file = base / "instances" / ".migrating-claude-code"
+    lock_file.write_text(json.dumps({"schema": 1, "pid": 777777, "started_ts": 1000.0}), encoding="utf-8")
+
+    empty_proc = tmp_path / "empty_proc"
+    empty_proc.mkdir(parents=True, exist_ok=True)
+
+    # First variant: IDENTICAL item in both places -> completes cleanly
+    ret = cli.main(["space", "migrate", "--proc-root", str(empty_proc), "--quiet-minutes", "0"])
+    assert ret == 0
+
+    assert (durable_dir / "instance.json").exists()
+    assert (durable_dir / "state.json").exists()
+    assert (durable_dir / "obs.db").exists()
+    # Duplicate in storage was cleaned up
+    assert not (storage / "state.json").exists()
+    assert not (storage / "obs.db").exists()
+    assert (plugin_dir / "space-pointer.json").exists()
+    assert not lock_file.exists()
+
+    # Second variant: item in both places DIFERENTE -> refuses and exit != 0
+    _p2, s2 = _setup_plugin_space(tmp_path / "variant", monkeypatch)
+    d2 = base / "instances" / "claude-code"
+    # matching instance.json
+    (d2 / "instance.json").write_text((s2 / "instance.json").read_text(encoding="utf-8"), encoding="utf-8")
+    # different file in both
+    (s2 / "state.json").write_text("state-version-legacy", encoding="utf-8")
+    (d2 / "state.json").write_text("state-version-durable", encoding="utf-8")
+    var_lock = base / "instances" / ".migrating-claude-code"
+    var_lock.write_text(json.dumps({"schema": 1, "pid": 777777, "started_ts": 1000.0}), encoding="utf-8")
+
+    ret_diff = cli.main(["space", "migrate", "--proc-root", str(empty_proc), "--quiet-minutes", "0"])
+    assert ret_diff != 0
+    # files intact
+    assert (s2 / "state.json").read_text(encoding="utf-8") == "state-version-legacy"
+    assert (d2 / "state.json").read_text(encoding="utf-8") == "state-version-durable"
