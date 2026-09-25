@@ -85,6 +85,24 @@ def plugin_data_roots(env: Mapping[str, str] | None = None) -> list[Path]:
     return roots
 
 
+def _find_pointer_file(storage: Path, root: Path | None = None) -> Path | None:
+    """Locate space-pointer.json if present in the plugin space."""
+    candidates = [
+        storage / "space-pointer.json",
+    ]
+    if storage.parent != storage:
+        candidates.append(storage.parent / "space-pointer.json")
+    if root is not None:
+        candidates.extend([
+            root / "space-pointer.json",
+            root / "space" / "space-pointer.json",
+        ])
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
+
+
 def _find_plugin_instance_json(storage: Path, root: Path | None = None) -> Path | None:
     """Locate an existing instance.json within the plugin space without side-effects."""
     candidates = [
@@ -143,6 +161,41 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
     runtime = host_ident.runtime or "default"
     slug = slugify(runtime)
     durable_target = space_dir(slug)
+
+    # Precedence Step 2: Check pointer (B1 / B5)
+    pointer_file = _find_pointer_file(storage_path, matched_root)
+    if pointer_file is not None:
+        try:
+            data = json.loads(pointer_file.read_text(encoding="utf-8"))
+            target_str = str(data.get("target", ""))
+            target_path = Path(target_str).expanduser()
+            if target_path.exists():
+                return SpaceResolution(
+                    kind="B1",
+                    target=target_path,
+                    reason="",
+                    repair_pointer=False,
+                    announcement="",
+                )
+            return SpaceResolution(
+                kind="B5",
+                target=None,
+                reason=(
+                    f"space pointer found but its target {target_path} is gone. "
+                    "Not minting over it — run 'conscio space migrate' to resolve, "
+                    "or restore the target."
+                ),
+                repair_pointer=False,
+                announcement="",
+            )
+        except Exception as exc:
+            return SpaceResolution(
+                kind="B5",
+                target=None,
+                reason=f"corrupt space pointer at {pointer_file}: {exc}",
+                repair_pointer=False,
+                announcement="",
+            )
 
     # Check existence of instance.json in plugin vs durable
     plugin_inst_path = _find_plugin_instance_json(storage_path, matched_root)

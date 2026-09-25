@@ -6,7 +6,11 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from conscio.installer.durable import SpaceResolution, resolve_space
+from conscio.installer.durable import (
+    SpaceResolution,
+    resolve_space,
+    write_pointer_atomic,
+)
 from conscio.installer.spaces import INSTANCES_ROOT
 
 
@@ -192,3 +196,56 @@ def test_b0_announces_migration(tmp_path):
 
     assert res.kind == "B0"
     assert res.announcement == "migration ready, run: conscio space migrate"
+
+
+def test_b1_pointer_valid(tmp_path):
+    plugin_dir = tmp_path / "plugin"
+    storage = plugin_dir / "space"
+    target_dir = INSTANCES_ROOT() / "claude-code"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    pointer_file = plugin_dir / "space-pointer.json"
+    write_pointer_atomic(
+        pointer_path=pointer_file,
+        target=target_dir,
+        runtime="claude-code",
+        slug="claude-code",
+    )
+
+    env = {"CLAUDE_PLUGIN_DATA": str(plugin_dir)}
+    res = resolve_space(storage, env=env)
+
+    assert res == SpaceResolution(
+        kind="B1",
+        target=target_dir,
+        reason="",
+        repair_pointer=False,
+        announcement="",
+    )
+
+
+def test_b5_dangling_pointer_refuses(tmp_path):
+    plugin_dir = tmp_path / "plugin"
+    storage = plugin_dir / "space"
+    missing_target = INSTANCES_ROOT() / "missing-target"
+    pointer_file = plugin_dir / "space-pointer.json"
+    write_pointer_atomic(
+        pointer_path=pointer_file,
+        target=missing_target,
+        runtime="claude-code",
+        slug="claude-code",
+    )
+
+    env = {"CLAUDE_PLUGIN_DATA": str(plugin_dir)}
+    res = resolve_space(storage, env=env)
+
+    expected_reason = (
+        f"space pointer found but its target {missing_target} is gone. "
+        "Not minting over it — run 'conscio space migrate' to resolve, or restore the target."
+    )
+    assert res == SpaceResolution(
+        kind="B5",
+        target=None,
+        reason=expected_reason,
+        repair_pointer=False,
+        announcement="",
+    )
