@@ -117,6 +117,106 @@ def test_migrate_ancestor_process_with_legacy_path_is_skipped(tmp_path, monkeypa
     assert ret == 0
 
 
+def test_gate_1_blocks_ancestor_conscio_holding_legacy_storage(tmp_path, monkeypatch, capsys):
+    """Gate 1 blocks ancestor process that is a live conscio process holding an open fd in legacy storage."""
+    _plugin_dir, storage = _setup_plugin_space(tmp_path, monkeypatch)
+
+    fake_proc = tmp_path / "fake_proc"
+    self_pid = os.getpid()
+    parent_pid = 8888
+
+    # Setup self process in fake_proc with PPid pointing to parent
+    p_self = fake_proc / str(self_pid)
+    p_self.mkdir(parents=True, exist_ok=True)
+    (p_self / "status").write_text(f"Name:\tpython\nPPid:\t{parent_pid}\n", encoding="utf-8")
+
+    # Setup parent process: python running conscio-mcp with --storage pointing to legacy
+    p_parent = fake_proc / str(parent_pid)
+    p_parent.mkdir(parents=True, exist_ok=True)
+    cmdline_parent = f"python3\x00conscio-mcp\x00--storage\x00{storage}\x00".encode()
+    (p_parent / "cmdline").write_bytes(cmdline_parent)
+    (p_parent / "status").write_text("Name:\tpython3\nPPid:\t1\n", encoding="utf-8")
+
+    # Open fd in parent pointing to file inside legacy storage
+    fd_dir = p_parent / "fd"
+    fd_dir.mkdir(parents=True, exist_ok=True)
+    os.symlink(str(storage / "obs.db"), str(fd_dir / "3"))
+
+    ret = cli.main(["space", "migrate", "--proc-root", str(fake_proc), "--quiet-minutes", "0"])
+    assert ret == 2
+    captured = capsys.readouterr()
+    assert "migration deferred" in captured.err
+    assert str(parent_pid) in captured.err
+    # Legado intacto
+    assert (storage / "instance.json").exists()
+    assert (storage / "obs.db").exists()
+
+
+def test_gate_1_blocks_ancestor_conscio_without_open_fd(tmp_path, monkeypatch, capsys):
+    """Gate 1 blocks ancestor process that is a live conscio process even without an open fd."""
+    _plugin_dir, storage = _setup_plugin_space(tmp_path, monkeypatch)
+
+    fake_proc = tmp_path / "fake_proc"
+    self_pid = os.getpid()
+    parent_pid = 8888
+
+    # Setup self process in fake_proc with PPid pointing to parent
+    p_self = fake_proc / str(self_pid)
+    p_self.mkdir(parents=True, exist_ok=True)
+    (p_self / "status").write_text(f"Name:\tpython\nPPid:\t{parent_pid}\n", encoding="utf-8")
+
+    # Setup parent process: python running conscio-mcp with --storage pointing to legacy, but NO open fd
+    p_parent = fake_proc / str(parent_pid)
+    p_parent.mkdir(parents=True, exist_ok=True)
+    cmdline_parent = f"python3\x00conscio-mcp\x00--storage\x00{storage}\x00".encode()
+    (p_parent / "cmdline").write_bytes(cmdline_parent)
+    (p_parent / "status").write_text("Name:\tpython3\nPPid:\t1\n", encoding="utf-8")
+
+    ret = cli.main(["space", "migrate", "--proc-root", str(fake_proc), "--quiet-minutes", "0"])
+    assert ret == 2
+    captured = capsys.readouterr()
+    assert "migration deferred" in captured.err
+    assert str(parent_pid) in captured.err
+    # Legado intacto
+    assert (storage / "instance.json").exists()
+    assert (storage / "obs.db").exists()
+
+
+def test_gate_1_blocks_bash_ancestor_holding_legacy_fd(tmp_path, monkeypatch, capsys):
+    """Gate 1 blocks a bash ancestor if it holds an open fd pointing into the legacy storage."""
+    _plugin_dir, storage = _setup_plugin_space(tmp_path, monkeypatch)
+
+    fake_proc = tmp_path / "fake_proc"
+    self_pid = os.getpid()
+    parent_pid = 8888
+
+    # Setup self process in fake_proc with PPid pointing to parent
+    p_self = fake_proc / str(self_pid)
+    p_self.mkdir(parents=True, exist_ok=True)
+    (p_self / "status").write_text(f"Name:\tpython\nPPid:\t{parent_pid}\n", encoding="utf-8")
+
+    # Setup parent process: bash running script, with fd open pointing to legacy storage
+    p_parent = fake_proc / str(parent_pid)
+    p_parent.mkdir(parents=True, exist_ok=True)
+    cmdline_parent = f"bash\x00-c\x00ls {storage} && conscio space migrate\x00".encode()
+    (p_parent / "cmdline").write_bytes(cmdline_parent)
+    (p_parent / "status").write_text("Name:\tbash\nPPid:\t1\n", encoding="utf-8")
+
+    # Open fd in bash pointing to file inside legacy storage
+    fd_dir = p_parent / "fd"
+    fd_dir.mkdir(parents=True, exist_ok=True)
+    os.symlink(str(storage / "instance.json"), str(fd_dir / "3"))
+
+    ret = cli.main(["space", "migrate", "--proc-root", str(fake_proc), "--quiet-minutes", "0"])
+    assert ret == 2
+    captured = capsys.readouterr()
+    assert "migration deferred" in captured.err
+    assert str(parent_pid) in captured.err
+    # Legado intacto
+    assert (storage / "instance.json").exists()
+    assert (storage / "obs.db").exists()
+
+
 def test_migrate_non_ancestor_process_with_legacy_path_is_refused(tmp_path, monkeypatch, capsys):
     """Gate 1 continues refusing when a non-ancestor (e.g. sibling/stranger) process
 
