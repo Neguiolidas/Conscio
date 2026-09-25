@@ -61,7 +61,10 @@ def main(argv):
     obsstore = _load_module(Path(args.obsstore).expanduser().resolve(),
                             "conscio_obsstore_vendored")
 
-    storage = Path(args.storage).expanduser()
+    resolved_storage = obsstore.resolve_hook_storage(args.storage)
+    if resolved_storage is None:
+        return 0
+    storage = resolved_storage
     storage.mkdir(parents=True, exist_ok=True)
     db_path = storage / "conscio.db"
 

@@ -1887,9 +1887,44 @@ def main(argv: list[str] | None = None) -> int:
               "absolute --storage path in its own MCP config.",
               file=sys.stderr)
         return 2
+
+    # S1 Durable Space resolution
+    from conscio.installer.durable import (
+        plugin_pointer_path,
+        remove_refused_marker,
+        resolve_space,
+        write_pointer_atomic,
+        write_refused_marker,
+    )
+    from conscio.installer.spaces import minting_lock, slugify
+
+    storage_arg = Path(args.storage) if args.storage else Path.cwd()
+    res = resolve_space(storage_arg)
+    if res.target is None:
+        write_refused_marker(storage_arg, state=res.kind, reason=res.reason)
+        print(f"conscio-mcp: {res.reason}", file=sys.stderr)
+        return 2
+
+    remove_refused_marker(storage_arg)
+    if res.announcement:
+        print(f"conscio-mcp: {res.announcement}", file=sys.stderr)
+    args.storage = str(res.target)
+
     ident = resolve_full_identity(
         model=args.identity_model, familia=args.identity_familia,
         runtime=args.identity_runtime, papel=args.identity_papel)
+
+    if res.repair_pointer:
+        slug = slugify(ident[2] or "default")
+        with minting_lock(slug):
+            ptr_path = plugin_pointer_path(storage_arg)
+            write_pointer_atomic(
+                ptr_path,
+                target=res.target,
+                runtime=ident[2] or "default",
+                slug=slug,
+            )
+
     validate_binding(args.storage)                 # R6
     try:
         model_name = _resolve_model(args)

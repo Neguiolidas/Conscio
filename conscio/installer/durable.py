@@ -20,11 +20,16 @@ __all__ = [
     "SpaceResolution",
     "migration_lock_path",
     "minting_lock",
+    "plugin_data_dir",
     "plugin_data_roots",
+    "plugin_pointer_path",
+    "plugin_refused_marker_path",
     "remove_migration_lock",
+    "remove_refused_marker",
     "resolve_space",
     "write_migration_lock",
     "write_pointer_atomic",
+    "write_refused_marker",
 ]
 
 _SUPPORTED_PLUGIN_ROOT_KEYS = ("CLAUDE_PLUGIN_DATA", "ZCODE_PLUGIN_DATA")
@@ -120,6 +125,68 @@ def plugin_data_roots(env: Mapping[str, str] | None = None) -> list[Path]:
         if val:
             roots.append(Path(val).expanduser())
     return roots
+
+
+def plugin_data_dir(storage: Path | str, env: Mapping[str, str] | None = None) -> Path:
+    """Return the base plugin data directory for storage, or storage itself."""
+    storage_path = Path(storage).expanduser()
+    roots = plugin_data_roots(env)
+    for r in roots:
+        try:
+            if storage_path == r or storage_path.is_relative_to(r):
+                return r
+        except (ValueError, OSError):
+            continue
+    if storage_path.name == "space":
+        return storage_path.parent
+    return storage_path
+
+
+def plugin_pointer_path(storage: Path | str, env: Mapping[str, str] | None = None) -> Path:
+    """Return the space-pointer.json path for storage."""
+    return plugin_data_dir(storage, env) / "space-pointer.json"
+
+
+def plugin_refused_marker_path(storage: Path | str, env: Mapping[str, str] | None = None) -> Path:
+    """Return the space-refused.json path for storage."""
+    return plugin_data_dir(storage, env) / "space-refused.json"
+
+
+def write_refused_marker(
+    storage: Path | str,
+    state: str,
+    reason: str,
+    env: Mapping[str, str] | None = None,
+    ts: float | None = None,
+) -> Path:
+    """Atomically write space-refused.json schema 1."""
+    marker_path = plugin_refused_marker_path(storage, env)
+    marker_path.parent.mkdir(parents=True, exist_ok=True)
+    if ts is None:
+        ts = time.time()
+    payload = {
+        "schema": 1,
+        "state": state,
+        "reason": reason,
+        "ts": float(ts),
+    }
+    _write_json_atomic(marker_path, payload)
+    return marker_path
+
+
+def remove_refused_marker(storage: Path | str, env: Mapping[str, str] | None = None) -> None:
+    """Remove space-refused.json if present."""
+    marker_path = plugin_refused_marker_path(storage, env)
+    try:
+        marker_path.unlink()
+    except FileNotFoundError:
+        pass
+    storage_path = Path(storage).expanduser()
+    if storage_path != marker_path.parent:
+        try:
+            (storage_path / "space-refused.json").unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _find_pointer_file(storage: Path, root: Path | None = None) -> Path | None:

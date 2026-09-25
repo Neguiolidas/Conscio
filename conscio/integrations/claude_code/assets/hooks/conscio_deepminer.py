@@ -115,9 +115,13 @@ def main(argv):
         storage = _argv_opt(argv, "--storage") or cfg.get("storage")
         if not store or not storage:
             return 0
-        if (Path(storage) / "capture-off").exists():  # muted for this space
+        obs_mod = load_obsstore(store)
+        resolved_storage = obs_mod.resolve_hook_storage(storage)
+        if resolved_storage is None:
             return 0
-        handler(_read_stdin(), load_obsstore(store), Path(storage))
+        if (resolved_storage / "capture-off").exists():  # muted for this space
+            return 0
+        handler(_read_stdin(), obs_mod, resolved_storage)
     except Exception:
         if os.environ.get("CONSCIO_HOOK_TRACE"):
             import traceback

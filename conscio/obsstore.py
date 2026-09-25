@@ -18,6 +18,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import os
 import sqlite3
 import time
 import zlib
@@ -32,6 +33,125 @@ MAX_FIELD_BYTES = 1024 * 1024
 #: Used only when the space has no readable identity. Kept as a literal so a
 #: store written before identities existed still joins cleanly with new rows.
 DEFAULT_AGENT = "claude-code"
+
+
+def resolve_hook_storage(storage: str | Path | None) -> Path | None:
+    """Resolve storage path for hooks using pure stdlib cascade (Spec §1.3).
+
+    Strict evaluation order:
+    1. space-pointer.json present: target exists -> return target; target missing -> return None.
+    2. Check if storage is plugin-bound (inside CLAUDE_PLUGIN_DATA or ZCODE_PLUGIN_DATA).
+       If NOT plugin-bound:
+         - if space-refused.json exists -> return None
+         - otherwise -> return storage_path (explicit storage outside plugin data roots retains legacy behaviour).
+    3. If plugin-bound:
+       - without pointer: any ~/.conscio/instances/.migrating-* exists -> return None.
+       - without pointer: space-refused.json present -> return None.
+       - without pointer: space/instance.json or instance.json in plugin space exists -> return plugin space (B0 legacy).
+       - otherwise: return None.
+    """
+    if not storage:
+        return None
+    try:
+        storage_path = Path(storage).expanduser()
+    except Exception:
+        return None
+
+    plugin_roots: list[Path] = []
+    for env_k in ("CLAUDE_PLUGIN_DATA", "ZCODE_PLUGIN_DATA"):
+        val = os.environ.get(env_k)
+        if val:
+            try:
+                plugin_roots.append(Path(val).expanduser())
+            except Exception:
+                pass
+
+    is_plugin_bound = False
+    for r in plugin_roots:
+        try:
+            if storage_path == r or storage_path.is_relative_to(r):
+                is_plugin_bound = True
+                break
+        except (ValueError, OSError):
+            continue
+
+    plugin_dirs: list[Path] = list(plugin_roots)
+    if storage_path.name == "space":
+        plugin_dirs.append(storage_path.parent)
+    plugin_dirs.append(storage_path)
+
+    # 1. space-pointer.json present
+    pointer_candidates = [
+        storage_path / "space-pointer.json",
+        storage_path.parent / "space-pointer.json",
+    ]
+    for pdir in plugin_dirs:
+        pointer_candidates.append(pdir / "space-pointer.json")
+        pointer_candidates.append(pdir / "space" / "space-pointer.json")
+
+    seen_ptrs: set[Path] = set()
+    for ptr in pointer_candidates:
+        if ptr in seen_ptrs:
+            continue
+        seen_ptrs.add(ptr)
+        if ptr.exists():
+            try:
+                data = json.loads(ptr.read_text(encoding="utf-8"))
+                target_str = data.get("target")
+                if target_str:
+                    target = Path(target_str).expanduser()
+                    if target.exists():
+                        return target
+                return None
+            except Exception:
+                return None
+
+    # Check space-refused.json
+    refused_candidates = [
+        storage_path / "space-refused.json",
+        storage_path.parent / "space-refused.json",
+    ]
+    for pdir in plugin_dirs:
+        refused_candidates.append(pdir / "space-refused.json")
+        refused_candidates.append(pdir / "space" / "space-refused.json")
+
+    seen_refs: set[Path] = set()
+    for ref in refused_candidates:
+        if ref in seen_refs:
+            continue
+        seen_refs.add(ref)
+        if ref.exists():
+            return None
+
+    # If NOT plugin-bound, explicit storage outside plugin data roots retains legacy behaviour
+    if not is_plugin_bound:
+        return storage_path
+
+    # 2. If plugin-bound: check ~/.conscio/instances/.migrating-*
+    base = os.environ.get("CONSCIO_BASE")
+    if base:
+        instances_dir = Path(base).expanduser() / "instances"
+    else:
+        instances_dir = Path.home() / ".conscio" / "instances"
+    try:
+        if instances_dir.exists():
+            for entry in instances_dir.iterdir():
+                if entry.name.startswith(".migrating-"):
+                    return None
+    except Exception:
+        pass
+
+    # 4. If plugin-bound: check instance.json in plugin space exists (B0 legacy)
+    if (storage_path / "instance.json").exists():
+        return storage_path
+    for pdir in plugin_dirs:
+        if (pdir / "space" / "instance.json").exists():
+            return pdir / "space"
+        if (pdir / "instance.json").exists():
+            return pdir
+
+    # 5. Fallback: silent return None
+    return None
 
 
 def agent_label(storage) -> str:
@@ -50,8 +170,10 @@ def agent_label(storage) -> str:
     an observation.
     """
     try:
+        resolved = resolve_hook_storage(storage)
+        target = resolved if resolved is not None else Path(storage)
         ident = json.loads(
-            (Path(storage) / "instance.json").read_text(encoding="utf-8"))
+            (target / "instance.json").read_text(encoding="utf-8"))
         label = ident.get("label") or ident.get("instance_id")
     except (OSError, ValueError, AttributeError):
         return DEFAULT_AGENT

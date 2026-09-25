@@ -169,11 +169,30 @@ def _render(rows: list[dict], db: Path) -> str:
     return "\n".join(lines)
 
 
+def _resolve_storage(storage: str | Path | None) -> Path | None:
+    here = Path(__file__).resolve().parent
+    obsstore_path = here / "conscio_obsstore.py"
+    if obsstore_path.exists():
+        import importlib.util
+        try:
+            spec = importlib.util.spec_from_file_location("_conscio_obsstore_wake", obsstore_path)
+            if spec and spec.loader:
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod.resolve_hook_storage(storage)
+        except Exception:
+            pass
+    return Path(storage).expanduser() if storage else None
+
+
 def main(argv: list[str]) -> int:
     storage = _argv_opt(argv, "--storage")
     if not storage:
         return 0
-    storage_path = Path(storage)
+    resolved = _resolve_storage(storage)
+    if resolved is None:
+        return 0
+    storage_path = resolved
     db = Path(_argv_opt(argv, "--liaison-db") or storage_path / "liaison.db")
     if not db.exists():
         return 0
