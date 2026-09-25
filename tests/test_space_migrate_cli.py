@@ -81,6 +81,74 @@ def test_migrate_refused_lists_pids(tmp_path, monkeypatch, capsys):
     assert not (base / "instances" / ".migrating-claude-code").exists()
 
 
+def test_migrate_ancestor_process_with_legacy_path_is_skipped(tmp_path, monkeypatch, capsys):
+    """Gate 1 skips ancestor processes whose cmdline contains the legacy path.
+
+    E.g. parent shell running `bash -c "... <legacy-path> ... && conscio space migrate"`.
+    """
+    _plugin_dir, storage = _setup_plugin_space(tmp_path, monkeypatch)
+
+    fake_proc = tmp_path / "fake_proc"
+    self_pid = os.getpid()
+    parent_pid = 8888
+    grandparent_pid = 7777
+
+    # Setup self process in fake_proc with PPid pointing to parent
+    p_self = fake_proc / str(self_pid)
+    p_self.mkdir(parents=True, exist_ok=True)
+    (p_self / "status").write_text(f"Name:\tpython\nPPid:\t{parent_pid}\n", encoding="utf-8")
+
+    # Setup parent process with legacy path in cmdline and PPid pointing to grandparent
+    p_parent = fake_proc / str(parent_pid)
+    p_parent.mkdir(parents=True, exist_ok=True)
+    cmdline_parent = f"bash\x00-c\x00ls {storage} && conscio space migrate\x00".encode()
+    (p_parent / "cmdline").write_bytes(cmdline_parent)
+    (p_parent / "status").write_text(f"Name:\tbash\nPPid:\t{grandparent_pid}\n", encoding="utf-8")
+
+    # Setup grandparent process with legacy path in cmdline and PPid: 1
+    p_grandparent = fake_proc / str(grandparent_pid)
+    p_grandparent.mkdir(parents=True, exist_ok=True)
+    cmdline_gp = f"sh\x00--arg={storage}\x00".encode()
+    (p_grandparent / "cmdline").write_bytes(cmdline_gp)
+    (p_grandparent / "status").write_text("Name:\tsh\nPPid:\t1\n", encoding="utf-8")
+
+    # Run migrate: should pass because parent and grandparent are ancestors!
+    ret = cli.main(["space", "migrate", "--proc-root", str(fake_proc), "--quiet-minutes", "0"])
+    assert ret == 0
+
+
+def test_migrate_non_ancestor_process_with_legacy_path_is_refused(tmp_path, monkeypatch, capsys):
+    """Gate 1 continues refusing when a non-ancestor (e.g. sibling/stranger) process
+
+    has the legacy path in its cmdline.
+    """
+    _plugin_dir, storage = _setup_plugin_space(tmp_path, monkeypatch)
+
+    fake_proc = tmp_path / "fake_proc"
+    self_pid = os.getpid()
+    parent_pid = 8888
+    sibling_pid = 6666
+
+    # Setup self
+    p_self = fake_proc / str(self_pid)
+    p_self.mkdir(parents=True, exist_ok=True)
+    (p_self / "status").write_text(f"Name:\tpython\nPPid:\t{parent_pid}\n", encoding="utf-8")
+
+    # Setup stranger/sibling process with legacy path
+    p_sibling = fake_proc / str(sibling_pid)
+    p_sibling.mkdir(parents=True, exist_ok=True)
+    cmdline_sib = f"python3\x00worker.py\x00--storage={storage}\x00".encode()
+    (p_sibling / "cmdline").write_bytes(cmdline_sib)
+    (p_sibling / "status").write_text(f"Name:\tpython3\nPPid:\t{parent_pid}\n", encoding="utf-8")
+
+    # Run migrate: should refuse with exit 2 because sibling is not an ancestor of self
+    ret = cli.main(["space", "migrate", "--proc-root", str(fake_proc), "--quiet-minutes", "0"])
+    assert ret == 2
+    captured = capsys.readouterr()
+    assert "migration deferred" in captured.err
+    assert str(sibling_pid) in captured.err
+
+
 def test_backup_two_generations(tmp_path, monkeypatch):
     _plugin_dir, _storage = _setup_plugin_space(tmp_path, monkeypatch)
     base = Path(os.environ["CONSCIO_BASE"])

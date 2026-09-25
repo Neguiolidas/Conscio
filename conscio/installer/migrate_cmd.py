@@ -88,11 +88,38 @@ def _is_pid_alive(pid: int | None, proc_root: Path = Path("/proc")) -> bool:
         return err.errno == errno.EPERM
 
 
+def _get_ancestor_pids(self_pid: int, proc_root: Path) -> set[int]:
+    ancestors = {self_pid}
+    curr = self_pid
+    while curr > 1:
+        status_file = proc_root / str(curr) / "status"
+        if not status_file.is_file():
+            break
+        try:
+            ppid = None
+            for line in status_file.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.startswith("PPid:"):
+                    parts = line.split(":", 1)
+                    if len(parts) == 2:
+                        ppid = int(parts[1].strip())
+                    break
+            if ppid is None or ppid in ancestors:
+                break
+            ancestors.add(ppid)
+            if ppid <= 1:
+                break
+            curr = ppid
+        except Exception:
+            break
+    return ancestors
+
+
 def _find_active_legacy_procs(legacy_path: Path, proc_root: Path) -> list[dict]:
     legacy_str = str(legacy_path.resolve())
     legacy_raw = str(legacy_path)
     active = []
     self_pid = os.getpid()
+    ancestor_pids = _get_ancestor_pids(self_pid, proc_root)
     if not proc_root.exists():
         return []
     for p_entry in proc_root.iterdir():
@@ -102,7 +129,7 @@ def _find_active_legacy_procs(legacy_path: Path, proc_root: Path) -> list[dict]:
             pid = int(p_entry.name)
         except ValueError:
             continue
-        if pid == self_pid:
+        if pid in ancestor_pids:
             continue
         cmdline_file = p_entry / "cmdline"
         if not cmdline_file.is_file():
