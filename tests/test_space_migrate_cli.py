@@ -202,6 +202,17 @@ def test_migrate_quiet_minutes_default_10(tmp_path, monkeypatch, capsys):
     assert not (storage / "instance.json").exists()
 
 
+def test_migrate_quiet_minutes_zero_does_not_print_checking_log(tmp_path, monkeypatch, capsys):
+    _plugin_dir, _storage = _setup_plugin_space(tmp_path, monkeypatch)
+    empty_proc = tmp_path / "empty_proc"
+    empty_proc.mkdir(parents=True, exist_ok=True)
+
+    ret = cli.main(["space", "migrate", "--proc-root", str(empty_proc), "--quiet-minutes", "0"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "checking quiet minutes" not in captured.err
+
+
 def test_migrate_cross_fs_exdev(tmp_path, monkeypatch):
     _plugin_dir, storage = _setup_plugin_space(tmp_path, monkeypatch)
     empty_proc = tmp_path / "empty_proc"

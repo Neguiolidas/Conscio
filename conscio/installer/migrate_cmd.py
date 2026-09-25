@@ -321,8 +321,8 @@ def migrate_space_cmd(
             return 2
 
     # Gate 2: Mtime-quieto check
-    print(f"gate: checking quiet minutes (threshold: {quiet_minutes} min)...", file=sys.stderr)
     if quiet_minutes > 0 and legacy_path and legacy_path.exists():
+        print(f"gate: checking quiet minutes (threshold: {quiet_minutes} min)...", file=sys.stderr)
         cutoff = time.time() - (quiet_minutes * 60)
         recent_mod = []
         for root_dir, _, files in os.walk(legacy_path):
