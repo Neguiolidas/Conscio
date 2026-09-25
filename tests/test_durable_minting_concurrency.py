@@ -48,6 +48,7 @@ def test_b6_two_concurrent_boots_one_identity(tmp_path):
         "CONSCIO_BASE": os.environ["CONSCIO_BASE"],
     }
     queue: multiprocessing.Queue = multiprocessing.Queue()
+    # Barrier(2) sincroniza os dois boots para que iniciem juntos: sem ele os processos não se sobrepõem e o teste passa mesmo sem o lock (falso-verde 16/20 do H15).
     barrier = multiprocessing.Barrier(2)
 
     p1 = multiprocessing.Process(target=_boot_worker, args=(slug, queue, env_vars, barrier))
