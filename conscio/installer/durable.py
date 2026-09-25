@@ -18,6 +18,8 @@ from .spaces import minting_lock, slugify, space_dir
 
 __all__ = [
     "SpaceResolution",
+    "find_refused_markers",
+    "known_plugin_data_dirs",
     "migration_lock_path",
     "minting_lock",
     "plugin_data_dir",
@@ -125,6 +127,81 @@ def plugin_data_roots(env: Mapping[str, str] | None = None) -> list[Path]:
         if val:
             roots.append(Path(val).expanduser())
     return roots
+
+
+def known_plugin_data_dirs(
+    env: Mapping[str, str] | None = None,
+    home: Path | None = None,
+    only_existing: bool = True,
+) -> list[Path]:
+    """Return recognized plugin data directories from env and standard filesystem locations.
+
+    Checks:
+    - Environment variables: CLAUDE_PLUGIN_DATA, ZCODE_PLUGIN_DATA
+    - Standard filesystem defaults relative to home (Path.home()):
+      ~/.claude/plugins/data/conscio-conscio
+      ~/.zcode/cli/plugins/data/conscio@conscio
+    (Codex is treated as absent until upstream documentation defines it).
+
+    If only_existing is True (default), returns only paths that exist on disk.
+    Preserves order and deduplicates paths.
+    """
+    if env is None:
+        env = os.environ
+    if home is None:
+        home = Path.home()
+
+    candidates: list[Path] = []
+
+    # 1. From env vars
+    for key in _SUPPORTED_PLUGIN_ROOT_KEYS:
+        val = env.get(key)
+        if val:
+            candidates.append(Path(val).expanduser())
+
+    # 2. Standard filesystem paths relative to home
+    candidates.append(home / ".claude" / "plugins" / "data" / "conscio-conscio")
+    candidates.append(home / ".zcode" / "cli" / "plugins" / "data" / "conscio@conscio")
+
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    result: list[Path] = []
+    for p in candidates:
+        try:
+            norm = str(p.expanduser().resolve())
+        except (ValueError, OSError):
+            norm = str(p.expanduser())
+        if norm in seen:
+            continue
+        seen.add(norm)
+        if not only_existing or p.is_dir():
+            result.append(p)
+    return result
+
+
+def find_refused_markers(
+    env: Mapping[str, str] | None = None,
+    home: Path | None = None,
+) -> list[dict]:
+    """Scan known plugin data directories for space-refused.json markers."""
+    markers: list[dict] = []
+    for p_dir in known_plugin_data_dirs(env=env, home=home, only_existing=True):
+        marker_path = p_dir / "space-refused.json"
+        if marker_path.is_file():
+            try:
+                data = json.loads(marker_path.read_text(encoding="utf-8"))
+            except Exception:
+                data = {}
+            st = marker_path.stat()
+            markers.append({
+                "path": marker_path,
+                "plugin_dir": p_dir,
+                "state": data.get("state", "unknown"),
+                "reason": data.get("reason", ""),
+                "ts": float(data.get("ts", st.st_mtime)),
+                "mtime": st.st_mtime,
+            })
+    return markers
 
 
 def plugin_data_dir(storage: Path | str, env: Mapping[str, str] | None = None) -> Path:

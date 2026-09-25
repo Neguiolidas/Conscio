@@ -18,13 +18,18 @@ returns a non-zero code when the answer is "no".
 from __future__ import annotations
 
 import argparse
+import errno
+import json
 import os
 import re
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import NamedTuple
 
+from ..installer.durable import find_refused_markers, known_plugin_data_dirs
+from ..installer.spaces import INSTANCES_ROOT
 from . import directory, mailbox, relay_transport
 
 
@@ -768,6 +773,276 @@ def _report_mailboxes(cards: list[dict]) -> None:
               f"never published)")
 
 
+def _fmt_size(num_bytes: int) -> str:
+    if num_bytes < 1024:
+        return f"{num_bytes}B"
+    elif num_bytes < 1024 * 1024:
+        return f"{num_bytes / 1024:.1f}K"
+    elif num_bytes < 1024 * 1024 * 1024:
+        return f"{num_bytes / (1024 * 1024):.1f}M"
+    return f"{num_bytes / (1024 * 1024 * 1024):.1f}G"
+
+
+def _dir_stats(path: Path) -> tuple[int, float]:
+    """Compute total size (bytes) and latest mtime of a directory recursively."""
+    total_size = 0
+    latest_mtime = 0.0
+    try:
+        latest_mtime = path.stat().st_mtime
+    except OSError:
+        pass
+    try:
+        for root, _dirs, files in os.walk(str(path)):
+            for f in files:
+                fp = Path(root) / f
+                try:
+                    st = fp.stat()
+                    total_size += st.st_size
+                    latest_mtime = max(latest_mtime, st.st_mtime)
+                except OSError:
+                    continue
+    except OSError:
+        pass
+    return total_size, latest_mtime
+
+
+def _is_pid_alive(pid: int | None, proc_root: Path = Path("/proc")) -> bool:
+    if pid is None or pid <= 0:
+        return False
+    if proc_root != Path("/proc"):
+        return (proc_root / str(pid)).is_dir()
+    if (proc_root / str(pid)).is_dir():
+        return True
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError as err:
+        return err.errno == errno.EPERM
+
+
+def _find_active_procs_on_path(target_path: Path, proc_root: Path) -> list[dict]:
+    try:
+        target_str = str(target_path.resolve())
+    except (ValueError, OSError):
+        target_str = str(target_path)
+    target_raw = str(target_path)
+    active = []
+    self_pid = os.getpid()
+    if not proc_root.exists() or not proc_root.is_dir():
+        return []
+    try:
+        entries = list(proc_root.iterdir())
+    except OSError:
+        return []
+    for p_entry in entries:
+        if not p_entry.name.isdigit():
+            continue
+        try:
+            pid = int(p_entry.name)
+        except ValueError:
+            continue
+        if pid == self_pid:
+            continue
+        cmdline_file = p_entry / "cmdline"
+        if not cmdline_file.is_file():
+            continue
+        try:
+            raw = cmdline_file.read_bytes()
+            args = [a for a in raw.decode("utf-8", errors="replace").split("\x00") if a]
+            cmdline_str = " ".join(args)
+            if target_str in cmdline_str or target_raw in cmdline_str:
+                active.append({"pid": pid, "cmdline": cmdline_str, "args": args})
+        except Exception:
+            continue
+    return active
+
+
+def _report_space_diagnostics(
+    proc_root: Path = Path("/proc"),
+    env: Mapping[str, str] | None = None,
+) -> None:
+    """Diagnose durable spaces, locks, phantoms, tombstones, and refusal markers (Spec §3, §5 item 8)."""
+    now = time.time()
+    if env is None:
+        env = os.environ
+
+    if "CONSCIO_BASE" in env:
+        inst_root = Path(env["CONSCIO_BASE"]).expanduser() / "instances"
+        home_dir = None
+    elif directory.RELAY_ROOT_ENV in env:
+        test_base = Path(env[directory.RELAY_ROOT_ENV]).expanduser().parent
+        inst_root = test_base / "instances"
+        home_dir = test_base
+    else:
+        inst_root = INSTANCES_ROOT()
+        home_dir = None
+
+    # D5: Migration locks (.migrating-*)
+    if inst_root.is_dir():
+        try:
+            entries = list(inst_root.iterdir())
+        except OSError:
+            entries = []
+
+        for entry in sorted(entries, key=lambda x: x.name):
+            if entry.name.startswith(".migrating-"):
+                pid = None
+                try:
+                    data = json.loads(entry.read_text(encoding="utf-8"))
+                    pid = data.get("pid")
+                except Exception:
+                    pass
+
+                if not _is_pid_alive(pid, proc_root=proc_root):
+                    print(
+                        f"AVISO: lock de migracao orfao {entry} (pid {pid} morto) (D5).\n"
+                        f"  Sugestao: rm {entry}"
+                    )
+                else:
+                    print(f"info: migracao em andamento em {entry} (pid {pid} ativo)")
+
+    # Find known plugin directories and pointers
+    known_plugins = known_plugin_data_dirs(env=env, home=home_dir, only_existing=True)
+
+    # Collect all pointers from known plugins
+    target_to_pointers: dict[str, list[tuple[Path, dict]]] = {}
+    for p_dir in known_plugins:
+        pointer_file = p_dir / "space-pointer.json"
+        if pointer_file.is_file():
+            try:
+                p_data = json.loads(pointer_file.read_text(encoding="utf-8"))
+                tgt = p_data.get("target")
+                if tgt:
+                    try:
+                        tgt_norm = str(Path(tgt).resolve())
+                    except Exception:
+                        tgt_norm = str(tgt)
+                    target_to_pointers.setdefault(tgt_norm, []).append((p_dir, p_data))
+            except Exception:
+                pass
+
+    # Collect known directory cards
+    cards = directory.peers(exclude="")
+    known_spaces_in_cards: set[str] = set()
+    known_ids_in_cards: set[str] = set()
+    for c in cards:
+        if c.get("instance_id"):
+            known_ids_in_cards.add(str(c["instance_id"]))
+        if c.get("space"):
+            try:
+                known_spaces_in_cards.add(str(Path(c["space"]).resolve()))
+            except Exception:
+                known_spaces_in_cards.add(str(c["space"]))
+
+    # Scan instances_root for D1, D2, D3
+    if inst_root.is_dir():
+        try:
+            entries = list(inst_root.iterdir())
+        except OSError:
+            entries = []
+
+        for entry in sorted(entries, key=lambda x: x.name):
+            # Spec D1: ignore normal files and dot-prefixed entries (e.g. .migrating-*, .minting-*)
+            if not entry.is_dir() or entry.name.startswith("."):
+                continue
+
+            try:
+                entry_resolved = str(entry.resolve())
+            except Exception:
+                entry_resolved = str(entry)
+            iid = None
+            inst_json = entry / "instance.json"
+            if inst_json.is_file():
+                try:
+                    i_data = json.loads(inst_json.read_text(encoding="utf-8"))
+                    iid = i_data.get("instance_id")
+                except Exception:
+                    pass
+
+            # Check D2: Downgrade phantom
+            tombstone_file = entry / "migrated-from.json"
+            phantom_found = False
+            if tombstone_file.is_file():
+                origin_path = None
+                try:
+                    t_data = json.loads(tombstone_file.read_text(encoding="utf-8"))
+                    origin_str = t_data.get("origin")
+                    if origin_str:
+                        origin_path = Path(origin_str)
+                except Exception:
+                    pass
+
+                if origin_path:
+                    cand_dirs = [origin_path]
+                    if origin_path.name == "space":
+                        cand_dirs.append(origin_path.parent)
+                    for cd in cand_dirs:
+                        cand_inst = cd / "instance.json"
+                        if cand_inst.is_file():
+                            try:
+                                cd_data = json.loads(cand_inst.read_text(encoding="utf-8"))
+                                cd_id = cd_data.get("instance_id")
+                                if cd_id and cd_id != iid:
+                                    print(
+                                        f"AVISO: fantasma de downgrade detectado (D2):\n"
+                                        f"  duravel: {entry} (id {iid})\n"
+                                        f"  plugin: {cd} (id {cd_id})\n"
+                                        f"  sugestao: conscio relay forget {cd_id}"
+                                    )
+                                    phantom_found = True
+                                    break
+                            except Exception:
+                                pass
+
+                # Check D3: Orphan tombstone (origin does not exist)
+                if not phantom_found and origin_path and not origin_path.exists():
+                    print(
+                        f"info: lapide orfa em {tombstone_file} (D3): "
+                        f"origem {origin_path} nao existe mais (normal apos desinstalacao do plugin)"
+                    )
+
+            # Check D1: Orphan space (sem cartao e sem ponteiro)
+            has_pointer = entry_resolved in target_to_pointers
+            has_card = (entry_resolved in known_spaces_in_cards) or (iid and iid in known_ids_in_cards)
+            if not has_pointer and not has_card and not phantom_found:
+                size, mtime = _dir_stats(entry)
+                age_str = _fmt_age(now - mtime) if mtime > 0 else "desconhecido"
+                print(
+                    f"AVISO: espaco orfao {entry.name} (D1):\n"
+                    f"  id: {iid or 'sem id'}, tamanho: {_fmt_size(size)}, modificado: {age_str} atras\n"
+                    f"  caminho: {entry}"
+                )
+
+    # Check D4: Deferred migration in B0
+    for p_dir in known_plugins:
+        pointer_file = p_dir / "space-pointer.json"
+        if pointer_file.is_file():
+            continue  # Already has pointer, not B0
+
+        legacy_space = p_dir / "space" if (p_dir / "space").is_dir() else p_dir
+        if (legacy_space / "instance.json").is_file():
+            active_procs = _find_active_procs_on_path(legacy_space, proc_root=proc_root)
+            if not active_procs and legacy_space != p_dir:
+                active_procs = _find_active_procs_on_path(p_dir, proc_root=proc_root)
+            if active_procs:
+                print(
+                    f"AVISO: migracao adiada para {legacy_space} (D4): "
+                    f"{len(active_procs)} processo(s) ativo(s) no caminho legado:"
+                )
+                for proc in active_procs:
+                    print(f"  pid {proc['pid']}: {proc['cmdline'][:80]}")
+
+    # Check Refusal markers: space-refused.json
+    refused_markers = find_refused_markers(env=env, home=home_dir)
+    for rm in refused_markers:
+        age_str = _fmt_age(now - rm["ts"]) if rm["ts"] > 0 else "desconhecido"
+        print(
+            f"AVISO: marcador de recusa em {rm['path']}:\n"
+            f"  estado: {rm['state']}, gravado {age_str} atras\n"
+            f"  motivo: {rm['reason']}"
+        )
+
+
 def _cmd_doctor(args: argparse.Namespace) -> int:
     """Three questions, no journal: am I published, is anything parked in my
     spool, and does the directory know anybody at all."""
@@ -822,6 +1097,8 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
             f"{sp['running_version']} < instalada {sp['installed_version']}, "
             f"reinicie apos upgrade para nao apagar campos novos"
         )
+
+    _report_space_diagnostics(proc_root=proc_root)
 
     for p in problems:
         print(f"PROBLEM: {p}", file=sys.stderr)
