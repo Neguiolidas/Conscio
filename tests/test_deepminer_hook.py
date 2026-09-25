@@ -545,3 +545,17 @@ def test_compaction_events_still_fail_open(wired, tmp_path):
         r = run_hook(event, {"session_id": "C1"}, bad)
         assert r.returncode == 0, event
         assert r.stdout == "", event
+
+
+def test_retention_cap_is_3gb_universal():
+    """A25 (dono, 2026-09-25): o teto de retenção das observações sobe para
+    3 GB em TODOS os produtores; a idade continua 30 dias."""
+    import inspect
+
+    from conscio import obsstore
+
+    sig = inspect.signature(obsstore.prune)
+    assert sig.parameters["max_bytes"].default == 3 * 1024 ** 3
+    hook = _load_hook_module()
+    assert hook.RETENTION_BYTES == 3 * 1024 ** 3
+    assert hook.RETENTION_DAYS == 30

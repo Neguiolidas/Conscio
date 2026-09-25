@@ -188,7 +188,7 @@ def on_tool(payload, store, storage, failed=False):
 
 # Retention runs at session start, never on the hot path.
 RETENTION_DAYS = 30
-RETENTION_BYTES = 2 * 1024 ** 3
+RETENTION_BYTES = 3 * 1024 ** 3
 
 
 def render_index(summary):
