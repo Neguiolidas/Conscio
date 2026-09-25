@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import fcntl
+import logging
 import os
 import re
 import time
@@ -11,6 +12,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from ..noosphere.identity import Identity, load_or_create
+
+logger = logging.getLogger(__name__)
 
 _HELD_MINTING_LOCKS: dict[str, int] = {}
 
@@ -75,6 +78,12 @@ def minting_lock(slug: str, timeout: float = 5.0):
                 if exc.errno in (errno.ENOLCK, errno.EOPNOTSUPP):
                     # Filesystem does not support flock (e.g. WSL drvfs/NFS)
                     has_flock = False
+                    logger.warning(
+                        "minting flock is not available on this filesystem (%s); "
+                        "proceeding without exclusive lock via re-read only for %s",
+                        errno.errorcode.get(exc.errno, exc.errno),
+                        slug,
+                    )
                     break
                 if exc.errno not in (errno.EWOULDBLOCK, errno.EAGAIN):
                     raise

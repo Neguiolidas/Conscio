@@ -142,3 +142,26 @@ def test_minting_lock_timeout_raises_spec_message(tmp_path):
         "Re-run when current minting finishes."
     )
     assert str(exc_info.value) == expected_msg
+
+
+def test_minting_lock_enolck_logs_warning(monkeypatch, caplog):
+    """Item 2: ENOLCK on flock logs warning that minting lock is unavailable."""
+    import errno
+    import fcntl
+    import logging
+
+    slug = "enolck-slug"
+
+    def fake_flock(fd, op):
+        raise OSError(errno.ENOLCK, "No record locks available")
+
+    monkeypatch.setattr(fcntl, "flock", fake_flock)
+
+    with caplog.at_level(logging.WARNING), minting_lock(slug):
+        pass
+
+    assert any(
+        "minting flock is not available on this filesystem" in record.message
+        and "re-read" in record.message
+        for record in caplog.records
+    )
