@@ -18,9 +18,12 @@ from .spaces import minting_lock, slugify, space_dir
 
 __all__ = [
     "SpaceResolution",
+    "migration_lock_path",
     "minting_lock",
     "plugin_data_roots",
+    "remove_migration_lock",
     "resolve_space",
+    "write_migration_lock",
     "write_pointer_atomic",
 ]
 
@@ -60,6 +63,40 @@ def write_pointer_atomic(
         "migrated_ts": float(migrated_ts),
     }
     _write_json_atomic(pointer_path, payload)
+
+
+def migration_lock_path(slug: str) -> Path:
+    """Return Path to ~/.conscio/instances/.migrating-<slug>."""
+    return space_dir(slug).parent / f".migrating-{slug}"
+
+
+def write_migration_lock(
+    slug: str,
+    pid: int | None = None,
+    started_ts: float | None = None,
+) -> Path:
+    """Atomically create migration lock .migrating-<slug> schema 1."""
+    if pid is None:
+        pid = os.getpid()
+    if started_ts is None:
+        started_ts = time.time()
+    payload = {
+        "schema": 1,
+        "pid": pid,
+        "started_ts": float(started_ts),
+    }
+    lock_path = migration_lock_path(slug)
+    _write_json_atomic(lock_path, payload)
+    return lock_path
+
+
+def remove_migration_lock(slug: str) -> None:
+    """Remove migration lock .migrating-<slug> if present."""
+    lock_path = migration_lock_path(slug)
+    try:
+        lock_path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 @dataclass(frozen=True)
@@ -161,6 +198,27 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
     runtime = host_ident.runtime or "default"
     slug = slugify(runtime)
     durable_target = space_dir(slug)
+
+    # Precedence Step 0: Check migration lock (.migrating-<slug>)
+    migrating_lock_file = migration_lock_path(slug)
+    if migrating_lock_file.exists():
+        pid = "unknown"
+        try:
+            lock_data = json.loads(migrating_lock_file.read_text(encoding="utf-8"))
+            pid = str(lock_data.get("pid", "unknown"))
+        except Exception:
+            pass
+        return SpaceResolution(
+            kind="lock",
+            target=None,
+            reason=(
+                f"space migration in progress for {slug} (pid {pid}). "
+                "Refusing to start: neither minting nor using the legacy path. "
+                "Re-run when the migration finishes."
+            ),
+            repair_pointer=False,
+            announcement="",
+        )
 
     # Precedence Step 2: Check pointer (B1 / B5)
     pointer_file = _find_pointer_file(storage_path, matched_root)

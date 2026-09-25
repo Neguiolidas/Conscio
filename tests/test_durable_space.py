@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 
 import pytest
 
@@ -365,3 +367,106 @@ def test_b4_evidence_without_space_asks(tmp_path):
         "but no live space exists. Not minting silently — resolve with 'conscio space migrate' or delete the evidence explicitly."
         in res2.reason
     )
+
+
+def test_boot_during_lock_refuses(tmp_path):
+    plugin_dir = tmp_path / "plugin"
+    storage = plugin_dir / "space"
+    slug = "claude-code"
+    lock_file = INSTANCES_ROOT() / f".migrating-{slug}"
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    lock_file.write_text(
+        json.dumps({"schema": 1, "pid": 1454710, "started_ts": 1000.0}),
+        encoding="utf-8",
+    )
+
+    env = {"CLAUDE_PLUGIN_DATA": str(plugin_dir)}
+    res = resolve_space(storage, env=env)
+
+    assert res.kind == "lock"
+    assert res.target is None
+    assert res.repair_pointer is False
+    expected_msg = (
+        "space migration in progress for claude-code (pid 1454710). "
+        "Refusing to start: neither minting nor using the legacy path. "
+        "Re-run when the migration finishes."
+    )
+    assert res.reason == expected_msg
+
+
+def _lock_concurrency_worker(slug, env_vars, event_locked, event_step1_done, event_unlocked, queue):
+    for k, v in env_vars.items():
+        os.environ[k] = v
+    plugin_dir = Path(env_vars["CLAUDE_PLUGIN_DATA"])
+    storage = plugin_dir / "space"
+    env = {"CLAUDE_PLUGIN_DATA": str(plugin_dir)}
+
+    # Wait until migration lock is established
+    event_locked.wait(timeout=5)
+    res_locked = resolve_space(storage, env=env)
+    queue.put({"phase": "locked", "kind": res_locked.kind, "target": str(res_locked.target)})
+
+    # Signal step 1 completed
+    event_step1_done.set()
+
+    # Wait until migration lock is released
+    event_unlocked.wait(timeout=5)
+    res_unlocked = resolve_space(storage, env=env)
+    queue.put({"phase": "unlocked", "kind": res_unlocked.kind, "target": str(res_unlocked.target)})
+
+
+def test_boot_during_lock_concurrency_with_event(tmp_path):
+    plugin_dir = tmp_path / "plugin"
+    slug = "claude-code"
+    lock_file = INSTANCES_ROOT() / f".migrating-{slug}"
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+
+    ctx = multiprocessing.get_context("fork")
+    event_locked = ctx.Event()
+    event_step1_done = ctx.Event()
+    event_unlocked = ctx.Event()
+    queue = ctx.Queue()
+
+    env_vars = {
+        "HOME": os.environ["HOME"],
+        "CONSCIO_BASE": os.environ["CONSCIO_BASE"],
+        "CLAUDE_PLUGIN_DATA": str(plugin_dir),
+    }
+
+    p = ctx.Process(
+        target=_lock_concurrency_worker,
+        args=(slug, env_vars, event_locked, event_step1_done, event_unlocked, queue),
+    )
+    p.start()
+
+    try:
+        # Phase 1: Create lock file and signal worker
+        lock_file.write_text(
+            json.dumps({"schema": 1, "pid": 9999, "started_ts": 1000.0}),
+            encoding="utf-8",
+        )
+        event_locked.set()
+
+        # Wait for worker to test while locked
+        assert event_step1_done.wait(timeout=5)
+        item1 = queue.get(timeout=2)
+        assert item1["phase"] == "locked"
+        assert item1["kind"] == "lock"
+        assert item1["target"] == "None"
+
+        # Phase 2: Remove lock file and signal worker
+        lock_file.unlink()
+        event_unlocked.set()
+
+        p.join(timeout=5)
+        assert p.exitcode == 0
+
+        item2 = queue.get(timeout=2)
+        assert item2["phase"] == "unlocked"
+        # When lock is removed, boot no longer refuses with "lock"
+        assert item2["kind"] != "lock"
+        assert item2["kind"] == "B6"
+    finally:
+        if p.is_alive():
+            p.terminate()
+            p.join(timeout=2)
