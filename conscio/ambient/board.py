@@ -13,7 +13,8 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from collections.abc import Iterator
+import time
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -225,3 +226,155 @@ def _task(db: sqlite3.Connection, task_id: int) -> sqlite3.Row:
     if row is None:
         raise NoSuchTask(int(task_id))
     return row
+
+
+def _declare(files: Iterable[str]) -> list[str]:
+    """Absolute, resolved, deduplicated. The key of a reservation is the
+    resolved path, so a symlink COLLIDES with its target (measured
+    2026-09-25) and a hardlink does not (known limit, §6.5)."""
+    out: list[str] = []
+    for raw in files:
+        if not isinstance(raw, str):
+            raise ValueError(f"file path must be a string, got {type(raw).__name__}")
+        expanded = os.path.expanduser(raw)
+        if not os.path.isabs(expanded):
+            raise RelativePath(raw)
+        resolved = str(Path(expanded).resolve())
+        if resolved not in out:
+            out.append(resolved)
+    return out
+
+
+def _insert_task(db: sqlite3.Connection, *, title: str, body: str, state: str,
+                 creator: str, assignee: str | None, reviewer: str | None,
+                 origin: str | None, now: float) -> int:
+    cur = db.execute(
+        "INSERT INTO tasks (title, body, state, creator, assignee, reviewer,"
+        " origin, created_ts, updated_ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (str(title), str(body), state, creator, assignee, reviewer, origin, now, now))
+    assert cur.lastrowid is not None
+    return int(cur.lastrowid)
+
+
+def _insert_files(db: sqlite3.Connection, task_id: int, paths: list[str]) -> None:
+    db.executemany("INSERT INTO task_files (task_id, path) VALUES (?, ?)",
+                   [(task_id, p) for p in paths])
+
+
+def _lease_row(db: sqlite3.Connection) -> sqlite3.Row | None:
+    return db.execute("SELECT holder, fence, acquired_ts, expires_ts "
+                      "FROM board_lease WHERE id = 1").fetchone()
+
+
+def _require_orch(db: sqlite3.Connection, *, orch_fence: int, now: float,
+                  holder: str | None = None) -> str:
+    """The dispatch check of §6.4. Passing it RENEWS the lease (every
+    dispatch write of the holder does). Returns the holder."""
+    row = _lease_row(db)
+    if row is None or row["expires_ts"] <= now:
+        raise NoOrchestrationLease()
+    if int(orch_fence) != row["fence"] or (holder is not None and holder != row["holder"]):
+        raise StaleFence(None, int(orch_fence), int(row["fence"]))
+    db.execute("UPDATE board_lease SET expires_ts = ? WHERE id = 1",
+               (max(row["expires_ts"], now + DEFAULT_LEASE_S),))
+    return str(row["holder"])
+
+
+def propose_task(db: sqlite3.Connection, *, title: str, body: str, creator: str,
+                 files: Iterable[str] = (), origin: str | None = None,
+                 now: float | None = None) -> int:
+    """Anyone proposes (I9). A proposal is never wakeable (I4). A repeated
+    `origin` (a relay redelivery) returns the existing id."""
+    paths = _declare(files)
+    now = time.time() if now is None else float(now)
+    with _tx(db):
+        if origin is not None:
+            row = db.execute("SELECT id FROM tasks WHERE origin = ?", (origin,)).fetchone()
+            if row is not None:
+                return int(row["id"])
+        tid = _insert_task(db, title=title, body=body, state="proposed",
+                           creator=creator, assignee=None, reviewer=None,
+                           origin=origin, now=now)
+        _insert_files(db, tid, paths)
+        _event(db, "proposed", tid, creator, {"origin": origin, "files": paths}, now)
+    return tid
+
+
+def create_task(db: sqlite3.Connection, *, title: str, body: str, creator: str,
+                assignee: str, reviewer: str | None = None,
+                files: Iterable[str] = (), orch_fence: int,
+                now: float | None = None) -> int:
+    if not assignee:
+        raise ValueError("assignee is required (propose_task is for unassigned work)")
+    paths = _declare(files)
+    now = time.time() if now is None else float(now)
+    with _tx(db):
+        _require_orch(db, orch_fence=orch_fence, now=now, holder=creator)
+        tid = _insert_task(db, title=title, body=body, state="backlog",
+                           creator=creator, assignee=assignee, reviewer=reviewer,
+                           origin=None, now=now)
+        _insert_files(db, tid, paths)
+        _event(db, "created", tid, creator,
+               {"assignee": assignee, "reviewer": reviewer, "files": paths,
+                "orch_fence": int(orch_fence)}, now)
+    return tid
+
+
+def assign_task(db: sqlite3.Connection, *, task_id: int, assignee: str,
+                reviewer: str | None = None, orch_fence: int,
+                now: float | None = None) -> None:
+    """proposed|backlog -> backlog. Accepting a proposal is assigning it."""
+    if not assignee:
+        raise ValueError("assignee is required")
+    now = time.time() if now is None else float(now)
+    with _tx(db):
+        holder = _require_orch(db, orch_fence=orch_fence, now=now)
+        row = _task(db, task_id)
+        if row["state"] not in ("proposed", "backlog"):
+            raise NotClaimable(int(task_id), row["state"])
+        db.execute("UPDATE tasks SET state = 'backlog', assignee = ?, reviewer = ?,"
+                   " updated_ts = ? WHERE id = ?", (assignee, reviewer, now, int(task_id)))
+        _event(db, "assigned", int(task_id), holder,
+               {"assignee": assignee, "reviewer": reviewer,
+                "from_state": row["state"], "orch_fence": int(orch_fence)}, now)
+
+
+def acquire_orchestration(db: sqlite3.Connection, *, holder: str,
+                          ttl_s: float = DEFAULT_LEASE_S, now: float) -> int:
+    """Only with no holder or an expired lease (§6.4). Fence +1 every time."""
+    with _tx(db):
+        row = _lease_row(db)
+        if row is not None and row["expires_ts"] > now:
+            raise OrchestrationHeld(str(row["holder"]), float(row["expires_ts"]))
+        fence = (int(row["fence"]) if row is not None else 0) + 1
+        db.execute(
+            "INSERT INTO board_lease (id, holder, fence, acquired_ts, expires_ts)"
+            " VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET"
+            " holder = excluded.holder, fence = excluded.fence,"
+            " acquired_ts = excluded.acquired_ts, expires_ts = excluded.expires_ts",
+            (holder, fence, now, now + float(ttl_s)))
+        _event(db, "orchestration_acquired", None, holder,
+               {"fence": fence, "ttl_s": float(ttl_s),
+                "previous": row["holder"] if row is not None else None}, now)
+    return fence
+
+
+def renew_orchestration(db: sqlite3.Connection, *, holder: str, orch_fence: int,
+                        ttl_s: float = DEFAULT_LEASE_S, now: float) -> None:
+    with _tx(db):
+        _require_orch(db, orch_fence=orch_fence, now=now, holder=holder)
+        db.execute("UPDATE board_lease SET expires_ts = ? WHERE id = 1",
+                   (now + float(ttl_s),))
+        _event(db, "orchestration_renewed", None, holder,
+               {"fence": int(orch_fence), "ttl_s": float(ttl_s)}, now)
+
+
+def release_orchestration(db: sqlite3.Connection, *, holder: str,
+                          orch_fence: int, now: float | None = None) -> None:
+    """Expires the lease now. The row stays: it carries the fence counter."""
+    now = time.time() if now is None else float(now)
+    with _tx(db):
+        _require_orch(db, orch_fence=orch_fence, now=now, holder=holder)
+        db.execute("UPDATE board_lease SET expires_ts = ? WHERE id = 1", (now,))
+        _event(db, "orchestration_released", None, holder,
+               {"fence": int(orch_fence)}, now)
