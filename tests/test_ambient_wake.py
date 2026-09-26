@@ -344,3 +344,64 @@ def test_gate_files_reserved_records_event_when_file_conflict(rig, tmp_path):
     assert len(events) == 1
     assert f in events[0]["reason"]
 
+
+def test_unknown_connector_records_no_connector(rig):
+    """A44-m-no_connector: a VALID registry whose entry names a connector that
+    is NOT installed must be refused by the gate as `no_connector` — not let
+    through to `wake()` (where `self.connectors[<unknown>]` would raise and the
+    whole tick is skipped, recording nothing)."""
+    make, clock = rig
+    _registry({"A": {"connector": "ghost", "wake_budget_per_day": 5}})
+    n = make(FakeConnector())
+    _task()
+    _to_gate(n, clock)
+    n.close()
+    assert _events("no_connector") != []
+
+
+def test_dead_session_is_reaped_even_while_lease_alive(rig):
+    """A44-m-reap: a running session whose connector reports inactive must be
+    ended on the next sweep even while its lease is still valid; otherwise it
+    lingers `running` and blocks the concurrency gate (running_sessions)."""
+    make, clock = rig
+    _registry({"A": {"connector": "fake", "wake_budget_per_day": 5}})
+    fake = FakeConnector()
+    n = make(fake)
+    _task()
+    _to_gate(n, clock)                                  # session s1 running
+    db = board.open_board(paths.board_path())
+    sid = str(board.running_sessions(db)[0]["session_id"])
+    db.close()
+    fake.is_active = lambda s: False                     # the session just died
+    n.on_tick()                                           # sweep -> _reap_sessions
+    n.close()
+    db = board.open_board(paths.board_path())
+    try:
+        assert board.session_row(db, sid)["state"] == "ended"
+    finally:
+        db.close()
+
+
+def test_liveness_considers_only_own_running_sessions(rig):
+    """A44-m-isolation: `_liveness(A)` reads `running_sessions(instance_id=A)`;
+    B's live session must not make A count as live (per-instance filter)."""
+    make, clock = rig
+    _registry({"A": {"connector": "fake", "wake_budget_per_day": 5},
+               "B": {"connector": "fake", "wake_budget_per_day": 5}})
+    fake = FakeConnector()
+    n = make(fake)
+    db = board.open_board(paths.board_path())
+    try:
+        board.session_started(db, session_id="sB", instance_id="B", task_id=99,
+                              connector="fake", pid=4242, fence=0, now=clock[0])
+    finally:
+        db.close()
+    fake.is_active = lambda s: True if s == "sB" else None
+    db = board.open_board(paths.board_path())
+    try:
+        live = n._liveness(db, "A")
+    finally:
+        db.close()
+    n.close()
+    assert live is not True        # B's session must not count as A being live
+
