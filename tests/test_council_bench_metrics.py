@@ -136,3 +136,22 @@ def test_empty_origin_pool_fails_as_not_measurable():
     checks = evaluate(cases, preds)["checks"]
     assert checks["c3_c2"] is False
     assert checks["c4_c2"] is False
+
+
+def test_empty_clean_heldout_fails_whole_kappa():
+    # H48: G3's teeth bit the per-origin pools, but the WHOLE-kappa NaN
+    # branch (c4_whole_ok = not isnan(...) and ...) had no test that
+    # morda. A heldout with no clean case carrying a verdict gives an
+    # undefined whole kappa; the check must fail (never pass silently)
+    # and the printed line must show the undefined value — assert what
+    # the code actually prints ('nan' via f"{nan:.3f}').
+    cases = [
+        _case(f"amb{i}", "a", "proceed", confidence=0.4) for i in range(3)
+    ]
+    result = evaluate(cases, preds={})
+    assert result["checks"]["c4_whole"] is False
+    assert result["checks"]["c4_ab"] is False
+    assert result["checks"]["c4_c2"] is False
+    kappa_lines = [l for l in result["lines"] if l.startswith("kappa overall")]
+    assert len(kappa_lines) == 1
+    assert "nan" in kappa_lines[0]
