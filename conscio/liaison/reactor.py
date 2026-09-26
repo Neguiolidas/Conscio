@@ -298,9 +298,14 @@ def main(argv: list[str] | None = None) -> int:
         return n
 
     # v4.8 S3: the ambient node rides this loop (spec §3). It never raises
-    # into it: a board problem costs one sweep, never a message delivery.
-    from ..ambient.node import Node
-    node = Node(self_id=self_id, liaison_db=db)
+    # into it: a board problem costs one sweep, and a broken ambient package
+    # (import or construction) costs the node - never a message delivery.
+    try:
+        from ..ambient.node import Node
+        node = Node(self_id=self_id, liaison_db=db)
+    except Exception as exc:
+        print(f"conscio reactor: ambient node unavailable: {exc}", file=sys.stderr)
+        node = None
 
     # One reactor per agent notifies; the others idle until it lets go.
     lock = acquire_lock(db, self_id)
@@ -317,7 +322,8 @@ def main(argv: list[str] | None = None) -> int:
                 lock = acquire_lock(db, self_id)
             if lock is not None:
                 tick()
-                node.on_tick()
+                if node is not None:
+                    node.on_tick()
         except Exception as exc:
             log.error("tick failed: %s", exc)
         time.sleep(max(args.interval, 0.5))

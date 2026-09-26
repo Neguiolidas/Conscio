@@ -213,6 +213,49 @@ def test_node_exception_never_stops_relay_tick(tmp_path, monkeypatch):
     assert len(ticks) == 3
 
 
+def test_broken_ambient_import_never_stops_delivery(tmp_path, monkeypatch, capsys):
+    import sys
+
+    from conscio.liaison import reactor
+    ticks = []
+    monkeypatch.setattr(reactor, "dispatch", lambda *a, **k: ticks.append(1) or 0)
+    monkeypatch.setitem(sys.modules, "conscio.ambient.node", None)
+    sleeps = []
+
+    def fake_sleep(s):
+        sleeps.append(s)
+        if len(sleeps) == 3:
+            raise _Stop()
+    monkeypatch.setattr(reactor.time, "sleep", fake_sleep)
+    with pytest.raises(_Stop):
+        reactor.main(["--storage", str(tmp_path / "space"), "--self-id", "me",
+                      "--notify-cmd", "true", "--liaison-db", str(tmp_path / "liaison.db")])
+    assert len(ticks) == 3
+    assert "ambient node unavailable" in capsys.readouterr().err
+
+
+def test_node_constructor_failure_never_stops_delivery(tmp_path, monkeypatch, capsys):
+    from conscio.liaison import reactor
+    ticks = []
+    monkeypatch.setattr(reactor, "dispatch", lambda *a, **k: ticks.append(1) or 0)
+
+    def broken(self, *a, **k):
+        raise RuntimeError("ctor broken")
+    monkeypatch.setattr(node.Node, "__init__", broken)
+    sleeps = []
+
+    def fake_sleep(s):
+        sleeps.append(s)
+        if len(sleeps) == 3:
+            raise _Stop()
+    monkeypatch.setattr(reactor.time, "sleep", fake_sleep)
+    with pytest.raises(_Stop):
+        reactor.main(["--storage", str(tmp_path / "space"), "--self-id", "me",
+                      "--notify-cmd", "true", "--liaison-db", str(tmp_path / "liaison.db")])
+    assert len(ticks) == 3
+    assert "ambient node unavailable" in capsys.readouterr().err
+
+
 def test_unwritable_ambient_dir_never_stops_delivery(tmp_path, caplog):
     root = tmp_path / "relay"
     _enable(root)
