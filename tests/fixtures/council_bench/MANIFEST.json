@@ -1,0 +1,56 @@
+{
+ "corpus_date": "2026-09-26",
+ "counts": {
+  "dev": {
+   "ambiguous": 6,
+   "by_label": {
+    "hold": 13,
+    "proceed": 17,
+    "veto": 19
+   },
+   "by_origin": {
+    "a": 11,
+    "b": 20,
+    "c1": 18
+   },
+   "c5a_denominator": 9,
+   "c5b_denominator": 15,
+   "n": 49
+  },
+  "heldout": {
+   "ab": {
+    "ambiguous": 4,
+    "by_label": {
+     "hold": 12,
+     "proceed": 9,
+     "veto": 10
+    },
+    "by_origin": {
+     "a": 11,
+     "b": 20
+    },
+    "c5a_denominator": 7,
+    "c5b_denominator": 7,
+    "n": 31
+   },
+   "c2": {
+    "ambiguous": 2,
+    "by_label": {
+     "hold": 4,
+     "proceed": 8,
+     "veto": 10
+    },
+    "by_origin": {
+     "c2": 22
+    },
+    "c5a_denominator": 7,
+    "c5b_denominator": 6,
+    "n": 22,
+    "source": "reported by the blind c2 author; c5a/c5b derived as whole-heldout minus ab"
+   }
+  }
+ },
+ "heldout_sha256": "3e09b7de6594d2aa7833cd7f684f6fc5f7b8ad34b171965fe1ecc3b6fa122136",
+ "judge_question_sha256": "5eef4c5ca51549d674911168505e6b496e426a317f61a70dfdce63e1f705e270",
+ "split_seed": 20260926
+}
