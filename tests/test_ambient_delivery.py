@@ -180,3 +180,77 @@ def test_propose_to_peer_goes_over_the_relay(monkeypatch, tmp_path):
     missing = surface.run_op({"op": "propose", "title": "t", "to": "NOPE"},
                              actor="S", space=tmp_path / "s")
     assert missing == {"ok": False, "error": "peer NOPE is not in the directory"}
+
+
+def test_grace_window_suppresses_then_renotifies(env):
+    """A42-m5: the WAKE_GRACE_S cutoff has teeth. A re-notify INSIDE the
+    window is suppressed; PAST it, the re-notify fires (up to RENOTIFY_MAX).
+    The cap test always advances the clock past the window, so it cannot see
+    this — a renotify must be blocked while `now - last_ts < WAKE_GRACE_S`."""
+    make, _, clock = env
+    tid = _task(reviewer="R")
+    db = _db()
+    c = board.claim_task(db, task_id=tid, claimer="A", now=clock[0])
+    board.submit_task(db, task_id=tid, fence=c.fence, claimer="A")
+    db.close()
+    n = make()
+    n.on_tick()                       # reviewer's first notice ('notified')
+    clock[0] += 10.0                  # well inside WAKE_GRACE_S
+    n.on_tick()                       # grace cutoff must suppress the re-notify
+    db = _db()
+    assert board.events_for(db, "renotified", tid, c.fence) == []
+    db.close()
+    clock[0] += node.WAKE_GRACE_S     # now past the window
+    n.on_tick()                       # the re-notify fires
+    db = _db()
+    try:
+        assert len(board.events_for(db, "renotified", tid, c.fence)) == 1
+    finally:
+        db.close()
+    n.close()
+
+
+def test_board_busy_keeps_proposal_unread_then_ingests(env, monkeypatch, tmp_path):
+    """A42-m8: a BoardBusy during ingest must leave the message UNREAD (retry
+    next tick, never lost). The next tick, board free, ingests exactly one."""
+    make, _, _ = env
+    db = tmp_path / "liaison.db"
+    mailbox.send(db, from_instance="P", to_instance="sweeper",
+                 type="board.propose", payload={"title": "t", "body": "b"})
+    real_propose = board.propose_task
+    state = {"busy": True}
+
+    def flaky(dbh, **kw):
+        if state["busy"]:
+            raise board.BoardBusy()
+        return real_propose(dbh, **kw)
+    monkeypatch.setattr(board, "propose_task", flaky)
+    n = make()
+    n.on_tick()                       # BoardBusy: the row must stay unread
+    assert len(mailbox.inbox(db, "sweeper", types=["board.propose"],
+                             unread_only=True)) == 1
+    with board.open_board(paths.board_path()) as b:
+        assert board.list_tasks(b, state="proposed") == []
+    state["busy"] = False            # board free on the next tick
+    n.on_tick()
+    with board.open_board(paths.board_path()) as b:
+        assert len(board.list_tasks(b, state="proposed")) == 1
+    n.close()
+
+
+def test_origin_dedupe_on_real_redelivery(env, monkeypatch, tmp_path):
+    """A42-m9: a real redelivery of the SAME message (the row goes back to
+    unread, as when the process dies between propose_task and mark_read) must
+    produce exactly one task — deduped by `origin`. The cap test's second tick
+    never exercises this, because mark_read already consumed the row."""
+    make, _, _ = env
+    db = tmp_path / "liaison.db"
+    mailbox.send(db, from_instance="P", to_instance="sweeper",
+                 type="board.propose", payload={"title": "t", "body": "b"})
+    monkeypatch.setattr(mailbox, "mark_read", lambda d, ids: 0)   # no-op: row stays unread
+    n = make()
+    n.on_tick()                       # ingest #1: creates the proposed task
+    n.on_tick()                       # ingest #2: same unread row, dedupes by origin
+    n.close()
+    with board.open_board(paths.board_path()) as b:
+        assert len(board.list_tasks(b, state="proposed")) == 1
