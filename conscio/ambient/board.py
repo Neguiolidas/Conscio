@@ -16,6 +16,7 @@ import sqlite3
 import time
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -383,3 +384,73 @@ def release_orchestration(db: sqlite3.Connection, *, holder: str,
         db.execute("UPDATE board_lease SET expires_ts = ? WHERE id = 1", (now,))
         _event(db, "orchestration_released", None, holder,
                {"fence": int(orch_fence)}, now)
+
+
+@dataclass(frozen=True)
+class Claim:
+    task_id: int
+    fence: int
+    lease_expires_ts: float
+    files: tuple[str, ...]
+
+
+def claim_task(db: sqlite3.Connection, *, task_id: int, claimer: str,
+               lease_s: float = DEFAULT_LEASE_S, now: float | None = None) -> Claim:
+    """§6.2: one UPDATE decides the winner; the file reservation rides the
+    same transaction, so a conflict reverts the whole claim."""
+    now = time.time() if now is None else float(now)
+    task_id = int(task_id)
+    with _tx(db):
+        cur = db.execute(
+            "UPDATE tasks SET state = 'working', fence = fence + 1,"
+            " lease_expires_ts = ?, updated_ts = ?"
+            " WHERE id = ? AND state = 'backlog' AND assignee = ?",
+            (now + float(lease_s), now, task_id, claimer))
+        if cur.rowcount != 1:
+            row = _task(db, task_id)
+            if row["state"] == "working" and row["assignee"] == claimer:
+                raise ClaimLost(task_id)
+            if row["state"] not in ("backlog", "working"):
+                raise NotClaimable(task_id, row["state"])
+            if row["assignee"] != claimer:
+                raise NotAssignee(task_id, row["assignee"])
+            raise ClaimLost(task_id)
+        paths = [r["path"] for r in db.execute(
+            "SELECT path FROM task_files WHERE task_id = ? ORDER BY path", (task_id,))]
+        for p in paths:
+            try:
+                db.execute("UPDATE task_files SET reserved = 1"
+                           " WHERE task_id = ? AND path = ?", (task_id, p))
+            except sqlite3.IntegrityError:
+                held = db.execute("SELECT task_id FROM task_files"
+                                  " WHERE path = ? AND reserved = 1", (p,)).fetchone()
+                raise FilesReserved(task_id, p, int(held["task_id"])) from None
+        fence = int(_task(db, task_id)["fence"])
+        _event(db, "claimed", task_id, claimer,
+               {"fence": fence, "lease_s": float(lease_s), "files": paths}, now)
+    return Claim(task_id, fence, now + float(lease_s), tuple(paths))
+
+
+def _require_exec(db: sqlite3.Connection, *, task_id: int, fence: int,
+                  claimer: str) -> sqlite3.Row:
+    """Every execution write: current fence first (a late executor learns by
+    StaleFence, §7.2-2), then the assignee, then the state."""
+    row = _task(db, task_id)
+    if int(fence) != row["fence"]:
+        raise StaleFence(int(task_id), int(fence), int(row["fence"]))
+    if row["assignee"] != claimer:
+        raise NotAssignee(int(task_id), row["assignee"])
+    if row["state"] != "working":
+        raise NotClaimable(int(task_id), row["state"])
+    return row
+
+
+def renew_task(db: sqlite3.Connection, *, task_id: int, fence: int, claimer: str,
+               lease_s: float = DEFAULT_LEASE_S, now: float | None = None) -> None:
+    now = time.time() if now is None else float(now)
+    with _tx(db):
+        _require_exec(db, task_id=task_id, fence=fence, claimer=claimer)
+        db.execute("UPDATE tasks SET lease_expires_ts = ?, updated_ts = ? WHERE id = ?",
+                   (now + float(lease_s), now, int(task_id)))
+        _event(db, "renewed", int(task_id), claimer,
+               {"fence": int(fence), "lease_s": float(lease_s)}, now)
