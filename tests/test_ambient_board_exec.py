@@ -110,3 +110,22 @@ def test_show_list_and_status(db, tmp_path):
     assert status["holder"] == "O" and status["counts"] == {"working": 1}
     with pytest.raises(board.NoSuchTask):
         board.show_task(db, 999)
+
+
+def test_execution_writes_refuse_a_stale_fence(db):
+    tid, c = _working(db, assignee="A", reviewer="R")
+    f = c.fence
+    with pytest.raises(board.StaleFence):
+        board.submit_task(db, task_id=tid, fence=f + 1, claimer="A")
+    assert board._task(db, tid)["state"] == "working"
+
+    with pytest.raises(board.StaleFence):
+        board.release_task(db, task_id=tid, fence=f + 1, claimer="A", reason="stuck")
+    assert board._task(db, tid)["state"] == "working"
+
+    board.submit_task(db, task_id=tid, fence=f, claimer="A")
+    assert board._task(db, tid)["state"] == "review"
+
+    with pytest.raises(board.StaleFence):
+        board.review_task(db, task_id=tid, fence=f + 1, reviewer="R", verdict="approve")
+    assert board._task(db, tid)["state"] == "review"

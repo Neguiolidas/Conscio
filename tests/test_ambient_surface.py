@@ -94,3 +94,8 @@ def test_cli_claim_then_submit_roundtrip(tmp_path, monkeypatch, capsys):
         assert board._task(db, 1)["state"] == "done"
     finally:
         db.close()
+
+
+def test_run_op_refuses_unknown_op(tmp_path):
+    out = surface.run_op({"op": "bogus"}, actor="A", space=tmp_path / "space")
+    assert out["ok"] is False and out["error"].startswith("unknown op 'bogus'")

@@ -531,8 +531,7 @@ def block_task(db: sqlite3.Connection, *, task_id: int, actor: str, reason: str,
     with _tx(db):
         if fence is not None:
             _require_exec(db, task_id=task_id, fence=fence, claimer=actor)
-        else:
-            assert orch_fence is not None
+        elif orch_fence is not None:
             _require_orch(db, orch_fence=int(orch_fence), now=now, holder=actor)
             row = _task(db, task_id)
             if row["state"] in (*TERMINAL_STATES, "blocked"):
