@@ -279,8 +279,8 @@ class TestInheritedEnvPrecedence:
         # CLAUDECODE + CLAUDE_PLUGIN_* + as 12 ZCODE_* herdadas (sem ZCODE_PLUGIN_*)
         env = {
             "CLAUDECODE": "1",
-            "CLAUDE_PLUGIN_DATA": "/home/ubuntu/.claude/plugins/data/conscio-conscio",
-            "CLAUDE_PLUGIN_ROOT": "/home/ubuntu/.claude/plugins/cache/conscio/conscio/4.7.3",
+            "CLAUDE_PLUGIN_DATA": "${HOME}/.claude/plugins/data/conscio-conscio",
+            "CLAUDE_PLUGIN_ROOT": "${HOME}/.claude/plugins/cache/conscio/conscio/4.7.3",
             "ZCODE_APP_VERSION": "3.14.3",
             "ZCODE_BASE_URL": "https://zcode.z.ai",
             "ZCODE_BFS_BINARY": "/opt/ZCode/resources/tools/bfs/bfs",
@@ -297,7 +297,7 @@ class TestInheritedEnvPrecedence:
 
     def test_hermes_inside_zcode_derives_hermes(self):
         env = {
-            "HERMES_HOME": "/home/ubuntu/.hermes",
+            "HERMES_HOME": "${HOME}/.hermes",
             "ZCODE_APP_VERSION": "3.14.3",
         }
         ident = derive_host_identity(env=env)
@@ -314,9 +314,9 @@ class TestInheritedEnvPrecedence:
     def test_zcode_native_primary_beats_claude_compat(self):
         # O próprio ZCode injeta ZCODE_PLUGIN_* == CLAUDE_PLUGIN_*: continua zcode
         env = {
-            "ZCODE_PLUGIN_DATA": "/home/ubuntu/.zcode/cli/plugins/data/conscio@conscio",
+            "ZCODE_PLUGIN_DATA": "${HOME}/.zcode/cli/plugins/data/conscio@conscio",
             "ZCODE_PLUGIN_ID": "conscio@conscio",
-            "CLAUDE_PLUGIN_DATA": "/home/ubuntu/.zcode/cli/plugins/data/conscio@conscio",
+            "CLAUDE_PLUGIN_DATA": "${HOME}/.zcode/cli/plugins/data/conscio@conscio",
             "CLAUDECODE": "1",
             "ZCODE_APP_VERSION": "3.14.3",
         }
@@ -326,7 +326,7 @@ class TestInheritedEnvPrecedence:
 
     def test_claude_inside_zcode_with_antigravity_agent_derives_claude(self):
         env = {
-            "CLAUDE_PLUGIN_DATA": "/home/ubuntu/.claude/plugins/data/conscio-conscio",
+            "CLAUDE_PLUGIN_DATA": "${HOME}/.claude/plugins/data/conscio-conscio",
             "ANTIGRAVITY_AGENT": "1",
             "ZCODE_APP_VERSION": "3.14.3",
         }
@@ -344,7 +344,7 @@ class TestInheritedEnvPrecedence:
         # O slug da S1 (runtime derivado) do claude-dentro-do-zcode não pode ser zcode
         env = {
             "CLAUDECODE": "1",
-            "CLAUDE_PLUGIN_DATA": "/home/ubuntu/.claude/plugins/data/conscio-conscio",
+            "CLAUDE_PLUGIN_DATA": "${HOME}/.claude/plugins/data/conscio-conscio",
             "ZCODE_APP_VERSION": "3.14.3",
         }
         ident = derive_host_identity(env=env)
