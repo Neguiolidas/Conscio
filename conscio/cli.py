@@ -1337,6 +1337,13 @@ def _main(argv: list[str] | None = None) -> int:
     if args.command == "outcomes":
         return _cmd_outcomes(args)
 
+    if args.command == "observatory":
+        return _cmd_observatory(host=args.host, port=args.port,
+                                root=args.root, token=args.token,
+                                storage=args.storage,
+                                noosphere=args.noosphere,
+                                liaison_db=args.liaison_db)
+
     if args.command == "space":
         if getattr(args, "space_command", None) == "migrate":
             from .installer.migrate_cmd import migrate_space_cmd
