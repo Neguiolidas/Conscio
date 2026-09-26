@@ -9,6 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Unreleased]
+
+### Added — Ambient: one task board per machine (v4.8 S3)
+
+One task board per relay root (`<relay_root>/ambient/board.db`, SQLite/WAL,
+`user_version=1`, `busy_timeout=5000`), swept by the relay reactor's own tick —
+no new daemon. All four surfaces resolve the same board (invariant I1): the
+`conscio_board` MCP tool, the `conscio ambient` CLI, the ambient node, and the
+doctor.
+
+- **`conscio_board` MCP tool + `conscio ambient` CLI.** The board's write
+  surface: `task {propose,create,assign,list,show,claim,renew,submit,review,
+  release,block,cancel}`, `orchestrate {acquire,renew,release}`, `status`,
+  `report`, `doctor`, and `wake <id> --dry-run`. The MCP tool is a single
+  `conscio_board` dispatch; the actor is always the server's own identity —
+  there is no `as=` argument.
+- **The ambient node rides the reactor tick.** While enabled it notices
+  assigned work over the relay (a `task_dispatch` carrying only the task id),
+  re-notifies a stalled reviewer on a cap, and — through the connector gate —
+  may wake a non-live agent. A broken `conscio.ambient` package costs the node
+  and never a relay delivery.
+- **Off by default.** Without the `<relay_root>/ambient/enabled` flag file the
+  node gives its sweep back and touches nothing (`conscio ambient enable`
+  creates it). The board and CLI keep working while disabled.
+- **`board.propose` travels over the relay.** The one board write a remote
+  machine may perform: a peer asks for work and it lands as a `proposed` task
+  with `creator = sender` and `origin = <message id>` (a redelivery dedupes on
+  `origin`). It is a reserved type the generic relay refuses; only
+  `conscio_board op=propose to=<peer>` sends it.
+- **Wake registry with a zero default budget.** `<relay_root>/ambient/agents.json`
+  names the connectors a machine may use; every agent's `wake_budget_per_day`
+  defaults to **0**, so nobody is woken until the owner opts them in.
+
+### Not in this slice
+- The **`claude-bg` connector is not included** — it lands after the S1/S2
+  probes (blocked on the owner's go-ahead to spend probe quota).
+- **`WAKE_GRACE_S` and `RENOTIFY_MAX` are provisional** constants, to be
+  calibrated by probe S3.
+
+### Tests
+The full suite was run one test file per process (347 files). Measured at
+close: **4442 tests across 347 files, 0 failures, 0 collection errors.** The
+five `guard`/`contract`/`invariant`/`no_` suites
+(`test_agency_contracts`, `test_agency_no_network`, `test_assets_no_phantom_tools`,
+`test_durable_guards`, `test_mcp_dispatch_contract` — 41 tests) were run
+nominally and pass.
+
 ## [4.7.3] - 2026-09-24 — The doctor asks the process, not the disk
 
 Found by the post-update test of 4.7.2 (2026-09-24): 4 of the 7

@@ -425,6 +425,35 @@ ConsciousnessEngine(adaptive_reflection=True, max_reflection_cycles=3)
 engine.attach_adapter(intercept_enabled=True)
 ```
 
+## Ambient — per-machine task board (v4.8)
+
+Optional, **off by default**. Each relay root may carry one task board that the
+relay reactor's tick sweeps; without the `<relay_root>/ambient/enabled` flag file
+the node gives the sweep back and touches nothing (the board and CLI keep
+working either way). `conscio ambient enable` / `disable` toggles the flag.
+
+- **CLI** (`conscio ambient`; actor is `CONSCIO_SELF_ID` or the resolved space,
+  as with `conscio relay`):
+  - `task {propose,create,assign,list,show,claim,renew,submit,review,release,block,cancel}`
+  - `orchestrate {acquire,renew,release} [--ttl-s N]`
+  - `status` · `enable` · `disable` · `report [--since 30m|8h|2d]` ·
+    `doctor [--prune]` · `wake <task-id> --dry-run` (the `--dry-run` flag is
+    required: in v4.8 only the node wakes, never the CLI)
+- **MCP**: one tool, `conscio_board`, with `op` ∈
+  {`show`,`list`,`status`,`propose`,`create`,`assign`,`claim`,`renew`,`submit`,
+  `review`,`release`,`block`,`cancel`,`orchestrate`}. The actor is always the
+  server's own identity — there is no `as=` argument.
+- **Storage** (I1): one board per relay root at `<relay_root>/ambient/board.db`
+  (SQLite, WAL, `user_version=1`, `busy_timeout=5000`). The wake registry is
+  `<relay_root>/ambient/agents.json`; every agent's `wake_budget_per_day`
+  defaults to **0**, so nobody is woken until the owner opts an agent in.
+- `board.propose` is the one board write that travels over the relay (remote
+  peers ask for work); it is a reserved type that the generic relay refuses.
+
+Not in this slice: the `claude-bg` connector (it lands after the S1/S2 probes),
+and `WAKE_GRACE_S` / `RENOTIFY_MAX` are provisional constants until probe S3.
+Full walkthrough in `docs/guides/ambient.md`.
+
 ## Top pitfalls
 
 1. **Engine must be closed** — always use `with` or `try/finally close()`. WAL

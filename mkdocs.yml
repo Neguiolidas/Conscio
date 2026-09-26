@@ -61,6 +61,7 @@ nav:
       - Noosphere (society): guides/noosphere.md
       - Observatory (read-only view): guides/observatory.md
       - Liaison (cross-agent review): guides/liaison.md
+      - Ambient (per-machine task board): guides/ambient.md
   - Workflows:
       - Continuous learning: guides/workflows/continuous-learning.md
       - Architecture audit: guides/workflows/architecture-audit.md
