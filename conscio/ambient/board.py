@@ -252,7 +252,8 @@ def _insert_task(db: sqlite3.Connection, *, title: str, body: str, state: str,
         "INSERT INTO tasks (title, body, state, creator, assignee, reviewer,"
         " origin, created_ts, updated_ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (str(title), str(body), state, creator, assignee, reviewer, origin, now, now))
-    assert cur.lastrowid is not None
+    if cur.lastrowid is None:
+        raise RuntimeError("insert without rowid")
     return int(cur.lastrowid)
 
 
@@ -340,8 +341,10 @@ def assign_task(db: sqlite3.Connection, *, task_id: int, assignee: str,
 
 
 def acquire_orchestration(db: sqlite3.Connection, *, holder: str,
-                          ttl_s: float = DEFAULT_LEASE_S, now: float) -> int:
+                          ttl_s: float = DEFAULT_LEASE_S,
+                          now: float | None = None) -> int:
     """Only with no holder or an expired lease (§6.4). Fence +1 every time."""
+    now = time.time() if now is None else float(now)
     with _tx(db):
         row = _lease_row(db)
         if row is not None and row["expires_ts"] > now:
@@ -360,7 +363,9 @@ def acquire_orchestration(db: sqlite3.Connection, *, holder: str,
 
 
 def renew_orchestration(db: sqlite3.Connection, *, holder: str, orch_fence: int,
-                        ttl_s: float = DEFAULT_LEASE_S, now: float) -> None:
+                        ttl_s: float = DEFAULT_LEASE_S,
+                        now: float | None = None) -> None:
+    now = time.time() if now is None else float(now)
     with _tx(db):
         _require_orch(db, orch_fence=orch_fence, now=now, holder=holder)
         db.execute("UPDATE board_lease SET expires_ts = ? WHERE id = 1",

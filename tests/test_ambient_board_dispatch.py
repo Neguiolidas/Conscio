@@ -103,3 +103,25 @@ def test_every_write_records_event_in_same_transaction(db, monkeypatch):
     with pytest.raises(RuntimeError):
         board.propose_task(db, title="t", body="b", creator="P")
     assert _count(db, "tasks") == 0
+
+
+def test_lease_writes_accept_now_none(db):
+    before = time.time()
+    fence = board.acquire_orchestration(db, holder="A", ttl_s=60)
+    board.renew_orchestration(db, holder="A", orch_fence=fence, ttl_s=120)
+    after = time.time()
+    row = db.execute("SELECT fence, acquired_ts, expires_ts FROM board_lease WHERE id = 1").fetchone()
+    assert row[0] == fence
+    assert before <= row[1] <= after
+    assert before + 120 <= row[2] <= after + 120
+
+
+def test_board_propose_dedupe_key_is_origin_not_title(db):
+    a = board.propose_task(db, title="t1", body="b", creator="P", origin="relay:X:9")
+    b = board.propose_task(db, title="t2", body="b", creator="P", origin="relay:X:9")
+    assert a == b
+    c = board.propose_task(db, title="t1", body="b", creator="P", origin="relay:X:10")
+    assert c != a
+    assert _count(db, "tasks") == 2
+    kinds = [r[0] for r in db.execute("SELECT kind FROM board_events ORDER BY id")]
+    assert kinds == ["proposed", "proposed"]
