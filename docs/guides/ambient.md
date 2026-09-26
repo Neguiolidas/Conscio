@@ -101,9 +101,12 @@ stuck reason is visible without event spam. `conscio ambient wake <id> --dry-run
 runs the whole gate and records a `wake_dry_run` event — it **never** spawns.
 In v4.8 only the node spawns, never the CLI.
 
-The `claude-bg` connector itself is **not** part of this slice (it lands after
-the S1/S2 probes), and `WAKE_GRACE_S` / `RENOTIFY_MAX` are provisional until
-probe S3. `board.propose` is the one board write that travels over the relay:
+The `claude-bg` connector is **not yet included**: the S1/S2 probes that capture
+its output are authorized and run after this task. Six gate constants are
+provisional until they are calibrated — `WAKE_FLOOR_MB`, `LOAD1_DELTA_TOLERANCE`
+(renamed from `DELTA_TOLERADO`), `ADMISSION_WINDOW`, `ADMISSION_MAX_AGE_S`
+(spec §7.3, probe S3) and `WAKE_GRACE_S`, `RENOTIFY_MAX` (spec §7.4, no probe).
+`board.propose` is the one board write that travels over the relay:
 a remote peer asks for work by sending `board.propose`, which becomes a
 `proposed` task with `creator = sender` and `origin = <message id>` (a redelivery
 dedupes on `origin`).

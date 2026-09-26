@@ -43,10 +43,17 @@ doctor.
   defaults to **0**, so nobody is woken until the owner opts them in.
 
 ### Not in this slice
-- The **`claude-bg` connector is not included** — it lands after the S1/S2
-  probes (blocked on the owner's go-ahead to spend probe quota).
-- **`WAKE_GRACE_S` and `RENOTIFY_MAX` are provisional** constants, to be
-  calibrated by probe S3.
+- The **`claude-bg` connector is not yet included.** The S1/S2 probes that
+  capture its output are authorized and run after this task; the changelog is
+  amended when the connector lands.
+
+### Provisional constants (to be calibrated)
+Six constants are provisional (measured in `conscio/ambient/node.py`):
+- **Not determined until probe S3 (spec §7.3, admission gate):** `WAKE_FLOOR_MB=1500`,
+  `LOAD1_DELTA_TOLERANCE=1.5` (renamed from `DELTA_TOLERADO`),
+  `ADMISSION_WINDOW=36`, `ADMISSION_MAX_AGE_S=360`.
+- **Not determined by spec §7.4 (no associated probe):** `WAKE_GRACE_S=600`,
+  `RENOTIFY_MAX=3`.
 
 ### Tests
 The full suite was run one test file per process (347 files). Measured at
