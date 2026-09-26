@@ -454,3 +454,148 @@ def renew_task(db: sqlite3.Connection, *, task_id: int, fence: int, claimer: str
                    (now + float(lease_s), now, int(task_id)))
         _event(db, "renewed", int(task_id), claimer,
                {"fence": int(fence), "lease_s": float(lease_s)}, now)
+
+
+def _move(db: sqlite3.Connection, task_id: int, state: str, now: float, *,
+          attempts_delta: int = 0, bump_fence: bool = False,
+          resumable: str | None = None) -> None:
+    """Every exit from working goes through here, so the reservation drops
+    on every one of them (§6.5)."""
+    db.execute(
+        "UPDATE tasks SET state = ?, lease_expires_ts = NULL,"
+        " attempts = attempts + ?, fence = fence + ?,"
+        " resumable = COALESCE(?, resumable), updated_ts = ? WHERE id = ?",
+        (state, attempts_delta, 1 if bump_fence else 0, resumable, now, int(task_id)))
+    db.execute("UPDATE task_files SET reserved = 0 WHERE task_id = ?", (int(task_id),))
+
+
+def submit_task(db: sqlite3.Connection, *, task_id: int, fence: int, claimer: str,
+                now: float | None = None) -> None:
+    now = time.time() if now is None else float(now)
+    with _tx(db):
+        row = _require_exec(db, task_id=task_id, fence=fence, claimer=claimer)
+        to = "review" if row["reviewer"] else "done"
+        _move(db, task_id, to, now)
+        _event(db, "submitted", int(task_id), claimer, {"fence": int(fence), "to": to}, now)
+
+
+def review_task(db: sqlite3.Connection, *, task_id: int, fence: int, reviewer: str,
+                verdict: str, now: float | None = None) -> None:
+    """approve -> done; reject -> backlog with the same assignee and attempts
+    intact (rejection is not an execution failure, §6.3)."""
+    if verdict not in ("approve", "reject"):
+        raise ValueError(f"verdict must be approve|reject, got {verdict!r}")
+    now = time.time() if now is None else float(now)
+    with _tx(db):
+        row = _task(db, task_id)
+        if reviewer == row["assignee"]:
+            raise SelfReview(int(task_id))
+        if int(fence) != row["fence"]:
+            raise StaleFence(int(task_id), int(fence), int(row["fence"]))
+        if row["state"] != "review":
+            raise NotClaimable(int(task_id), row["state"])
+        if reviewer != row["reviewer"]:
+            raise NotReviewer(int(task_id), row["reviewer"])
+        to = "done" if verdict == "approve" else "backlog"
+        db.execute("UPDATE tasks SET state = ?, updated_ts = ? WHERE id = ?",
+                   (to, now, int(task_id)))
+        _event(db, "reviewed", int(task_id), reviewer,
+               {"fence": int(fence), "verdict": verdict, "to": to}, now)
+
+
+def release_task(db: sqlite3.Connection, *, task_id: int, fence: int, claimer: str,
+                 reason: str, now: float | None = None) -> None:
+    """working -> backlog, attempts + 1; at MAX_ATTEMPTS -> blocked (§7.6)."""
+    now = time.time() if now is None else float(now)
+    with _tx(db):
+        row = _require_exec(db, task_id=task_id, fence=fence, claimer=claimer)
+        attempts = int(row["attempts"]) + 1
+        to = "blocked" if attempts >= MAX_ATTEMPTS else "backlog"
+        _move(db, task_id, to, now, attempts_delta=1)
+        _event(db, "released", int(task_id), claimer,
+               {"fence": int(fence), "reason": str(reason), "attempts": attempts}, now)
+        if to == "blocked":
+            _event(db, "blocked", int(task_id), None,
+                   {"attempts": attempts, "reason": "attempts"}, now)
+
+
+def block_task(db: sqlite3.Connection, *, task_id: int, actor: str, reason: str,
+               fence: int | None = None, orch_fence: int | None = None,
+               now: float | None = None) -> None:
+    """The executor blocks its own working task (fence); the holder blocks any
+    open task (orch_fence). Exactly one of the two."""
+    if (fence is None) == (orch_fence is None):
+        raise ValueError("block_task needs exactly one of fence (executor) "
+                         "or orch_fence (holder)")
+    now = time.time() if now is None else float(now)
+    with _tx(db):
+        if fence is not None:
+            _require_exec(db, task_id=task_id, fence=fence, claimer=actor)
+        else:
+            assert orch_fence is not None
+            _require_orch(db, orch_fence=int(orch_fence), now=now, holder=actor)
+            row = _task(db, task_id)
+            if row["state"] in (*TERMINAL_STATES, "blocked"):
+                raise NotClaimable(int(task_id), row["state"])
+        _move(db, task_id, "blocked", now)
+        _event(db, "blocked", int(task_id), actor,
+               {"reason": str(reason),
+                "by": "executor" if fence is not None else "orchestrator"}, now)
+
+
+def cancel_task(db: sqlite3.Connection, *, task_id: int, actor: str, reason: str,
+                orch_fence: int, now: float | None = None) -> None:
+    now = time.time() if now is None else float(now)
+    with _tx(db):
+        _require_orch(db, orch_fence=orch_fence, now=now, holder=actor)
+        row = _task(db, task_id)
+        if row["state"] in TERMINAL_STATES:
+            raise NotClaimable(int(task_id), row["state"])
+        _move(db, task_id, "cancelled", now)
+        _event(db, "cancelled", int(task_id), actor, {"reason": str(reason)}, now)
+
+
+def show_task(db: sqlite3.Connection, task_id: int) -> dict:
+    with _reading():
+        out = dict(_task(db, task_id))
+        out["files"] = [{"path": r["path"], "reserved": bool(r["reserved"])}
+                        for r in db.execute("SELECT path, reserved FROM task_files"
+                                            " WHERE task_id = ? ORDER BY path",
+                                            (int(task_id),))]
+    return out
+
+
+def list_tasks(db: sqlite3.Connection, *, state: str | None = None,
+               assignee: str | None = None) -> list[dict]:
+    with _reading():
+        rows = db.execute(
+            "SELECT id, title, state, creator, assignee, reviewer, fence, attempts,"
+            " lease_expires_ts, updated_ts FROM tasks"
+            " WHERE (? IS NULL OR state = ?) AND (? IS NULL OR assignee = ?)"
+            " ORDER BY id", (state, state, assignee, assignee)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def board_status(db: sqlite3.Connection, *, now: float) -> dict:
+    """holder, counts per state, refused wakes in 24 h, stalled reviews."""
+    with _reading():
+        lease = _lease_row(db)
+        counts = {r["state"]: int(r["n"]) for r in db.execute(
+            "SELECT state, COUNT(*) AS n FROM tasks GROUP BY state")}
+        refused = {r["kind"]: int(r["n"]) for r in db.execute(
+            "SELECT kind, COUNT(*) AS n FROM board_events WHERE ts > ? AND kind IN"
+            " ('no_connector', 'budget_exhausted', 'admission_denied',"
+            "  'liveness_unknown', 'agent_live', 'concurrency', 'files_reserved',"
+            "  'wake_failed') GROUP BY kind", (now - 86400,))}
+        stalled = [int(r["task_id"]) for r in db.execute(
+            "SELECT DISTINCT e.task_id FROM board_events e JOIN tasks t"
+            " ON t.id = e.task_id WHERE e.kind = 'review_stalled'"
+            " AND t.state = 'review' ORDER BY e.task_id")]
+    live = lease is not None and lease["expires_ts"] > now
+    holder = str(lease["holder"]) if live and lease is not None else None
+    orch_expires = _iso(float(lease["expires_ts"])) if live and lease is not None else None
+    return {"schema": SCHEMA_VERSION,
+            "holder": holder,
+            "orch_expires": orch_expires,
+            "counts": counts, "refused_wakes_24h": refused,
+            "stalled_reviews": stalled}

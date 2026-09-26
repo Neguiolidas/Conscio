@@ -183,6 +183,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("relay", add_help=False,
                    help="operate the relay: pair/peers/quarantine/doctor "
                         "(see: conscio relay --help)")
+    sub.add_parser("ambient", add_help=False,
+                   help="this machine's task board (see: conscio ambient --help)")
 
     p_space = sub.add_parser("space", help="manage conscious spaces (durable space)")
     p_space_sub = p_space.add_subparsers(dest="space_command", metavar="<subcommand>")
@@ -1261,6 +1263,9 @@ def _main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "relay":
         from .liaison import relay_cli
         return relay_cli.main(argv[1:])
+    if argv and argv[0] == "ambient":
+        from .ambient import cli as ambient_cli
+        return ambient_cli.main(argv[1:])
     if argv and argv[0] == "init":
         from .installer import cli as installer_cli
         return installer_cli.main(argv[1:])

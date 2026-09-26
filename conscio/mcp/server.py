@@ -24,6 +24,7 @@ from .protocol import SUPPORTED_PROTOCOLS, Dispatcher
 from .schemas import (
     ACT_TOOL_DEFS,
     BASE_TOOL_DEFS,
+    BOARD_DISPATCH_DEF,
     HALL_DISPATCH_DEF,
     LIAISON_TOOL_DEFS,
     MODE_TOOL_DEF,
@@ -205,6 +206,7 @@ class Bindings:
                 flagged.append(poll)
         if self.relay:
             flagged.append(RELAY_DISPATCH_DEF)
+            flagged.append(BOARD_DISPATCH_DEF)
         if self.can_create_halls:                # v4.5: Agent's Hall tools
             flagged.append(HALL_DISPATCH_DEF)
 
@@ -358,6 +360,7 @@ class Bindings:
                 tools["conscio_poll_reviews"] = self._poll_reviews
         if self.relay:
             tools["conscio_relay"] = self._relay_dispatch
+            tools["conscio_board"] = self._board_dispatch
             # E3: dispatch-only aliases — route alive, never advertised
             tools["conscio_relay_send"] = self._relay_send
             tools["conscio_relay_inbox"] = self._relay_inbox
@@ -675,6 +678,14 @@ class Bindings:
         if sent:                                  # best-effort retention, once
             self._retention_tick()
         return {"ok": True, "sent": sent, "errors": errors, "skipped": skipped}
+
+    def _board_dispatch(self, args: dict) -> dict:
+        """v4.8 S3: the actor is ALWAYS this server's identity (§8, no `as=`).
+        Refusals come back as {"ok": false, "error": <exact text>}: the agent
+        has to read them, and a JSON-RPC error would hide the text."""
+        from ..ambient import surface
+        return surface.run_op(args, actor=self.self_instance_id or "",
+                              space=Path(self.engine.storage))
 
     def _relay_dispatch(self, args: dict) -> dict:
         """E3 (ADR-20260913133108-1fac9c): one dispatcher for the five relay
