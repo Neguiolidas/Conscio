@@ -28,7 +28,7 @@ SAMPLE_KEEP = 36
 RETENTION_DAYS = 90
 TERMINAL_STATES = ("done", "cancelled")
 GATE_KINDS = ("no_connector", "budget_exhausted", "admission_denied",
-              "liveness_unknown", "agent_live", "concurrency")
+              "liveness_unknown", "agent_live", "concurrency", "files_reserved")
 
 _SCHEMA = (
     """CREATE TABLE IF NOT EXISTS tasks (
@@ -716,4 +716,63 @@ def events_for(db: sqlite3.Connection, kind: str, task_id: int, fence: int, *,
             " AND json_extract(payload, '$.fence') = ?"
             " AND (? IS NULL OR json_extract(payload, '$.role') = ?) ORDER BY id",
             (kind, int(task_id), int(fence), role, role)).fetchall()
+
+
+def session_started(db: sqlite3.Connection, *, session_id: str, instance_id: str,
+                    task_id: int, connector: str, pid: int | None, fence: int,
+                    now: float) -> None:
+    with _tx(db):
+        db.execute("INSERT OR REPLACE INTO sessions (session_id, instance_id, task_id,"
+                   " connector, pid, started_ts, state) VALUES (?, ?, ?, ?, ?, ?, 'running')",
+                   (session_id, instance_id, int(task_id), connector, pid, now))
+        _event(db, "wake_started", int(task_id), instance_id,
+               {"fence": int(fence), "session": session_id, "pid": pid,
+                "connector": connector}, now)
+
+
+def end_session(db: sqlite3.Connection, *, session_id: str, state: str, now: float) -> None:
+    with _tx(db):
+        row = db.execute("SELECT task_id FROM sessions WHERE session_id = ?"
+                         " AND state = 'running'", (session_id,)).fetchone()
+        if row is None:
+            return
+        db.execute("UPDATE sessions SET state = ? WHERE session_id = ?", (state, session_id))
+        _event(db, "session_ended", row["task_id"], None,
+               {"session": session_id, "state": state}, now)
+
+
+def session_row(db: sqlite3.Connection, session_id: str) -> sqlite3.Row | None:
+    with _reading():
+        return db.execute("SELECT * FROM sessions WHERE session_id = ?",
+                          (session_id,)).fetchone()
+
+
+def running_sessions(db: sqlite3.Connection, *,
+                     instance_id: str | None = None) -> list[sqlite3.Row]:
+    with _reading():
+        return db.execute("SELECT * FROM sessions WHERE state = 'running'"
+                          " AND (? IS NULL OR instance_id = ?) ORDER BY started_ts",
+                          (instance_id, instance_id)).fetchall()
+
+
+def wakes_started(db: sqlite3.Connection, *, instance_id: str, since_ts: float) -> int:
+    """The budget reads board_events, no new ledger (R4)."""
+    with _reading():
+        return int(db.execute("SELECT COUNT(*) FROM board_events WHERE kind = 'wake_started'"
+                              " AND actor = ? AND ts >= ?",
+                              (instance_id, since_ts)).fetchone()[0])
+
+
+def last_gate(db: sqlite3.Connection, task_id: int, fence: int) -> tuple[str, str] | None:
+    with _reading():
+        row = db.execute(
+            "SELECT kind, payload FROM board_events WHERE task_id = ?"
+            " AND json_extract(payload, '$.fence') = ? AND kind IN ('no_connector',"
+            " 'budget_exhausted', 'admission_denied', 'liveness_unknown', 'agent_live',"
+            " 'concurrency', 'files_reserved') ORDER BY id DESC LIMIT 1",
+            (int(task_id), int(fence))).fetchone()
+    if row is None:
+        return None
+    return str(row["kind"]), str(json.loads(row["payload"]).get("reason", ""))
+
 

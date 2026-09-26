@@ -86,6 +86,10 @@ def _parser() -> argparse.ArgumentParser:
     doc.add_argument("--prune", action="store_true",
                      help=f"delete events and done/cancelled tasks older than "
                           f"{board.RETENTION_DAYS} days")
+    wk = sub.add_parser("wake", help="run the whole wake gate for one task, never spawn")
+    wk.add_argument("task_id", type=int)
+    wk.add_argument("--dry-run", action="store_true", required=True,
+                    help="required: in v4.8 only the node wakes, never the CLI")
     return p
 
 
@@ -149,6 +153,20 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:                       # AmbiguousSpace and friends
         print(str(exc), file=sys.stderr)
         return 2
+    if ns.cmd == "wake":
+        import time
+
+        from . import board, node, paths
+        db = board.open_board(paths.board_path())
+        try:
+            out = node.Node(self_id=actor).dry_run(db, ns.task_id, now=time.time())
+        except board.BoardError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        finally:
+            db.close()
+        print(json.dumps(out, indent=2))
+        return 0
     args = {k: v for k, v in _args_of(ns).items() if v is not None}
     out = surface.run_op(args, actor=actor, space=space)
     if not out.get("ok"):

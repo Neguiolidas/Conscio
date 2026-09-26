@@ -55,6 +55,15 @@ def run(*, root: Path | None = None, proc_root: Path = Path("/proc"),
                                mem_available_mb_now=node.WAKE_FLOOR_MB) == ""
         lines.append(f"admission baseline: {'ready' if ready else 'not ready'}"
                      f" ({len(samples)}/{node.ADMISSION_WINDOW} samples)")
+        registry, error = node.load_registry(root)
+        if error:
+            lines.append(f"registry: {error}")
+        elif not registry:
+            lines.append("registry: absent (nobody is woken)")
+        else:
+            lines.append("registry: " + ", ".join(
+                f"{iid} ({e.get('connector')}, budget {e.get('wake_budget_per_day', 0)}/day)"
+                for iid, e in sorted(registry.items())))
         for r in wake_residue(db, proc_root=proc_root):
             lines.append(f"AVISO: processo {r['pid']} carrega CONSCIO_WAKE_TASK={r['task_id']},"
                          f" mas a task está em {r['state']}. Sugestão: kill {r['pid']}")
