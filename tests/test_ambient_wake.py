@@ -405,3 +405,31 @@ def test_liveness_considers_only_own_running_sessions(rig):
     n.close()
     assert live is not True        # B's session must not count as A being live
 
+
+def test_gate_order_is_connector_budget_admission_liveness_concurrency(rig):
+    """A45: the gate order (spec §7.4) is connector -> budget -> admission ->
+    liveness -> concurrency; the first 'no' is the answer. So an agent that is
+    LIVE while its budget is exhausted must record `budget_exhausted` (never
+    `agent_live`), and a live agent whose admission is denied must record
+    `admission_denied` (never `agent_live`). The order-mutant (liveness moved
+    before budget/admission) is the one that breaks this."""
+    make, clock = rig
+    _registry({"A": {"connector": "fake"}})
+    n = make(FakeConnector(), live=True)        # agent A is ALIVE
+    _task()
+    db = board.open_board(paths.board_path())
+    try:
+        task = board.pending_executor(db)[0]
+        # (1) budget precedes liveness: 0/day (exhausted) + live -> budget_exhausted
+        k1, r1 = n.gate(db, task, registry={"A": {"connector": "fake"}}, now=clock[0])
+        assert (k1, r1) == ("budget_exhausted", "")
+        # (2) admission precedes liveness: 5/day (0 used) + no baseline + live
+        #     -> admission_denied (baseline_not_ready), never agent_live
+        k2, r2 = n.gate(db, task,
+                       registry={"A": {"connector": "fake", "wake_budget_per_day": 5}},
+                       now=clock[0])
+        assert (k2, r2) == ("admission_denied", "baseline_not_ready")
+    finally:
+        db.close()
+    n.close()
+
