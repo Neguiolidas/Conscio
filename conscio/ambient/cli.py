@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import surface
+from . import board, surface
 
 
 def _space_and_actor(storage: str) -> tuple[Path, str]:
@@ -76,6 +76,14 @@ def _parser() -> argparse.ArgumentParser:
     orch.add_argument("action", choices=("acquire", "renew", "release"))
     orch.add_argument("--ttl-s", dest="ttl_s", type=float)
     sub.add_parser("status", help="holder, counts, refused wakes, stalled reviews")
+    sub.add_parser("enable", help="turn the ambient node on for this machine")
+    sub.add_parser("disable", help="turn it off (board and CLI keep working)")
+    rep = sub.add_parser("report", help="board events counted by kind")
+    rep.add_argument("--since", default="8h", help="window: 30m, 8h, 2d")
+    doc = sub.add_parser("doctor", help="flag, board, sweeper, admission, wake residue")
+    doc.add_argument("--prune", action="store_true",
+                     help=f"delete events and done/cancelled tasks older than "
+                          f"{board.RETENTION_DAYS} days")
     return p
 
 
@@ -88,8 +96,52 @@ def _args_of(ns: argparse.Namespace) -> dict:
     return {k: v for k, v in vars(ns).items() if k not in skip and v not in (None, [])}
 
 
+_UNITS = {"m": 60, "h": 3600, "d": 86400}
+
+
+def _since_s(text: str) -> float:
+    text = text.strip()
+    if len(text) < 2 or text[-1] not in _UNITS or not text[:-1].isdigit():
+        raise ValueError(f"--since must look like 30m, 8h or 2d, got {text!r}")
+    return int(text[:-1]) * _UNITS[text[-1]]
+
+
+def _machine_cmd(ns: argparse.Namespace) -> int:
+    import time
+
+    from . import board, doctor, paths
+    now = time.time()
+    if ns.cmd == "enable":
+        flag = paths.flag_path()
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.write_text(f"enabled {now:.0f}\n", encoding="utf-8")
+        print(f"ambient: on ({flag})")
+        return 0
+    if ns.cmd == "disable":
+        paths.flag_path().unlink(missing_ok=True)
+        print("ambient: off (board and CLI keep working; nobody is woken)")
+        return 0
+    if ns.cmd == "doctor":
+        print("\n".join(doctor.run(prune=ns.prune, now=now)))
+        return 0
+    try:
+        window = _since_s(ns.since)
+        db = board.open_board(paths.board_path())
+    except (ValueError, board.BoardError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    try:
+        counts = board.event_counts(db, since_ts=now - window)
+    finally:
+        db.close()
+    print(json.dumps({"since": board._iso(now - window), "events": counts}, indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ns = _parser().parse_args(argv)
+    if ns.cmd in ("enable", "disable", "report", "doctor"):
+        return _machine_cmd(ns)
     try:
         space, actor = _space_and_actor(ns.storage)
     except Exception as exc:                       # AmbiguousSpace and friends

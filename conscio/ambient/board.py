@@ -598,3 +598,96 @@ def board_status(db: sqlite3.Connection, *, now: float) -> dict:
             "orch_expires": orch_expires,
             "counts": counts, "refused_wakes_24h": refused,
             "stalled_reviews": stalled}
+
+
+def log_event(db: sqlite3.Connection, kind: str, task_id: int | None,
+              actor: str | None, payload: dict, now: float) -> None:
+    """A write whose only content IS the event (notice, gate, sweeper)."""
+    with _tx(db):
+        _event(db, kind, task_id, actor, payload, now)
+
+
+def record_sample(db: sqlite3.Connection, *, ts: float, load1: float,
+                  mem_available_mb: int) -> None:
+    """Sweep step 1. Keeps the last SAMPLE_KEEP rows. Not an event (§B-6)."""
+    with _tx(db):
+        db.execute("INSERT OR REPLACE INTO admission_samples (ts, load1,"
+                   " mem_available_mb) VALUES (?, ?, ?)",
+                   (float(ts), float(load1), int(mem_available_mb)))
+        db.execute("DELETE FROM admission_samples WHERE ts NOT IN (SELECT ts FROM"
+                   " admission_samples ORDER BY ts DESC LIMIT ?)", (SAMPLE_KEEP,))
+
+
+def recent_samples(db: sqlite3.Connection) -> list[tuple[float, float, int]]:
+    with _reading():
+        return [(float(r["ts"]), float(r["load1"]), int(r["mem_available_mb"]))
+                for r in db.execute("SELECT ts, load1, mem_available_mb"
+                                     " FROM admission_samples ORDER BY ts")]
+
+
+def expire_leases(db: sqlite3.Connection, *, now: float) -> list[dict]:
+    """Sweep step 2. The fence moves +1 (§B-1): expiry ENDS the execution
+    epoch, so the late executor's next write fails with StaleFence."""
+    out: list[dict] = []
+    with _tx(db):
+        rows = db.execute("SELECT id, attempts, fence FROM tasks WHERE state = 'working'"
+                          " AND lease_expires_ts <= ? ORDER BY id", (now,)).fetchall()
+        for row in rows:
+            tid = int(row["id"])
+            sess = db.execute("SELECT session_id, pid FROM sessions WHERE task_id = ?"
+                              " AND state = 'running' ORDER BY started_ts DESC LIMIT 1",
+                              (tid,)).fetchone()
+            attempts = int(row["attempts"]) + 1
+            to = "blocked" if attempts >= MAX_ATTEMPTS else "backlog"
+            _move(db, tid, to, now, attempts_delta=1, bump_fence=True,
+                  resumable=str(sess["session_id"]) if sess else None)
+            payload: dict = {"attempts": attempts, "fence": int(row["fence"]) + 1}
+            if sess is not None:
+                payload["session"] = str(sess["session_id"])
+                payload["pid"] = sess["pid"]
+            _event(db, "lease_expired", tid, None, payload, now)
+            if to == "blocked":
+                _event(db, "blocked", tid, None, {"attempts": attempts, "reason": "attempts"}, now)
+            out.append({"task_id": tid, "to": to, **payload})
+    return out
+
+
+def orchestration_expired(db: sqlite3.Connection, *, now: float) -> bool:
+    """Sweep step 3: one event per expired fence, none after a release."""
+    with _tx(db):
+        row = _lease_row(db)
+        if row is None or row["expires_ts"] > now:
+            return False
+        said = db.execute(
+            "SELECT 1 FROM board_events WHERE kind IN ('orchestration_expired',"
+            " 'orchestration_released') AND json_extract(payload, '$.fence') = ?",
+            (int(row["fence"]),)).fetchone()
+        if said is not None:
+            return False
+        _event(db, "orchestration_expired", None, str(row["holder"]),
+               {"fence": int(row["fence"])}, now)
+    return True
+
+
+def event_counts(db: sqlite3.Connection, *, since_ts: float) -> dict[str, int]:
+    with _reading():
+        return {r["kind"]: int(r["n"]) for r in db.execute(
+            "SELECT kind, COUNT(*) AS n FROM board_events WHERE ts >= ?"
+            " GROUP BY kind ORDER BY kind", (since_ts,))}
+
+
+def prune(db: sqlite3.Connection, *, now: float,
+          max_age_days: float = RETENTION_DAYS) -> dict:
+    """doctor --prune only, never the sweep (§6.6). 90 days is past the
+    21-day kill-criteria window, so the window is never touched."""
+    cutoff = now - float(max_age_days) * 86400
+    with _tx(db):
+        old = [int(r["id"]) for r in db.execute(
+            "SELECT id FROM tasks WHERE state IN ('done', 'cancelled')"
+            " AND updated_ts < ?", (cutoff,))]
+        db.executemany("DELETE FROM task_files WHERE task_id = ?", [(i,) for i in old])
+        db.executemany("DELETE FROM tasks WHERE id = ?", [(i,) for i in old])
+        events = db.execute("DELETE FROM board_events WHERE ts < ?", (cutoff,)).rowcount
+        _event(db, "pruned", None, None, {"tasks": len(old), "events": events,
+                                          "cutoff": cutoff}, now)
+    return {"tasks": len(old), "events": events}
