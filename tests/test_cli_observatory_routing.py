@@ -8,8 +8,7 @@ tooth that keeps the dispatch from being lost again: it calls main() with
 the observatory command, mocks _cmd_observatory, and asserts it was called
 with the parsed arguments.
 """
-import conscio.cli as cli
-from conscio.cli import main
+from conscio import cli
 
 
 def test_observatory_dispatch_reaches_cmd_observatory(monkeypatch):
@@ -23,7 +22,7 @@ def test_observatory_dispatch_reaches_cmd_observatory(monkeypatch):
         return 0
 
     monkeypatch.setattr(cli, "_cmd_observatory", fake_observatory)
-    rc = main(["observatory", "--port", "9999"])
+    rc = cli.main(["observatory", "--port", "9999"])
     assert rc == 0
     assert "port" in seen, "observatory dispatch block is missing"
     assert seen["port"] == 9999

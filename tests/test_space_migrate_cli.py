@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from conscio import cli
+from conscio.installer import migrate_cmd
 
 
 @pytest.fixture(autouse=True)
@@ -732,7 +733,6 @@ def test_migrate_refuses_upfront_when_pointer_unresolvable(tmp_path, monkeypatch
     fake_proc = tmp_path / "fake_proc"
     fake_proc.mkdir()
 
-    import conscio.installer.migrate_cmd as migrate_cmd
     monkeypatch.setattr(migrate_cmd, "plugin_pointer_path",
                         lambda *a, **k: None)
 
