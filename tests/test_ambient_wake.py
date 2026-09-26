@@ -9,6 +9,11 @@ import pytest
 from conscio.ambient import board, connectors, doctor, node, paths
 from conscio.liaison import directory
 
+# The gate's denial/reason vocabulary (spec §7.4) + the one non-gate event.
+# Kept as a literal here: board no longer exports it (A47-B1).
+_GATE_KINDS = ("no_connector", "budget_exhausted", "admission_denied",
+               "liveness_unknown", "agent_live", "concurrency", "files_reserved")
+
 
 class FakeConnector:
     name = "fake"
@@ -141,7 +146,7 @@ def test_I4_proposed_task_never_woken(rig):
     _to_gate(n, clock)
     n.close()
     assert fake.calls == []
-    assert all(_events(k) == [] for k in (*board.GATE_KINDS, "notified"))
+    assert all(_events(k) == [] for k in (*_GATE_KINDS, "notified"))
 
 
 def test_gate_denial_recorded_once_per_reason(rig):

@@ -232,10 +232,6 @@ class Node:
     def board(self) -> Path:
         return paths.board_path(self.root)
 
-    @property
-    def is_sweeper(self) -> bool:
-        return self._sweep_fd is not None
-
     def close(self) -> None:
         """Closing the fd is what gives the flock back (I12, §B-10)."""
         if self._sweep_fd is not None:

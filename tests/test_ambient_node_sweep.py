@@ -48,7 +48,7 @@ def test_flag_off_reactor_never_opens_board(tmp_path, monkeypatch):
     monkeypatch.setattr(board, "open_board", must_not_open)
     n = node.Node(self_id="a", root=tmp_path / "relay", proc_root=_proc(tmp_path))
     n.on_tick()
-    assert not n.is_sweeper
+    assert n._sweep_fd is None
     assert not paths.board_path(tmp_path / "relay").exists()
 
 
@@ -68,7 +68,7 @@ def test_board_too_new_skips_sweep(tmp_path):
         assert raw.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()[0] == 0
     finally:
         raw.close()
-    assert not n.is_sweeper
+    assert n._sweep_fd is None
 
 
 def test_I12_single_sweeper_three_reactors(tmp_path):
@@ -80,7 +80,7 @@ def test_I12_single_sweeper_three_reactors(tmp_path):
              for i in range(3)]
     for n in nodes:
         n.on_tick()
-    assert [n.is_sweeper for n in nodes] == [True, False, False]
+    assert [n._sweep_fd is not None for n in nodes] == [True, False, False]
     db = board.open_board(paths.board_path(root))
     try:
         assert len(board.recent_samples(db)) == 1
@@ -90,7 +90,7 @@ def test_I12_single_sweeper_three_reactors(tmp_path):
         db.close()
     nodes[0].close()
     nodes[1].on_tick()
-    assert nodes[1].is_sweeper
+    assert nodes[1]._sweep_fd is not None
     for n in nodes:
         n.close()
 

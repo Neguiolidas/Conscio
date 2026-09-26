@@ -27,8 +27,6 @@ MAX_ATTEMPTS = 2
 SAMPLE_KEEP = 36
 RETENTION_DAYS = 90
 TERMINAL_STATES = ("done", "cancelled")
-GATE_KINDS = ("no_connector", "budget_exhausted", "admission_denied",
-              "liveness_unknown", "agent_live", "concurrency", "files_reserved")
 
 _SCHEMA = (
     """CREATE TABLE IF NOT EXISTS tasks (
