@@ -55,6 +55,24 @@ def _save_orch_fence(space: Path, board_file: Path, fence: int) -> None:
     os.replace(tmp, path)
 
 
+def _propose_remote(a: dict, *, actor: str) -> dict:
+    """§9 / §B-2: the one board write that travels. The receiving machine
+    validates the paths; they are ITS paths, not ours."""
+    from ..liaison import directory, relay, relay_transport
+    to = str(a["to"])
+    card = directory.get(to)
+    if card is None:
+        return {"ok": False, "error": f"peer {to} is not in the directory"}
+    payload = {"title": str(a["title"]), "body": str(a.get("body", "")),
+               "files": [str(f) for f in (a.get("files") or [])]}
+    if relay.payload_size(payload) > relay.MAX_PAYLOAD_BYTES:
+        return {"ok": False, "error": f"payload exceeds {relay.MAX_PAYLOAD_BYTES} bytes"}
+    msg = {"from": actor, "to": to, "type": "board.propose", "payload": payload}
+    if not relay_transport.deliver(card, msg):
+        return {"ok": False, "error": f"peer {to} unreachable"}
+    return {"ok": True, "sent_to": to}
+
+
 def run_op(args: dict, *, actor: str, space: Path, now: float | None = None) -> dict:
     op = str(args.get("op", ""))
     if op not in OPS:
@@ -62,6 +80,8 @@ def run_op(args: dict, *, actor: str, space: Path, now: float | None = None) -> 
     if not actor:
         return {"ok": False, "error": "no identity: the board needs this agent's "
                                       "instance id (CONSCIO_SELF_ID)"}
+    if op == "propose" and args.get("to"):
+        return _propose_remote(args, actor=actor)
     when = time.time() if now is None else float(now)
     board_file = paths.board_path()
     try:

@@ -44,6 +44,8 @@ def _parser() -> argparse.ArgumentParser:
         sp.add_argument("--title", required=True)
         sp.add_argument("--body", default="")
         sp.add_argument("--file", dest="files", action="append", default=[])
+        if name == "propose":
+            sp.add_argument("--to")
         if name == "create":
             sp.add_argument("--assignee", required=True)
             sp.add_argument("--reviewer")

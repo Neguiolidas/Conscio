@@ -33,7 +33,7 @@ def test_envelope_of_none_when_payload_not_dict():
 def test_constants():
     assert relay.MAX_PAYLOAD_BYTES == 64 * 1024
     assert relay.RETENTION_DAYS == 7
-    assert relay.RESERVED_TYPES == {"review_request", "review_verdict"}
+    assert relay.RESERVED_TYPES == {"review_request", "review_verdict", "board.propose"}
 
 
 def test_validate_send_happy():

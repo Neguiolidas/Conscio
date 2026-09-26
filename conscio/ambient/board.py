@@ -691,3 +691,29 @@ def prune(db: sqlite3.Connection, *, now: float,
         _event(db, "pruned", None, None, {"tasks": len(old), "events": events,
                                           "cutoff": cutoff}, now)
     return {"tasks": len(old), "events": events}
+
+
+def pending_executor(db: sqlite3.Connection) -> list[sqlite3.Row]:
+    with _reading():
+        return db.execute("SELECT * FROM tasks WHERE state = 'backlog'"
+                          " AND assignee IS NOT NULL ORDER BY id").fetchall()
+
+
+def pending_review(db: sqlite3.Connection) -> list[sqlite3.Row]:
+    with _reading():
+        return db.execute("SELECT * FROM tasks WHERE state = 'review'"
+                          " AND reviewer IS NOT NULL ORDER BY id").fetchall()
+
+
+def events_for(db: sqlite3.Connection, kind: str, task_id: int, fence: int, *,
+               role: str | None = None) -> list[sqlite3.Row]:
+    """Events of one (task, fence[, role]). The notice key carries the role:
+    a rejected task goes back to backlog on the fence its reviewer was
+    notified on, and the executor must still be told."""
+    with _reading():
+        return db.execute(
+            "SELECT ts, payload FROM board_events WHERE kind = ? AND task_id = ?"
+            " AND json_extract(payload, '$.fence') = ?"
+            " AND (? IS NULL OR json_extract(payload, '$.role') = ?) ORDER BY id",
+            (kind, int(task_id), int(fence), role, role)).fetchall()
+

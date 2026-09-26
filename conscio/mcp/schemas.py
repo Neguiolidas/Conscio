@@ -687,6 +687,7 @@ _BOARD_DISPATCH_DEF = {
             "reason": {"type": "string"},
             "state": {"type": "string"},
             "action": {"type": "string", "enum": ["acquire", "renew", "release"]},
+            "to": {"type": "string", "description": "propose only: send the proposal to this peer over the relay"},
         },
         "required": ["op"],
     },

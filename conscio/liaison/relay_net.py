@@ -66,7 +66,9 @@ def validate_msg(msg: dict) -> None:
         raise ValueError("from must be a non-empty string")
     if not isinstance(msg.get("type"), str) or not msg["type"]:
         raise ValueError("type must be a non-empty string")
-    if msg["type"] in relay.RESERVED_TYPES:
+    # v4.8 S3: board.propose is the one reserved type a REMOTE machine may
+    # send (the maquina-pessoal asking for work). The review channel stays local.
+    if msg["type"] in relay.RESERVED_TYPES - relay.BOARD_TYPES:
         raise ValueError(f"type {msg['type']!r} reserved for review channel")
     if not isinstance(msg.get("payload"), dict):
         raise ValueError("payload must be an object")

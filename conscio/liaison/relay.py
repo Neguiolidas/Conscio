@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import json
 
-RESERVED_TYPES = {"review_request", "review_verdict"}   # owned by review channel
+BOARD_TYPES = frozenset({"board.propose"})   # v4.8 S3: a machine input, never chat
+RESERVED_TYPES = {"review_request", "review_verdict"} | BOARD_TYPES
 MAX_PAYLOAD_BYTES = 64 * 1024                            # 65536 (R1)
 RETENTION_DAYS = 7                                       # (R2)
 
@@ -25,6 +26,8 @@ def validate_send(*, to: str, type: str, payload: object,
     """Raise ValueError on any violation; otherwise return None."""
     if not isinstance(type, str) or not type:
         raise ValueError("type must be a non-empty string")
+    if type in BOARD_TYPES:
+        raise ValueError(f"type {type!r} is sent with conscio_board op=propose to=<peer>")
     if type in RESERVED_TYPES:
         raise ValueError(f"type {type!r} is reserved for the review channel")
     if not isinstance(payload, dict):
