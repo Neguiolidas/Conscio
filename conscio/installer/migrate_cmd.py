@@ -337,6 +337,24 @@ def migrate_space_cmd(
 
     durable_target = space_dir(slug)
 
+    # Step 0b: the plugin pointer target must be resolvable before ANY
+    # destructive step (lock, backup, move, tombstone). plugin_pointer_path
+    # returns None when the legacy storage is not inside a known plugin data
+    # dir; step 5 is where it is written, so discovering None only there
+    # would leave step 4's tombstone behind. Refuse up front, with the same
+    # rc as the other discovery failures.
+    pointer_path: Path | None = None
+    if legacy_path is not None:
+        pointer_path = plugin_pointer_path(legacy_path, env)
+        if pointer_path is None:
+            print(
+                f"conscio space migrate: legacy space {legacy_path} is not inside a "
+                "known plugin data dir, so its plugin pointer cannot be resolved. "
+                "Refusing before any file is moved.",
+                file=sys.stderr,
+            )
+            return 3
+
     # Step 0 check: resolve_space and B3 collision check
     if legacy_path and legacy_path.exists():
         res = resolve_space(legacy_path, env=env)
@@ -380,7 +398,7 @@ def migrate_space_cmd(
             write_migration_lock(slug)
     else:
         # Check if already migrated (only when lock is absent)
-        pointer_file = plugin_pointer_path(legacy_path, env) if legacy_path else None
+        pointer_file = pointer_path
         if pointer_file and pointer_file.is_file():
             try:
                 data = json.loads(pointer_file.read_text(encoding="utf-8"))
@@ -540,8 +558,11 @@ def migrate_space_cmd(
         _write_json_atomic(durable_target / "migrated-from.json", tombstone_payload)
 
         # Step 5: Gravar ponteiro space-pointer.json na pasta do plugin
-        if legacy_path:
-            pointer_path = plugin_pointer_path(legacy_path, env)
+        # pointer_path was resolved and validated at Step 0b; it is None
+        # only when legacy_path is None, in which case there is nothing
+        # to point at — so this guard is behavior-preserving, not a
+        # new skip.
+        if legacy_path and pointer_path is not None:
             write_pointer_atomic(pointer_path, target=durable_target, runtime=slug, slug=slug)
 
         # Step 6: Apagar space-refused.json se existir

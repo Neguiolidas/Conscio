@@ -716,3 +716,38 @@ def test_migrate_resume_completes_item_by_item(tmp_path, monkeypatch):
     # files intact
     assert (s2 / "state.json").read_text(encoding="utf-8") == "state-version-legacy"
     assert (d2 / "state.json").read_text(encoding="utf-8") == "state-version-durable"
+
+
+def test_migrate_refuses_upfront_when_pointer_unresolvable(tmp_path, monkeypatch, capsys):
+    """A47-A2: a legacy storage whose plugin pointer cannot be resolved
+    (not inside any known plugin data dir) must be refused BEFORE any
+    destructive step — not at step 5, after step 4's tombstone was
+    already written.
+
+    plugin_pointer_path is forced to None (the natural trigger is a
+    legacy space that sits outside every known plugin data dir; on a
+    real host that is e.g. a hand-created ~/.conscio space).
+    """
+    _plugin_dir, storage = _setup_plugin_space(tmp_path, monkeypatch)
+    fake_proc = tmp_path / "fake_proc"
+    fake_proc.mkdir()
+
+    import conscio.installer.migrate_cmd as migrate_cmd
+    monkeypatch.setattr(migrate_cmd, "plugin_pointer_path",
+                        lambda *a, **k: None)
+
+    ret = cli.main(["space", "migrate", "--proc-root", str(fake_proc),
+                    "--quiet-minutes", "0"])
+    assert ret != 0
+
+    # Nothing was moved
+    assert (storage / "instance.json").exists()
+    assert (storage / "obs.db").exists()
+    # No step 4 tombstone, no lock left behind
+    base = Path(os.environ["CONSCIO_BASE"])
+    durable = base / "instances" / "claude-code"
+    assert not (durable / "migrated-from.json").exists()
+    assert not (base / "instances" / ".migrating-claude-code").exists()
+
+    captured = capsys.readouterr()
+    assert "plugin pointer cannot be resolved" in captured.err
