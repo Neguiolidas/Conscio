@@ -286,10 +286,16 @@ def migrate_space_cmd(
             return 3
         elif len(candidates_with_data) == 1:
             plugin_dir, legacy_path = candidates_with_data[0]
+            # The resolved slug gets its own variable: writing it back into
+            # the declared `str | None` parameter (slug) keeps the declared
+            # type live at the slugify call site. Every branch resolves to
+            # a non-falsy string — host_identity.runtime is a str, and
+            # `or "default"` catches the rest — so resolved_slug is str.
+            resolved_slug: str
             if _plugin_dir_matches_slug(plugin_dir, "claude-code", env):
-                slug = "claude-code"
+                resolved_slug = "claude-code"
             elif _plugin_dir_matches_slug(plugin_dir, "zcode", env):
-                slug = "zcode"
+                resolved_slug = "zcode"
             else:
                 inst_file = legacy_path / "instance.json"
                 slug_found = None
@@ -302,8 +308,8 @@ def migrate_space_cmd(
                 if not slug_found:
                     host_ident = derive_host_identity(env)
                     slug_found = host_ident.runtime
-                slug = slug_found or "default"
-            slug = slugify(slug)
+                resolved_slug = slug_found or "default"
+            slug = slugify(resolved_slug)
         else:
             # 0 candidates with space data
             # Check if an in-flight migration lock exists for resumption
