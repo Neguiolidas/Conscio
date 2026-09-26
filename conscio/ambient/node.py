@@ -24,14 +24,14 @@ from .connectors import CONNECTORS, Connector, SpawnFailed
 
 log = logging.getLogger("conscio.ambient.node")
 
-# NÃO DETERMINADO until probe S3 (spec §7.3). Named so calibrating is one edit.
+# NOT DETERMINED until probe S3 (spec §7.3). Named so calibrating is one edit.
 WAKE_FLOOR_MB = 1500
-DELTA_TOLERADO = 1.5
+LOAD1_DELTA_TOLERANCE = 1.5
 ADMISSION_WINDOW = 36
 ADMISSION_MAX_AGE_S = 360
 
-WAKE_GRACE_S = 600      # NÃO DETERMINADO (spec §7.4)
-RENOTIFY_MAX = 3        # NÃO DETERMINADO (spec §7.4)
+WAKE_GRACE_S = 600      # NOT DETERMINED (spec §7.4)
+RENOTIFY_MAX = 3        # NOT DETERMINED (spec §7.4)
 
 MAX_CONCURRENT_WAKES = 1   # R8; probe S4 decides whether it may rise
 WAKE_PROMPT = ("You were assigned Conscio board task {task_id}. Read it with "
@@ -190,7 +190,7 @@ def admission(samples: Sequence[tuple[float, float, int]], *, now: float,
         return "baseline_not_ready"
     if mem_available_mb_now < WAKE_FLOOR_MB:
         return "mem"
-    if load1_now > statistics.median(s[1] for s in window) + DELTA_TOLERADO:
+    if load1_now > statistics.median(s[1] for s in window) + LOAD1_DELTA_TOLERANCE:
         return "load"
     return ""
 

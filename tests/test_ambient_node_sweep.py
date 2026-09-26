@@ -101,7 +101,7 @@ def test_admission_uses_injected_samples_and_baseline_not_ready():
     assert node.admission(_samples(35, step=5, end=now), load1_now=0.1, **kw) == "baseline_not_ready"
     assert node.admission(_samples(36, step=12, end=now), load1_now=0.1, **kw) == "baseline_not_ready"
     ready = _samples(36, step=5, end=now, load=1.0)
-    assert node.admission(ready, load1_now=1.0 + node.DELTA_TOLERADO, **kw) == ""
+    assert node.admission(ready, load1_now=1.0 + node.LOAD1_DELTA_TOLERANCE, **kw) == ""
     assert node.admission(ready, load1_now=2.6, **kw) == "load"
     assert node.admission(ready, now=now, load1_now=0.5,
                           mem_available_mb_now=node.WAKE_FLOOR_MB - 1) == "mem"
