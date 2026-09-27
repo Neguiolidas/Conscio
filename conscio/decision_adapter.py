@@ -22,8 +22,10 @@ QUESTION_TYPES = ("noul", "choice", "score")
 
 DEFAULT_TIMEOUT_S = 10.0
 
+# 'api_key' is intentionally omitted: inline keys are strictly forbidden (D6)
+# and rejected as unknown keys by the loader.
 KNOWN_KEYS = frozenset({
-    "url", "model", "api_key_env", "api_key_file", "timeout_s", "api_key",
+    "url", "model", "api_key_env", "api_key_file", "timeout_s",
 })
 
 _ENV_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
@@ -387,10 +389,6 @@ def load_decision_adapter(cfg: dict | None = None) -> DecisionAdapter | None | s
 
     block = cfg.get("decision_adapter")
     if not isinstance(block, dict):
-        return "bad_config"
-
-    # Inline api_key is strictly prohibited (D6)
-    if "api_key" in block:
         return "bad_config"
 
     # Any unknown key -> bad_config (D10 / D-a)
