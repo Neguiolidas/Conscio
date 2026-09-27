@@ -17,23 +17,30 @@ anything else is ``bad_config`` and no connection is ever attempted. The
 API key therefore never travels in cleartext outside the machine — this
 is also the mitigation for bandit B310 on the ``urlopen`` below.
 
-Response contract (spec section 4.3): the answer is valid only when
-``answers.<id>.choice`` is one of ``{proceed, hold, veto}`` *and*
-``probabilities`` carries all three numeric keys. Anything else is
-``malformed``; a malformed response is **never** coerced to ``proceed``.
-``ask`` never raises — every failure becomes a ``judge_status`` string
-(``no_key``/``bad_config``/``timeout``/``http_<code>``/``network``/
-``malformed``) so a judge failure can never take the Council down.
+Response contract (spec section 4.3, incl. emenda A51): the answer is
+valid only when ``answers.<id>.choice`` is one of ``{proceed, hold,
+veto}``, ``probabilities`` carries all three numeric keys, and
+``answers.<id>.confidence`` is numeric. "Numeric" means a *finite*
+number, not a ``bool``, with no ``NaN``/``Infinity`` (which
+``json.loads`` accepts). Anything else is ``malformed``; a malformed
+response is **never** coerced to ``proceed``. ``ask`` never raises —
+every failure becomes a ``judge_status`` string (``no_key``/
+``bad_config``/``timeout``/``http_<code>``/``network``/``malformed``)
+so a judge failure can never take the Council down.
 
-``JudgeVerdict.confidence`` is the probability of the gateway's reported
-choice; section 7.2 labels with argmax of ``probabilities`` and treats
-``confidence < 0.5`` as ambiguous, so consumers should argmax rather
-than trust ``choice`` alone.
+``JudgeVerdict.confidence`` is ``answers.<id>.confidence`` — the value
+the *model reports* (the distribution's concentration), the same value
+recorded in the frozen benchmark labels; it is deliberately **not**
+``probabilities[choice]`` (the two diverge in 81 of the 102 frozen
+cases). In judged mode the recommendation is ``verdict.choice`` (spec
+section 6): the TypeSafe contract makes the reported choice the top
+option, so consumers take it as-is rather than re-deriving it.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import time
 import urllib.error
@@ -78,9 +85,11 @@ JUDGE_QUESTION: dict[str, Any] = {
 class JudgeConfig:
     """Enabled judge endpoint (spec section 4.1).
 
-    ``api_key`` holds the *resolved* key (env var first, then the
-    ``NOME=valor`` file); ``load`` returns ``"no_key"`` instead of a
-    config when neither yields one, so every config here carries a key.
+    ``api_key`` holds the *resolved* key (env var first, then the key
+    file — but only a line whose NOME matches ``api_key_env`` exactly;
+    a file with only other secrets yields nothing). ``load`` returns
+    ``"no_key"`` instead of a config when neither yields one, so every
+    config here carries a key.
     """
 
     model: str
@@ -97,7 +106,7 @@ class JudgeVerdict:
 
     choice: str                      # proceed | hold | veto
     probabilities: dict[str, float]
-    confidence: float
+    confidence: float                # answers.<id>.confidence (the reported value)
     model: str                       # response["model"]
     provider: str                    # routing.resolvedProvider, "" if absent
 
@@ -112,34 +121,33 @@ def question_sha256() -> str:
     ).hexdigest()
 
 
-def _read_key_file(path: str, name: str = "") -> str:
-    """Read a key from a ``NOME=valor``-per-line file (spec section 4.1,
-    BUG-38: ``expanduser``). A line whose NOME matches ``name`` wins
-    when one exists; otherwise the first nonempty value. No file,
-    unreadable, or empty -> "" (the caller then reports ``no_key``).
-    Never raises."""
+def _read_key_file(path: str, name: str) -> str:
+    """Read the key for ``name`` from a ``NOME=valor``-per-line file
+    (spec section 4.1, BUG-38: ``expanduser``).
+
+    Strict name match, same contract as the gateway's own helper: only a
+    line whose NOME equals ``name`` yields a value. A file that holds
+    only *other* secrets must not hand one of them to the judge to
+    ship out as a Bearer token — so there is no fallback to "first
+    value". No match (or no file) -> "" (the caller reports
+    ``no_key``). Never raises."""
+    if not name:
+        return ""
     try:
         with open(os.path.expanduser(path), encoding="utf-8") as f:
             lines = f.readlines()
     except OSError:
         return ""
-    entries: list[tuple[str, str]] = []
     for raw in lines:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         key, sep, value = line.partition("=")
-        key = key.strip()
-        value = value.strip()
-        if not sep or not key or not value:
+        if not sep or key.strip() != name:
             continue
-        entries.append((key, value))
-    if name:
-        for entry_name, value in entries:
-            if entry_name == name:
-                return value
-    if entries:
-        return entries[0][1]
+        value = value.strip()
+        if value:
+            return value
     return ""
 
 
@@ -224,10 +232,14 @@ def _state(question: str, context: str, options: list[str] | None) -> dict[str, 
 
 
 def _parse_verdict(data: Any) -> JudgeVerdict | None:
-    """Validate a decoded response (spec section 4.3).
+    """Validate a decoded response (spec section 4.3, emenda A51).
 
-    Valid only when ``answers.<id>.choice`` is one of proceed/hold/veto
-    and ``probabilities`` has all three numeric keys. ``None`` -> the
+    Valid only when ``answers.<id>.choice`` is one of proceed/hold/veto,
+    ``probabilities`` has all three keys finite (``json.loads`` accepts
+    ``NaN``/``Infinity``, so finiteness is checked, not just type), and
+    ``answers.<id>.confidence`` — the value the *model reports*, the
+    same one recorded in the frozen labels, deliberately not
+    ``probabilities[choice]`` — is present and finite. ``None`` -> the
     caller reports ``malformed`` (never a default ``proceed``)."""
     if not isinstance(data, dict):
         return None
@@ -248,7 +260,14 @@ def _parse_verdict(data: Any) -> JudgeVerdict | None:
         value = probs.get(name)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             return None
+        if not math.isfinite(value):
+            return None
         numeric[name] = float(value)
+    confidence = entry.get("confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        return None
+    if not math.isfinite(confidence):
+        return None
     provider: str = ""
     routing = (
         (data.get("providerMetadata") or {}).get("gateway") or {}
@@ -261,7 +280,7 @@ def _parse_verdict(data: Any) -> JudgeVerdict | None:
     return JudgeVerdict(
         choice=choice,
         probabilities=numeric,
-        confidence=numeric[choice],
+        confidence=float(confidence),
         model=model_s,
         provider=provider,
     )

@@ -25,24 +25,29 @@ ForbiddenKeys = {"instance", "engine", "path", "agent", "relay", "identity",
 
 
 def _canonical_body(
-    choice: str = "hold",
-    probs: tuple[float, float, float] = (0.2, 0.6, 0.2),
+    choice: str = "veto",
+    probs: tuple[float, float, float] = (0.05, 0.03, 0.92),
+    confidence: float = 0.87,
     model: str = "typesafe-ai/jev",
     provider: str = "jev-canonical",
 ) -> dict[str, Any]:
-    """A valid gateway response: answers.<id>.choice + 3 numeric
-    probabilities + model + routing.resolvedProvider (spec 4.4)."""
+    """A valid gateway response in the real a01 form: answers.<id> =
+    {type, choice, probabilities, confidence}. The confidence is the
+    model-reported value — deliberately NOT probabilities[choice]
+    (0.87 vs 0.92, as in the frozen label a01; emenda A51)."""
     return {
         "model": model,
         "generationId": "gen-1",
         "answers": {
             "judge": {
+                "type": "choice",
                 "choice": choice,
                 "probabilities": {
                     "proceed": probs[0],
                     "hold": probs[1],
                     "veto": probs[2],
                 },
+                "confidence": confidence,
             },
         },
         "providerMetadata": {"gateway": {"routing": {"resolvedProvider": provider}}},
@@ -134,8 +139,9 @@ def test_load_empty_block_enables_defaults(monkeypatch):
 def test_load_key_from_tilde_file(tmp_path, monkeypatch):
     """BUG-38: api_key_file goes through expanduser (spec section 4.1).
 
-    The file is NOME=valor per line; the line whose NOME matches
-    api_key_env wins."""
+    The file is NOME=valor per line; only the line whose NOME matches
+    api_key_env may yield the key (D2: no first-value fallback — a file
+    holding only other secrets must not hand one of them out)."""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
@@ -154,6 +160,38 @@ def test_load_key_from_tilde_file(tmp_path, monkeypatch):
     }})
     assert isinstance(cfg, judge.JudgeConfig)
     assert cfg.api_key == "tok-123"
+
+
+def test_load_key_file_without_name_match_is_no_key(tmp_path, monkeypatch):
+    """D2: a key file holding only OTHER secrets is not a key source.
+    load() reports no_key and the stub endpoint sees ZERO requests."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    (home / "judge-keys.env").write_text(
+        "OTHER_TOKEN=secret-other\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("MY_GATEWAY_KEY", raising=False)
+    assert judge.load({"judge": {
+        "api_key_env": "MY_GATEWAY_KEY",
+        "api_key_file": "~/judge-keys.env",
+        "url": "http://127.0.0.1:9/v1/evaluate",
+    }}) == "no_key"
+    server, port, requests = start_stub(lambda i, req: (200, _canonical_body()))
+    try:
+        # No config was ever built, so no request may exist:
+        cfg = judge.load({"judge": {
+            "api_key_env": "MY_GATEWAY_KEY",
+            "api_key_file": "~/judge-keys.env",
+            "url": f"http://127.0.0.1:{port}/v1/evaluate",
+        }})
+        assert cfg == "no_key"
+        assert len(requests) == 0
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_load_no_key(monkeypatch):
@@ -198,10 +236,14 @@ def test_ask_canonical_verdict_c2():
         cfg = _cfg(f"http://127.0.0.1:{port}/v1/evaluate")
         verdict = judge.ask(cfg, "push to main?", "CI green", ["push", "wait"])
         assert isinstance(verdict, judge.JudgeVerdict)
-        assert verdict.choice == "hold" == max(
+        assert verdict.choice == "veto" == max(
             verdict.probabilities, key=verdict.probabilities.get)
-        assert verdict.probabilities == {"proceed": 0.2, "hold": 0.6, "veto": 0.2}
-        assert verdict.confidence == 0.6
+        assert verdict.probabilities == {"proceed": 0.05, "hold": 0.03, "veto": 0.92}
+        # Emenda A51: confidence is the model-reported value, NOT
+        # probabilities[choice] — the guard below would fail if the
+        # parser ever fell back to the chosen class' probability.
+        assert verdict.confidence == 0.87
+        assert verdict.confidence != verdict.probabilities[verdict.choice]
         assert verdict.model == "typesafe-ai/jev"
         assert verdict.provider == "jev-canonical"
         assert len(requests) == 1
@@ -301,11 +343,29 @@ def test_ask_body_state_exact():
 @pytest.mark.parametrize("body, why", [
     ({"model": "jev"}, "answers missing"),
     ({"answers": {"j": {"choice": "maybe",
-                        "probabilities": {"proceed": 0.1, "hold": 0.2, "veto": 0.7}}}},
+                        "probabilities": {"proceed": 0.1, "hold": 0.2, "veto": 0.7},
+                        "confidence": 0.5}}},
      "choice outside proceed/hold/veto"),
     ({"answers": {"j": {"choice": "veto",
-                        "probabilities": {"proceed": 0.1, "hold": 0.9}}}},
+                        "probabilities": {"proceed": 0.1, "hold": 0.9},
+                        "confidence": 0.9}}},
      "probabilities missing the veto key"),
+    ({"answers": {"j": {"type": "choice", "choice": "veto",
+                        "probabilities": {"proceed": 0.05, "hold": 0.03, "veto": 0.92}}}},
+     "confidence missing (emenda A51: absence is a broken contract)"),
+    ({"answers": {"j": {"type": "choice", "choice": "veto",
+                        "probabilities": {"proceed": 0.05, "hold": 0.03, "veto": 0.92},
+                        "confidence": float("nan")}}},
+     "confidence NaN (json.loads accepts it, it must still fail)"),
+    ({"answers": {"j": {"type": "choice", "choice": "veto",
+                        "probabilities": {"proceed": 0.05, "hold": float("inf"),
+                                          "veto": 0.92},
+                        "confidence": 0.87}}},
+     "probability Infinity (json.loads accepts it, it must still fail)"),
+    ({"answers": {"j": {"type": "choice", "choice": "veto",
+                        "probabilities": {"proceed": 0.05, "hold": 0.03, "veto": 0.92},
+                        "confidence": True}}},
+     "confidence bool is not numeric"),
 ])
 def test_ask_malformed_never_proceeds(body, why):
     server, port, requests = start_stub(lambda i, req: (200, body))
