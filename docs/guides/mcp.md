@@ -305,10 +305,17 @@ Create an Architecture Decision Record. `status` is one of `proposed`,
 
 ### `conscio_council(question, context?)`
 
-Convene a 4-voice deterministic council (Arquiteto, Cético, Pragmatista,
-Crítico). All four voices are deterministic — the Council never calls an LLM,
-regardless of Awake Mode or any attached adapter (LLM-assisted analysis exists
-only in the squads, via `use_llm`). Returns votes + majority verdict.
+Convene a 4-voice deterministic council (architect, skeptic, pragmatist,
+critic). The four voices stay deterministic — they never call an LLM or
+any attached adapter (LLM-assisted analysis exists only in the squads,
+via `use_llm`). Since v4.8 the council may additionally consult an
+**optional judge** — one canonical decision question sent to the typed
+decision API you configure (an empty `judge` block plus a
+`decision_adapter` block in the Conscio config; off by default, see
+`USAGE.md`) — and a readiness gate lowers a `proceed` to `hold` while
+the engine is not ready (never the other way around). Returns votes +
+majority verdict, plus the additive v4.8 fields `mode`, `judge_status`,
+`gate_reason` (and a `judge` report in judged mode).
 
 ### `conscio_loop_gate(verifiable?, budget_ok?, has_tools?)`
 
