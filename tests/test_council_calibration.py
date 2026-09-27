@@ -149,17 +149,25 @@ def test_order_independence(tmp_path_factory):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="baseline before calibration")
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "deterministic mode below the PRD floors after the T6 round "
+        "(kappa 0.088 < 0.40, C5a 8/14 > 10%); PRD reopened 2026-09-27, "
+        "next round needs a new blind held-out"
+    ),
+)
 def test_c3_c4_c5_heldout_by_origin(tmp_path_factory):
-    """C3/C4/C5 against the current (pre-calibration) Council — expected
-    to fail on the baseline. strict=True turns the XPASS red when the
-    Council starts passing, forcing the marker's removal in T6.
+    """C3/C4/C5 against the frozen held-out split. The deterministic Council
+    remains below the PRD floors after the T6 calibration round (kappa 0.088 < 0.40,
+    C5a 8/14 > 10%). The PRD was reopened on 2026-09-27 and the next round needs
+    a new blind held-out.
 
-    The decision itself is council_bench.evaluate (pure; synthetic tests
-    in test_council_bench_metrics.py exercise it engine-free): C3 whole
-    AND per origin (G2), C4 whole (G1) AND per origin, C5a/C5b whole with
-    the denominator floor and per origin only where measurable; undefined
-    pools fail as 'not measurable', never skip (G3).
+    strict=True turns any unexpected XPASS red. The decision itself is
+    council_bench.evaluate (pure; synthetic tests in test_council_bench_metrics.py
+    exercise it engine-free): C3 whole AND per origin (G2), C4 whole (G1) AND
+    per origin, C5a/C5b whole with the denominator floor and per origin only
+    where measurable; undefined pools fail as 'not measurable', never skip (G3).
     """
     cases = load_split("heldout")
     dev_cases = load_split("dev")
