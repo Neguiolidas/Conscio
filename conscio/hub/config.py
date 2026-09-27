@@ -118,17 +118,21 @@ def _valid_env_name(v) -> bool:
     return isinstance(v, str) and len(v) <= 128 and bool(_ENV_RE.match(v))
 
 
-def _check_base_url(bu: str, where: str) -> list[str]:
+def _check_url(u: str, field_name: str, where: str) -> list[str]:
     """Scheme/host allowlist: http(s) only, host required, no embedded creds.
     Blocks file:// reads and credential-in-URL before probe_models urlopens it."""
-    parsed = urllib.parse.urlparse(bu)
+    parsed = urllib.parse.urlparse(u)
     if parsed.scheme not in ("http", "https"):
-        return [f"{where}.base_url must use http or https, got {parsed.scheme!r}"]
+        return [f"{where}.{field_name} must use http or https, got {parsed.scheme!r}"]
     if not parsed.hostname:
-        return [f"{where}.base_url must include a host"]
+        return [f"{where}.{field_name} must include a host"]
     if parsed.username or parsed.password:
-        return [f"{where}.base_url must not embed credentials"]
+        return [f"{where}.{field_name} must not embed credentials"]
     return []
+
+
+def _check_base_url(bu: str, where: str) -> list[str]:
+    return _check_url(bu, "base_url", where)
 
 
 def _check_adapter(block: dict, where: str) -> list[str]:
@@ -154,9 +158,8 @@ def _check_adapter(block: dict, where: str) -> list[str]:
 
 
 def _check_decision_adapter(block: dict, where: str = "decision_adapter") -> list[str]:
-    from ..decision_adapter import DECISION_TYPES
     errs: list[str] = []
-    known = {"type", "model", "base_url", "api_key_env", "api_key_file", "timeout_s"}
+    known = {"url", "model", "api_key_env", "api_key_file", "timeout_s"}
     if "api_key" in block:
         errs.append(f"{where}.api_key is not allowed in config; "
                     f"use api_key_env (the NAME of an environment variable) "
@@ -164,15 +167,12 @@ def _check_decision_adapter(block: dict, where: str = "decision_adapter") -> lis
     for k in block:
         if k not in known and k != "api_key":
             errs.append(f"{where} unknown key {k!r}")
-    atype = block.get("type")
-    if atype not in DECISION_TYPES:
-        errs.append(f"{where}.type must be one of {DECISION_TYPES}, got {atype!r}")
-    bu = block.get("base_url")
-    if bu is not None:
-        if not isinstance(bu, str):
-            errs.append(f"{where}.base_url must be a string")
+    u = block.get("url")
+    if u is not None:
+        if not isinstance(u, str):
+            errs.append(f"{where}.url must be a string")
         else:
-            errs += _check_base_url(bu, where)
+            errs += _check_url(u, "url", where)
     env = block.get("api_key_env")
     if env is not None and not _valid_env_name(env):
         errs.append(f"{where}.api_key_env must be an ENV VAR NAME "

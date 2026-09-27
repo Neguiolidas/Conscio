@@ -1,13 +1,14 @@
 # tests/test_decision_adapter.py
-"""Tests for DecisionAdapter and POST /v1/systemone contract (v4.8 S3).
+"""Tests for DecisionAdapter and typed decision protocol (v4.8 S3).
 
 Covers:
-- Loader & presets (experiential, typesafe, systemone), validations, and error codes
+- Loader, validations, and error codes
 - Local validation before I/O (raising ValueError)
 - decide() against a loopback stub HTTP server: success, retries (429, 529), no-retry (401),
   network vs timeout, all malformed response variants
 - Fuzzing with deterministic seed (>=2000 mutations) asserting only DecisionError
 - Hub validate and redact tests
+- Dedicated mutation tests M1 to M4
 """
 from __future__ import annotations
 
@@ -118,120 +119,217 @@ def test_loader_bad_block_type_returns_bad_config():
 
 
 def test_loader_inline_api_key_forbidden():
-    cfg = {"decision_adapter": {"type": "experiential", "api_key": "raw-key"}}
+    cfg = {
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
+            "api_key": "raw-key",
+        }
+    }
     assert load_decision_adapter(cfg) == "bad_config"
 
 
 def test_loader_unknown_key_returns_bad_config():
-    cfg = {"decision_adapter": {"type": "experiential", "unknown_key": "val"}}
+    cfg = {
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
+            "unknown_key": "val",
+        }
+    }
     assert load_decision_adapter(cfg) == "bad_config"
 
 
-def test_loader_invalid_type_returns_bad_config():
+def test_loader_rejects_type_key_as_unknown():
+    """M2: The 'type' key is unknown and must be rejected with 'bad_config'."""
+    cfg = {
+        "decision_adapter": {
+            "type": "custom",
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
+        }
+    }
+    assert load_decision_adapter(cfg) == "bad_config"
     assert load_decision_adapter({"decision_adapter": {"type": "bogus"}}) == "bad_config"
     assert load_decision_adapter({"decision_adapter": {"type": 123}}) == "bad_config"
 
 
-def test_loader_presets_defaults(monkeypatch):
-    monkeypatch.setenv("EXPERIENTIAL_API_KEY", "exp-key-123")
-    monkeypatch.setenv("TYPESAFE_API_KEY", "typesafe-key-456")
+def test_loader_valid_config(monkeypatch):
+    monkeypatch.setenv("DECISION_API_KEY", "dec-key-123")
 
-    # experiential preset
-    ad_exp = load_decision_adapter({"decision_adapter": {"type": "experiential"}})
-    assert isinstance(ad_exp, DecisionAdapter)
-    assert ad_exp.type == "experiential"
-    assert ad_exp.base_url == "https://api.experientiallabs.ai"
-    assert ad_exp.model == "jev-latest"
-    assert ad_exp.api_key_env == "EXPERIENTIAL_API_KEY"
-    assert ad_exp.api_key == "exp-key-123"
-    assert ad_exp.timeout_s == DEFAULT_TIMEOUT_S
-
-    # typesafe preset
-    ad_ts = load_decision_adapter({"decision_adapter": {"type": "typesafe"}})
-    assert isinstance(ad_ts, DecisionAdapter)
-    assert ad_ts.type == "typesafe"
-    assert ad_ts.base_url == "https://api.typesafe.ai"
-    assert ad_ts.model == "jev-latest"
-    assert ad_ts.api_key_env == "TYPESAFE_API_KEY"
-    assert ad_ts.api_key == "typesafe-key-456"
-
-    # repr does not expose the key
-    assert "exp-key-123" not in repr(ad_exp)
-    assert "typesafe-key-456" not in repr(ad_ts)
-
-
-def test_loader_systemone_requires_base_url_and_api_key_env(monkeypatch):
-    monkeypatch.setenv("CUSTOM_KEY", "custom-secret")
-
-    # missing base_url
-    cfg1 = {"decision_adapter": {"type": "systemone", "api_key_env": "CUSTOM_KEY"}}
-    assert load_decision_adapter(cfg1) == "bad_config"
-
-    # missing api_key_env
-    cfg2 = {"decision_adapter": {"type": "systemone", "base_url": "https://custom.endpoint.com"}}
-    assert load_decision_adapter(cfg2) == "bad_config"
-
-    # valid systemone
-    cfg3 = {
+    cfg = {
         "decision_adapter": {
-            "type": "systemone",
-            "base_url": "https://custom.endpoint.com",
-            "api_key_env": "CUSTOM_KEY",
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
         }
     }
-    ad = load_decision_adapter(cfg3)
+    ad = load_decision_adapter(cfg)
     assert isinstance(ad, DecisionAdapter)
-    assert ad.type == "systemone"
-    assert ad.base_url == "https://custom.endpoint.com"
-    assert ad.api_key_env == "CUSTOM_KEY"
-    assert ad.api_key == "custom-secret"
-    assert ad.model == "jev-latest"
+    assert ad.url == "https://decision.example/v1/decide"
+    assert ad.model == "jev"
+    assert ad.api_key_env == "DECISION_API_KEY"
+    assert ad.api_key == "dec-key-123"
+    assert ad.timeout_s == DEFAULT_TIMEOUT_S
+
+    # repr does not expose the key
+    assert "dec-key-123" not in repr(ad)
+
+
+def test_loader_missing_url_returns_bad_config(monkeypatch):
+    monkeypatch.setenv("DECISION_API_KEY", "k")
+    assert load_decision_adapter({
+        "decision_adapter": {
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
+        }
+    }) == "bad_config"
+    assert load_decision_adapter({
+        "decision_adapter": {
+            "url": "",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
+        }
+    }) == "bad_config"
+    assert load_decision_adapter({
+        "decision_adapter": {
+            "url": "   ",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
+        }
+    }) == "bad_config"
+
+
+def test_loader_missing_model_returns_bad_config(monkeypatch):
+    """M3: Missing model has no default and must be rejected with 'bad_config'."""
+    monkeypatch.setenv("DECISION_API_KEY", "k")
+    # missing model
+    assert load_decision_adapter({
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "api_key_env": "DECISION_API_KEY",
+        }
+    }) == "bad_config"
+    # empty model
+    assert load_decision_adapter({
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "",
+            "api_key_env": "DECISION_API_KEY",
+        }
+    }) == "bad_config"
+    # whitespace model
+    assert load_decision_adapter({
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "   ",
+            "api_key_env": "DECISION_API_KEY",
+        }
+    }) == "bad_config"
+
+
+def test_loader_missing_both_key_sources_returns_bad_config():
+    """M4: Neither api_key_env nor api_key_file present must return 'bad_config'."""
+    cfg = {
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+        }
+    }
+    assert load_decision_adapter(cfg) == "bad_config"
 
 
 def test_loader_timeout_validation(monkeypatch):
-    monkeypatch.setenv("EXPERIENTIAL_API_KEY", "k")
+    monkeypatch.setenv("DECISION_API_KEY", "k")
 
     for bad_t in (0, -1, -5.5, float("nan"), float("inf"), float("-inf"), 1e400, True, False, "10"):
-        cfg = {"decision_adapter": {"type": "experiential", "timeout_s": bad_t}}
+        cfg = {
+            "decision_adapter": {
+                "url": "https://decision.example/v1/decide",
+                "model": "jev",
+                "api_key_env": "DECISION_API_KEY",
+                "timeout_s": bad_t,
+            }
+        }
         assert load_decision_adapter(cfg) == "bad_config"
 
     # finite valid timeout
-    cfg_ok = {"decision_adapter": {"type": "experiential", "timeout_s": 25.5}}
+    cfg_ok = {
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
+            "timeout_s": 25.5,
+        }
+    }
     ad = load_decision_adapter(cfg_ok)
     assert isinstance(ad, DecisionAdapter)
     assert ad.timeout_s == 25.5
 
 
-def test_loader_base_url_validation(monkeypatch):
-    monkeypatch.setenv("EXPERIENTIAL_API_KEY", "k")
+def test_loader_url_validation(monkeypatch):
+    monkeypatch.setenv("DECISION_API_KEY", "k")
 
     # http outside loopback is rejected
     assert load_decision_adapter(
-        {"decision_adapter": {"type": "experiential", "base_url": "http://api.external.com"}}
+        {
+            "decision_adapter": {
+                "url": "http://api.external.com/v1/decide",
+                "model": "jev",
+                "api_key_env": "DECISION_API_KEY",
+            }
+        }
     ) == "bad_config"
 
     # ftp / file / non-http(s) rejected
     assert load_decision_adapter(
-        {"decision_adapter": {"type": "experiential", "base_url": "file:///etc/passwd"}}
+        {
+            "decision_adapter": {
+                "url": "file:///etc/passwd",
+                "model": "jev",
+                "api_key_env": "DECISION_API_KEY",
+            }
+        }
     ) == "bad_config"
 
     # embedded credentials rejected
     assert load_decision_adapter(
-        {"decision_adapter": {"type": "experiential", "base_url": "https://user:pass@api.external.com"}}
+        {
+            "decision_adapter": {
+                "url": "https://user:pass@api.external.com/v1/decide",
+                "model": "jev",
+                "api_key_env": "DECISION_API_KEY",
+            }
+        }
     ) == "bad_config"
 
     # http on 127.0.0.1 or localhost is allowed
     ad1 = load_decision_adapter(
-        {"decision_adapter": {"type": "experiential", "base_url": "http://127.0.0.1:8080/v1/"}}
+        {
+            "decision_adapter": {
+                "url": "http://127.0.0.1:8080/v1/decide",
+                "model": "jev",
+                "api_key_env": "DECISION_API_KEY",
+            }
+        }
     )
     assert isinstance(ad1, DecisionAdapter)
-    assert ad1.base_url == "http://127.0.0.1:8080/v1"  # rstrip('/')
+    assert ad1.url == "http://127.0.0.1:8080/v1/decide"
 
     ad2 = load_decision_adapter(
-        {"decision_adapter": {"type": "experiential", "base_url": "http://localhost:5000"}}
+        {
+            "decision_adapter": {
+                "url": "http://localhost:5000/decide",
+                "model": "jev",
+                "api_key_env": "DECISION_API_KEY",
+            }
+        }
     )
     assert isinstance(ad2, DecisionAdapter)
-    assert ad2.base_url == "http://localhost:5000"
+    assert ad2.url == "http://localhost:5000/decide"
 
 
 def test_loader_key_resolution_order_and_file(tmp_path, monkeypatch):
@@ -245,8 +343,8 @@ def test_loader_key_resolution_order_and_file(tmp_path, monkeypatch):
 
     cfg = {
         "decision_adapter": {
-            "type": "systemone",
-            "base_url": "https://example.com",
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
             "api_key_env": "TEST_KEY",
             "api_key_file": str(key_file),
         }
@@ -274,8 +372,8 @@ def test_loader_key_resolution_order_and_file(tmp_path, monkeypatch):
     # 4. File holding only OTHER keys -> no_key
     cfg_other = {
         "decision_adapter": {
-            "type": "systemone",
-            "base_url": "https://example.com",
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
             "api_key_env": "NON_EXISTENT_KEY",
             "api_key_file": str(key_file),
         }
@@ -289,8 +387,8 @@ def test_loader_key_resolution_order_and_file(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(fake_home))
     cfg_tilde = {
         "decision_adapter": {
-            "type": "systemone",
-            "base_url": "https://example.com",
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
             "api_key_env": "TEST_KEY",
             "api_key_file": "~/my_key.env",
         }
@@ -300,17 +398,48 @@ def test_loader_key_resolution_order_and_file(tmp_path, monkeypatch):
     assert ad_tilde.api_key == "expanded-home-key"
 
 
+def test_loader_raw_key_file_without_env(tmp_path):
+    """Reading key solely from api_key_file when api_key_env is not specified."""
+    # Plain key on first line
+    key_file = tmp_path / "raw.key"
+    key_file.write_text("raw-secret-key-xyz\n")
+    cfg = {
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_file": str(key_file),
+        }
+    }
+    ad = load_decision_adapter(cfg)
+    assert isinstance(ad, DecisionAdapter)
+    assert ad.api_key == "raw-secret-key-xyz"
+
+    # Key with KEY=val format
+    key_file_kv = tmp_path / "kv.key"
+    key_file_kv.write_text("# comment\nMY_API_KEY=val-secret-456\n")
+    cfg_kv = {
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_file": str(key_file_kv),
+        }
+    }
+    ad_kv = load_decision_adapter(cfg_kv)
+    assert isinstance(ad_kv, DecisionAdapter)
+    assert ad_kv.api_key == "val-secret-456"
+
+
 # ── Local validation tests ───────────────────────────────────────────────────
 
 def test_local_validation_boolean_rejected_with_noul_message():
-    ad = DecisionAdapter("experiential", "https://api.test", "m", "K", None, 10.0, "k")
+    ad = DecisionAdapter("https://decision.example/v1/decide", "m", "DECISION_API_KEY", None, 10.0, "k")
     with pytest.raises(ValueError) as exc:
         ad.decide("state", {"q1": {"type": "boolean"}})
     assert "use 'noul' instead" in str(exc.value)
 
 
 def test_local_validation_empty_or_invalid_questions():
-    ad = DecisionAdapter("experiential", "https://api.test", "m", "K", None, 10.0, "k")
+    ad = DecisionAdapter("https://decision.example/v1/decide", "m", "DECISION_API_KEY", None, 10.0, "k")
     with pytest.raises(ValueError):
         ad.decide("state", {})
     with pytest.raises(ValueError):
@@ -324,7 +453,7 @@ def test_local_validation_empty_or_invalid_questions():
 
 
 def test_local_validation_choice_criteria():
-    ad = DecisionAdapter("experiential", "https://api.test", "m", "K", None, 10.0, "k")
+    ad = DecisionAdapter("https://decision.example/v1/decide", "m", "DECISION_API_KEY", None, 10.0, "k")
     # missing criteria
     with pytest.raises(ValueError):
         ad.decide("state", {"q1": {"type": "choice"}})
@@ -338,7 +467,7 @@ def test_local_validation_choice_criteria():
 
 
 def test_local_validation_score_criteria():
-    ad = DecisionAdapter("experiential", "https://api.test", "m", "K", None, 10.0, "k")
+    ad = DecisionAdapter("https://decision.example/v1/decide", "m", "DECISION_API_KEY", None, 10.0, "k")
     # missing criteria
     with pytest.raises(ValueError):
         ad.decide("state", {"q1": {"type": "score"}})
@@ -354,7 +483,7 @@ def test_local_validation_score_criteria():
 def test_local_validation_does_zero_network_requests():
     server, port, requests = start_stub(lambda i, r: (200, {}, None))
     try:
-        ad = DecisionAdapter("systemone", f"http://127.0.0.1:{port}", "m", "K", None, 10.0, "k")
+        ad = DecisionAdapter(f"http://127.0.0.1:{port}/v1/decide", "m", "DECISION_API_KEY", None, 10.0, "k")
         with pytest.raises(ValueError):
             ad.decide("state", {"q1": {"type": "boolean"}})
         with pytest.raises(ValueError):
@@ -381,7 +510,7 @@ def test_decide_choice_success():
     }
     server, port, requests = start_stub(lambda i, r: (200, resp_body, None))
     try:
-        ad = DecisionAdapter("systemone", f"http://127.0.0.1:{port}", "test-model", "K", None, 10.0, "secret-bearer")
+        ad = DecisionAdapter(f"http://127.0.0.1:{port}/v1/decide", "test-model", "DECISION_API_KEY", None, 10.0, "secret-bearer")
         questions = {
             "q_proceed": {
                 "type": "choice",
@@ -402,12 +531,33 @@ def test_decide_choice_success():
         # Verify request headers and path
         assert len(requests) == 1
         req = requests[0]
-        assert req["path"] == "/v1/systemone"
+        assert req["path"] == "/v1/decide"
         assert req["headers"]["Authorization"] == "Bearer secret-bearer"
         assert req["headers"]["Content-Type"] == "application/json"
         assert req["body"]["model"] == "test-model"
         assert req["body"]["questions"] == questions
         assert req["body"]["state"] == {"ctx": 123}
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_decide_posts_to_exact_url_without_appending_path():
+    """M1: The adapter posts to the exact path in url, never appending a suffix."""
+    server, port, requests = start_stub(lambda i, r: (200, _canonical_choice_response(), None))
+    custom_path = "/my/custom/path"
+    try:
+        ad = DecisionAdapter(
+            url=f"http://127.0.0.1:{port}{custom_path}",
+            model="jev",
+            api_key_env="DECISION_API_KEY",
+            api_key_file=None,
+            timeout_s=10.0,
+            api_key="secret-key",
+        )
+        ad.decide({}, {"q_choice": {"type": "choice", "criteria": {"proceed": "", "hold": "", "veto": ""}}})
+        assert len(requests) == 1
+        assert requests[0]["path"] == custom_path
     finally:
         server.shutdown()
         server.server_close()
@@ -425,7 +575,7 @@ def test_decide_noul_success():
     }
     server, port, _requests = start_stub(lambda i, r: (200, resp_body, None))
     try:
-        ad = DecisionAdapter("systemone", f"http://127.0.0.1:{port}", "m", "K", None, 10.0, "k")
+        ad = DecisionAdapter(f"http://127.0.0.1:{port}/v1/decide", "m", "DECISION_API_KEY", None, 10.0, "k")
         dec = ad.decide({}, {"q_prob": {"type": "noul"}})
         assert dec.answers["q_prob"] == Answer(
             type="noul",
@@ -452,7 +602,7 @@ def test_decide_score_success():
     }
     server, port, _requests = start_stub(lambda i, r: (200, resp_body, None))
     try:
-        ad = DecisionAdapter("systemone", f"http://127.0.0.1:{port}", "m", "K", None, 10.0, "k")
+        ad = DecisionAdapter(f"http://127.0.0.1:{port}/v1/decide", "m", "DECISION_API_KEY", None, 10.0, "k")
         dec = ad.decide(
             {},
             {"q_score": {"type": "score", "criteria": {"1": "Low", "2": "Med", "3": "High"}}},
@@ -482,7 +632,7 @@ def test_decide_retries_429_and_529_then_succeeds(monkeypatch):
 
     server, port, requests = start_stub(responder)
     try:
-        ad = DecisionAdapter("systemone", f"http://127.0.0.1:{port}", "m", "K", None, 10.0, "k")
+        ad = DecisionAdapter(f"http://127.0.0.1:{port}/v1/decide", "m", "DECISION_API_KEY", None, 10.0, "k")
         dec = ad.decide({}, {"q_choice": {"type": "choice", "criteria": {"proceed": "", "hold": "", "veto": ""}}})
         assert isinstance(dec, Decision)
         assert len(requests) == 3
@@ -497,7 +647,7 @@ def test_decide_401_fails_immediately_without_retry():
 
     server, port, requests = start_stub(responder)
     try:
-        ad = DecisionAdapter("systemone", f"http://127.0.0.1:{port}", "m", "K", None, 10.0, "k")
+        ad = DecisionAdapter(f"http://127.0.0.1:{port}/v1/decide", "m", "DECISION_API_KEY", None, 10.0, "k")
         with pytest.raises(DecisionError) as exc:
             ad.decide({}, {"q_choice": {"type": "choice", "criteria": {"proceed": "", "hold": "", "veto": ""}}})
         assert exc.value.status == "http_401"
@@ -515,7 +665,7 @@ def test_decide_deadline_exhaustion_raises_timeout():
     server, port, _requests = start_stub(responder)
     try:
         # timeout_s very small
-        ad = DecisionAdapter("systemone", f"http://127.0.0.1:{port}", "m", "K", None, 0.03, "k")
+        ad = DecisionAdapter(f"http://127.0.0.1:{port}/v1/decide", "m", "DECISION_API_KEY", None, 0.03, "k")
         with pytest.raises(DecisionError) as exc:
             ad.decide({}, {"q_choice": {"type": "choice", "criteria": {"proceed": "", "hold": "", "veto": ""}}})
         assert exc.value.status == "timeout"
@@ -531,7 +681,7 @@ def test_decide_network_error_with_healthy_deadline_raises_network(monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
 
-    ad = DecisionAdapter("systemone", "http://127.0.0.1:9", "m", "K", None, 30.0, "k")
+    ad = DecisionAdapter("http://127.0.0.1:9/v1/decide", "m", "DECISION_API_KEY", None, 30.0, "k")
     with pytest.raises(DecisionError) as exc:
         ad.decide({}, {"q_choice": {"type": "choice", "criteria": {"proceed": "", "hold": "", "veto": ""}}})
     assert exc.value.status == "network"
@@ -539,7 +689,7 @@ def test_decide_network_error_with_healthy_deadline_raises_network(monkeypatch):
 
 def test_decide_connection_refused_raises_network():
     # Connecting to closed port on loopback
-    ad = DecisionAdapter("systemone", "http://127.0.0.1:1", "m", "K", None, 5.0, "k")
+    ad = DecisionAdapter("http://127.0.0.1:1/v1/decide", "m", "DECISION_API_KEY", None, 5.0, "k")
     with pytest.raises(DecisionError) as exc:
         ad.decide({}, {"q_choice": {"type": "choice", "criteria": {"proceed": "", "hold": "", "veto": ""}}})
     assert exc.value.status == "network"
@@ -620,7 +770,7 @@ def test_decide_connection_refused_raises_network():
 def test_decide_malformed_variants(bad_payload):
     server, port, _ = start_stub(lambda i, r: (200, None, bad_payload))
     try:
-        ad = DecisionAdapter("systemone", f"http://127.0.0.1:{port}", "m", "K", None, 10.0, "k")
+        ad = DecisionAdapter(f"http://127.0.0.1:{port}/v1/decide", "m", "DECISION_API_KEY", None, 10.0, "k")
         with pytest.raises(DecisionError) as exc:
             ad.decide({}, {"q_choice": {"type": "choice", "criteria": {"proceed": "", "hold": "", "veto": ""}}})
         assert exc.value.status == "malformed"
@@ -686,7 +836,7 @@ def test_fuzz_decide_contract_never_raises_unexpected_exceptions():
         def read(self):
             return self._data
 
-    ad_mock = DecisionAdapter("systemone", "http://127.0.0.1:0", "m", "K", None, 10.0, "k")
+    ad_mock = DecisionAdapter("http://127.0.0.1:0/v1/decide", "m", "DECISION_API_KEY", None, 10.0, "k")
     violations: list[str] = []
 
     for i in range(2000):
@@ -743,7 +893,9 @@ def test_hub_validate_rejects_inline_api_key_in_decision_adapter():
         "model": "m",
         "adapter": {"type": "openai"},
         "decision_adapter": {
-            "type": "experiential",
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
             "api_key": "raw-key-secret",
         },
     }
@@ -756,7 +908,9 @@ def test_hub_validate_rejects_unknown_keys_in_decision_adapter():
         "model": "m",
         "adapter": {"type": "openai"},
         "decision_adapter": {
-            "type": "experiential",
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
             "mystery_key": "foo",
         },
     }
@@ -764,16 +918,19 @@ def test_hub_validate_rejects_unknown_keys_in_decision_adapter():
     assert any("decision_adapter unknown key 'mystery_key'" in e for e in errs)
 
 
-def test_hub_validate_rejects_invalid_type_in_decision_adapter():
+def test_hub_validate_rejects_type_key_in_decision_adapter():
     cfg = {
         "model": "m",
         "adapter": {"type": "openai"},
         "decision_adapter": {
             "type": "not-a-type",
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
         },
     }
     errs = hub_config.validate(cfg)
-    assert any("decision_adapter.type must be one of" in e for e in errs)
+    assert any("decision_adapter unknown key 'type'" in e for e in errs)
 
 
 def test_hub_validate_accepts_valid_decision_adapter():
@@ -781,7 +938,9 @@ def test_hub_validate_accepts_valid_decision_adapter():
         "model": "m",
         "adapter": {"type": "openai"},
         "decision_adapter": {
-            "type": "experiential",
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
         },
     }
     assert hub_config.validate(cfg) == []
@@ -789,50 +948,52 @@ def test_hub_validate_accepts_valid_decision_adapter():
 
 def test_hub_redact_masks_api_key_in_decision_adapter(tmp_path, monkeypatch):
     monkeypatch.setenv("CONSCIO_VAULT_DIR", str(tmp_path))
-    (tmp_path / "EXP_KEY").write_text("secret-in-vault\n")
+    (tmp_path / "DECISION_API_KEY").write_text("secret-in-vault\n")
 
     cfg = {
         "model": "m",
         "adapter": {"type": "openai"},
         "decision_adapter": {
-            "type": "experiential",
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
             "api_key": "raw-inline-secret",
-            "api_key_env": "EXP_KEY",
+            "api_key_env": "DECISION_API_KEY",
         },
     }
     redacted = hub_config.redact(cfg)
     da = redacted["decision_adapter"]
     assert "api_key" not in da
     assert da["api_key_present"] is True
-    assert da["type"] == "experiential"
+    assert da["url"] == "https://decision.example/v1/decide"
+    assert da["model"] == "jev"
 
 
 # ── G33b Construction validation and security teeth ─────────────────────────
 
 def test_direct_construction_with_file_url_raises_valueerror_and_no_io(monkeypatch):
     def _explode(*args, **kwargs):
-        raise AssertionError("urlopen must NEVER be called on invalid base_url construction")
+        raise AssertionError("urlopen must NEVER be called on invalid url construction")
 
     monkeypatch.setattr(urllib.request, "urlopen", _explode)
-    with pytest.raises(ValueError, match="Invalid base_url"):
-        DecisionAdapter("systemone", "file:///etc/hostname#", "m", "K", None, 10.0, "secret-key")
+    with pytest.raises(ValueError, match="Invalid url"):
+        DecisionAdapter("file:///etc/hostname#", "m", "DECISION_API_KEY", None, 10.0, "secret-key")
 
 
 @pytest.mark.parametrize("bad_timeout", [float("nan"), float("inf"), 0, -1, -0.5, 0.0, True, False])
 def test_construction_invalid_timeout_s_raises_valueerror(bad_timeout):
     with pytest.raises(ValueError, match="timeout_s must be"):
-        DecisionAdapter("systemone", "https://api.example.com", "m", "K", None, bad_timeout, "secret-key")
+        DecisionAdapter("https://api.example.com/v1/decide", "m", "DECISION_API_KEY", None, bad_timeout, "secret-key")
 
 
 @pytest.mark.parametrize("bad_key", ["secret\nkey", "secret\x00key", "secret\rkey", ""])
 def test_construction_invalid_api_key_raises_valueerror(bad_key):
     with pytest.raises(ValueError, match="api_key"):
-        DecisionAdapter("systemone", "https://api.example.com", "m", "K", None, 10.0, bad_key)
+        DecisionAdapter("https://api.example.com/v1/decide", "m", "DECISION_API_KEY", None, 10.0, bad_key)
 
 
 def test_transport_exception_never_leaks_secret_key_in_str_repr_args_traceback(monkeypatch):
     secret_key = "TOP_SECRET_API_KEY_xyz123"
-    ad = DecisionAdapter("systemone", "https://api.example.com", "m", "K", None, 10.0, secret_key)
+    ad = DecisionAdapter("https://api.example.com/v1/decide", "m", "DECISION_API_KEY", None, 10.0, secret_key)
 
     def _exploding_urlopen(req, timeout):
         raise ValueError(f"bad header Authorization: Bearer {secret_key}")
@@ -856,7 +1017,7 @@ def test_transport_exception_never_leaks_secret_key_in_str_repr_args_traceback(m
 
 
 def test_local_validation_state_rejects_nan_and_non_serializable_without_io(monkeypatch):
-    ad = DecisionAdapter("systemone", "https://api.example.com", "m", "K", None, 10.0, "key")
+    ad = DecisionAdapter("https://api.example.com/v1/decide", "m", "DECISION_API_KEY", None, 10.0, "key")
 
     def _explode(*args, **kwargs):
         raise AssertionError("urlopen must NEVER be called on invalid state")
@@ -884,15 +1045,14 @@ def test_local_validation_state_rejects_nan_and_non_serializable_without_io(monk
 def test_construction_non_ascii_key_raises_valueerror_and_loader_returns_bad_config(monkeypatch):
     bad_key = "SECRET€KEY"
     with pytest.raises(ValueError) as exc_info:
-        DecisionAdapter("systemone", "https://api.example.com", "m", "K", None, 10.0, bad_key)
+        DecisionAdapter("https://api.example.com/v1/decide", "m", "DECISION_API_KEY", None, 10.0, bad_key)
     err_msg = str(exc_info.value)
     assert bad_key not in err_msg
 
     monkeypatch.setenv("CONSCIO_DECISION_KEY_NONASCII", bad_key)
     cfg = {
         "decision_adapter": {
-            "type": "systemone",
-            "base_url": "https://api.example.com",
+            "url": "https://api.example.com/v1/decide",
             "model": "m",
             "api_key_env": "CONSCIO_DECISION_KEY_NONASCII",
             "timeout_s": 10.0,
@@ -926,7 +1086,7 @@ def test_construction_non_ascii_key_raises_valueerror_and_loader_returns_bad_con
 )
 def test_transport_exceptions_clean_context_and_no_leak(monkeypatch, exc_factory):
     secret_key = "TOP_SECRET_API_KEY_xyz123"
-    ad = DecisionAdapter("systemone", "https://api.example.com", "m", "K", None, 10.0, secret_key)
+    ad = DecisionAdapter("https://api.example.com/v1/decide", "m", "DECISION_API_KEY", None, 10.0, secret_key)
 
     exc_to_raise = exc_factory(secret_key)
 
@@ -978,8 +1138,8 @@ def test_envelope_top_level_keys_are_exact():
     server, port, requests = start_stub(
         lambda i, r: (200, _canonical_choice_response(), None))
     try:
-        ad = DecisionAdapter("systemone", f"http://127.0.0.1:{port}",
-                             "m", "K", None, 10.0, "k")
+        ad = DecisionAdapter(f"http://127.0.0.1:{port}/v1/decide",
+                             "m", "DECISION_API_KEY", None, 10.0, "k")
         ad.decide({"ctx": 1}, {"q_choice": {"type": "choice",
                                              "criteria": {"proceed": "",
                                                           "hold": "",
@@ -1017,8 +1177,8 @@ def test_decide_rejects_out_of_range_confidence(bad_conf, why):
     server, port, _ = start_stub(
         lambda i, r: (200, _choice_response_with_confidence(bad_conf), None))
     try:
-        ad = DecisionAdapter("systemone", f"http://127.0.0.1:{port}",
-                             "m", "K", None, 10.0, "k")
+        ad = DecisionAdapter(f"http://127.0.0.1:{port}/v1/decide",
+                             "m", "DECISION_API_KEY", None, 10.0, "k")
         with pytest.raises(DecisionError) as exc:
             ad.decide({}, {"q_choice": {"type": "choice",
                                          "criteria": {"proceed": "",
@@ -1043,8 +1203,8 @@ def test_loader_non_utf8_key_file_is_no_key(tmp_path, monkeypatch):
     monkeypatch.delenv("TEST_KEY_X", raising=False)
     assert load_decision_adapter({
         "decision_adapter": {
-            "type": "systemone",
-            "base_url": "https://example.com",
+            "url": "https://example.com/v1/decide",
+            "model": "m",
             "api_key_env": "TEST_KEY_X",
             "api_key_file": str(key_file),
         },
