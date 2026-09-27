@@ -242,14 +242,13 @@ class DecisionAdapter:
         # Transport errors must strictly maintain the invariant:
         # __cause__ is None and __context__ is None, leaving zero reference
         # to original transport exceptions (preventing secret key leakage).
+        # Raising outside all except blocks ensures Python does not attach
+        # active exception context (__context__ remains None).
         if err_status is None and raw is None:
             err_status = "network"
 
         if err_status is not None:
-            err = DecisionError(err_status)
-            setattr(err, "__cause__", None)
-            setattr(err, "__context__", None)
-            raise err
+            raise DecisionError(err_status)
 
         assert raw is not None
         return raw
