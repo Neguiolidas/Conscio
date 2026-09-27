@@ -60,13 +60,24 @@ from dataclasses import dataclass
 
 #: Local negators: cancel the trigger within the 3-word window before it
 #: (and, when a comma lies between, over a comma list of 4-5 words).
+#: Includes apostropheless contractions (spec 5.1 item 8, H51 finding 2).
 LOCAL_NEGATORS = frozenset({
     "no", "not", "without", "never", "missing", "none",
     "cannot", "lack", "lacks", "lacking",
+    "dont", "doesnt", "didnt", "isnt", "arent", "wasnt", "werent",
+    "hasnt", "havent", "hadnt", "cant", "couldnt", "wont", "wouldnt", "shouldnt",
 })
 #: Clause negators: cancel every trigger later in the SAME sentence
 #: (a null subject negates the whole predicate: "nobody ... has reviewed").
 CLAUSE_NEGATORS = frozenset({"nobody", "nothing"})
+#: Mitigator traits: post-trigger absence predicates apply ONLY to these three
+#: (spec 5.1 item 7, H51 finding 1; cancelling risk traits post-trigger is prohibited).
+_MITIGATOR_TRAITS = frozenset({"reversible", "verified", "low_stakes"})
+#: Closed list of post-trigger absence words (spec 5.1 item 7).
+#: "not available" is handled specially as a two-word phrase.
+_POST_ABSENCE_WORDS = frozenset({
+    "none", "missing", "nonexistent", "absent", "unavailable",
+})
 #: A token ending in n't (straight) or n\u2019t (curly) is a local negator
 #: (don't, isn't, hasn't, doesn\u2019t, ...). The two apostrophe types are
 #: kept separate so each is independently pinned by a teeth test.
@@ -243,45 +254,61 @@ def _light_in_segment(segment: str, lit: dict[str, bool]) -> None:
     for name, patterns in _COMPILED.items():
         if lit[name]:
             continue
+        is_mitigator = name in _MITIGATOR_TRAITS
         for pattern, _where in patterns:
             for match in pattern.finditer(segment):
-                q = _first_word_index(match.start(), spans)
-                if not _trigger_negated(segment, words, spans, breaks, q):
+                first_w, last_w = _trigger_word_span(match.start(), match.end(), spans)
+                if not _trigger_negated(
+                    segment, words, spans, breaks, first_w, last_w, is_mitigator
+                ):
                     lit[name] = True
                     break
             if lit[name]:
                 break
 
 
-def _first_word_index(match_start: int, spans: list[tuple[int, int]]) -> int:
-    """The index of the first word token at/after ``match_start`` (the
-    trigger's first word; for ``.env`` that is the token after the dot)."""
-    index = 0
-    while index < len(spans) and spans[index][0] < match_start:
-        index += 1
-    return index
+def _trigger_word_span(
+    match_start: int, match_end: int, spans: list[tuple[int, int]]
+) -> tuple[int, int]:
+    """Return (first_word_idx, last_word_idx) for the trigger match."""
+    first = 0
+    while first < len(spans) and spans[first][0] < match_start:
+        first += 1
+    last = first
+    while last < len(spans) and spans[last][0] < match_end:
+        last += 1
+    return first, max(first, last - 1)
 
 
 def _trigger_negated(
-    segment: str, words: list[str], spans: list[tuple[int, int]],
-    breaks: list[int], q: int,
+    segment: str,
+    words: list[str],
+    spans: list[tuple[int, int]],
+    breaks: list[int],
+    first_w: int,
+    last_w: int,
+    is_mitigator: bool,
 ) -> bool:
-    """True when the trigger occurrence at word index ``q`` is cancelled by
-    a negation word.
+    """True when the trigger occurrence spanning [first_w, last_w] is cancelled.
 
-    Scans backwards from the trigger to the start of the sentence: a
-    clause negator (``nobody``/``nothing``) cancels at any distance; a
-    local negator cancels within NEGATION_WINDOW words, or at
-    _COMMA_RULE distance when a comma lies between (list distribution).
-    The scan stops at the first sentence end (``breaks``) and never
-    leaves the segment. The trigger's own first word is never in the
-    window, so atomic negation-start phrases cannot self-cancel."""
-    for j in range(q - 1, -1, -1):
+    Pre-trigger: scans backwards from first_w. A clause negator (nobody/nothing)
+    cancels at any distance in the same sentence; a local negator cancels within
+    NEGATION_WINDOW words, or at _COMMA_RULE distance when a comma lies between.
+    Stops at sentence ends. Applies to all nine traits.
+
+    Post-trigger (spec 5.1 item 7): applies ONLY to the three mitigator traits
+    (reversible, verified, low_stakes). Scans forward up to NEGATION_WINDOW words
+    from last_w. A closed list of absence predicates (none, missing, nonexistent,
+    absent, unavailable, 'not available') cancels the occurrence. Partitive 'none of'
+    does not cancel. General negators do not cancel post-trigger. Stops at sentence ends.
+    """
+    # 1. Pre-trigger negation (all nine traits)
+    for j in range(first_w - 1, -1, -1):
         lo, hi = spans[j][1], spans[j + 1][0]
         if any(lo <= p <= hi for p in breaks):
             break
         norm = words[j].lower()
-        gap = q - j
+        gap = first_w - j
         if norm in CLAUSE_NEGATORS:
             return True
         is_contraction = norm.endswith((_N_T_STRAIGHT, _N_T_CURLY))
@@ -289,8 +316,36 @@ def _trigger_negated(
             if gap <= NEGATION_WINDOW:
                 return True
             if _COMMA_RULE[0] <= gap <= _COMMA_RULE[1] \
-                    and "," in segment[spans[j][1]:spans[q][0]]:
+                    and "," in segment[spans[j][1]:spans[first_w][0]]:
                 return True
+
+    # 2. Post-trigger absence predicate negation (mitigators only)
+    if is_mitigator:
+        for k in range(last_w + 1, min(len(words), last_w + 1 + NEGATION_WINDOW)):
+            lo, hi = spans[k - 1][1], spans[k][0]
+            if any(lo <= p <= hi for p in breaks):
+                break
+            norm = words[k].lower()
+            if norm == "none":
+                # Partitive exception: "none" followed by "of" is not an absence predicate
+                is_partitive = False
+                if k + 1 < len(words):
+                    lo_n, hi_n = spans[k][1], spans[k + 1][0]
+                    if not any(lo_n <= p <= hi_n for p in breaks):
+                        if words[k + 1].lower() == "of":
+                            is_partitive = True
+                if not is_partitive:
+                    return True
+            elif norm in _POST_ABSENCE_WORDS:
+                return True
+            elif norm == "not":
+                # Check for two-word phrase "not available"
+                if k + 1 < len(words):
+                    lo_n, hi_n = spans[k][1], spans[k + 1][0]
+                    if not any(lo_n <= p <= hi_n for p in breaks):
+                        if words[k + 1].lower() == "available":
+                            return True
+
     return False
 
 

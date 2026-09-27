@@ -11,6 +11,12 @@ at segment joins; the comma stays inside the window (list distribution);
 nobody/nothing have clause scope; n't contractions (straight and curly
 apostrophe) and lack/lacks/lacking/cannot/missing/none/never are
 negators; the dots of .env and 1.5 do not end a sentence.
+
+G34 (post-trigger absence and contractions emenda 2026-09-27, H51 findings 1
+and 2): post-trigger absence predicates for mitigators within 3 words (none,
+missing, nonexistent, absent, unavailable, not available); partitive none of
+exception; absence predicates do not cancel risk traits; general negators
+do not cancel post-trigger; 15 apostropheless contractions as local negators.
 """
 from __future__ import annotations
 
@@ -202,3 +208,70 @@ def test_decimal_and_env_dots_do_not_break_the_window():
     still lights data_exposure."""
     assert extract_traits("no 1.5 backup").reversible is False
     assert extract_traits("print the .env to the log").data_exposure is True
+
+
+# ── G34: post-trigger absence negation & apostropheless contractions ────
+# Spec 2026-09-26 §5.1 items 7 and 8 (H51 findings 1 and 2).
+
+
+def test_post_trigger_none_cancels_reversible():
+    """§5.1 it. 7: 'backup: none.' does not light reversible."""
+    assert extract_traits("backup: none.").reversible is False
+
+
+def test_post_trigger_nonexistent_cancels_reversible():
+    """§5.1 it. 7: 'Rollback plan: nonexistent.' does not light reversible."""
+    assert extract_traits("Rollback plan: nonexistent.").reversible is False
+
+
+def test_post_trigger_not_available_cancels_reversible():
+    """§5.1 it. 7: two-word phrase 'not available' cancels reversible."""
+    assert extract_traits("The rollback is not available.").reversible is False
+
+
+def test_post_trigger_missing_cancels_reversible():
+    """§5.1 it. 7: 'Backup missing.' does not light reversible."""
+    assert extract_traits("Backup missing.").reversible is False
+
+
+def test_apostropheless_contraction_cancels_mitigator():
+    """§5.1 it. 8: 'we dont have a backup' does not light reversible."""
+    assert extract_traits("we dont have a backup").reversible is False
+
+
+@pytest.mark.parametrize("neg", [
+    "dont", "doesnt", "didnt", "isnt", "arent", "wasnt", "werent",
+    "hasnt", "havent", "hadnt", "cant", "couldnt", "wont", "wouldnt", "shouldnt",
+])
+def test_all_apostropheless_contractions_cancel(neg: str):
+    """§5.1 it. 8: each of the 15 apostropheless contractions cancels mitigators."""
+    assert extract_traits(f"we {neg} have a backup").reversible is False
+
+
+def test_drop_orders_table_nothing_else_keeps_irreversible_lit():
+    """§5.1 it. 7: 'Drop the orders table, nothing else.' keeps irreversible lit."""
+    assert extract_traits("Drop the orders table, nothing else.").irreversible is True
+
+
+def test_verified_in_staging_no_issues_keeps_verified_and_staging_lit():
+    """§5.1 it. 7: general negator post-trigger ('no issues') does not cancel mitigators."""
+    traits = extract_traits("Verified in staging, no issues.")
+    assert traits.verified is True
+    assert traits.reversible is True
+
+
+def test_none_of_partitive_does_not_cancel_low_stakes():
+    """§5.1 it. 7: partitive 'none of' does not cancel low_stakes."""
+    assert extract_traits("It is a typo fix, none of the users are affected.").low_stakes is True
+
+
+def test_we_have_a_backup_keeps_reversible_lit():
+    """Baseline: positive mitigator without absence predicate lights reversible."""
+    assert extract_traits("We have a backup.").reversible is True
+
+
+def test_post_trigger_absence_does_not_cancel_risk_traits():
+    """§5.1 it. 7: post-trigger absence predicate applies ONLY to mitigators.
+    Risk traits like blast_radius are never cancelled post-trigger."""
+    assert extract_traits("Production is unavailable.").blast_radius is True
+
