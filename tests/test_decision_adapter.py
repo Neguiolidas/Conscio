@@ -964,3 +964,89 @@ def test_transport_exceptions_clean_context_and_no_leak(monkeypatch, exc_factory
             assert secret_key not in str(curr.object)
         curr = curr.__cause__ or curr.__context__
 
+
+# ── A57 successors (cases moved out of the old judge transport tests) ──
+# The judge no longer owns transport; the cases it used to pin now live
+# here, next to the code that owns them. The A57 report carries the full
+# migration table.
+
+def test_envelope_top_level_keys_are_exact():
+    """Successor of the judge's old loose-body teeth (A56): the request
+    body is exactly {model, state, questions} at the root — no extra
+    top-level key ever (the T5 defect was a root-level question with
+    no model and no questions map)."""
+    server, port, requests = start_stub(
+        lambda i, r: (200, _canonical_choice_response(), None))
+    try:
+        ad = DecisionAdapter("systemone", f"http://127.0.0.1:{port}",
+                             "m", "K", None, 10.0, "k")
+        ad.decide({"ctx": 1}, {"q_choice": {"type": "choice",
+                                             "criteria": {"proceed": "",
+                                                          "hold": "",
+                                                          "veto": ""}}})
+        assert set(requests[0]["body"]) == {"model", "state", "questions"}
+        assert set(requests[0]["body"]["questions"]) == {"q_choice"}
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _choice_response_with_confidence(confidence: Any) -> dict:
+    body: dict[str, Any] = {
+        "model": "jev-latest",
+        "answers": {
+            "q_choice": {
+                "type": "choice",
+                "choice": "proceed",
+                "probabilities": {"proceed": 0.9, "hold": 0.05, "veto": 0.05},
+            }
+        },
+    }
+    if confidence is not None:
+        body["answers"]["q_choice"]["confidence"] = confidence
+    return body
+
+
+@pytest.mark.parametrize("bad_conf, why", [
+    (1.7, "H51 finding 3: a confidence above 1 is not 'confident', it is invalid"),
+    (-0.1, "H51 finding 3: a confidence below 0 is invalid"),
+    (float("nan"), "NaN is not a number (json.loads accepts it, it must still fail)"),
+    (None, "emenda A51: confidence absent is a broken contract, not optional"),
+], ids=["above-one", "below-zero", "nan", "missing"])
+def test_decide_rejects_out_of_range_confidence(bad_conf, why):
+    server, port, _ = start_stub(
+        lambda i, r: (200, _choice_response_with_confidence(bad_conf), None))
+    try:
+        ad = DecisionAdapter("systemone", f"http://127.0.0.1:{port}",
+                             "m", "K", None, 10.0, "k")
+        with pytest.raises(DecisionError) as exc:
+            ad.decide({}, {"q_choice": {"type": "choice",
+                                         "criteria": {"proceed": "",
+                                                      "hold": "",
+                                                      "veto": ""}}})
+        assert exc.value.status == "malformed", why
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_loader_non_utf8_key_file_is_no_key(tmp_path, monkeypatch):
+    """Successor of the judge's A53 P1 case: a key file that is not
+    UTF-8 is unreadable -> no key -> 'no_key', never
+    UnicodeDecodeError (zero connections: the loader never opens
+    transport)."""
+    key_file = tmp_path / "keys.env"
+    key_file.write_bytes(b"TEST_KEY_X=\xff\xfe\x00")
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    monkeypatch.setenv("CONSCIO_VAULT_DIR", str(vault))
+    monkeypatch.delenv("TEST_KEY_X", raising=False)
+    assert load_decision_adapter({
+        "decision_adapter": {
+            "type": "systemone",
+            "base_url": "https://example.com",
+            "api_key_env": "TEST_KEY_X",
+            "api_key_file": str(key_file),
+        },
+    }) == "no_key"
+

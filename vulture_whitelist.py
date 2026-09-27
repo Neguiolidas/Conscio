@@ -400,9 +400,12 @@ conscio.mcp.server.resolve_identity_env
 # ── v4.8 council judge (T3) ───────────────────────────────────────────
 # No production caller until T5 wires the Council judged mode in
 # gates.py; the tests exercise them (vulture does not scan tests/).
+# A57: the verdict fields are built by judge.ask but read only by T5,
+# so the field names (not the class) need the suppression here.
 # wired by T5 (Council judged mode); T5 MUST delete these entries
 from conscio.judge import JudgeVerdict, question_sha256
 
+JudgeVerdict.choice
 JudgeVerdict.probabilities
 question_sha256
 
