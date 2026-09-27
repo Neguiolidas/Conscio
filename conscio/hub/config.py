@@ -174,7 +174,9 @@ def _check_decision_adapter(block: dict, where: str = "decision_adapter") -> lis
         else:
             errs += _check_url(u, "url", where)
     env = block.get("api_key_env")
-    if env is not None and not _valid_env_name(env):
+    if env is None:
+        errs.append(f"{where} requires 'api_key_env' (the NAME of an environment variable)")
+    elif not _valid_env_name(env):
         errs.append(f"{where}.api_key_env must be an ENV VAR NAME "
                     f"(^[A-Z_][A-Z0-9_]*$, <=128), not a key")
     return errs

@@ -118,7 +118,9 @@ def test_loader_bad_block_type_returns_bad_config():
     assert load_decision_adapter({"decision_adapter": [1, 2]}) == "bad_config"
 
 
-def test_loader_inline_api_key_forbidden():
+def test_loader_inline_api_key_forbidden(monkeypatch):
+    """M6: Inline api_key is strictly prohibited (D6), returning 'bad_config' even if key is in env."""
+    monkeypatch.setenv("DECISION_API_KEY", "valid-env-key")
     cfg = {
         "decision_adapter": {
             "url": "https://decision.example/v1/decide",
@@ -204,35 +206,33 @@ def test_loader_missing_url_returns_bad_config(monkeypatch):
 
 
 def test_loader_missing_model_returns_bad_config(monkeypatch):
-    """M3: Missing model has no default and must be rejected with 'bad_config'."""
+    """M3 & M8: Missing or whitespace model has no default and must be rejected with 'bad_config'."""
+    # 1. With key present in env
     monkeypatch.setenv("DECISION_API_KEY", "k")
-    # missing model
-    assert load_decision_adapter({
-        "decision_adapter": {
+    for bad_m in (None, "", "   ", "\t\n"):
+        block = {
             "url": "https://decision.example/v1/decide",
             "api_key_env": "DECISION_API_KEY",
         }
-    }) == "bad_config"
-    # empty model
-    assert load_decision_adapter({
-        "decision_adapter": {
-            "url": "https://decision.example/v1/decide",
-            "model": "",
-            "api_key_env": "DECISION_API_KEY",
+        if bad_m is not None:
+            block["model"] = bad_m
+        assert load_decision_adapter({"decision_adapter": block}) == "bad_config"
+
+    # 2. M8 dente: With key ABSENT in env, whitespace model must return bad_config, NEVER no_key
+    monkeypatch.delenv("DECISION_API_KEY", raising=False)
+    for bad_m in ("", "   ", "\t\n"):
+        cfg_nokey = {
+            "decision_adapter": {
+                "url": "https://decision.example/v1/decide",
+                "model": bad_m,
+                "api_key_env": "DECISION_API_KEY",
+            }
         }
-    }) == "bad_config"
-    # whitespace model
-    assert load_decision_adapter({
-        "decision_adapter": {
-            "url": "https://decision.example/v1/decide",
-            "model": "   ",
-            "api_key_env": "DECISION_API_KEY",
-        }
-    }) == "bad_config"
+        assert load_decision_adapter(cfg_nokey) == "bad_config"
 
 
-def test_loader_missing_both_key_sources_returns_bad_config():
-    """M4: Neither api_key_env nor api_key_file present must return 'bad_config'."""
+def test_loader_missing_api_key_env_returns_bad_config():
+    """M4: Missing api_key_env must return 'bad_config'."""
     cfg = {
         "decision_adapter": {
             "url": "https://decision.example/v1/decide",
@@ -243,9 +243,10 @@ def test_loader_missing_both_key_sources_returns_bad_config():
 
 
 def test_loader_timeout_validation(monkeypatch):
+    """M7: timeout_s <= 0, nan, inf, bool, string rejected with 'bad_config' before key check."""
+    # 1. With key present in env
     monkeypatch.setenv("DECISION_API_KEY", "k")
-
-    for bad_t in (0, -1, -5.5, float("nan"), float("inf"), float("-inf"), 1e400, True, False, "10"):
+    for bad_t in (0, 0.0, -1, -5.5, float("nan"), float("inf"), float("-inf"), 1e400, True, False, "10"):
         cfg = {
             "decision_adapter": {
                 "url": "https://decision.example/v1/decide",
@@ -256,7 +257,21 @@ def test_loader_timeout_validation(monkeypatch):
         }
         assert load_decision_adapter(cfg) == "bad_config"
 
-    # finite valid timeout
+    # 2. M7 dente: With key ABSENT in env, timeout_s=0 must still return bad_config, NEVER no_key
+    monkeypatch.delenv("DECISION_API_KEY", raising=False)
+    for bad_t in (0, 0.0, -1):
+        cfg_nokey = {
+            "decision_adapter": {
+                "url": "https://decision.example/v1/decide",
+                "model": "jev",
+                "api_key_env": "DECISION_API_KEY",
+                "timeout_s": bad_t,
+            }
+        }
+        assert load_decision_adapter(cfg_nokey) == "bad_config"
+
+    # 3. Finite valid timeout
+    monkeypatch.setenv("DECISION_API_KEY", "k")
     cfg_ok = {
         "decision_adapter": {
             "url": "https://decision.example/v1/decide",
@@ -398,11 +413,12 @@ def test_loader_key_resolution_order_and_file(tmp_path, monkeypatch):
     assert ad_tilde.api_key == "expanded-home-key"
 
 
-def test_loader_raw_key_file_without_env(tmp_path):
-    """Reading key solely from api_key_file when api_key_env is not specified."""
-    # Plain key on first line
-    key_file = tmp_path / "raw.key"
-    key_file.write_text("raw-secret-key-xyz\n")
+def test_loader_missing_api_key_env_even_with_file_returns_bad_config(tmp_path):
+    """D17 & M5: api_key_env is strictly mandatory. A key file without api_key_env returns bad_config."""
+    key_file = tmp_path / "valid.key"
+    key_file.write_text("DECISION_API_KEY=secret-token\n")
+
+    # Only api_key_file provided, no api_key_env -> bad_config
     cfg = {
         "decision_adapter": {
             "url": "https://decision.example/v1/decide",
@@ -410,23 +426,92 @@ def test_loader_raw_key_file_without_env(tmp_path):
             "api_key_file": str(key_file),
         }
     }
-    ad = load_decision_adapter(cfg)
-    assert isinstance(ad, DecisionAdapter)
-    assert ad.api_key == "raw-secret-key-xyz"
+    assert load_decision_adapter(cfg) == "bad_config"
 
-    # Key with KEY=val format
-    key_file_kv = tmp_path / "kv.key"
-    key_file_kv.write_text("# comment\nMY_API_KEY=val-secret-456\n")
-    cfg_kv = {
+    # api_key_env is None -> bad_config
+    cfg_none = {
         "decision_adapter": {
             "url": "https://decision.example/v1/decide",
             "model": "jev",
-            "api_key_file": str(key_file_kv),
+            "api_key_env": None,
+            "api_key_file": str(key_file),
         }
     }
-    ad_kv = load_decision_adapter(cfg_kv)
-    assert isinstance(ad_kv, DecisionAdapter)
-    assert ad_kv.api_key == "val-secret-456"
+    assert load_decision_adapter(cfg_none) == "bad_config"
+
+    # api_key_env empty or whitespace -> bad_config
+    cfg_empty = {
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "   ",
+            "api_key_file": str(key_file),
+        }
+    }
+    assert load_decision_adapter(cfg_empty) == "bad_config"
+
+
+def test_loader_key_file_with_other_key_before_target_returns_correct_key(tmp_path, monkeypatch):
+    """D17 finding 1: strict matching ensures a previous key in file does NOT leak."""
+    monkeypatch.delenv("DECISION_API_KEY", raising=False)
+    monkeypatch.delenv("OTHER_SERVICE_TOKEN", raising=False)
+    monkeypatch.setenv("CONSCIO_VAULT_DIR", str(tmp_path / "vault"))
+
+    key_file = tmp_path / "multi.env"
+    key_file.write_text("OTHER_SERVICE_TOKEN=aaa-wrong-secret\nDECISION_API_KEY=bbb-right\n")
+
+    cfg = {
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
+            "api_key_file": str(key_file),
+        }
+    }
+    ad = load_decision_adapter(cfg)
+    assert isinstance(ad, DecisionAdapter)
+    assert ad.api_key == "bbb-right"
+
+
+def test_loader_key_file_with_only_other_keys_returns_no_key(tmp_path, monkeypatch):
+    """D17: When file holds only other keys, resolve returns empty -> no_key."""
+    monkeypatch.delenv("DECISION_API_KEY", raising=False)
+    monkeypatch.setenv("CONSCIO_VAULT_DIR", str(tmp_path / "vault"))
+
+    key_file = tmp_path / "other.env"
+    key_file.write_text("OTHER_SERVICE_TOKEN=aaa-wrong-secret\n")
+
+    cfg = {
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
+            "api_key_file": str(key_file),
+        }
+    }
+    assert load_decision_adapter(cfg) == "no_key"
+
+
+def test_loader_key_file_tilde_expansion(tmp_path, monkeypatch):
+    """Spec §7: tilde expansion in api_key_file."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    (fake_home / "tilde_key.env").write_text("DECISION_API_KEY=expanded-home-key\n")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.delenv("DECISION_API_KEY", raising=False)
+    monkeypatch.setenv("CONSCIO_VAULT_DIR", str(tmp_path / "vault"))
+
+    cfg = {
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
+            "api_key_file": "~/tilde_key.env",
+        }
+    }
+    ad = load_decision_adapter(cfg)
+    assert isinstance(ad, DecisionAdapter)
+    assert ad.api_key == "expanded-home-key"
 
 
 # ── Local validation tests ───────────────────────────────────────────────────
@@ -946,6 +1031,33 @@ def test_hub_validate_accepts_valid_decision_adapter():
     assert hub_config.validate(cfg) == []
 
 
+def test_hub_validate_requires_api_key_env_in_decision_adapter():
+    """M9: Hub validate requires api_key_env naming the variable, never accepting missing env."""
+    cfg = {
+        "model": "m",
+        "adapter": {"type": "openai"},
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+        },
+    }
+    errs = hub_config.validate(cfg)
+    assert any("decision_adapter requires 'api_key_env'" in e for e in errs)
+
+    # Even with api_key_file provided, api_key_env is strictly required
+    cfg_file = {
+        "model": "m",
+        "adapter": {"type": "openai"},
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_file": "/path/to/key.env",
+        },
+    }
+    errs_file = hub_config.validate(cfg_file)
+    assert any("decision_adapter requires 'api_key_env'" in e for e in errs_file)
+
+
 def test_hub_redact_masks_api_key_in_decision_adapter(tmp_path, monkeypatch):
     monkeypatch.setenv("CONSCIO_VAULT_DIR", str(tmp_path))
     (tmp_path / "DECISION_API_KEY").write_text("secret-in-vault\n")
@@ -983,6 +1095,18 @@ def test_direct_construction_with_file_url_raises_valueerror_and_no_io(monkeypat
 def test_construction_invalid_timeout_s_raises_valueerror(bad_timeout):
     with pytest.raises(ValueError, match="timeout_s must be"):
         DecisionAdapter("https://api.example.com/v1/decide", "m", "DECISION_API_KEY", None, bad_timeout, "secret-key")
+
+
+@pytest.mark.parametrize("bad_model", ["", "   ", "\t\n", None, 123])
+def test_construction_invalid_model_raises_valueerror(bad_model):
+    with pytest.raises(ValueError, match="Invalid model"):
+        DecisionAdapter("https://decision.example/v1/decide", bad_model, "DECISION_API_KEY", None, 10.0, "secret-key")  # type: ignore
+
+
+@pytest.mark.parametrize("bad_env", ["", "   ", "lower_case", "123_START", None, 123, "VAR-WITH-DASH"])
+def test_construction_invalid_api_key_env_raises_valueerror(bad_env):
+    with pytest.raises(ValueError, match="Invalid api_key_env"):
+        DecisionAdapter("https://decision.example/v1/decide", "m", bad_env, None, 10.0, "secret-key")  # type: ignore
 
 
 @pytest.mark.parametrize("bad_key", ["secret\nkey", "secret\x00key", "secret\rkey", ""])

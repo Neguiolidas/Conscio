@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import re
 import time
 import urllib.error
@@ -24,7 +23,7 @@ QUESTION_TYPES = ("noul", "choice", "score")
 DEFAULT_TIMEOUT_S = 10.0
 
 KNOWN_KEYS = frozenset({
-    "url", "model", "api_key_env", "api_key_file", "timeout_s",
+    "url", "model", "api_key_env", "api_key_file", "timeout_s", "api_key",
 })
 
 _ENV_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
@@ -87,7 +86,7 @@ def _valid_env_name(v: Any) -> bool:
 class DecisionAdapter:
     url: str
     model: str
-    api_key_env: str | None
+    api_key_env: str
     api_key_file: str | None
     timeout_s: float
     api_key: str = field(repr=False)   # Key is never exposed in repr or logs
@@ -97,7 +96,7 @@ class DecisionAdapter:
             raise ValueError(f"Invalid url: {self.url!r}")
         if not isinstance(self.model, str) or not self.model.strip():
             raise ValueError(f"Invalid model: {self.model!r}")
-        if self.api_key_env is not None and not _valid_env_name(self.api_key_env):
+        if not isinstance(self.api_key_env, str) or not _valid_env_name(self.api_key_env):
             raise ValueError(f"Invalid api_key_env: {self.api_key_env!r}")
         if self.api_key_file is not None and not isinstance(self.api_key_file, str):
             raise ValueError(f"Invalid api_key_file: {self.api_key_file!r}")
@@ -364,29 +363,6 @@ class DecisionAdapter:
             raise DecisionError("malformed", str(exc)) from None
 
 
-def _read_raw_key_file(path: str) -> str:
-    """Read an API key from a file when no env var name is specified."""
-    if not path:
-        return ""
-    try:
-        with open(os.path.expanduser(path), encoding="utf-8") as f:
-            lines = f.readlines()
-    except (OSError, UnicodeDecodeError):
-        return ""
-    for raw in lines:
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" in line:
-            _, _, val = line.partition("=")
-            val = val.strip()
-            if val:
-                return val
-        else:
-            return line
-    return ""
-
-
 def load_decision_adapter(cfg: dict | None = None) -> DecisionAdapter | None | str:
     """Load and validate DecisionAdapter configuration without opening any connection.
 
@@ -432,17 +408,12 @@ def load_decision_adapter(cfg: dict | None = None) -> DecisionAdapter | None | s
     if not isinstance(model, str) or not model.strip():
         return "bad_config"
 
-    # api_key_env and api_key_file validation (D-d)
-    has_env = "api_key_env" in block and block.get("api_key_env") is not None
-    has_file = "api_key_file" in block and block.get("api_key_file") is not None
-    if not has_env and not has_file:
+    # api_key_env validation (required, no default - D17)
+    api_key_env = block.get("api_key_env")
+    if not isinstance(api_key_env, str) or not _valid_env_name(api_key_env):
         return "bad_config"
 
-    api_key_env = block.get("api_key_env")
-    if api_key_env is not None:
-        if not isinstance(api_key_env, str) or not _valid_env_name(api_key_env):
-            return "bad_config"
-
+    # api_key_file validation (optional, must be non-empty string if provided)
     api_key_file = block.get("api_key_file")
     if api_key_file is not None:
         if not isinstance(api_key_file, str) or not api_key_file.strip():
@@ -454,13 +425,8 @@ def load_decision_adapter(cfg: dict | None = None) -> DecisionAdapter | None | s
     if timeout_s is None or timeout_s <= 0:
         return "bad_config"
 
-    # Resolve key
-    key = ""
-    if api_key_env:
-        key = adapter_config.resolve_api_key(api_key_env, key_file=api_key_file)
-    elif api_key_file:
-        key = _read_raw_key_file(api_key_file)
-
+    # Resolve key: env -> vault -> api_key_file (D17, D14)
+    key = adapter_config.resolve_api_key(api_key_env, key_file=api_key_file)
     if not key:
         return "no_key"
 

@@ -151,6 +151,7 @@ def test_load_no_key_passes_through(monkeypatch, tmp_path):
         "decision_adapter": {
             "url": "https://decision.example/v1/decide",
             "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
             "api_key_file": str(tmp_path / "missing.env"),
         },
         "judge": {},
