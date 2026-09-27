@@ -13,8 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 A calibration round for the four-voice council: an opt-in judge, trait-
 sharpened deterministic votes, a readiness gate, and an offline
-benchmark. All additive; the deterministic path and its contract are
-untouched.
+benchmark. The voices' contract — they never call an LLM or an
+attached adapter — is intact; the votes now also read a 9-trait
+extraction of the question text, and the new result fields are
+additive.
 
 - **Optional council judge (`conscio/judge.py`).** One canonical
   decision question, answered by *your* typed decision API through the
@@ -23,9 +25,10 @@ untouched.
   judge is off unless configured, and no env var alone turns it on.
   Any failure is a status string, never an exception: `ok`, `off`,
   `no_key`, `bad_config`, `no_adapter`, `timeout`, `network`,
-  `http_<code>`, `malformed`, `internal_error` (the last two from the
-  A57 boundary; an unexpected error is logged and the council falls
-  back to deterministic mode). Only the council's `question`,
+  `http_<code>`, `malformed`, `internal_error` — the last two mark the
+  judge boundary: a response that fails validation, or an unexpected
+  error, is logged and the council falls back to deterministic mode.
+  Only the council's `question`,
   `context` and, when present, `options` leave the machine.
 - **Trait-sharpened deterministic votes.** All four voices stay
   deterministic (the pinned contract: they never call an adapter) and
@@ -45,8 +48,9 @@ untouched.
   measures agreement with the frozen judge labels — Cohen's kappa
   plus a confusion matrix, per origin — on a 114-case corpus
   (61 dev + 53 heldout, hash-pinned in
-  `tests/fixtures/council_bench/MANIFEST.json`; the heldout half is
-  read only by the harness). `scripts/council_bench_relabel.py`
+  `tests/fixtures/council_bench/MANIFEST.json`). Tuning never reads
+  the heldout half; only the harness and the relabel tool open it.
+  `scripts/council_bench_relabel.py`
   re-labels the heldout against a live judge and reports drift
   without writing to the fixture. The harness prints its headline
   literally as agreement with the judge labels, not ground-truth

@@ -305,8 +305,8 @@ Create an Architecture Decision Record. `status` is one of `proposed`,
 
 ### `conscio_council(question, context?)`
 
-Convene a 4-voice deterministic council (Arquiteto, Cético, Pragmatista,
-Crítico). The four voices stay deterministic — they never call an LLM or
+Convene a 4-voice deterministic council (architect, skeptic, pragmatist,
+critic). The four voices stay deterministic — they never call an LLM or
 any attached adapter (LLM-assisted analysis exists only in the squads,
 via `use_llm`). Since v4.8 the council may additionally consult an
 **optional judge** — one canonical decision question sent to the typed

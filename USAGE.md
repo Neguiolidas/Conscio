@@ -197,8 +197,9 @@ Payload cap 64KB, retention 7 days after read.
 ### v4.8 — Council judge (optional, off by default)
 
 The council's four voices (architect, skeptic, pragmatist, critic)
-stay deterministic — the critic sharpens its vote with a 9-trait
-deterministic reading of the question text (English only; see the
+stay deterministic, and each one sharpens its vote with a 9-trait
+deterministic reading of the question text — a per-voice weight
+table decides which traits move that vote (English only; see the
 limitation at the end of this section). v4.8 adds an **optional
 judge**: one canonical decision question asked to *your* typed
 decision API (any server that speaks the `POST {url}` protocol with
