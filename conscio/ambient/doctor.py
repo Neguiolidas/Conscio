@@ -5,9 +5,44 @@ never kills (the D5 pattern of the S1 doctor)."""
 from __future__ import annotations
 
 import sqlite3
+import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 from . import board, node, paths
+
+
+def check_units(run_cmd: Callable = subprocess.run) -> str:
+    try:
+        cp = run_cmd(
+            ["systemctl", "--user", "list-units", "conscio-relay-reactor*",
+             "--all", "--no-legend", "--no-pager"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        if cp.returncode != 0:
+            err = (cp.stderr or cp.stdout or "").strip() or f"exit {cp.returncode}"
+            return f"units: unknown ({err})"
+        out = (cp.stdout or "").strip()
+        if not out:
+            return "units: none"
+        return f"units: {out}"
+    except Exception as exc:
+        return f"units: unknown ({exc})"
+
+
+def check_claude(run_cmd: Callable = subprocess.run) -> str:
+    try:
+        cp = run_cmd(
+            ["claude", "--version"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        if cp.returncode != 0:
+            err = (cp.stderr or cp.stdout or "").strip() or f"exit {cp.returncode}"
+            return f"claude: unknown ({err})"
+        out = (cp.stdout or "").strip()
+        return f"claude: {out}"
+    except Exception as exc:
+        return f"claude: unknown ({exc})"
 
 
 def wake_residue(db: sqlite3.Connection, *, proc_root: Path) -> list[dict]:
@@ -32,15 +67,16 @@ def wake_residue(db: sqlite3.Connection, *, proc_root: Path) -> list[dict]:
 
 
 def run(*, root: Path | None = None, proc_root: Path = Path("/proc"),
-        prune: bool = False, now: float) -> list[str]:
+        prune: bool = False, now: float,
+        run_cmd: Callable = subprocess.run) -> list[str]:
     lines = [f"flag: {'on' if paths.flag_path(root).is_file() else 'off'}"]
     path = paths.board_path(root)
     if not path.exists():
-        return [*lines, f"board: absent ({path})"]
+        return [*lines, f"board: absent ({path})", check_units(run_cmd), check_claude(run_cmd)]
     try:
         db = board.open_board(path)
     except board.BoardError as exc:
-        return [*lines, f"board: {exc}"]
+        return [*lines, f"board: {exc}", check_units(run_cmd), check_claude(run_cmd)]
     try:
         lines.append(f"board: {path} (schema v{board.SCHEMA_VERSION})")
         sweeper = db.execute("SELECT actor, ts FROM board_events WHERE kind = 'sweeper'"
@@ -67,6 +103,8 @@ def run(*, root: Path | None = None, proc_root: Path = Path("/proc"),
         for r in wake_residue(db, proc_root=proc_root):
             lines.append(f"AVISO: processo {r['pid']} carrega CONSCIO_WAKE_TASK={r['task_id']},"
                          f" mas a task está em {r['state']}. Sugestão: kill {r['pid']}")
+        lines.append(check_units(run_cmd))
+        lines.append(check_claude(run_cmd))
         if prune:
             got = board.prune(db, now=now)
             lines.append(f"pruned: {got['tasks']} tasks, {got['events']} events"

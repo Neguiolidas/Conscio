@@ -1,0 +1,5 @@
+backgrounded · c8ce076a
+  claude agents             list sessions
+  claude attach c8ce076a    open in this terminal
+  claude logs c8ce076a      show recent output
+  claude stop c8ce076a      stop this session

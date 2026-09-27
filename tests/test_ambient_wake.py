@@ -186,6 +186,7 @@ def test_wake_prompt_is_the_fixed_template_and_env_is_built_from_scratch(rig, tm
     _registry({"A": {"connector": "fake", "wake_budget_per_day": 5, "cwd": str(tmp_path)}})
     fake = FakeConnector()
     leaky = {"PATH": "/usr/bin", "HOME": "/home/x", "LANG": "C",
+             "XDG_RUNTIME_DIR": "/run/user/1000",
              "ZCODE_PLUGIN_DATA": "/z", "CLAUDE_PLUGIN_ROOT": "/c",
              "CONSCIO_SELF_ID": "sweeper", "TOKEN_SECRET": "s3cr3t"}
     n = make(fake, base_env=leaky)
@@ -195,10 +196,30 @@ def test_wake_prompt_is_the_fixed_template_and_env_is_built_from_scratch(rig, tm
     [call] = fake.calls
     assert call["prompt"] == node.WAKE_PROMPT.format(task_id=tid)
     assert call["env"] == {"PATH": "/usr/bin", "HOME": "/home/x", "LANG": "C",
+                           "XDG_RUNTIME_DIR": "/run/user/1000",
                            "CONSCIO_SELF_ID": "A", "CONSCIO_SPACE": str(tmp_path / "A"),
                            "CONSCIO_WAKE_TASK": str(tid)}
     assert "IGNORE" not in json.dumps(call)
     assert call["cwd"] == str(tmp_path)
+
+
+def test_xdg_runtime_dir_passes_through_and_dbus_does_not(rig, tmp_path):
+    make, clock = rig
+    _registry({"A": {"connector": "fake", "wake_budget_per_day": 5, "cwd": str(tmp_path)}})
+    fake = FakeConnector()
+    leaky = {
+        "PATH": "/usr/bin", "HOME": "/home/x", "LANG": "C",
+        "XDG_RUNTIME_DIR": "/run/user/1000",
+        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+    }
+    n = make(fake, base_env=leaky)
+    _task()
+    _to_gate(n, clock)
+    n.close()
+    [call] = fake.calls
+    assert call["env"].get("XDG_RUNTIME_DIR") == "/run/user/1000"
+    assert "DBUS_SESSION_BUS_ADDRESS" not in call["env"]
+
 
 
 def test_spawn_failure_releases_immediately_no_retry_same_sweep(rig):

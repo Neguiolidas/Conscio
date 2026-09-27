@@ -1,0 +1,1 @@
+'claude agents' requires an interactive terminal (stdout is not a TTY) — use 'claude agents --json' for a machine-readable listing.

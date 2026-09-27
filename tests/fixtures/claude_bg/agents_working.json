@@ -1,0 +1,29 @@
+[
+ {
+  "id": "93e12ae9",
+  "cwd": "/work/project",
+  "kind": "background",
+  "startedAt": 1789430048682,
+  "sessionId": "93e12ae9-1d76-42c0-baf5-cfaef14273c3",
+  "name": "probe session",
+  "state": "blocked"
+ },
+ {
+  "pid": 405839,
+  "cwd": "/work/project",
+  "kind": "interactive",
+  "startedAt": 1790420253195,
+  "sessionId": "856aff7e-6ab9-4791-9773-c37cf2c5af8b",
+  "name": "interactive session",
+  "status": "busy"
+ },
+ {
+  "id": "c8ce076a",
+  "cwd": "/work/project",
+  "kind": "background",
+  "startedAt": 1790548515789,
+  "sessionId": "c8ce076a-151d-486d-b6c2-dd84b485f528",
+  "name": "probe session",
+  "state": "working"
+ }
+]

@@ -1,0 +1,49 @@
+[
+ {
+  "id": "a80b2948",
+  "cwd": "/work/project",
+  "kind": "background",
+  "startedAt": 1785691295798,
+  "sessionId": "a80b2948-c108-44d5-8c7d-6c6c1dbff13b",
+  "name": "probe session",
+  "state": "failed"
+ },
+ {
+  "id": "93e12ae9",
+  "cwd": "/work/project",
+  "kind": "background",
+  "startedAt": 1789430048682,
+  "sessionId": "93e12ae9-1d76-42c0-baf5-cfaef14273c3",
+  "name": "probe session",
+  "state": "blocked"
+ },
+ {
+  "pid": 405839,
+  "cwd": "/work/project",
+  "kind": "interactive",
+  "startedAt": 1790420253195,
+  "sessionId": "856aff7e-6ab9-4791-9773-c37cf2c5af8b",
+  "name": "interactive session",
+  "status": "busy"
+ },
+ {
+  "id": "90526d24",
+  "cwd": "/work/project",
+  "kind": "background",
+  "startedAt": 1790547912923,
+  "sessionId": "90526d24-3ea7-496b-ad26-1a907877d8ef",
+  "name": "probe session",
+  "state": "failed"
+ },
+ {
+  "pid": 3298784,
+  "id": "f10bd885",
+  "cwd": "/work/project",
+  "kind": "background",
+  "startedAt": 1790548140809,
+  "sessionId": "f10bd885-27e1-4f47-b21e-3f34fbbfc6e8",
+  "name": "probe session",
+  "status": "idle",
+  "state": "done"
+ }
+]
