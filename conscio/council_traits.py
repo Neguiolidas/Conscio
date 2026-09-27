@@ -40,6 +40,16 @@ Rules (spec section 5.1, incl. the negation emenda of 2026-09-27; Jev
   - Triggers that START with a negation word (``no tests``, ``not sure``,
     ``not decided``, ``without tests``) are atomic phrases: the window is
     strictly before the match start, so they can never self-cancel.
+  - **Post-trigger absence** (spec 5.1 item 7; H53 emenda): for the three
+    MITIGATOR traits only (``reversible``, ``verified``, ``low_stakes``),
+    a closed list of absence predicates AFTER the trigger — ``none``,
+    ``missing``, ``nonexistent``, ``absent``, ``unavailable`` and the
+    phrase ``not available`` — cancels that occurrence at ANY distance up
+    to the end of the sentence (no word limit; the comma is not a
+    boundary). Partitive ``none of`` does not cancel. Risk traits are
+    never cancelled post-trigger ("Drop the orders table, nothing else"
+    stays ``irreversible``), and general negators do not act post-trigger
+    ("verified in staging, no issues" stays ``verified``).
   - **Documented limit:** a 4-word gap with no comma is out of reach —
     "None of it was verified" keeps ``verified`` lit. No test pretends to
     cover it.
@@ -84,7 +94,8 @@ _POST_ABSENCE_WORDS = frozenset({
 _N_T_STRAIGHT = "n't"
 _N_T_CURLY = "n\u2019t"
 #: The local negation window: how many words before a trigger can carry a
-#: cancelling negation.
+#: cancelling negation (pre-trigger only; the post-trigger absence scan has
+#: no word limit).
 NEGATION_WINDOW = 3
 #: Comma-list distribution: a local negator also cancels a trigger this
 #: many words away when a comma lies between them ("no backup, staging or
@@ -296,11 +307,14 @@ def _trigger_negated(
     NEGATION_WINDOW words, or at _COMMA_RULE distance when a comma lies between.
     Stops at sentence ends. Applies to all nine traits.
 
-    Post-trigger (spec 5.1 item 7): applies ONLY to the three mitigator traits
-    (reversible, verified, low_stakes). Scans forward up to NEGATION_WINDOW words
-    from last_w. A closed list of absence predicates (none, missing, nonexistent,
-    absent, unavailable, 'not available') cancels the occurrence. Partitive 'none of'
-    does not cancel. General negators do not cancel post-trigger. Stops at sentence ends.
+    Post-trigger (spec 5.1 item 7, H53 emenda): applies ONLY to the three
+    mitigator traits (reversible, verified, low_stakes). Scans forward from
+    last_w to the END OF THE SENTENCE — every word after the trigger until a
+    sentence break or the end of the segment, with NO word limit. A closed
+    list of absence predicates (none, missing, nonexistent, absent,
+    unavailable, 'not available') cancels the occurrence at any distance.
+    Partitive 'none of' does not cancel. General negators do not cancel
+    post-trigger.
     """
     # 1. Pre-trigger negation (all nine traits)
     for j in range(first_w - 1, -1, -1):
@@ -319,9 +333,10 @@ def _trigger_negated(
                     and "," in segment[spans[j][1]:spans[first_w][0]]:
                 return True
 
-    # 2. Post-trigger absence predicate negation (mitigators only)
+    # 2. Post-trigger absence predicate negation (mitigators only; the scan
+    # runs to the end of the sentence — no word limit, H53 emenda)
     if is_mitigator:
-        for k in range(last_w + 1, min(len(words), last_w + 1 + NEGATION_WINDOW)):
+        for k in range(last_w + 1, len(words)):
             lo, hi = spans[k - 1][1], spans[k][0]
             if any(lo <= p <= hi for p in breaks):
                 break

@@ -13,10 +13,15 @@ apostrophe) and lack/lacks/lacking/cannot/missing/none/never are
 negators; the dots of .env and 1.5 do not end a sentence.
 
 G34 (post-trigger absence and contractions emenda 2026-09-27, H51 findings 1
-and 2): post-trigger absence predicates for mitigators within 3 words (none,
-missing, nonexistent, absent, unavailable, not available); partitive none of
+and 2): post-trigger absence predicates for mitigators (none, missing,
+nonexistent, absent, unavailable, not available); partitive none of
 exception; absence predicates do not cancel risk traits; general negators
 do not cancel post-trigger; 15 apostropheless contractions as local negators.
+
+H53 emenda (F3): the post-trigger absence scan has NO word limit — it runs
+from the trigger to the end of the sentence, so real absence at any gap
+cancels the mitigator (the optimistic-side miss 'the backup is there but
+missing the checksum', gap 4, is now caught).
 """
 from __future__ import annotations
 
@@ -283,11 +288,33 @@ def test_post_trigger_sentence_boundary_stops_the_scan():
     assert extract_traits("We have a backup. Missing: the old logs.").reversible is True
 
 
-def test_post_trigger_negation_window_is_three_words():
-    """§5.1 it. 7 (S2): post-trigger window is strictly 3 words (NEGATION_WINDOW).
-    Distance 3 cancels; distance 4 does not."""
-    assert extract_traits("Backup is now missing.").reversible is False
-    assert extract_traits("Backup taken before the missing records were purged.").reversible is True
+def test_post_trigger_scan_runs_to_sentence_end():
+    """§5.1 it. 7 (H53 emenda, replacing S2): the post-trigger absence scan
+    has NO word limit — it runs from the trigger to the end of the sentence.
+    Real absence at any gap cancels the mitigator; a sentence end stops the
+    scan, and a second trigger later in the text lights on its own."""
+    # H53 probes: absence at gaps 2, 3, 4, 4 and 7 — all cancel now.
+    assert extract_traits("the backup is missing the checksum").reversible is False
+    assert extract_traits("the backup is there missing the checksum").reversible is False
+    assert extract_traits("the backup is there but missing the checksum").reversible is False
+    assert extract_traits("backup a b c missing").reversible is False
+    assert extract_traits("backup a b c d e f missing").reversible is False
+    # Sentence end stops the scan; the second trigger lights alone.
+    assert extract_traits("Backups are missing. The rollback flag works").reversible is True
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="F3 finding: 'missing' is ALSO a pre-trigger local negator (spec 5.1 "
+           "it. 4), so in the single-sentence probe it sits 3 words before the "
+           "second trigger 'rollback' and cancels that occurrence pre-trigger. "
+           "Making it pass would require consuming the negator or narrowing the "
+           "pre-trigger rule — both are out of F3 scope (pre-trigger must not "
+           "change). Conservative side: a mitigator stays unlit.")
+def test_single_sentence_second_mitigator_after_absence_lights():
+    """§5.1 it. 7 (H53 probe, single sentence): 'Backups are missing and the
+    rollback flag works' should light reversible via the second trigger."""
+    assert extract_traits("Backups are missing and the rollback flag works").reversible is True
 
 
 def test_post_trigger_unavailable_cancels_mitigators():
