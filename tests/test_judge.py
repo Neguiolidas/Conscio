@@ -13,6 +13,8 @@ import json
 import socket
 import threading
 import time
+import urllib.error
+import urllib.request
 from typing import Any
 
 import pytest
@@ -20,8 +22,11 @@ from council_bench import load_manifest
 
 from conscio import judge
 
+# Forbidden keys at the state level and beyond the envelope's own top
+# keys (emenda A56 made "model" a legitimate top-level envelope key, so
+# it is no longer in this set).
 ForbiddenKeys = {"instance", "engine", "path", "agent", "relay", "identity",
-                 "workspace", "model"}
+                 "workspace"}
 
 
 def _canonical_body(
@@ -54,13 +59,38 @@ def _canonical_body(
     }
 
 
-def start_stub(responder: Any) -> tuple[http.server.ThreadingHTTPServer, int, list[dict]]:
+def _envelope_error(body: Any, expect_model: str | None) -> str | None:
+    """The stub's server side of the emenda-A56 envelope contract: the
+    live API rejects anything that is not exactly
+    ``{"model", "state", "questions"}`` at the root, with a single-key
+    ``questions`` whose value is ``JUDGE_QUESTION`` and ``model`` equal
+    to the cfg's model (when ``expect_model`` is given). Any violation
+    is refused with 400 — this is what made the T5 defect (the loose
+    question at root, no model, no questions) a visible ``http_400``
+    instead of a silent pass."""
+    if not isinstance(body, dict) or set(body) != {"model", "state", "questions"}:
+        return "top-level keys are not exactly {model, state, questions}"
+    questions = body["questions"]
+    if not isinstance(questions, dict) or len(questions) != 1:
+        return "questions must be a dict with a single key"
+    if next(iter(questions.values())) != judge.JUDGE_QUESTION:
+        return "the single questions value is not JUDGE_QUESTION"
+    if expect_model is not None and body["model"] != expect_model:
+        return "model does not reach the body as the cfg's model"
+    return None
+
+
+def start_stub(responder: Any, expect_model: str | None = None
+               ) -> tuple[http.server.ThreadingHTTPServer, int, list[dict]]:
     """Start a stub endpoint on loopback port 0.
 
     ``responder(call_index, request) -> (status, body_dict_or_None)``
     decides each response. ``request`` carries ``path``, ``headers``
     and the decoded ``body``. Requests are recorded on the returned
-    list, in order. Teardown: ``server.shutdown(); server_close()``."""
+    list, in order. Before the responder runs, the body is held to the
+    envelope contract (``_envelope_error``): a violating body is
+    refused with 400 and never reaches the responder. Teardown:
+    ``server.shutdown(); server_close()``."""
     requests: list[dict] = []
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -76,6 +106,15 @@ def start_stub(responder: Any) -> tuple[http.server.ThreadingHTTPServer, int, li
                 "body": json.loads(raw) if raw else None,
             }
             requests.append(entry)
+            err = _envelope_error(entry["body"], expect_model)
+            if err is not None:
+                data = json.dumps({"error": err}).encode("utf-8")
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
             status, payload = responder(len(requests) - 1, entry)
             data = json.dumps(payload).encode("utf-8") if payload is not None else b""
             try:
@@ -97,9 +136,10 @@ def start_stub(responder: Any) -> tuple[http.server.ThreadingHTTPServer, int, li
     return server, server.server_address[1], requests
 
 
-def _cfg(url: str, timeout_s: float = 15.0, key: str = "test-key") -> judge.JudgeConfig:
+def _cfg(url: str, timeout_s: float = 15.0, key: str = "test-key",
+         model: str = "typesafe-ai/jev") -> judge.JudgeConfig:
     return judge.JudgeConfig(
-        model="typesafe-ai/jev", url=url, api_key_env="TEST_JUDGE_KEY",
+        model=model, url=url, api_key_env="TEST_JUDGE_KEY",
         api_key_file="", timeout_s=timeout_s, api_key=key)
 
 
@@ -117,21 +157,23 @@ def test_question_sha256_matches_manifest():
 
 
 def test_load_absent_block_returns_none(monkeypatch):
-    monkeypatch.delenv("VERCEL_AI_GATEWAY_KEY", raising=False)
+    monkeypatch.delenv("EXPERIENTIAL_API_KEY", raising=False)
     assert judge.load() is None                   # conftest isolates config -> {}
     assert judge.load({}) is None
     assert judge.load({"council": {}}) is None     # a different block is not the judge
 
 
 def test_load_empty_block_enables_defaults(monkeypatch):
-    monkeypatch.delenv("VERCEL_AI_GATEWAY_KEY", raising=False)
-    monkeypatch.setenv("VERCEL_AI_GATEWAY_KEY", "k-default")
+    """Emenda A56 defaults: the Experiential direct API (the Vercel
+    gateway route was dropped 2026-09-27)."""
+    monkeypatch.delenv("EXPERIENTIAL_API_KEY", raising=False)
+    monkeypatch.setenv("EXPERIENTIAL_API_KEY", "k-default")
     cfg = judge.load({"judge": {}})
     assert isinstance(cfg, judge.JudgeConfig)
-    assert cfg.model == "typesafe-ai/jev"
-    assert cfg.url == "https://ai-gateway.vercel.sh/v1/evaluate"
-    assert cfg.api_key_env == "VERCEL_AI_GATEWAY_KEY"
-    assert cfg.api_key_file == "~/.conscio-claude/vercel-gateway.env"
+    assert cfg.model == "jev-latest"
+    assert cfg.url == "https://api.experientiallabs.ai/v1/systemone"
+    assert cfg.api_key_env == "EXPERIENTIAL_API_KEY"
+    assert cfg.api_key_file == "~/.conscio-claude/experiential.env"
     assert cfg.timeout_s == 10.0
     assert cfg.api_key == "k-default"
 
@@ -210,7 +252,7 @@ def test_load_http_non_loopback_is_bad_config(monkeypatch):
         pytest.fail("a connection was attempted for a bad_config url")
 
     monkeypatch.setattr(socket, "create_connection", _explode)
-    monkeypatch.setenv("VERCEL_AI_GATEWAY_KEY", "k")
+    monkeypatch.setenv("EXPERIENTIAL_API_KEY", "k")
     for url in ("http://example.com/v1/evaluate", "http://10.0.0.1/v1/evaluate",
                 "ftp://127.0.0.1/x", "http://[::1]/x"):
         assert judge.load({"judge": {"url": url}}) == "bad_config", url
@@ -231,7 +273,8 @@ def test_load_http_loopback_is_not_bad_config(monkeypatch):
 
 
 def test_ask_canonical_verdict_c2():
-    server, port, requests = start_stub(lambda i, req: (200, _canonical_body()))
+    server, port, requests = start_stub(
+        lambda i, req: (200, _canonical_body()), expect_model="typesafe-ai/jev")
     try:
         cfg = _cfg(f"http://127.0.0.1:{port}/v1/evaluate")
         verdict = judge.ask(cfg, "push to main?", "CI green", ["push", "wait"])
@@ -311,9 +354,11 @@ def test_ask_network_error():
 
 
 def test_ask_body_state_exact():
-    """The recorded body carries exactly question/context/options —
-    options only when present. Never engine state, instance id, path,
-    agent name, or relay content (spec section 4.2)."""
+    """The recorded body carries exactly question/context/options in
+    ``state`` — options only when present — inside the emenda-A56
+    envelope (top-level keys exactly model/state/questions). Never
+    engine state, instance id, path, agent name, or relay content
+    (spec section 4.2; the envelope holds, now within the envelope)."""
     server, port, requests = start_stub(lambda i, req: (200, _canonical_body()))
     try:
         cfg = _cfg(f"http://127.0.0.1:{port}/v1/evaluate")
@@ -328,10 +373,93 @@ def test_ask_body_state_exact():
         without_opts = requests[1]["body"]
         assert set(without_opts["state"]) == {"question", "context"}
 
-        for body in requests:
-            top_keys = set(body["body"].keys())
-            assert not (ForbiddenKeys & top_keys)
-            assert not (ForbiddenKeys & set(body["body"]["state"].keys()))
+        for req in requests:
+            body = req["body"]
+            assert set(body) == {"model", "state", "questions"}
+            assert not (ForbiddenKeys & set(body["state"]))
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+# ── emenda A56: the request envelope (spec section 4.3) ───────────────
+
+
+def test_ask_model_reaches_the_body():
+    """The cfg's model is what the server sees (emenda A56): a cfg
+    with model 'x-test' produces model 'x-test' in the body — the stub
+    refuses any other value with 400, so a fixed-model or dropped-
+    model payload would surface as http_400 here."""
+    server, port, requests = start_stub(
+        lambda i, req: (200, _canonical_body()), expect_model="x-test")
+    try:
+        cfg = _cfg(f"http://127.0.0.1:{port}/v1/evaluate", model="x-test")
+        verdict = judge.ask(cfg, "q", "c")
+        assert isinstance(verdict, judge.JudgeVerdict)
+        assert requests[0]["body"]["model"] == "x-test"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_stub_rejects_the_old_loose_body():
+    """The T5 defect, pinned against the stub itself: the old loose
+    body (question fields at root, no model, no questions) is exactly
+    what every real call sent before A56 — and exactly what the
+    server now refuses with 400. Sent straight with urllib, no
+    judge.ask involved, so this test pins the stub's contract even
+    while the module is correct."""
+    old_body = {
+        "type": judge.JUDGE_QUESTION["type"],
+        "instructions": judge.JUDGE_QUESTION["instructions"],
+        "criteria": judge.JUDGE_QUESTION["criteria"],
+        "state": {"question": "q", "context": "c"},
+    }
+    server, port, _ = start_stub(lambda i, req: (200, _canonical_body()))
+    try:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/v1/evaluate",
+            data=json.dumps(old_body).encode("utf-8"),
+            headers={"Content-Type": "application/json"}, method="POST")
+        with pytest.raises(urllib.error.HTTPError) as excinfo:
+            urllib.request.urlopen(request, timeout=5)
+        assert excinfo.value.code == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("top, nested, expected, why", [
+    ("typesafe", "vercel-x", "typesafe",
+     "both present: the top-level str wins"),
+    (None, "vercel-x", "vercel-x",
+     "nested only: Vercel routing falls through to provider"),
+    (42, "vercel-x", "vercel-x",
+     "wrong-type top (int): falls back to nested, never malformed"),
+    ({"p": 1}, "vercel-x", "vercel-x",
+     "wrong-type top (dict): falls back to nested"),
+    (None, None, "", "neither present: provider is ''"),
+    (42, None, "", "wrong-type top, no nested: ''"),
+], ids=["both-top-wins", "nested-only", "top-int", "top-dict",
+        "neither", "top-int-no-nested"])
+def test_provider_precedence(top, nested, expected, why):
+    """Emenda A56 precedence: top-level "provider" (Experiential)
+    beats providerMetadata.gateway.routing.resolvedProvider (Vercel);
+    a wrong type at any level degrades instead of breaking the
+    verdict (spec section 4.4)."""
+    body = _canonical_body()
+    body["providerMetadata"] = (
+        {"gateway": {"routing": {"resolvedProvider": nested}}}
+        if nested is not None else {})
+    if top is not None:
+        body["provider"] = top
+    server, port, requests = start_stub(lambda i, req: (200, body))
+    try:
+        cfg = _cfg(f"http://127.0.0.1:{port}/v1/evaluate")
+        verdict = judge.ask(cfg, "q", "c")
+        assert isinstance(verdict, judge.JudgeVerdict), why
+        assert verdict.provider == expected, (why, verdict.provider)
+        assert len(requests) == 1
     finally:
         server.shutdown()
         server.server_close()

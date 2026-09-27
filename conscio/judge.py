@@ -1,10 +1,15 @@
 # conscio/judge.py
 """Council judge client (spec 2026-09-26, section 4).
 
-Opt-in second opinion for the Council: one POST of the canonical question
-plus the Council's ``question``/``context``/``options`` to a configured
-evaluate endpoint. Nothing else leaves the machine — never engine state,
-instance id, paths, agent names, or relay content (spec section 4.2).
+Opt-in second opinion for the Council: one POST to a configured
+evaluate endpoint. The request body is the emenda-A56 envelope,
+exactly ``{"model": cfg.model, "state": <question/context/options>,
+"questions": {"decision": JUDGE_QUESTION}}`` — the API refuses any
+other root-level key set with 400 (the pre-A56 body sent the question
+loose at the root and every real call came back ``http_400``).
+Nothing else leaves the machine: ``state`` carries only the Council's
+``question``/``context``/``options`` — never engine state, instance
+id, paths, agent names, or relay content (spec section 4.2).
 
 Config comes from the *existing* loader (``adapter_config.load_config``),
 not a new one, so the conftest autouse fixture that points
@@ -53,10 +58,10 @@ from .adapter_config import load_config
 
 CHOICES = ("proceed", "hold", "veto")
 
-DEFAULT_MODEL = "typesafe-ai/jev"
-DEFAULT_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
-DEFAULT_API_KEY_ENV = "VERCEL_AI_GATEWAY_KEY"
-DEFAULT_API_KEY_FILE = "~/.conscio-claude/vercel-gateway.env"
+DEFAULT_MODEL = "jev-latest"
+DEFAULT_URL = "https://api.experientiallabs.ai/v1/systemone"
+DEFAULT_API_KEY_ENV = "EXPERIENTIAL_API_KEY"
+DEFAULT_API_KEY_FILE = "~/.conscio-claude/experiential.env"
 DEFAULT_TIMEOUT_S = 10
 
 # Canonical question (spec section 4.3, verbatim). It labels the benchmark
@@ -108,7 +113,8 @@ class JudgeVerdict:
     probabilities: dict[str, float]
     confidence: float                # answers.<id>.confidence (the reported value)
     model: str                       # response["model"]
-    provider: str                    # routing.resolvedProvider, "" if absent
+    provider: str                    # top-level "provider" (Experiential); else
+                                     # routing.resolvedProvider (Vercel); "" if none
 
 
 def question_sha256() -> str:
@@ -291,19 +297,24 @@ def _parse_verdict(data: Any) -> JudgeVerdict | None:
     confidence = _finite_float(entry.get("confidence"))
     if confidence is None:
         return None
-    # provider is optional metadata: every level is checked with
-    # isinstance(dict), so a wrong type at any level degrades to ""
-    # instead of raising.
-    provider = ""
-    meta = data.get("providerMetadata")
-    if isinstance(meta, dict):
-        gateway = meta.get("gateway")
-        if isinstance(gateway, dict):
-            routing = gateway.get("routing")
-            if isinstance(routing, dict):
-                resolved = routing.get("resolvedProvider")
-                if isinstance(resolved, str):
-                    provider = resolved
+    # provider precedence (spec 4.4, emenda A56): a top-level string
+    # "provider" wins; otherwise the nested Vercel
+    # providerMetadata.gateway.routing.resolvedProvider; otherwise "".
+    # A wrong type at any level falls through — never malformed.
+    top = data.get("provider")
+    if isinstance(top, str):
+        provider = top
+    else:
+        provider = ""
+        meta = data.get("providerMetadata")
+        if isinstance(meta, dict):
+            gateway = meta.get("gateway")
+            if isinstance(gateway, dict):
+                routing = gateway.get("routing")
+                if isinstance(routing, dict):
+                    resolved = routing.get("resolvedProvider")
+                    if isinstance(resolved, str):
+                        provider = resolved
     model = data.get("model")
     model_s = model if isinstance(model, str) else ""
     return JudgeVerdict(
@@ -317,22 +328,29 @@ def _parse_verdict(data: Any) -> JudgeVerdict | None:
 
 def ask(cfg: JudgeConfig, question: str, context: str,
         options: list[str] | None = None) -> JudgeVerdict | str:
-    """Ask the judge (spec sections 4.3-4.4).
+    """Ask the judge (spec sections 4.3-4.4, emenda A56 envelope).
 
-    One request per Council. A strict total deadline (``timeout_s``)
-    bounds the whole call, retries included: each ``urlopen`` gets
+    One request per Council. The body is exactly the emenda-A56
+    envelope: ``{"model": cfg.model, "state": ..., "questions":
+    {"decision": JUDGE_QUESTION}}`` — the real API refuses anything
+    else with 400. A strict total deadline (``timeout_s``) bounds the
+    whole call, retries included: each ``urlopen`` gets
     ``timeout=restante``, only 429/529 retry with exponential backoff
     from 1 s capped to the remaining budget, any other 4xx fails
     immediately as ``http_<code>``, network errors as ``"network"``,
     deadline exhaustion as ``"timeout"``, and an unvalidatable response
     as ``"malformed"``. Never raises; a judge failure never takes the
     Council down."""
+    # Envelope (emenda A56): the real API accepts exactly these three top
+    # level keys — anything else (the old T5 body sent the question loose
+    # at the root, with no model and no questions map) is refused with
+    # 400. The question id key is free-form on the API side; "decision"
+    # is this module's.
     payload = json.dumps(
         {
-            "type": JUDGE_QUESTION["type"],
-            "instructions": JUDGE_QUESTION["instructions"],
-            "criteria": JUDGE_QUESTION["criteria"],
+            "model": cfg.model,
             "state": _state(question, context, options),
+            "questions": {"decision": JUDGE_QUESTION},
         },
         sort_keys=True,
     ).encode("utf-8")
