@@ -386,3 +386,212 @@ def test_ask_malformed_json_response():
     finally:
         server.shutdown()
         server.server_close()
+
+
+# ── A53: the "ask never raises" contract (spec section 4.4) ──────────
+# Three historically-leaked paths (P1-P3) plus a deterministic fuzz of
+# the two parsing surfaces. The fuzz tests collect violations and
+# assert zero with the count in the message, so a teeth-mutant shows
+# exactly how many mutations escape the contract.
+
+import copy
+import math
+import random
+
+_JUNK_VALUES = ["junk", 12345, 10 ** 399, float("nan"), float("inf"),
+                float("-inf"), True, False, None, [1, 2], {"n": 1}]
+
+
+def test_p1_non_utf8_key_file_is_no_key(tmp_path, monkeypatch):
+    """P1 regression: a key file that is not UTF-8 is unreadable ->
+    no key -> 'no_key' (spec section 4.1: sem chave => no_key), never
+    UnicodeDecodeError. The stub sees ZERO requests."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    (home / "judge-keys.env").write_bytes(b"MY_GATEWAY_KEY=\xff\xfe")
+    monkeypatch.delenv("MY_GATEWAY_KEY", raising=False)
+    assert judge.load({"judge": {
+        "api_key_env": "MY_GATEWAY_KEY",
+        "api_key_file": "~/judge-keys.env",
+        "url": "http://127.0.0.1:9/v1/evaluate",
+    }}) == "no_key"
+    server, port, requests = start_stub(lambda i, req: (200, _canonical_body()))
+    try:
+        cfg = judge.load({"judge": {
+            "api_key_env": "MY_GATEWAY_KEY",
+            "api_key_file": "~/judge-keys.env",
+            "url": f"http://127.0.0.1:{port}/v1/evaluate",
+        }})
+        assert cfg == "no_key"
+        assert len(requests) == 0
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("bad_meta", [
+    "x",
+    {"gateway": "y"},
+    {"gateway": {"routing": 5}},
+], ids=["str", "gateway-str", "routing-int"])
+def test_p2_wrong_typed_provider_metadata_yields_empty_provider(bad_meta):
+    """P2 regression: wrong-typed providerMetadata degrades to
+    provider == "" (it is optional metadata, like a missing
+    resolvedProvider) — never AttributeError, never 'malformed'."""
+    server, port, requests = start_stub(
+        lambda i, req: (200, dict(_canonical_body(), providerMetadata=bad_meta)))
+    try:
+        cfg = _cfg(f"http://127.0.0.1:{port}/v1/evaluate")
+        verdict = judge.ask(cfg, "q", "c")
+        assert isinstance(verdict, judge.JudgeVerdict)
+        assert verdict.provider == ""
+        assert verdict.confidence == 0.87
+        assert len(requests) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("where", ["confidence", "probability"])
+def test_p3_huge_json_int_is_malformed(where):
+    """P3 regression: a 400-digit JSON int literal is not a finite
+    number -> 'malformed', never OverflowError (emenda A51 + F3)."""
+    body = _canonical_body()
+    entry = body["answers"]["judge"]
+    if where == "confidence":
+        entry["confidence"] = 10 ** 399
+    else:
+        entry["probabilities"]["veto"] = 10 ** 399
+    server, port, requests = start_stub(lambda i, req: (200, body))
+    try:
+        cfg = _cfg(f"http://127.0.0.1:{port}/v1/evaluate")
+        assert judge.ask(cfg, "q", "c") == "malformed"
+        assert len(requests) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _value_paths(node: Any, prefix: tuple[Any, ...] = ()) -> list[tuple[Any, ...]]:
+    """Paths to every dict/list *entry value* at every depth (the
+    value of providerMetadata itself, of gateway, of routing, of the
+    probability keys — not just the deepest leaves)."""
+    paths: list[tuple[Any, ...]] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            p = prefix + (key,)
+            paths.append(p)
+            paths.extend(_value_paths(value, p))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            p = prefix + (index,)
+            paths.append(p)
+            paths.extend(_value_paths(value, p))
+    return paths
+
+
+def test_fuzz_parse_verdict_contract():
+    """A53 fuzz (>=2000 deterministic mutations, fixed seed, no new
+    dependencies): every mutated canonical response must make
+    _parse_verdict return JudgeVerdict or None WITHOUT raising; a
+    returned verdict must have choice in CHOICES and finite float
+    confidence/probabilities. Mutations target any dict/list entry
+    value at any depth (replace with junk / delete the key / nest the
+    value one level deeper), so intermediate nodes like
+    providerMetadata/gateway/routing get non-dict values too."""
+    rng = random.Random(20260926)
+    base = _canonical_body()
+    total = 0
+    violations: list[tuple[int, str]] = []
+    for i in range(2000):
+        data = copy.deepcopy(base)
+        op = i % 3
+        paths = _value_paths(data)
+        if op == 0 and paths:  # replace any entry value with junk
+            path = rng.choice(paths)
+            node = data
+            for key in path[:-1]:
+                node = node[key]
+            node[path[-1]] = rng.choice(_JUNK_VALUES)
+        elif op == 1:  # delete a random dict key at any depth
+            dict_paths = [p for p in paths if isinstance(p[-1], str)]
+            if dict_paths:
+                path = rng.choice(dict_paths)
+                node = data
+                for key in path[:-1]:
+                    node = node[key]
+                del node[path[-1]]
+        elif op == 2 and paths:  # nest an entry value one level deeper
+            path = rng.choice(paths)
+            node = data
+            for key in path[:-1]:
+                node = node[key]
+            node[path[-1]] = {"nested": node[path[-1]]}
+        total += 1
+        try:
+            result = judge._parse_verdict(data)
+        except Exception as exc:
+            violations.append((i, f"raised {type(exc).__name__}: {exc}"))
+            continue
+        if result is not None:
+            fields_ok = (
+                result.choice in judge.CHOICES
+                and isinstance(result.confidence, float)
+                and math.isfinite(result.confidence)
+                and set(result.probabilities) == set(judge.CHOICES)
+                and all(isinstance(v, float) and math.isfinite(v)
+                        for v in result.probabilities.values()))
+            if not fields_ok:
+                violations.append((i, f"bad verdict fields: {result!r}"))
+    assert not violations, (
+        f"{len(violations)}/{total} parse fuzz mutations violated the contract; "
+        f"first: {violations[:5]}")
+
+
+def test_fuzz_load_contract(tmp_path):
+    """A53 fuzz (>=500 random configs, fixed seed): every random 'judge'
+    block (each field drawn from a random type) must make load()
+    return JudgeConfig | None | str WITHOUT raising; a JudgeConfig
+    always carries a key; str outcomes are no_key/bad_config only."""
+    rng = random.Random(9531)
+    key_file = str(tmp_path / "nonexistent-judge.env")
+    pools = {
+        "model": ["junk-model", 5, True, None, [], {"m": 1}],
+        "url": ["https://judge.example/v1/evaluate", "junk-str", 7,
+                float("nan"), ["u"], {"u": 1}],
+        "api_key_env": ["JUDGE_FUZZ_KEY_NOT_SET", "junk", 3, False, None, {"a": 1}],
+        "api_key_file": [key_file, "junk-relpath", 9, 10 ** 399, None, []],
+        "timeout_s": [5, -1, 0, float("nan"), "junk", 10 ** 399, True,
+                      None, [], {"t": 1}, 10.5],
+    }
+    total = 0
+    violations: list[tuple[int, str]] = []
+    for i in range(500):
+        if i % 17 == 0:  # sometimes a non-dict top level or no block
+            cfg = rng.choice(["junk", 5, [1], None, {"council": {}}])
+        else:
+            block: dict[str, Any] = {}
+            for field, pool in pools.items():
+                if rng.random() < 0.7:  # field present with random type
+                    block[field] = rng.choice(pool)
+            if i % 23 == 0:  # sometimes a non-dict block
+                block = rng.choice(["junk", 5, [1]])
+            cfg = {"judge": block}
+        total += 1
+        try:
+            outcome = judge.load(cfg)
+        except Exception as exc:
+            violations.append((i, f"load raised {type(exc).__name__}: {exc} (cfg={cfg!r})"))
+            continue
+        ok = outcome is None or isinstance(outcome, (judge.JudgeConfig, str))
+        if isinstance(outcome, judge.JudgeConfig) and not outcome.api_key:
+            ok = False
+        if isinstance(outcome, str) and outcome not in ("no_key", "bad_config"):
+            ok = False
+        if not ok:
+            violations.append((i, f"bad outcome {outcome!r} for cfg={cfg!r}"))
+    assert not violations, (
+        f"{len(violations)}/{total} load fuzz configs violated the contract; "
+        f"first: {violations[:5]}")

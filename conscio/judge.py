@@ -129,14 +129,15 @@ def _read_key_file(path: str, name: str) -> str:
     line whose NOME equals ``name`` yields a value. A file that holds
     only *other* secrets must not hand one of them to the judge to
     ship out as a Bearer token — so there is no fallback to "first
-    value". No match (or no file) -> "" (the caller reports
-    ``no_key``). Never raises."""
+    value". No match, no file, or a key file that is not readable as
+    UTF-8 (``UnicodeDecodeError``) -> "" (the caller reports
+    ``no_key``: an unreadable key file is no key). Never raises."""
     if not name:
         return ""
     try:
         with open(os.path.expanduser(path), encoding="utf-8") as f:
             lines = f.readlines()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return ""
     for raw in lines:
         line = raw.strip()
@@ -192,11 +193,12 @@ def load(cfg: dict | None = None) -> JudgeConfig | None | str:
     if model is None or url is None or api_key_env is None or api_key_file is None:
         return "bad_config"
 
-    timeout_s = block.get("timeout_s", DEFAULT_TIMEOUT_S)
-    if isinstance(timeout_s, bool) or not isinstance(timeout_s, (int, float)):
-        return "bad_config"
-    timeout_s = float(timeout_s)
-    if not timeout_s > 0:
+    # The same single numeric rule as _parse_verdict (F3, DRY): a
+    # timeout that is not a finite positive number is a bad config, and
+    # the conversion itself must not raise (a huge JSON int would
+    # OverflowError on float()).
+    timeout_s = _finite_float(block.get("timeout_s", DEFAULT_TIMEOUT_S))
+    if timeout_s is None or not timeout_s > 0:
         return "bad_config"
 
     if not _url_ok(url):
@@ -231,16 +233,41 @@ def _state(question: str, context: str, options: list[str] | None) -> dict[str, 
     return state
 
 
+def _finite_float(value: Any) -> float | None:
+    """A number (no ``bool``) as a *finite* float, else ``None``.
+
+    The single numeric rule for both ``confidence`` and the three
+    probabilities (spec section 4.3, emenda A51). Guards the "never
+    raises" contract: a JSON integer too large for ``float`` raises
+    ``OverflowError`` at the conversion, and ``NaN``/``±inf`` (which
+    ``json.loads`` accepts) are not finite. One rule, one helper —
+    no per-call-site drift."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        f = float(value)
+    except OverflowError:
+        return None
+    if not math.isfinite(f):
+        return None
+    return f
+
+
 def _parse_verdict(data: Any) -> JudgeVerdict | None:
     """Validate a decoded response (spec section 4.3, emenda A51).
 
     Valid only when ``answers.<id>.choice`` is one of proceed/hold/veto,
-    ``probabilities`` has all three keys finite (``json.loads`` accepts
-    ``NaN``/``Infinity``, so finiteness is checked, not just type), and
+    ``probabilities`` has all three keys finite, and
     ``answers.<id>.confidence`` — the value the *model reports*, the
     same one recorded in the frozen labels, deliberately not
-    ``probabilities[choice]`` — is present and finite. ``None`` -> the
-    caller reports ``malformed`` (never a default ``proceed``)."""
+    ``probabilities[choice]`` — is present and finite. "Finite number"
+    means exactly ``_finite_float``: not a bool, convertible to a
+    finite float (``json.loads`` accepts ``NaN``/``Infinity`` and huge
+    JSON integers; all of those fail). ``None`` -> the caller reports
+    ``malformed`` (never a default ``proceed``). Wrong-typed
+    ``providerMetadata`` never makes the answer malformed: it is
+    optional metadata, so every level that is not a dict just yields
+    ``provider = ""``."""
     if not isinstance(data, dict):
         return None
     answers = data.get("answers")
@@ -257,30 +284,32 @@ def _parse_verdict(data: Any) -> JudgeVerdict | None:
         return None
     numeric: dict[str, float] = {}
     for name in CHOICES:
-        value = probs.get(name)
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
+        f = _finite_float(probs.get(name))
+        if f is None:
             return None
-        if not math.isfinite(value):
-            return None
-        numeric[name] = float(value)
-    confidence = entry.get("confidence")
-    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        numeric[name] = f
+    confidence = _finite_float(entry.get("confidence"))
+    if confidence is None:
         return None
-    if not math.isfinite(confidence):
-        return None
-    provider: str = ""
-    routing = (
-        (data.get("providerMetadata") or {}).get("gateway") or {}
-    ).get("routing") or {}
-    resolved = routing.get("resolvedProvider")
-    if isinstance(resolved, str):
-        provider = resolved
+    # provider is optional metadata: every level is checked with
+    # isinstance(dict), so a wrong type at any level degrades to ""
+    # instead of raising.
+    provider = ""
+    meta = data.get("providerMetadata")
+    if isinstance(meta, dict):
+        gateway = meta.get("gateway")
+        if isinstance(gateway, dict):
+            routing = gateway.get("routing")
+            if isinstance(routing, dict):
+                resolved = routing.get("resolvedProvider")
+                if isinstance(resolved, str):
+                    provider = resolved
     model = data.get("model")
     model_s = model if isinstance(model, str) else ""
     return JudgeVerdict(
         choice=choice,
         probabilities=numeric,
-        confidence=float(confidence),
+        confidence=confidence,
         model=model_s,
         provider=provider,
     )
