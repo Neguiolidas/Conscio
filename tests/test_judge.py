@@ -41,9 +41,7 @@ class _StubAdapter:
     checked without a server."""
 
     def __init__(self, result: Decision | None = None,
-                 exc: BaseException | None = None,
-                 type: str = "experiential") -> None:
-        self.type = type
+                 exc: BaseException | None = None) -> None:
         self.calls: list[tuple[Any, dict]] = []
         self._result = result
         self._exc = exc
@@ -89,7 +87,7 @@ def test_question_sha256_matches_manifest():
 
 
 def test_load_absent_block_returns_none(monkeypatch):
-    monkeypatch.delenv("EXPERIENTIAL_API_KEY", raising=False)
+    monkeypatch.delenv("DECISION_API_KEY", raising=False)
     assert judge.load() is None                   # conftest isolates config -> {}
     assert judge.load({}) is None
     assert judge.load({"council": {}}) is None     # a different block is not the judge
@@ -100,10 +98,10 @@ def test_load_judge_with_any_key_is_bad_config(monkeypatch):
     key left in the ``judge`` block (url/model/api_key_env/timeout_s —
     the pre-A56 shape) is a config error, not a silently ignored
     field."""
-    monkeypatch.delenv("EXPERIENTIAL_API_KEY", raising=False)
+    monkeypatch.delenv("DECISION_API_KEY", raising=False)
     for bad in ({"judge": {"url": "https://judge.example/v1"}},
                 {"judge": {"model": "jev-latest"}},
-                {"judge": {"api_key_env": "EXPERIENTIAL_API_KEY"}},
+                {"judge": {"api_key_env": "DECISION_API_KEY"}},
                 {"judge": {"api_key_file": "~/judge-keys.env"}},
                 {"judge": {"timeout_s": 5}},
                 {"judge": "on"},
@@ -115,24 +113,29 @@ def test_load_judge_without_adapter_is_no_adapter(monkeypatch):
     """D9: judge present, no usable ``decision_adapter`` block (absent
     or explicitly null) -> ``no_adapter`` — an explicit status, never a
     silent fallback."""
-    monkeypatch.delenv("EXPERIENTIAL_API_KEY", raising=False)
+    monkeypatch.delenv("DECISION_API_KEY", raising=False)
     assert judge.load({"judge": {}}) == "no_adapter"
     assert judge.load({"judge": {}, "decision_adapter": None}) == "no_adapter"
 
 
-def test_load_section2_literal_is_the_experiential_preset(monkeypatch):
-    """The decision-adapter spec section 2 config, loaded verbatim with
-    the key in the environment: the judge comes up with the
-    ``experiential`` preset (PRD criterion S1)."""
-    monkeypatch.delenv("EXPERIENTIAL_API_KEY", raising=False)
-    monkeypatch.setenv("EXPERIENTIAL_API_KEY", "k-env")
-    cfg = {"decision_adapter": {"type": "experiential"}, "judge": {}}
+def test_load_decision_adapter_valid_config(monkeypatch):
+    """The decision_adapter loaded with valid config and key in the environment
+    (PRD criterion S1, neutral)."""
+    monkeypatch.delenv("DECISION_API_KEY", raising=False)
+    monkeypatch.setenv("DECISION_API_KEY", "k-env")
+    cfg = {
+        "decision_adapter": {
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
+        },
+        "judge": {},
+    }
     adapter = judge.load(cfg)
     assert isinstance(adapter, DecisionAdapter)
-    assert adapter.type == "experiential"
-    assert adapter.base_url == "https://api.experientiallabs.ai"
-    assert adapter.model == "jev-latest"
-    assert adapter.api_key_env == "EXPERIENTIAL_API_KEY"
+    assert adapter.url == "https://decision.example/v1/decide"
+    assert adapter.model == "jev"
+    assert adapter.api_key_env == "DECISION_API_KEY"
     assert adapter.timeout_s == 10.0
     assert adapter.api_key == "k-env"
 
@@ -140,13 +143,15 @@ def test_load_section2_literal_is_the_experiential_preset(monkeypatch):
 def test_load_no_key_passes_through(monkeypatch, tmp_path):
     """judge + decision_adapter, key unresolvable anywhere -> the
     adapter loader's ``no_key`` passes through untouched."""
-    monkeypatch.delenv("EXPERIENTIAL_API_KEY", raising=False)
+    monkeypatch.delenv("DECISION_API_KEY", raising=False)
     vault = tmp_path / "vault"
     vault.mkdir()
     monkeypatch.setenv("CONSCIO_VAULT_DIR", str(vault))
     cfg = {
         "decision_adapter": {
-            "type": "experiential",
+            "url": "https://decision.example/v1/decide",
+            "model": "jev",
+            "api_key_env": "DECISION_API_KEY",
             "api_key_file": str(tmp_path / "missing.env"),
         },
         "judge": {},
@@ -157,9 +162,12 @@ def test_load_no_key_passes_through(monkeypatch, tmp_path):
 def test_load_bad_adapter_passes_through(monkeypatch):
     """A decision_adapter block the adapter loader rejects surfaces as
     the same ``bad_config`` through the judge boundary."""
-    monkeypatch.delenv("EXPERIENTIAL_API_KEY", raising=False)
+    monkeypatch.delenv("DECISION_API_KEY", raising=False)
     for bad in ({"decision_adapter": {"type": "bogus"}, "judge": {}},
-                {"decision_adapter": {"type": "experiential", "api_key": "inline"},
+                {"decision_adapter": {"url": "https://decision.example/v1/decide",
+                                      "model": "jev",
+                                      "api_key_env": "DECISION_API_KEY",
+                                      "api_key": "inline"},
                  "judge": {}},
                 {"decision_adapter": 5, "judge": {}}):
         assert judge.load(bad) == "bad_config", bad
@@ -174,18 +182,28 @@ def test_fuzz_load_contract(tmp_path, monkeypatch):
     now an empty marker, so its fields pool over judge AND
     decision_adapter together.)"""
     rng = random.Random(7777)
-    monkeypatch.delenv("EXPERIENTIAL_API_KEY", raising=False)
+    monkeypatch.delenv("DECISION_API_KEY", raising=False)
     vault = tmp_path / "vault"
     vault.mkdir()
     monkeypatch.setenv("CONSCIO_VAULT_DIR", str(vault))
     pools = {
         "judge": [None, {}, {"url": "https://judge.example/v1"},
                   {"model": "jev-latest"}, {"timeout_s": 5}, "on", 5, [1]],
-        "decision_adapter": [None, {}, {"type": "experiential"},
+        "decision_adapter": [None, {},
+                             {"url": "https://decision.example/v1/decide",
+                              "model": "jev",
+                              "api_key_env": "DECISION_API_KEY"},
                              {"type": "bogus"},
-                             {"type": "experiential", "api_key": "inline"},
-                             {"type": "experiential", "unknown_key": 1},
-                             {"type": "systemone"}, 5, "x"],
+                             {"url": "https://decision.example/v1/decide",
+                              "model": "jev",
+                              "api_key_env": "DECISION_API_KEY",
+                              "api_key": "inline"},
+                             {"url": "https://decision.example/v1/decide",
+                              "model": "jev",
+                              "api_key_env": "DECISION_API_KEY",
+                              "unknown_key": 1},
+                             {"url": "http://insecure.example"},
+                             5, "x"],
     }
     total = 0
     violations: list[tuple[int, str]] = []
@@ -250,9 +268,7 @@ def test_ask_canonical_verdict_c2():
     """The typed Decision maps back to JudgeVerdict: choice, all three
     probabilities, the model-reported confidence — deliberately NOT
     probabilities[choice] (0.87 vs 0.92, as in the frozen label a01;
-    emenda A51), the model from the response, and the provider as the
-    adapter type (gateway metadata no longer reaches the judge since
-    A57)."""
+    emenda A51), and the model from the response."""
     adapter = _StubAdapter(result=_canned_decision())
     verdict = judge.ask(adapter, "push to main?", "CI green", ["push", "wait"])
     assert isinstance(verdict, judge.JudgeVerdict)
@@ -262,7 +278,6 @@ def test_ask_canonical_verdict_c2():
     assert verdict.confidence == 0.87
     assert verdict.confidence != verdict.probabilities[verdict.choice]
     assert verdict.model == "jev-latest"
-    assert verdict.provider == "experiential"
 
 
 def test_ask_model_none_is_empty_string():

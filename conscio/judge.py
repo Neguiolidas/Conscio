@@ -67,10 +67,6 @@ class JudgeVerdict:
     confidence: float                # answers.<id>.confidence (the reported value,
                                      # emenda A51; finite, in [0, 1] since A57)
     model: str                       # Decision.model; "" when the response has none
-    provider: str                    # the adapter type (experiential | typesafe |
-                                     # systemone) since A57: the adapter owns response
-                                     # parsing, so gateway metadata no longer reaches
-                                     # the judge
 
 
 def question_sha256() -> str:
@@ -163,5 +159,4 @@ def ask(adapter: DecisionAdapter, question: str, context: str,
         probabilities=dict(answer.probabilities),
         confidence=answer.confidence,
         model=decision.model or "",
-        provider=adapter.type,
     )

@@ -1,7 +1,7 @@
 # conscio/decision_adapter.py
 """Decision adapter for Jev-like typed decision models (v4.8, S3).
 
-Implements the POST /v1/systemone contract for typed decisions (noul, choice, score).
+Implements the POST {url} protocol with {model, state, questions}; answers keyed by question id.
 Stdlib only (urllib, dataclasses). All code, docstrings, and error messages in English.
 """
 from __future__ import annotations
@@ -18,30 +18,14 @@ from typing import Any
 
 from . import adapter_config
 
-DECISION_TYPES = ("experiential", "typesafe", "systemone")
 QUESTION_TYPES = ("noul", "choice", "score")
 
-DEFAULT_MODEL = "jev-latest"
 DEFAULT_TIMEOUT_S = 10.0
 
-PRESETS: dict[str, dict[str, str]] = {
-    "experiential": {
-        "base_url": "https://api.experientiallabs.ai",
-        "model": DEFAULT_MODEL,
-        "api_key_env": "EXPERIENTIAL_API_KEY",
-    },
-    "typesafe": {
-        "base_url": "https://api.typesafe.ai",
-        "model": DEFAULT_MODEL,
-        "api_key_env": "TYPESAFE_API_KEY",
-    },
-    "systemone": {
-        "model": DEFAULT_MODEL,
-    },
-}
-
+# 'api_key' is intentionally omitted: inline keys are strictly forbidden (D6)
+# and rejected as unknown keys by the loader.
 KNOWN_KEYS = frozenset({
-    "type", "model", "base_url", "api_key_env", "api_key_file", "timeout_s",
+    "url", "model", "api_key_env", "api_key_file", "timeout_s",
 })
 
 _ENV_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
@@ -102,8 +86,7 @@ def _valid_env_name(v: Any) -> bool:
 
 @dataclass(frozen=True)
 class DecisionAdapter:
-    type: str
-    base_url: str
+    url: str
     model: str
     api_key_env: str
     api_key_file: str | None
@@ -111,11 +94,14 @@ class DecisionAdapter:
     api_key: str = field(repr=False)   # Key is never exposed in repr or logs
 
     def __post_init__(self) -> None:
-        if self.type not in DECISION_TYPES:
-            raise ValueError(f"Invalid type {self.type!r}; must be one of {DECISION_TYPES}")
-        if not isinstance(self.base_url, str) or not _url_ok(self.base_url):
-            raise ValueError(f"Invalid base_url: {self.base_url!r}")
-        object.__setattr__(self, "base_url", self.base_url.rstrip("/"))
+        if not isinstance(self.url, str) or not _url_ok(self.url):
+            raise ValueError(f"Invalid url: {self.url!r}")
+        if not isinstance(self.model, str) or not self.model.strip():
+            raise ValueError(f"Invalid model: {self.model!r}")
+        if not isinstance(self.api_key_env, str) or not _valid_env_name(self.api_key_env):
+            raise ValueError(f"Invalid api_key_env: {self.api_key_env!r}")
+        if self.api_key_file is not None and not isinstance(self.api_key_file, str):
+            raise ValueError(f"Invalid api_key_file: {self.api_key_file!r}")
         if isinstance(self.timeout_s, bool) or not isinstance(self.timeout_s, (int, float)):
             raise ValueError(f"timeout_s must be a number, got {self.timeout_s!r}")
         if not math.isfinite(self.timeout_s) or not self.timeout_s > 0:
@@ -187,7 +173,7 @@ class DecisionAdapter:
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             }
-            url = f"{self.base_url}/v1/systemone"
+            url = self.url
 
             deadline = time.monotonic() + self.timeout_s
             attempt = 0
@@ -405,45 +391,31 @@ def load_decision_adapter(cfg: dict | None = None) -> DecisionAdapter | None | s
     if not isinstance(block, dict):
         return "bad_config"
 
-    # Inline api_key is strictly prohibited (D6)
-    if "api_key" in block:
-        return "bad_config"
-
-    # Any unknown key -> bad_config (D10)
+    # Any unknown key -> bad_config (D10 / D-a)
     for k in block:
         if k not in KNOWN_KEYS:
             return "bad_config"
 
-    atype = block.get("type")
-    if not isinstance(atype, str) or atype not in DECISION_TYPES:
+    # url validation (required, no default - D-b, D-c)
+    url = block.get("url")
+    if not isinstance(url, str) or not url.strip() or not _url_ok(url):
         return "bad_config"
 
-    preset = PRESETS[atype]
-
-    # base_url validation
-    base_url = block.get("base_url") or preset.get("base_url")
-    if atype == "systemone" and not block.get("base_url"):
-        return "bad_config"
-    if not isinstance(base_url, str) or not _url_ok(base_url):
-        return "bad_config"
-    base_url = base_url.rstrip("/")
-
-    # model validation
-    model = block.get("model") or preset.get("model") or DEFAULT_MODEL
+    # model validation (required, no default - D-c)
+    model = block.get("model")
     if not isinstance(model, str) or not model.strip():
         return "bad_config"
 
-    # api_key_env validation
-    api_key_env = block.get("api_key_env") or preset.get("api_key_env")
-    if atype == "systemone" and not block.get("api_key_env"):
-        return "bad_config"
+    # api_key_env validation (required, no default - D17)
+    api_key_env = block.get("api_key_env")
     if not isinstance(api_key_env, str) or not _valid_env_name(api_key_env):
         return "bad_config"
 
-    # api_key_file validation
+    # api_key_file validation (optional, must be non-empty string if provided)
     api_key_file = block.get("api_key_file")
-    if api_key_file is not None and not isinstance(api_key_file, str):
-        return "bad_config"
+    if api_key_file is not None:
+        if not isinstance(api_key_file, str) or not api_key_file.strip():
+            return "bad_config"
 
     # timeout_s validation
     raw_timeout = block.get("timeout_s", DEFAULT_TIMEOUT_S)
@@ -451,15 +423,14 @@ def load_decision_adapter(cfg: dict | None = None) -> DecisionAdapter | None | s
     if timeout_s is None or timeout_s <= 0:
         return "bad_config"
 
-    # Resolve key
+    # Resolve key: env -> vault -> api_key_file (D17, D14)
     key = adapter_config.resolve_api_key(api_key_env, key_file=api_key_file)
     if not key:
         return "no_key"
 
     try:
         return DecisionAdapter(
-            type=atype,
-            base_url=base_url,
+            url=url,
             model=model,
             api_key_env=api_key_env,
             api_key_file=api_key_file,
@@ -468,3 +439,4 @@ def load_decision_adapter(cfg: dict | None = None) -> DecisionAdapter | None | s
         )
     except ValueError:
         return "bad_config"
+
