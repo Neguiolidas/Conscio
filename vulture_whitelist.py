@@ -405,3 +405,10 @@ from conscio.judge import JudgeVerdict, question_sha256
 
 JudgeVerdict.probabilities
 question_sha256
+
+# ── v4.8 decision adapter (G33) ───────────────────────────────────────
+# Public API implemented in G33; consumed by conscio/judge.py in A57
+# (spec §6). Exercised by tests/test_decision_adapter.py.
+from conscio.decision_adapter import load_decision_adapter
+
+load_decision_adapter
