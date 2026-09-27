@@ -91,13 +91,16 @@ def test_manifest_hashes():
     )
 
 
-def _run_cases(cases: list[dict], tmp_path_factory, run_label: str) -> dict[str, str]:
-    """One fresh healthy engine per case. Returns {case_id: recommendation}.
+def _run_cases(
+    cases: list[dict], tmp_path_factory, run_label: str
+) -> dict[str, tuple[str, tuple[tuple[str, str, tuple[str, ...]], ...]]]:
+    """One fresh healthy engine per case. Returns:
+    {case_id: (recommendation, ((role, vote, (concerns, ...)), ...))}
 
     The G6 invariant: with CONSCIO_VECTORS pinned to 0, no engine this
     file creates may have loaded a vector backend.
     """
-    preds: dict[str, str] = {}
+    preds: dict[str, tuple[str, tuple[tuple[str, str, tuple[str, ...]], ...]]] = {}
     for i, case in enumerate(cases):
         storage = tmp_path_factory.mktemp(f"council_{run_label}_{i:03d}")
         with ConsciousnessEngine(model_name="test", storage_path=str(storage)) as engine:
@@ -111,7 +114,11 @@ def _run_cases(cases: list[dict], tmp_path_factory, run_label: str) -> dict[str,
                 context=case.get("context", ""),
                 options=case.get("options"),
             )
-        preds[case["id"]] = result["recommendation"]
+        voices_sig = tuple(
+            (v["role"], v["vote"], tuple(sorted(v.get("concerns", []))))
+            for v in result.get("voices", [])
+        )
+        preds[case["id"]] = (result["recommendation"], voices_sig)
     return preds
 
 
@@ -119,10 +126,24 @@ def test_order_independence(tmp_path_factory):
     """Same verdicts forward and reversed. Every case runs on a brand-new
     engine in both directions, so any verdict drift between the two runs
     can only come from shared state leaking between cases (module
-    globals, config, fixtures)."""
+    globals, config, fixtures).
+
+    Note (G37/G38): the shared ConsciousnessEngine mutant is equivalent here
+    (0/53 heldout cases diverge on a clean engine); order-dependence teeth
+    are proven by injecting module-state leakage (G38 item 2).
+    """
     cases = load_split("heldout")
     forward = _run_cases(cases, tmp_path_factory, "order_fwd")
     reversed_preds = _run_cases(list(reversed(cases)), tmp_path_factory, "order_rev")
+    for case_id in forward:
+        fwd_rec, fwd_voices = forward[case_id]
+        rev_rec, rev_voices = reversed_preds[case_id]
+        if (fwd_rec, fwd_voices) != (rev_rec, rev_voices):
+            pytest.fail(
+                f"council output depends on case order for case_id='{case_id}': "
+                f"forward recommendation='{fwd_rec}', reversed='{rev_rec}'; "
+                f"forward voices={fwd_voices}, reversed voices={rev_voices}"
+            )
     assert forward == reversed_preds, (
         "council verdicts depend on case order: shared state leaks between cases"
     )
@@ -142,16 +163,22 @@ def test_c3_c4_c5_heldout_by_origin(tmp_path_factory):
     """
     cases = load_split("heldout")
     dev_cases = load_split("dev")
-    preds = _run_cases(cases, tmp_path_factory, "c345")
+    preds = {
+        cid: rec
+        for cid, (rec, _) in _run_cases(cases, tmp_path_factory, "c345").items()
+    }
     pair_ids = {
         c["pair_of"] for c in cases
         if c.get("pair_of") in {d["id"] for d in dev_cases}
     }
-    dev_preds = _run_cases(
-        [d for d in dev_cases if d["id"] in pair_ids],
-        tmp_path_factory,
-        "c345-pair",
-    )
+    dev_preds = {
+        cid: rec
+        for cid, (rec, _) in _run_cases(
+            [d for d in dev_cases if d["id"] in pair_ids],
+            tmp_path_factory,
+            "c345-pair",
+        ).items()
+    }
     result = evaluate(cases, preds, dev_cases=dev_cases, dev_preds=dev_preds)
     for line in result["lines"]:
         print(line)
