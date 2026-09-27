@@ -146,6 +146,9 @@ def capture_council_outcome(store: OutcomeStore, result: dict) -> int:
     snapshot = {
         "question": result.get("question", ""),
         "recommendation": result.get("recommendation", ""),
+        # T5 (calibration spec 6.4, divergence 3): the decision's mode
+        # ("judged" / "deterministic") is part of the provenance.
+        "mode": result.get("mode", "deterministic"),
         "agreement": result.get("agreement", {}),
         "votes_summary": result.get("votes_summary", {}),
     }
