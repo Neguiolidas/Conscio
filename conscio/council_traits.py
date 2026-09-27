@@ -6,20 +6,43 @@ text of the Council input and lights a fixed set of nine boolean traits.
 The extractor is deterministic, dependency-free, and offline: it is pure
 regex over the input text.
 
-Rules (spec section 5.1, Jev ``all_traits`` decision):
+Rules (spec section 5.1, incl. the negation emenda of 2026-09-27; Jev
+``all_traits`` decision):
 
 - The text is ``question + context + options`` (``options`` may be None or
   a list; ``context`` may be empty/None). Matching is case-insensitive and
   word-boundary anchored. English only (house rule, R-S3).
 - **Absence is not a trait**: an empty context lights nothing. A trait
   lights only when one of its trigger words is present in the text.
-- **Negation**: a negation word (``no``, ``not``, ``without``, ``never``,
-  ``missing``) within the 3 words immediately BEFORE a trigger occurrence
-  cancels that occurrence only. The trait still lights if any other
-  occurrence survives. The window looks strictly backwards: "feature flag
-  ... without a redeploy" keeps ``reversible`` lit (dev m03). Triggers that
-  START with a negation word ("no tests", "not sure", "not decided",
-  "without tests") are atomic phrases and never self-cancel.
+- **Negation** (emenda 2026-09-27), applies to all nine traits:
+  - A negation word cancels only the trigger occurrence it governs, and
+    looks strictly backwards.
+  - The window never crosses a **segment**: the question, the context,
+    and each option are separate segments; a negation in one does not
+    cancel a trigger in another.
+  - Inside a segment the window stops at the **end of a sentence**
+    (``.`` ``!`` ``?`` ``;`` followed by a space or end of text). The
+    dot of ``.env`` and of a decimal like ``1.5`` is NOT a sentence end
+    (it is followed by a letter/digit, not a space).
+  - The **comma stays inside the window**: a negation distributes over a
+    comma list — "no backup, staging or rollback" keeps every item of the
+    list cancelled.
+  - **Local** negators (cancel within the 3 words before the trigger, plus
+    the comma-list distribution): ``no``, ``not``, ``without``, ``never``,
+    ``missing``, ``none``, ``cannot``, ``lack``, ``lacks``, ``lacking``,
+    and every ``n't`` contraction, straight (``don't``) or curly
+    (``doesn\u2019t``) apostrophe. A contraction is ONE word: the
+    tokenizer keeps it whole (hyphenated words stay one word too, so
+    ``no-verify`` is not the negator ``no``).
+  - **Clause** negators (cancel every trigger later in the same
+    sentence): ``nobody``, ``nothing`` — a null subject negates the whole
+    predicate ("nobody on the team has reviewed yet").
+  - Triggers that START with a negation word (``no tests``, ``not sure``,
+    ``not decided``, ``without tests``) are atomic phrases: the window is
+    strictly before the match start, so they can never self-cancel.
+  - **Documented limit:** a 4-word gap with no comma is out of reach —
+    "None of it was verified" keeps ``verified`` lit. No test pretends to
+    cover it.
 - The trigger table is frozen here with each entry's provenance commented
   (the dev.jsonl ids where the word actually appears, or "spec 5.1" when it
   comes only from the spec table).
@@ -30,21 +53,41 @@ entries are added on purpose.
 """
 from __future__ import annotations
 
-import bisect
 import re
 from dataclasses import dataclass
 
-#: Negation words. A negation within NEGATION_WINDOW words before a trigger
-#: occurrence cancels that occurrence (backward-only).
-NEGATION_WORDS = frozenset({
-    "no", "not", "without", "never", "missing",
-})
-#: How many words before a trigger can still carry a cancelling negation.
-NEGATION_WINDOW = 3
+# ── negation constants (emenda 2026-09-27) ─────────────────────────────
 
-# Word tokenizer for the negation window: hyphenated words stay one token
-# ("no-verify" is a flag name, not the negation "no").
-_WORD_RE = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+#: Local negators: cancel the trigger within the 3-word window before it
+#: (and, when a comma lies between, over a comma list of 4-5 words).
+LOCAL_NEGATORS = frozenset({
+    "no", "not", "without", "never", "missing", "none",
+    "cannot", "lack", "lacks", "lacking",
+})
+#: Clause negators: cancel every trigger later in the SAME sentence
+#: (a null subject negates the whole predicate: "nobody ... has reviewed").
+CLAUSE_NEGATORS = frozenset({"nobody", "nothing"})
+#: A token ending in n't (straight) or n\u2019t (curly) is a local negator
+#: (don't, isn't, hasn't, doesn\u2019t, ...). The two apostrophe types are
+#: kept separate so each is independently pinned by a teeth test.
+_N_T_STRAIGHT = "n't"
+_N_T_CURLY = "n\u2019t"
+#: The local negation window: how many words before a trigger can carry a
+#: cancelling negation.
+NEGATION_WINDOW = 3
+#: Comma-list distribution: a local negator also cancels a trigger this
+#: many words away when a comma lies between them ("no backup, staging or
+#: rollback").
+_COMMA_RULE = (4, 5)
+#: Sentence-final punctuation (each counts only when followed by a space
+#: or end of text — so the dots of ".env" and "1.5" never break).
+_SENTENCE_END = ".!?;"
+
+# Word tokenizer: hyphenated words stay one word ("no-verify" is a flag
+# name, not the negator "no"); contractions stay one word ("don't",
+# "doesn\u2019t"); a decimal "1.5" tokenizes as "1" and "5".
+_WORD_RE = re.compile(
+    r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*(?:['\u2019][A-Za-z0-9]+)*")
 
 # Trigger table: trait -> (pattern, provenance). Every pattern is compiled
 # case-insensitive; single-word triggers are word-boundary anchored.
@@ -171,34 +214,93 @@ def extract_traits(
 
     Deterministic pure function: same inputs, same Traits, every time.
     No I/O, no network, no engine state — only the words of
-    ``question``, ``context`` and the (optional) ``options``."""
-    parts: list[str] = [question or ""]
+    ``question``, ``context`` and the (optional) ``options``. The
+    question, the context, and each option are NEGATION SEGMENTS: a
+    negation word never crosses the join between two of them."""
+    segments: list[str] = []
+    if question:
+        segments.append(question)
     if context:
-        parts.append(context)
+        segments.append(context)
     if options:
-        parts.extend(str(opt) for opt in options)
-    text = " ".join(parts)
-
-    tokens = list(_WORD_RE.finditer(text))
-    word_texts = [t.group(0).lower() for t in tokens]
-    word_ends = [t.end() for t in tokens]
+        segments.extend(str(opt) for opt in options if str(opt))
 
     lit = {name: False for name in _COMPILED}
-    for name, patterns in _COMPILED.items():
-        for pattern, _where in patterns:
-            for match in pattern.finditer(text):
-                if _negated(match.start(), word_texts, word_ends):
-                    continue
-                lit[name] = True
-                break
+    for segment in segments:
+        _light_in_segment(segment, lit)
     return Traits(**lit)
 
 
-def _negated(match_start: int, word_texts: list[str], word_ends: list[int]) -> bool:
-    """True when a negation word sits within NEGATION_WINDOW words
-    IMMEDIATELY BEFORE the trigger occurrence (backward-only; spec section
-    5.1). The trigger's own first word is never in the window, so atomic
-    negation-start phrases ("no tests", ...) cannot self-cancel."""
-    idx = bisect.bisect_right(word_ends, match_start)
-    window = word_texts[max(0, idx - NEGATION_WINDOW):idx]
-    return any(word in NEGATION_WORDS for word in window)
+def _light_in_segment(segment: str, lit: dict[str, bool]) -> None:
+    """Light the traits whose triggers fire in ONE negation segment.
+
+    A trait already lit (in an earlier segment) is left alone; only
+    unlit traits are matched, so the first firing segment wins and the
+    result stays deterministic."""
+    words = [m.group(0) for m in _WORD_RE.finditer(segment)]
+    spans = [m.span() for m in _WORD_RE.finditer(segment)]
+    breaks = _sentence_breaks(segment)
+    for name, patterns in _COMPILED.items():
+        if lit[name]:
+            continue
+        for pattern, _where in patterns:
+            for match in pattern.finditer(segment):
+                q = _first_word_index(match.start(), spans)
+                if not _trigger_negated(segment, words, spans, breaks, q):
+                    lit[name] = True
+                    break
+            if lit[name]:
+                break
+
+
+def _first_word_index(match_start: int, spans: list[tuple[int, int]]) -> int:
+    """The index of the first word token at/after ``match_start`` (the
+    trigger's first word; for ``.env`` that is the token after the dot)."""
+    index = 0
+    while index < len(spans) and spans[index][0] < match_start:
+        index += 1
+    return index
+
+
+def _trigger_negated(
+    segment: str, words: list[str], spans: list[tuple[int, int]],
+    breaks: list[int], q: int,
+) -> bool:
+    """True when the trigger occurrence at word index ``q`` is cancelled by
+    a negation word.
+
+    Scans backwards from the trigger to the start of the sentence: a
+    clause negator (``nobody``/``nothing``) cancels at any distance; a
+    local negator cancels within NEGATION_WINDOW words, or at
+    _COMMA_RULE distance when a comma lies between (list distribution).
+    The scan stops at the first sentence end (``breaks``) and never
+    leaves the segment. The trigger's own first word is never in the
+    window, so atomic negation-start phrases cannot self-cancel."""
+    for j in range(q - 1, -1, -1):
+        lo, hi = spans[j][1], spans[j + 1][0]
+        if any(lo <= p <= hi for p in breaks):
+            break
+        norm = words[j].lower()
+        gap = q - j
+        if norm in CLAUSE_NEGATORS:
+            return True
+        is_contraction = norm.endswith((_N_T_STRAIGHT, _N_T_CURLY))
+        if norm in LOCAL_NEGATORS or is_contraction:
+            if gap <= NEGATION_WINDOW:
+                return True
+            if _COMMA_RULE[0] <= gap <= _COMMA_RULE[1] \
+                    and "," in segment[spans[j][1]:spans[q][0]]:
+                return True
+    return False
+
+
+def _sentence_breaks(segment: str) -> list[int]:
+    """Character positions right after a sentence end: a ``.`` ``!`` ``?``
+    ``;`` followed by a space or end of text. The dots of ``.env`` and of
+    decimals (``1.5``) are followed by a letter/digit, never by a space,
+    so they do NOT break the window."""
+    breaks: list[int] = []
+    for i, ch in enumerate(segment):
+        if ch in _SENTENCE_END and (i + 1 >= len(segment) or segment[i + 1] == " "):
+            breaks.append(i + 1)
+    return breaks
