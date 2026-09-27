@@ -9,7 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [Unreleased]
+### Added — Council calibration (v4.8)
+
+A calibration round for the four-voice council: an opt-in judge, trait-
+sharpened deterministic votes, a readiness gate, and an offline
+benchmark. All additive; the deterministic path and its contract are
+untouched.
+
+- **Optional council judge (`conscio/judge.py`).** One canonical
+  decision question, answered by *your* typed decision API through the
+  shared `decision_adapter` transport (config: an empty `judge`
+  marker block plus a `decision_adapter` block — see `USAGE.md`). The
+  judge is off unless configured, and no env var alone turns it on.
+  Any failure is a status string, never an exception: `ok`, `off`,
+  `no_key`, `bad_config`, `no_adapter`, `timeout`, `network`,
+  `http_<code>`, `malformed`, `internal_error` (the last two from the
+  A57 boundary; an unexpected error is logged and the council falls
+  back to deterministic mode). Only the council's `question`,
+  `context` and, when present, `options` leave the machine.
+- **Trait-sharpened deterministic votes.** All four voices stay
+  deterministic (the pinned contract: they never call an adapter) and
+  now also read a 9-trait extraction of the question text (English
+  only — see the limitation in `USAGE.md`). The per-voice weight
+  table in `conscio/gates.py` is commented with the dev round that
+  produced each value.
+- **Readiness gate.** A `proceed` only leaves the council when the
+  engine is ready — not in `action_lockdown`, not in a critical
+  metabolic state, and, when a coherence score exists, coherence ≥
+  0.5. Not ready ⇒ lowered to `hold`, reasons in `gate_reason`; the
+  gate never promotes. New additive result fields: `mode`,
+  `judge_status`, `gate_reason`, and the `judge` report in judged
+  mode.
+- **Calibration bench + relabel tool.** An offline harness
+  (`tests/test_council_calibration.py` + `tests/council_bench.py`)
+  measures agreement with the frozen judge labels — Cohen's kappa
+  plus a confusion matrix, per origin — on a 114-case corpus
+  (61 dev + 53 heldout, hash-pinned in
+  `tests/fixtures/council_bench/MANIFEST.json`; the heldout half is
+  read only by the harness). `scripts/council_bench_relabel.py`
+  re-labels the heldout against a live judge and reports drift
+  without writing to the fixture. The harness prints its headline
+  literally as agreement with the judge labels, not ground-truth
+  correctness.
+- **Docs.** The optional judge, its config keys, statuses, result
+  fields, the gate, and the English-only limitation are documented in
+  `USAGE.md` (root and packaged copies); the `conscio_council` entry
+  in `docs/guides/mcp.md` now mentions the judge.
 
 ### Added — Ambient: one task board per machine (v4.8 S3)
 

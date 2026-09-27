@@ -194,6 +194,92 @@ Payload cap 64KB, retention 7 days after read.
 - `conscio_delivery_check()` — verifies blockers, staleness, rationalization before shutdown
 - `conscio_investigate(topic)` — hypothesis scan over recent events
 
+### v4.8 — Council judge (optional, off by default)
+
+The council's four voices (architect, skeptic, pragmatist, critic)
+stay deterministic — the critic sharpens its vote with a 9-trait
+deterministic reading of the question text (English only; see the
+limitation at the end of this section). v4.8 adds an **optional
+judge**: one canonical decision question asked to *your* typed
+decision API (any server that speaks the `POST {url}` protocol with
+a `{model, state, questions}` body). The judge is off unless you
+configure it, and no environment variable alone can turn it on.
+
+**Turn it on** in the Conscio config file (the first existing of
+`~/.config/conscio/config.json`, `~/.conscio/config.json`):
+
+```json
+{
+  "judge": {},
+  "decision_adapter": {
+    "url": "https://decisions.example/v1",
+    "model": "YOUR_MODEL_ID",
+    "api_key_env": "YOUR_DECISION_API_KEY",
+    "api_key_file": "~/.conscio/decision.keys",
+    "timeout_s": 10
+  }
+}
+```
+
+- `judge` is an **empty marker block**: its presence turns the judge
+  on; *any* key inside it is a config error (`bad_config`) — the
+  transport has no per-field defaults and lives entirely in
+  `decision_adapter`.
+- `decision_adapter` accepts exactly five keys: `url` (required;
+  `https://` anywhere, `http://` only for `127.0.0.1`/`localhost`),
+  `model` (required, non-empty), `api_key_env` (required; an
+  `UPPER_CASE` variable name), `api_key_file` (optional; a
+  `NAME=value`-per-line file, strict name match, `~` expanded),
+  `timeout_s` (optional; default 10.0 — one total deadline,
+  retries included). Any other key is `bad_config`.
+- **The key never lives in the config file** — only its variable
+  name. It is resolved in order: the env var named by `api_key_env`,
+  then the hub vault entry of that name, then a line in
+  `api_key_file` matching that name. No key ⇒ `no_key` and the
+  council stays deterministic. The key travels only as the
+  `Authorization` header of the configured endpoint.
+- **What leaves the machine**: only the council's `question`,
+  `context` and — when present — `options` (sent as the `state` of
+  one POST, together with the model id and the canonical question).
+  Never engine state, instance id, paths, agent names, or relay
+  content.
+
+**Judge statuses** — the council result carries `judge_status`:
+`ok` (a verdict came back; `mode` is `judged`), `off` (no judge
+block), `no_key`, `bad_config`, `no_adapter` (judge configured
+without a usable `decision_adapter` block), `timeout` (the total
+deadline, retries included, ran out), `network`, `http_<code>`
+(any non-retried HTTP error; 429/529 are retried with exponential
+backoff inside the deadline), `malformed` (a response that fails
+validation — never turned into a default proceed), and
+`internal_error` (an unexpected error, logged; the council falls
+back to deterministic mode). Every status except `ok` leaves the
+result deterministic.
+
+**New council result fields (additive, v4.8)**: `mode`
+(`judged` | `deterministic`), `judge_status` (above), `gate_reason`
+(None, or the readiness reasons that lowered a proceed to hold),
+and — judged mode only — a `judge` report with `verdict`,
+`probabilities`, `confidence`, `model`. The judge's `verdict` is
+its pre-gate choice: it differs from the final recommendation
+exactly when `gate_reason` is not None.
+
+**Readiness gate.** A `proceed` only leaves the council when the
+engine is ready — not in `action_lockdown` (circuit breaker), not
+in a critical metabolic state, and, when a coherence score exists,
+coherence ≥ 0.5. Not ready ⇒ the recommendation is lowered to
+`hold` and the reasons land in `gate_reason`. The gate never
+promotes; a hold or a veto passes through unchanged. A missing
+coherence score is not a reason — absence of data is not evidence
+of a problem.
+
+**Limitation — the deterministic council reads English.** The trait
+extractor behind the four voices is a deterministic English text
+extraction: a question in another language lights no traits and the
+council falls back to its state-only votes (normally `proceed`).
+The calibration corpus is English; broader language coverage is a
+future round, with the owner.
+
 ### Resources (read-only URIs)
 
 - `conscio://advisory`
