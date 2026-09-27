@@ -271,12 +271,13 @@ class TestMutantProtection:
 
 
 class TestInheritedEnvPrecedence:
-    """A23: sinais de FALLBACK (ZCODE_APP_VERSION etc.) herdados de um ancestral
-    ZCode nunca vencem o sinal de plugin do próprio processo (A22 — bug medido:
-    um claude-mcp lançado de dentro do ZCode derivava zcode)."""
+    """Fallback signals (ZCODE_APP_VERSION etc.) inherited from an ancestor
+    ZCode never outrank the plugin signal of the process itself (the earlier
+    host-identity bug review — a claude-mcp launched from inside ZCode used
+    to derive zcode)."""
 
     def test_claude_inside_zcode_derives_claude(self):
-        # CLAUDECODE + CLAUDE_PLUGIN_* + as 12 ZCODE_* herdadas (sem ZCODE_PLUGIN_*)
+        # CLAUDECODE + CLAUDE_PLUGIN_* + the 12 inherited ZCODE_* (no ZCODE_PLUGIN_*)
         env = {
             "CLAUDECODE": "1",
             "CLAUDE_PLUGIN_DATA": "${HOME}/.claude/plugins/data/conscio-conscio",
@@ -305,14 +306,14 @@ class TestInheritedEnvPrecedence:
         assert ident.source == "hermes"
 
     def test_zcode_fallback_still_works_alone(self):
-        # Sem nenhum sinal primário de outro host: o fallback ZCode segue valendo
+        # With no primary signal from another host: the ZCode fallback still applies
         env = {"ZCODE_APP_VERSION": "3.14.3"}
         ident = derive_host_identity(env=env)
         assert ident.runtime == "zcode"
         assert ident.source == "zcode"
 
     def test_zcode_native_primary_beats_claude_compat(self):
-        # O próprio ZCode injeta ZCODE_PLUGIN_* == CLAUDE_PLUGIN_*: continua zcode
+        # Native ZCode injects ZCODE_PLUGIN_* == CLAUDE_PLUGIN_*: stays zcode
         env = {
             "ZCODE_PLUGIN_DATA": "${HOME}/.zcode/cli/plugins/data/conscio@conscio",
             "ZCODE_PLUGIN_ID": "conscio@conscio",
@@ -341,7 +342,7 @@ class TestInheritedEnvPrecedence:
         assert ident.source == "antigravity"
 
     def test_s1_slug_of_claude_inside_zcode_is_not_zcode(self):
-        # O slug da S1 (runtime derivado) do claude-dentro-do-zcode não pode ser zcode
+        # The S1 (derived runtime) slug of claude-inside-zcode must not be zcode
         env = {
             "CLAUDECODE": "1",
             "CLAUDE_PLUGIN_DATA": "${HOME}/.claude/plugins/data/conscio-conscio",

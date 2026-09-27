@@ -548,8 +548,8 @@ def test_compaction_events_still_fail_open(wired, tmp_path):
 
 
 def test_retention_cap_is_3gb_universal():
-    """A25 (dono, 2026-09-25): o teto de retenção das observações sobe para
-    3 GB em TODOS os produtores; a idade continua 30 dias."""
+    """Owner decision (2026-09-25): the observation retention cap rises to
+    3 GB across all producers; the age limit stays 30 days."""
     import inspect
 
     from conscio import obsstore

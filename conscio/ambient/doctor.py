@@ -101,8 +101,8 @@ def run(*, root: Path | None = None, proc_root: Path = Path("/proc"),
                 f"{iid} ({e.get('connector')}, budget {e.get('wake_budget_per_day', 0)}/day)"
                 for iid, e in sorted(registry.items())))
         for r in wake_residue(db, proc_root=proc_root):
-            lines.append(f"AVISO: processo {r['pid']} carrega CONSCIO_WAKE_TASK={r['task_id']},"
-                         f" mas a task está em {r['state']}. Sugestão: kill {r['pid']}")
+            lines.append(f"WARNING: process {r['pid']} holds CONSCIO_WAKE_TASK={r['task_id']}, "
+                         f"but the task is in {r['state']}. Suggestion: kill {r['pid']}")
         lines.append(check_units(run_cmd))
         lines.append(check_claude(run_cmd))
         if prune:

@@ -896,12 +896,12 @@ def _report_space_diagnostics(
                 if not _is_pid_alive(pid, proc_root=proc_root):
                     slug = entry.name.removeprefix(".migrating-")
                     print(
-                        f"AVISO: lock de migracao orfao {entry} (pid {pid} morto) (D5).\n"
-                        f"  Sugestao: conscio space migrate --slug {slug}\n"
-                        f"            (o comando retoma a migracao de onde parou)"
+                        f"WARNING: orphaned migration lock {entry} (pid {pid} is dead).\n"
+                        f"  Suggestion: conscio space migrate --slug {slug}\n"
+                        f"            (the command resumes the migration where it left off)"
                     )
                 else:
-                    print(f"info: migracao em andamento em {entry} (pid {pid} ativo)")
+                    print(f"info: migration in progress at {entry} (pid {pid} active)")
 
     # Find known plugin directories and pointers
     known_plugins = known_plugin_data_dirs(env=env, home=home_dir, only_existing=True)
@@ -986,10 +986,10 @@ def _report_space_diagnostics(
                                 cd_id = cd_data.get("instance_id")
                                 if cd_id and cd_id != iid:
                                     print(
-                                        f"AVISO: fantasma de downgrade detectado (D2):\n"
-                                        f"  duravel: {entry} (id {iid})\n"
+                                        f"WARNING: downgrade phantom detected:\n"
+                                        f"  durable: {entry} (id {iid})\n"
                                         f"  plugin: {cd} (id {cd_id})\n"
-                                        f"  sugestao: conscio relay forget {cd_id}"
+                                        f"  suggestion: conscio relay forget {cd_id}"
                                     )
                                     phantom_found = True
                                     break
@@ -999,8 +999,8 @@ def _report_space_diagnostics(
                 # Check D3: Orphan tombstone (origin does not exist)
                 if not phantom_found and origin_path and not origin_path.exists():
                     print(
-                        f"info: lapide orfa em {tombstone_file} (D3): "
-                        f"origem {origin_path} nao existe mais (normal apos desinstalacao do plugin)"
+                        f"info: orphaned tombstone at {tombstone_file}: "
+                        f"origin {origin_path} no longer exists (normal after the plugin was uninstalled)"
                     )
 
             # Check D1: Orphan space (sem cartao e sem ponteiro)
@@ -1008,11 +1008,11 @@ def _report_space_diagnostics(
             has_card = (entry_resolved in known_spaces_in_cards) or (iid and iid in known_ids_in_cards)
             if not has_pointer and not has_card and not phantom_found:
                 size, mtime = _dir_stats(entry)
-                age_str = _fmt_age(now - mtime) if mtime > 0 else "desconhecido"
+                age_str = _fmt_age(now - mtime) if mtime > 0 else "unknown"
                 print(
-                    f"AVISO: espaco orfao {entry.name} (D1):\n"
-                    f"  id: {iid or 'sem id'}, tamanho: {_fmt_size(size)}, modificado: {age_str} atras\n"
-                    f"  caminho: {entry}"
+                    f"WARNING: orphaned space {entry.name}:\n"
+                    f"  id: {iid or 'no id'}, size: {_fmt_size(size)}, modified: {age_str} ago\n"
+                    f"  path: {entry}"
                 )
 
     # Check D4: Deferred migration in B0
@@ -1028,8 +1028,8 @@ def _report_space_diagnostics(
                 active_procs = _find_active_procs_on_path(p_dir, proc_root=proc_root)
             if active_procs:
                 print(
-                    f"AVISO: migracao adiada para {legacy_space} (D4): "
-                    f"{len(active_procs)} processo(s) ativo(s) no caminho legado:"
+                    f"WARNING: migration deferred for {legacy_space}: "
+                    f"{len(active_procs)} active process(es) on the legacy path:"
                 )
                 for proc in active_procs:
                     print(f"  pid {proc['pid']}: {proc['cmdline'][:80]}")
@@ -1037,11 +1037,11 @@ def _report_space_diagnostics(
     # Check Refusal markers: space-refused.json
     refused_markers = find_refused_markers(env=env, home=home_dir)
     for rm in refused_markers:
-        age_str = _fmt_age(now - rm["ts"]) if rm["ts"] > 0 else "desconhecido"
+        age_str = _fmt_age(now - rm["ts"]) if rm["ts"] > 0 else "unknown"
         print(
-            f"AVISO: marcador de recusa em {rm['path']}:\n"
-            f"  estado: {rm['state']}, gravado {age_str} atras\n"
-            f"  motivo: {rm['reason']}"
+            f"WARNING: refusal marker at {rm['path']}:\n"
+            f"  state: {rm['state']}, written {age_str} ago\n"
+            f"  reason: {rm['reason']}"
         )
 
 

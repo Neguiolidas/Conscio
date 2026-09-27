@@ -2,7 +2,7 @@
 
 Values are computed by hand, not asserted against the implementation:
 each test documents the input, the expected arithmetic, and the expected
-result. (spec section 7.4: cada função com seu teste de valor conhecido.)
+result. (spec section 7.4: every function has its known-value test.)
 """
 from __future__ import annotations
 

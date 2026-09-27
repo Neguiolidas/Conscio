@@ -497,7 +497,7 @@ def migrate_space_cmd(
                 file=sys.stderr,
             )
 
-    # Step 2: Backup rotativo de 2 gerações
+    # Step 2: Rolling backup of 2 generations
     base_dir = durable_target.parent.parent
     backups_dir = base_dir / "backups"
     backups_dir.mkdir(parents=True, exist_ok=True)
@@ -552,7 +552,7 @@ def migrate_space_cmd(
                 file=sys.stderr,
             )
 
-        # Step 4: Gravar lápide migrated-from.json na raiz durável
+        # Step 4: Write the migrated-from.json tombstone at the durable root
         origin_str = str(legacy_path.resolve()) if legacy_path else str(durable_target)
         tombstone_payload = {
             "schema": 1,
@@ -563,7 +563,7 @@ def migrate_space_cmd(
         }
         _write_json_atomic(durable_target / "migrated-from.json", tombstone_payload)
 
-        # Step 5: Gravar ponteiro space-pointer.json na pasta do plugin
+        # Step 5: Write the space-pointer.json pointer into the plugin folder
         # pointer_path was resolved and validated at Step 0b; it is None
         # only when legacy_path is None, in which case there is nothing
         # to point at — so this guard is behavior-preserving, not a
@@ -571,11 +571,11 @@ def migrate_space_cmd(
         if legacy_path and pointer_path is not None:
             write_pointer_atomic(pointer_path, target=durable_target, runtime=slug, slug=slug)
 
-        # Step 6: Apagar space-refused.json se existir
+        # Step 6: Delete space-refused.json if present
         if legacy_path:
             remove_refused_marker(legacy_path, env)
 
-        # Step 7: Remover lock .migrating-<slug>
+        # Step 7: Remove the .migrating-<slug> lock
         remove_migration_lock(slug)
 
     except Exception as exc:
@@ -583,7 +583,7 @@ def migrate_space_cmd(
         print(f"to resume migration: conscio space migrate --slug {slug}", file=sys.stderr)
         raise
 
-    # Step 8: Imprimir units systemd regenerados apontando para o durável no stdout
+    # Step 8: Print the regenerated systemd units pointing at the durable root
     db_path = durable_target / "liaison.db"
     self_id = "default"
     inst_json = durable_target / "instance.json"

@@ -37,13 +37,14 @@ class ModeRouter:
         return "compact"
 
     def format_council(self, council_result: dict) -> dict:
-        """Formata resultado do council conforme o modo.
+        """Formats the council result for the output mode.
 
-        O modo vem do próprio resultado (calibration spec section 6.3/
-        6.4): o council() emite ``mode`` ("judged" ou "deterministic")
-        desde a T5. A detecção antiga pela string "LLM" na análise das
-        vozes era código morto desde a v4.6.8 (o critic nunca chama
-        LLM) e foi apagada, sem whitelist (section 6.4).
+        The mode comes from the result itself (calibration spec section
+        6.3/6.4): council() has emitted ``mode`` ("judged" or
+        "deterministic") since the readiness-gate step. The old
+        detection by the "LLM" string in the voice analyses was dead
+        code since v4.6.8 (the critic never calls an LLM) and was
+        deleted, with no whitelist entry (section 6.4).
         """
         mode = council_result.get("mode", "deterministic")
         complexity = self.complexity

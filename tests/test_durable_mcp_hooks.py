@@ -359,7 +359,7 @@ def test_hook_explicit_storage_ignores_plugin_root_pointer_and_refusal(tmp_path,
     )
 
     monkeypatch.setenv("CLAUDE_PLUGIN_DATA", str(plugin_dir))
-    explicit_storage = fake_home / "meu-espaco"
+    explicit_storage = fake_home / "my-space"
     explicit_storage.mkdir(parents=True, exist_ok=True)
 
     # 1. resolve_hook_storage must return explicit_storage, not other_target or None
@@ -400,7 +400,7 @@ def test_hook_explicit_storage_ignores_plugin_root_pointer_and_refusal(tmp_path,
 
 
 def test_plugin_data_dir_none_for_non_bound_storage(tmp_path):
-    explicit_storage = tmp_path / "meu-espaco"
+    explicit_storage = tmp_path / "my-space"
     explicit_storage.mkdir(parents=True, exist_ok=True)
 
     assert plugin_data_dir(explicit_storage) is None
@@ -414,7 +414,7 @@ def test_plugin_data_dir_none_for_non_bound_storage(tmp_path):
 
 
 def test_remove_refused_marker_preserves_user_file_in_non_bound_storage(tmp_path):
-    explicit_storage = tmp_path / "meu-espaco"
+    explicit_storage = tmp_path / "my-space"
     explicit_storage.mkdir(parents=True, exist_ok=True)
     planted_file = explicit_storage / "space-refused.json"
     planted_file.write_text(json.dumps({"user": "important-data"}), encoding="utf-8")

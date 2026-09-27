@@ -197,7 +197,7 @@ def test_c6_down_judged_mode_gate_lowers_proceed(engine, reason, setup, monkeypa
 ], ids=["lockdown", "metabolic-critical", "low-coherence"])
 def test_c6_down_deterministic_mode_gate_lowers_proceed(engine, reason, setup, monkeypatch):
     """The gate applies identically without a judge (spec section 8:
-    'idem no modo determinístico')."""
+    'the same in deterministic mode')."""
     setup(engine)
     _judge_off(monkeypatch)
     result = gates.council(engine, question="rename the changelog entry", context="docs only")

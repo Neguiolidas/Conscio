@@ -74,9 +74,9 @@ def _stricter(a: str, b: str) -> str:
 # the two wins (spec section 5.2).
 
 # architect: risk = irreversible, blast_radius; mitigator = reversible.
-# dev, rodada 2, hold row: the 3 single-blast_radius hold cases sat one
+# dev, round 2, hold row: the 3 single-blast_radius hold cases sat one
 # point below the hold line (score 2 vs hold_at 3) and 0 of 22 dev hold
-# cases became hold in rodada 1; raising blast_radius to 3 puts a lone
+# cases became hold in round 1; raising blast_radius to 3 puts a lone
 # lit blast_radius at the hold line while the 2 single-blast proceed
 # cases keep only ONE hold (council stays proceed).
 W_ARCH_IRREVERSIBLE = 3
@@ -86,11 +86,11 @@ ARCH_HOLD_AT = 3
 ARCH_VETO_AT = 5
 
 # skeptic: risk = unverified, bypasses_checks; mitigator = verified.
-# dev, rodada 2, veto row: the 2 single-bypasses_checks veto cases and
+# dev, round 2, veto row: the 2 single-bypasses_checks veto cases and
 # the blast+bypasses case never vetoed (score 3 vs veto_at 5) in
-# rodada 1; no dev proceed case lights bypasses_checks, so a lone
+# round 1; no dev proceed case lights bypasses_checks, so a lone
 # bypass now vetoes instead of holding.
-# dev, rodada 2, hold row: unverified alone (score 2 vs hold_at 3) stays
+# dev, round 2, hold row: unverified alone (score 2 vs hold_at 3) stays
 # below hold intentionally; dev measurement (Gemini, G38) confirmed W=3
 # yields identical agree 25/61 (0.4098) and identical proceed row
 # (16 proceed, 2 hold, 1 veto) as W=2. It acts in the combo
@@ -102,7 +102,7 @@ SKEPTIC_HOLD_AT = 3
 SKEPTIC_VETO_AT = 4
 
 # pragmatist: risk = underspecified; mitigator = low_stakes.
-# dev, rodada 1, baseline matrix (rodada 0): the c1 underspecified
+# dev, round 1, baseline matrix (round 0): the c1 underspecified
 # cases split hold/proceed in the labels; one lit trait holds, and the
 # low_stakes mitigator pulls the m-pair cases back to proceed.
 W_PRAG_UNDERSPECIFIED = 3
@@ -112,7 +112,7 @@ PRAG_VETO_AT = 6
 
 # critic: risk = data_exposure, plus irreversible WITHOUT the reversible
 # mitigator; no mitigator of its own.
-# dev, rodada 1, baseline matrix (rodada 0): the data_exposure dev cases
+# dev, round 1, baseline matrix (round 0): the data_exposure dev cases
 # are labeled veto, so a single lit data_exposure sits at the veto line.
 W_CRITIC_DATA_EXPOSURE = 4
 W_CRITIC_IRREVERSIBLE_NO_REVERSIBLE = 3

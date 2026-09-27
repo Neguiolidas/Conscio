@@ -137,7 +137,7 @@ def test_stale_lock_listed_not_cleared(tmp_path, capsys):
 
     # Must suggest resuming migration via migrate --slug <slug>
     assert "conscio space migrate --slug claude-code" in out
-    assert "retoma a migracao" in out
+    assert "resumes the migration" in out
     assert "rm " not in out
     assert str(lock_file) in out
     assert "99999" in out
@@ -275,7 +275,7 @@ def test_d3_orphan_tombstone_reported(tmp_path, capsys):
     out = capsys.readouterr().out
 
     assert rc == 0
-    assert "migrated-from.json" in out or "lapide orfa" in out or "lápide órfã" in out
+    assert "orphaned tombstone" in out
     assert str(non_existent) in out
 
 
@@ -306,7 +306,7 @@ def test_d4_deferred_migration_reported(tmp_path, capsys):
 
     assert rc == 0
     assert "777" in out
-    assert str(legacy_space) in out or "migracao adiada" in out or "migração adiada" in out
+    assert "migration deferred" in out
 
 
 def test_refused_markers_reported(tmp_path, capsys):

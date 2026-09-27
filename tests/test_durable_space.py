@@ -525,7 +525,9 @@ def _lock_concurrency_worker(slug, env_vars, event_locked, event_step1_done, eve
 
 
 def test_boot_during_lock_concurrency_with_event(tmp_path):
-    # Sincronização via Event: sem os eventos os dois passos não se sobrepõem e o teste passa mesmo sem o lock (falso-verde 16/20 do H15).
+    # Synchronization via Event: without the events the two steps do not
+    # overlap and the test passes even without the lock (the 16/20 false-green
+    # pinned by the hostile review).
     plugin_dir = tmp_path / "plugin"
     slug = "claude-code"
     lock_file = INSTANCES_ROOT() / f".migrating-{slug}"
