@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from conscio.auto_evolution import ProposalStatus
+from conscio.council_traits import Traits, extract_traits
 
 if TYPE_CHECKING:
     from conscio.engine import ConsciousnessEngine
@@ -55,6 +56,135 @@ ADR_VALID_STATUSES = {"proposed", "accepted", "deprecated", "superseded"}
 
 COUNCIL_ROLES = ("architect", "skeptic", "pragmatist", "critic")
 COUNCIL_VOTES = ("proceed", "hold", "veto")
+
+# Vote severity used by the trait vote: proceed < hold < veto.
+_VOTE_SEVERITY = {"proceed": 0, "hold": 1, "veto": 2}
+
+
+def _stricter(a: str, b: str) -> str:
+    """The more severe of two votes (proceed < hold < veto)."""
+    return a if _VOTE_SEVERITY[a] >= _VOTE_SEVERITY[b] else b
+
+
+# ── Council trait weights (calibration spec section 5.2, T6) ─────────
+# Integer weight and threshold table. Every constant carries its
+# provenance comment: the dev round that produced the value and the dev
+# metric it moved. The state checks above each vote stay untouched —
+# this table only drives the separate trait vote, and the stricter of
+# the two wins (spec section 5.2).
+
+# architect: risk = irreversible, blast_radius; mitigator = reversible.
+# dev, rodada 1, baseline matrix (rodada 0): every dev case came out
+# proceed; 3 irreversible and 2 blast_radius cases are labeled veto, so
+# the starting weights put two lit risk traits past the veto line.
+W_ARCH_IRREVERSIBLE = 3
+W_ARCH_BLAST_RADIUS = 2
+W_ARCH_REVERSIBLE = 2
+ARCH_HOLD_AT = 3
+ARCH_VETO_AT = 5
+
+# skeptic: risk = unverified, bypasses_checks; mitigator = verified.
+# dev, rodada 1, baseline matrix (rodada 0): bypasses_checks cases are
+# labeled hold/veto; one lit risk trait sits at the hold line, two
+# (e.g. unverified + bypasses_checks) cross into veto.
+W_SKEPTIC_UNVERIFIED = 2
+W_SKEPTIC_BYPASSES_CHECKS = 3
+W_SKEPTIC_VERIFIED = 2
+SKEPTIC_HOLD_AT = 3
+SKEPTIC_VETO_AT = 5
+
+# pragmatist: risk = underspecified; mitigator = low_stakes.
+# dev, rodada 1, baseline matrix (rodada 0): the c1 underspecified
+# cases split hold/proceed in the labels; one lit trait holds, and the
+# low_stakes mitigator pulls the m-pair cases back to proceed.
+W_PRAG_UNDERSPECIFIED = 3
+W_PRAG_LOW_STAKES = 2
+PRAG_HOLD_AT = 3
+PRAG_VETO_AT = 6
+
+# critic: risk = data_exposure, plus irreversible WITHOUT the reversible
+# mitigator; no mitigator of its own.
+# dev, rodada 1, baseline matrix (rodada 0): the data_exposure dev cases
+# are labeled veto, so a single lit data_exposure sits at the veto line.
+W_CRITIC_DATA_EXPOSURE = 4
+W_CRITIC_IRREVERSIBLE_NO_REVERSIBLE = 3
+CRITIC_HOLD_AT = 3
+CRITIC_VETO_AT = 4
+
+
+def _threshold_vote(score: int, hold_at: int, veto_at: int) -> str:
+    """Score -> trait vote: veto at >= veto_at, hold at >= hold_at."""
+    if score >= veto_at:
+        return "veto"
+    if score >= hold_at:
+        return "hold"
+    return "proceed"
+
+
+def _architect_traits(traits: Traits) -> tuple[str, list[str]]:
+    """Architect trait vote (spec section 5.2): risk = irreversible,
+    blast_radius; mitigator = reversible. Returns (trait vote, the
+    lit risk-trait concerns, each naming its trait)."""
+    score = 0
+    concerns: list[str] = []
+    if traits.irreversible:
+        score += W_ARCH_IRREVERSIBLE
+        concerns.append("trait irreversible: the action destroys or rewrites something with no way back")
+    if traits.blast_radius:
+        score += W_ARCH_BLAST_RADIUS
+        concerns.append("trait blast_radius: the change reaches shared or public territory")
+    if traits.reversible:
+        score -= W_ARCH_REVERSIBLE
+    vote = _threshold_vote(score, ARCH_HOLD_AT, ARCH_VETO_AT)
+    return vote, concerns
+
+
+def _skeptic_traits(traits: Traits) -> tuple[str, list[str]]:
+    """Skeptic trait vote (spec section 5.2): risk = unverified,
+    bypasses_checks; mitigator = verified."""
+    score = 0
+    concerns: list[str] = []
+    if traits.unverified:
+        score += W_SKEPTIC_UNVERIFIED
+        concerns.append("trait unverified: claims are asserted without evidence")
+    if traits.bypasses_checks:
+        score += W_SKEPTIC_BYPASSES_CHECKS
+        concerns.append("trait bypasses_checks: the plan skips a required verification")
+    if traits.verified:
+        score -= W_SKEPTIC_VERIFIED
+    vote = _threshold_vote(score, SKEPTIC_HOLD_AT, SKEPTIC_VETO_AT)
+    return vote, concerns
+
+
+def _pragmatist_traits(traits: Traits) -> tuple[str, list[str]]:
+    """Pragmatist trait vote (spec section 5.2): risk = underspecified;
+    mitigator = low_stakes."""
+    score = 0
+    concerns: list[str] = []
+    if traits.underspecified:
+        score += W_PRAG_UNDERSPECIFIED
+        concerns.append("trait underspecified: the request declares that information is missing")
+    if traits.low_stakes:
+        score -= W_PRAG_LOW_STAKES
+    vote = _threshold_vote(score, PRAG_HOLD_AT, PRAG_VETO_AT)
+    return vote, concerns
+
+
+def _critic_traits(traits: Traits) -> tuple[str, list[str]]:
+    """Critic trait vote (spec section 5.2): risk = data_exposure, plus
+    irreversible WITHOUT the reversible mitigator; no mitigator of its
+    own. The critic stays deterministic and never calls the adapter."""
+    score = 0
+    concerns: list[str] = []
+    if traits.data_exposure:
+        score += W_CRITIC_DATA_EXPOSURE
+        concerns.append("trait data_exposure: secrets or personal data may be exposed")
+    if traits.irreversible and not traits.reversible:
+        score += W_CRITIC_IRREVERSIBLE_NO_REVERSIBLE
+        concerns.append("trait irreversible without a reversible mitigation")
+    vote = _threshold_vote(score, CRITIC_HOLD_AT, CRITIC_VETO_AT)
+    return vote, concerns
+
 
 
 # ── decide() ─────────────────────────────────────────────────────────
@@ -293,6 +423,15 @@ def _voice_architect(
 
     vote = "veto" if len(concerns) >= 2 else ("hold" if concerns else "proceed")
 
+    # Trait vote (calibration spec section 5.2, T6): a separate vote
+    # from the text traits. The state vote above stays intact; the
+    # stricter of the two wins, and lit risk traits name themselves in
+    # the concerns.
+    traits = extract_traits(question, context, options)
+    trait_vote, trait_concerns = _architect_traits(traits)
+    concerns.extend(trait_concerns)
+    vote = _stricter(vote, trait_vote)
+
     return {
         "role": "architect",
         "analysis": "; ".join(analysis_items),
@@ -342,6 +481,14 @@ def _voice_skeptic(
 
     vote = "veto" if len(concerns) >= 2 else ("hold" if concerns else "proceed")
 
+    # Trait vote (calibration spec section 5.2, T6): the state vote
+    # above stays intact; the stricter of the two wins, and lit risk
+    # traits name themselves in the concerns.
+    traits = extract_traits(question, context, options)
+    trait_vote, trait_concerns = _skeptic_traits(traits)
+    concerns.extend(trait_concerns)
+    vote = _stricter(vote, trait_vote)
+
     return {
         "role": "skeptic",
         "analysis": "; ".join(analysis_items),
@@ -389,6 +536,14 @@ def _voice_pragmatist(
 
     vote = "veto" if len(concerns) >= 2 else ("hold" if concerns else "proceed")
 
+    # Trait vote (calibration spec section 5.2, T6): the state vote
+    # above stays intact; the stricter of the two wins, and lit risk
+    # traits name themselves in the concerns.
+    traits = extract_traits(question, context, options)
+    trait_vote, trait_concerns = _pragmatist_traits(traits)
+    concerns.extend(trait_concerns)
+    vote = _stricter(vote, trait_vote)
+
     return {
         "role": "pragmatist",
         "analysis": "; ".join(analysis_items),
@@ -418,6 +573,15 @@ def _voice_critic(
     concerns = _critic_deterministic(engine, question, context, options)
     analysis_items.extend(concerns)
     vote = "veto" if len(concerns) >= 2 else ("hold" if concerns else "proceed")
+
+    # Trait vote (calibration spec section 5.2, T6): the state vote
+    # above stays intact; the stricter of the two wins, and lit risk
+    # traits name themselves in the concerns. The critic stays
+    # deterministic: the trait vote adds no LLM call.
+    traits = extract_traits(question, context, options)
+    trait_vote, trait_concerns = _critic_traits(traits)
+    concerns.extend(trait_concerns)
+    vote = _stricter(vote, trait_vote)
 
     return {
         "role": "critic",
