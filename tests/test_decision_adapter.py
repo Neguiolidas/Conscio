@@ -17,6 +17,7 @@ import json
 import random
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.request
 from typing import Any
@@ -802,3 +803,73 @@ def test_hub_redact_masks_api_key_in_decision_adapter(tmp_path, monkeypatch):
     assert "api_key" not in da
     assert da["api_key_present"] is True
     assert da["type"] == "experiential"
+
+
+# ── G33b Construction validation and security teeth ─────────────────────────
+
+def test_direct_construction_with_file_url_raises_valueerror_and_no_io(monkeypatch):
+    def _explode(*args, **kwargs):
+        raise AssertionError("urlopen must NEVER be called on invalid base_url construction")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _explode)
+    with pytest.raises(ValueError, match="Invalid base_url"):
+        DecisionAdapter("systemone", "file:///etc/hostname#", "m", "K", None, 10.0, "secret-key")
+
+
+@pytest.mark.parametrize("bad_timeout", [float("nan"), float("inf"), 0, -1, -0.5, 0.0, True, False])
+def test_construction_invalid_timeout_s_raises_valueerror(bad_timeout):
+    with pytest.raises(ValueError, match="timeout_s must be"):
+        DecisionAdapter("systemone", "https://api.example.com", "m", "K", None, bad_timeout, "secret-key")
+
+
+@pytest.mark.parametrize("bad_key", ["secret\nkey", "secret\x00key", "secret\rkey", ""])
+def test_construction_invalid_api_key_raises_valueerror(bad_key):
+    with pytest.raises(ValueError, match="api_key"):
+        DecisionAdapter("systemone", "https://api.example.com", "m", "K", None, 10.0, bad_key)
+
+
+def test_transport_exception_never_leaks_secret_key_in_str_repr_args_traceback(monkeypatch):
+    secret_key = "TOP_SECRET_API_KEY_xyz123"
+    ad = DecisionAdapter("systemone", "https://api.example.com", "m", "K", None, 10.0, secret_key)
+
+    def _exploding_urlopen(req, timeout):
+        raise ValueError(f"bad header Authorization: Bearer {secret_key}")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _exploding_urlopen)
+
+    with pytest.raises(DecisionError) as exc_info:
+        ad.decide({"state": "ok"}, {"q1": {"type": "noul"}})
+
+    err = exc_info.value
+    assert err.status == "network"
+    assert secret_key not in str(err)
+    assert secret_key not in repr(err)
+    for arg in err.args:
+        assert secret_key not in str(arg)
+
+    tb_str = "".join(traceback.format_exception(type(err), err, err.__traceback__))
+    assert secret_key not in tb_str
+
+
+def test_local_validation_state_rejects_nan_and_non_serializable_without_io(monkeypatch):
+    ad = DecisionAdapter("systemone", "https://api.example.com", "m", "K", None, 10.0, "key")
+
+    def _explode(*args, **kwargs):
+        raise AssertionError("urlopen must NEVER be called on invalid state")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _explode)
+
+    # State with NaN
+    with pytest.raises(ValueError, match="state is not valid JSON"):
+        ad.decide({"metric": float("nan")}, {"q1": {"type": "noul"}})
+
+    # State with Inf
+    with pytest.raises(ValueError, match="state is not valid JSON"):
+        ad.decide({"metric": float("inf")}, {"q1": {"type": "noul"}})
+
+    # State with non-serializable object
+    class Unserializable:
+        pass
+
+    with pytest.raises(ValueError, match="state is not valid JSON"):
+        ad.decide({"obj": Unserializable()}, {"q1": {"type": "noul"}})

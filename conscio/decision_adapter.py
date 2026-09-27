@@ -110,15 +110,40 @@ class DecisionAdapter:
     timeout_s: float
     api_key: str = field(repr=False)   # Key is never exposed in repr or logs
 
+    def __post_init__(self) -> None:
+        if self.type not in DECISION_TYPES:
+            raise ValueError(f"Invalid type {self.type!r}; must be one of {DECISION_TYPES}")
+        if not isinstance(self.base_url, str) or not _url_ok(self.base_url):
+            raise ValueError(f"Invalid base_url: {self.base_url!r}")
+        object.__setattr__(self, "base_url", self.base_url.rstrip("/"))
+        if isinstance(self.timeout_s, bool) or not isinstance(self.timeout_s, (int, float)):
+            raise ValueError(f"timeout_s must be a number, got {self.timeout_s!r}")
+        if not math.isfinite(self.timeout_s) or not self.timeout_s > 0:
+            raise ValueError(f"timeout_s must be finite and > 0, got {self.timeout_s!r}")
+        if not isinstance(self.api_key, str) or not self.api_key:
+            raise ValueError("api_key must be a non-empty string")
+        if not self.api_key.isprintable():
+            raise ValueError("api_key must contain only printable characters")
+
     def decide(self, state: Any, questions: dict[str, dict]) -> Decision:
         """Query the model with state and questions, returning a typed Decision.
 
-        Validates questions locally first (raising ValueError on caller errors).
+        Validates state and questions locally first (raising ValueError on caller errors).
         After local validation, only raises DecisionError.
         """
         # 1. Local validation before any I/O (raises ValueError)
+        try:
+            json.dumps(state, allow_nan=False)
+        except (TypeError, ValueError) as err:
+            raise ValueError(f"state is not valid JSON (allow_nan=False): {err}") from None
+
         if not isinstance(questions, dict) or not questions:
             raise ValueError("questions must be a non-empty dict")
+
+        try:
+            json.dumps(questions, allow_nan=False)
+        except (TypeError, ValueError) as err:
+            raise ValueError(f"questions is not valid JSON (allow_nan=False): {err}") from None
 
         for qid, q in questions.items():
             if not isinstance(qid, str) or not qid.strip():
@@ -145,178 +170,193 @@ class DecisionAdapter:
                     )
 
         # 2-5. Transport and response validation (only raises DecisionError)
+        raw = self._execute_transport(state, questions)
+        return self._parse_response(raw, questions)
+
+    def _execute_transport(self, state: Any, questions: dict[str, dict]) -> bytes:
         try:
-            return self._execute_decide(state, questions)
+            payload = json.dumps(
+                {"model": self.model, "questions": questions, "state": state},
+                sort_keys=True,
+                allow_nan=False,
+            ).encode("utf-8")
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            url = f"{self.base_url}/v1/systemone"
+
+            deadline = time.monotonic() + self.timeout_s
+            attempt = 0
+            raw: bytes | None = None
+
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise DecisionError("timeout") from None
+
+                request = urllib.request.Request(
+                    url, data=payload, headers=headers, method="POST"
+                )
+                try:
+                    with urllib.request.urlopen(request, timeout=remaining) as response:
+                        raw = response.read()
+                    break
+                except urllib.error.HTTPError as err:
+                    if err.code in (429, 529):
+                        delay = min(2.0 ** attempt, max(deadline - time.monotonic(), 0.0))
+                        attempt += 1
+                        if delay > 0:
+                            time.sleep(delay)
+                        continue
+                    raise DecisionError(f"http_{err.code}") from None
+                except urllib.error.URLError as err:
+                    reason = getattr(err, "reason", None)
+                    if isinstance(reason, TimeoutError):
+                        if deadline - time.monotonic() <= 0:
+                            raise DecisionError("timeout") from None
+                        raise DecisionError("network") from None
+                    raise DecisionError("network") from None
+                except (TimeoutError, ConnectionError, OSError) as err:
+                    if isinstance(err, TimeoutError):
+                        if deadline - time.monotonic() <= 0:
+                            raise DecisionError("timeout") from None
+                    raise DecisionError("network") from None
+
+            if raw is None:
+                raise DecisionError("network") from None
+            return raw
+        except DecisionError:
+            raise
+        except Exception:
+            # Any unexpected transport error (e.g. invalid header from http.client, socket, etc.)
+            # MUST NOT include exc text or chain 'from exc' to prevent key leakage.
+            raise DecisionError("network") from None
+
+    def _parse_response(self, raw: bytes, questions: dict[str, dict]) -> Decision:
+        try:
+            try:
+                data = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, ValueError) as err:
+                raise DecisionError("malformed", f"invalid JSON or encoding: {err}") from None
+
+            if not isinstance(data, dict):
+                raise DecisionError("malformed", "response is not a JSON object")
+
+            model_resp = data.get("model")
+            model_str = model_resp if isinstance(model_resp, str) else None
+
+            answers_raw = data.get("answers")
+            if not isinstance(answers_raw, dict):
+                raise DecisionError("malformed", "answers field missing or not an object")
+
+            parsed_answers: dict[str, Answer] = {}
+            for qid, q in questions.items():
+                if qid not in answers_raw:
+                    raise DecisionError("malformed", f"missing answer for question {qid!r}")
+                ans_item = answers_raw[qid]
+                if not isinstance(ans_item, dict):
+                    raise DecisionError("malformed", f"answer for {qid!r} must be an object")
+
+                ans_type = ans_item.get("type")
+                if ans_type != q["type"]:
+                    raise DecisionError(
+                        "malformed",
+                        f"answer type {ans_type!r} does not match question type {q['type']!r}",
+                    )
+
+                if q["type"] == "choice":
+                    choice_val = ans_item.get("choice")
+                    if not isinstance(choice_val, str):
+                        raise DecisionError(
+                            "malformed", f"choice value for {qid!r} must be str, got {type(choice_val)}"
+                        )
+                    crit = q.get("criteria", {})
+                    allowed = set(crit.keys()) if isinstance(crit, dict) else set(crit)
+                    if choice_val not in allowed:
+                        raise DecisionError(
+                            "malformed", f"choice {choice_val!r} not in criteria {allowed}"
+                        )
+                    probs_raw = ans_item.get("probabilities")
+                    if not isinstance(probs_raw, dict):
+                        raise DecisionError("malformed", f"probabilities for {qid!r} must be an object")
+                    if set(probs_raw.keys()) != allowed:
+                        raise DecisionError(
+                            "malformed",
+                            f"probabilities keys {set(probs_raw.keys())} != criteria keys {allowed}",
+                        )
+                    probs_clean: dict[str, float] = {}
+                    for k, v in probs_raw.items():
+                        f = _finite_float(v)
+                        if f is None or not (0.0 <= f <= 1.0):
+                            raise DecisionError(
+                                "malformed", f"probability for {k!r} must be finite in [0, 1]"
+                            )
+                        probs_clean[k] = f
+                    conf_f = _finite_float(ans_item.get("confidence"))
+                    if conf_f is None or not (0.0 <= conf_f <= 1.0):
+                        raise DecisionError(
+                            "malformed", "confidence must be finite in [0, 1]"
+                        )
+                    parsed_answers[qid] = Answer(
+                        type="choice",
+                        value=choice_val,
+                        probabilities=probs_clean,
+                        confidence=conf_f,
+                    )
+
+                elif q["type"] == "noul":
+                    noul_val = _finite_float(ans_item.get("noul"))
+                    if noul_val is None or not (0.0 <= noul_val <= 1.0):
+                        raise DecisionError(
+                            "malformed", f"noul value for {qid!r} must be finite in [0, 1]"
+                        )
+                    parsed_answers[qid] = Answer(
+                        type="noul",
+                        value=noul_val,
+                        probabilities={},
+                        confidence=None,
+                    )
+
+                elif q["type"] == "score":
+                    score_val = _finite_float(ans_item.get("score"))
+                    if score_val is None:
+                        raise DecisionError(
+                            "malformed", f"score value for {qid!r} must be a finite number"
+                        )
+                    probs_raw = ans_item.get("probabilities")
+                    if not isinstance(probs_raw, dict):
+                        raise DecisionError("malformed", f"probabilities for {qid!r} must be an object")
+                    probs_clean = {}
+                    for k, v in probs_raw.items():
+                        if not isinstance(k, str):
+                            raise DecisionError(
+                                "malformed", f"score probability key {k!r} must be str"
+                            )
+                        f = _finite_float(v)
+                        if f is None or not (0.0 <= f <= 1.0):
+                            raise DecisionError(
+                                "malformed", f"probability for level {k!r} must be finite in [0, 1]"
+                            )
+                        probs_clean[k] = f
+                    conf_f = _finite_float(ans_item.get("confidence"))
+                    if conf_f is None or not (0.0 <= conf_f <= 1.0):
+                        raise DecisionError(
+                            "malformed", "confidence must be finite in [0, 1]"
+                        )
+                    parsed_answers[qid] = Answer(
+                        type="score",
+                        value=score_val,
+                        probabilities=probs_clean,
+                        confidence=conf_f,
+                    )
+
+            return Decision(model=model_str, answers=parsed_answers)
         except DecisionError:
             raise
         except Exception as exc:
-            raise DecisionError("malformed", str(exc)) from exc
-
-    def _execute_decide(self, state: Any, questions: dict[str, dict]) -> Decision:
-        payload = json.dumps(
-            {"model": self.model, "questions": questions, "state": state},
-            sort_keys=True,
-        ).encode("utf-8")
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        url = f"{self.base_url}/v1/systemone"
-
-        deadline = time.monotonic() + self.timeout_s
-        attempt = 0
-        raw: bytes | None = None
-
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise DecisionError("timeout", "overall deadline exhausted")
-
-            request = urllib.request.Request(
-                url, data=payload, headers=headers, method="POST"
-            )
-            try:
-                with urllib.request.urlopen(request, timeout=remaining) as response:
-                    raw = response.read()
-                break
-            except urllib.error.HTTPError as err:
-                if err.code in (429, 529):
-                    delay = min(2.0 ** attempt, max(deadline - time.monotonic(), 0.0))
-                    attempt += 1
-                    if delay > 0:
-                        time.sleep(delay)
-                    continue
-                raise DecisionError(f"http_{err.code}", str(err))
-            except urllib.error.URLError as err:
-                reason = getattr(err, "reason", None)
-                if isinstance(reason, TimeoutError):
-                    if deadline - time.monotonic() <= 0:
-                        raise DecisionError("timeout", str(err))
-                    raise DecisionError("network", str(err))
-                raise DecisionError("network", str(err))
-            except (TimeoutError, ConnectionError, OSError) as err:
-                if isinstance(err, TimeoutError):
-                    if deadline - time.monotonic() <= 0:
-                        raise DecisionError("timeout", str(err))
-                raise DecisionError("network", str(err))
-
-        if raw is None:
-            raise DecisionError("network", "no response data received")
-
-        try:
-            data = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError) as err:
-            raise DecisionError("malformed", f"invalid JSON or encoding: {err}")
-
-        if not isinstance(data, dict):
-            raise DecisionError("malformed", "response is not a JSON object")
-
-        model_resp = data.get("model")
-        model_str = model_resp if isinstance(model_resp, str) else None
-
-        answers_raw = data.get("answers")
-        if not isinstance(answers_raw, dict):
-            raise DecisionError("malformed", "answers field missing or not an object")
-
-        parsed_answers: dict[str, Answer] = {}
-        for qid, q in questions.items():
-            if qid not in answers_raw:
-                raise DecisionError("malformed", f"missing answer for question {qid!r}")
-            ans_item = answers_raw[qid]
-            if not isinstance(ans_item, dict):
-                raise DecisionError("malformed", f"answer for {qid!r} is not an object")
-            ans_type = ans_item.get("type")
-            if ans_type != q["type"]:
-                raise DecisionError(
-                    "malformed",
-                    f"answer type {ans_type!r} does not match question type {q['type']!r}",
-                )
-
-            if q["type"] == "choice":
-                choice_val = ans_item.get("choice")
-                if not isinstance(choice_val, str):
-                    raise DecisionError(
-                        "malformed", f"choice value for {qid!r} must be str, got {type(choice_val)}"
-                    )
-                crit = q.get("criteria", {})
-                allowed = set(crit.keys()) if isinstance(crit, dict) else set(crit)
-                if choice_val not in allowed:
-                    raise DecisionError(
-                        "malformed", f"choice {choice_val!r} not in criteria {allowed}"
-                    )
-                probs_raw = ans_item.get("probabilities")
-                if not isinstance(probs_raw, dict):
-                    raise DecisionError("malformed", f"probabilities for {qid!r} must be an object")
-                if set(probs_raw.keys()) != allowed:
-                    raise DecisionError(
-                        "malformed",
-                        f"probabilities keys {set(probs_raw.keys())} != criteria keys {allowed}",
-                    )
-                probs_clean: dict[str, float] = {}
-                for k, v in probs_raw.items():
-                    f = _finite_float(v)
-                    if f is None or not (0.0 <= f <= 1.0):
-                        raise DecisionError(
-                            "malformed", f"probability for {k!r} must be finite in [0, 1]"
-                        )
-                    probs_clean[k] = f
-                conf_f = _finite_float(ans_item.get("confidence"))
-                if conf_f is None or not (0.0 <= conf_f <= 1.0):
-                    raise DecisionError(
-                        "malformed", f"confidence for {qid!r} must be finite in [0, 1]"
-                    )
-                parsed_answers[qid] = Answer(
-                    type="choice",
-                    value=choice_val,
-                    probabilities=probs_clean,
-                    confidence=conf_f,
-                )
-
-            elif q["type"] == "noul":
-                noul_f = _finite_float(ans_item.get("noul"))
-                if noul_f is None or not (0.0 <= noul_f <= 1.0):
-                    raise DecisionError(
-                        "malformed", f"noul value for {qid!r} must be finite in [0, 1]"
-                    )
-                parsed_answers[qid] = Answer(
-                    type="noul",
-                    value=noul_f,
-                    probabilities={},
-                    confidence=None,
-                )
-
-            elif q["type"] == "score":
-                score_f = _finite_float(ans_item.get("score"))
-                if score_f is None:
-                    raise DecisionError(
-                        "malformed", f"score value for {qid!r} must be a finite number"
-                    )
-                probs_raw = ans_item.get("probabilities")
-                if not isinstance(probs_raw, dict):
-                    raise DecisionError("malformed", f"probabilities for {qid!r} must be an object")
-                probs_clean = {}
-                for k, v in probs_raw.items():
-                    if not isinstance(k, str):
-                        raise DecisionError("malformed", "score probabilities keys must be str")
-                    f = _finite_float(v)
-                    if f is None or not (0.0 <= f <= 1.0):
-                        raise DecisionError(
-                            "malformed", f"probability for level {k!r} must be finite in [0, 1]"
-                        )
-                    probs_clean[k] = f
-                conf_f = _finite_float(ans_item.get("confidence"))
-                if conf_f is None or not (0.0 <= conf_f <= 1.0):
-                    raise DecisionError(
-                        "malformed", f"confidence for {qid!r} must be finite in [0, 1]"
-                    )
-                parsed_answers[qid] = Answer(
-                    type="score",
-                    value=score_f,
-                    probabilities=probs_clean,
-                    confidence=conf_f,
-                )
-
-        return Decision(model=model_str, answers=parsed_answers)
+            # ONLY response decode/validation exceptions embed str(exc)
+            raise DecisionError("malformed", str(exc)) from None
 
 
 def load_decision_adapter(cfg: dict | None = None) -> DecisionAdapter | None | str:
@@ -396,12 +436,15 @@ def load_decision_adapter(cfg: dict | None = None) -> DecisionAdapter | None | s
     if not key:
         return "no_key"
 
-    return DecisionAdapter(
-        type=atype,
-        base_url=base_url,
-        model=model,
-        api_key_env=api_key_env,
-        api_key_file=api_key_file,
-        timeout_s=timeout_s,
-        api_key=key,
-    )
+    try:
+        return DecisionAdapter(
+            type=atype,
+            base_url=base_url,
+            model=model,
+            api_key_env=api_key_env,
+            api_key_file=api_key_file,
+            timeout_s=timeout_s,
+            api_key=key,
+        )
+    except ValueError:
+        return "bad_config"
