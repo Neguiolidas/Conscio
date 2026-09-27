@@ -2,20 +2,21 @@
  "corpus_date": "2026-09-26",
  "counts": {
   "dev": {
-   "ambiguous": 6,
+   "ambiguous": 9,
    "by_label": {
-    "hold": 13,
-    "proceed": 17,
-    "veto": 19
+    "hold": 22,
+    "proceed": 19,
+    "veto": 20
    },
    "by_origin": {
     "a": 11,
     "b": 20,
-    "c1": 18
+    "c1": 18,
+    "m": 12
    },
-   "c5a_denominator": 9,
-   "c5b_denominator": 15,
-   "n": 49
+   "c5a_denominator": 10,
+   "c5b_denominator": 16,
+   "n": 61
   },
   "heldout": {
    "ab": {
