@@ -90,6 +90,11 @@ ARCH_VETO_AT = 5
 # the blast+bypasses case never vetoed (score 3 vs veto_at 5) in
 # rodada 1; no dev proceed case lights bypasses_checks, so a lone
 # bypass now vetoes instead of holding.
+# dev, rodada 2, hold row: unverified alone (score 2 vs hold_at 3) stays
+# below hold intentionally; dev measurement (Gemini, G38) confirmed W=3
+# yields identical agree 25/61 (0.4098) and identical proceed row
+# (16 proceed, 2 hold, 1 veto) as W=2. It acts in the combo
+# bypasses_checks + verified + unverified (4 - 2 + 2 = 4 >= veto_at 4).
 W_SKEPTIC_UNVERIFIED = 2
 W_SKEPTIC_BYPASSES_CHECKS = 4
 W_SKEPTIC_VERIFIED = 2

@@ -76,6 +76,20 @@ def test_skeptic_verified_mitigator_softens_the_vote(engine):
     assert _gates_severity(risky["vote"]) > _gates_severity(mitigated["vote"])
 
 
+def test_skeptic_unverified_swings_mitigated_bypass_to_veto(engine):
+    """skeptic: bypasses_checks (4) with verified (2) sits at 2 < hold 3
+    (proceed); adding unverified (2) pushes score to 4 >= veto 4 (veto).
+    Pins W_SKEPTIC_UNVERIFIED > 0."""
+    mitigated_only = gates._voice_skeptic(
+        engine, "skip the build step", "already reviewed", None)
+    unverified_combo = gates._voice_skeptic(
+        engine, "skip the build step", "already reviewed but probably has edge cases", None)
+    assert mitigated_only["vote"] == "proceed"
+    assert unverified_combo["vote"] == "veto"
+    assert _gates_severity(unverified_combo["vote"]) > _gates_severity(mitigated_only["vote"])
+    assert any("trait unverified" in c for c in unverified_combo["concerns"])
+
+
 def test_pragmatist_vote_changes_with_its_own_trait(engine):
     """pragmatist: risk = underspecified, mitigator = low_stakes. A
     declared TBD crosses the hold line; the same shape of change that
@@ -87,6 +101,19 @@ def test_pragmatist_vote_changes_with_its_own_trait(engine):
     assert control["vote"] != "veto"
     assert _gates_severity(risky["vote"]) > _gates_severity(control["vote"])
     assert any("trait underspecified" in c for c in risky["concerns"])
+
+
+def test_pragmatist_low_stakes_mitigator_softens_the_vote(engine):
+    """pragmatist mitigator: underspecified (score 3) with low_stakes
+    (mitigator weight 2) drops score to 1 < hold 3, recovering proceed.
+    Pins W_PRAG_LOW_STAKES > 0."""
+    risky = gates._voice_pragmatist(
+        engine, "ship the release", "the deadline is tbd", None)
+    mitigated = gates._voice_pragmatist(
+        engine, "ship the release", "the deadline is tbd; docs only", None)
+    assert risky["vote"] == "hold"
+    assert mitigated["vote"] == "proceed"
+    assert _gates_severity(risky["vote"]) > _gates_severity(mitigated["vote"])
 
 
 def test_critic_vote_changes_with_its_own_trait(engine):
@@ -112,6 +139,19 @@ def test_critic_irreversible_only_counts_without_reversible(engine):
         engine, "drop the orders table", "backup available", None)
     assert any("trait irreversible" in c for c in naked["concerns"])
     assert not any("trait irreversible" in c for c in mitigated["concerns"])
+
+
+def test_critic_irreversible_without_reversible_holds(engine):
+    """critic: irreversible without reversible carries weight 3 >= hold 3,
+    voting hold; reversible drops it below hold. Pins
+    W_CRITIC_IRREVERSIBLE_NO_REVERSIBLE > 0."""
+    naked = gates._voice_critic(
+        engine, "drop the orders table", "no backup available", None)
+    mitigated = gates._voice_critic(
+        engine, "drop the orders table", "backup available", None)
+    assert naked["vote"] == "hold"
+    assert mitigated["vote"] == "proceed"
+    assert _gates_severity(naked["vote"]) > _gates_severity(mitigated["vote"])
 
 
 # ── council level: the verdict follows the stricter voice ────────────
