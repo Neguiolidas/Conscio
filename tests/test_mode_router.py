@@ -140,15 +140,32 @@ def test_format_council_agent_host(tmp_storage, council_result):
     assert "produce 4 voices" in result["hint"].lower()
 
 
-# ── LLM mode detection ──
+# ── council mode comes from the result, not string detection ───────
 
-def test_detect_llm_mode(tmp_storage, llm_council_result):
+def test_council_mode_read_from_result_field(tmp_storage, llm_council_result):
+    """Spec 6.4: format_council reads result["mode"], not the legacy
+    "LLM"-in-analysis detection (dead since v4.6.8). The llm fixture
+    has "LLM" in a voice analysis but no "mode" key, so it falls back
+    to "deterministic"; the legacy "llm" mode is gone."""
     ctrl = tmp_storage / "daemon_control.json"
     ctrl.write_text(json.dumps({"prompt_complexity": "compact"}))
     router = ModeRouter(tmp_storage)
 
     result = router.format_council(llm_council_result)
-    assert result["mode"] == "llm"
+    assert result["mode"] == "deterministic"
+
+
+def test_council_mode_explicit_field_wins(tmp_storage, llm_council_result):
+    """When the result carries an explicit "mode" (T5 judged mode),
+    format_council returns it verbatim — even though a voice analysis
+    contains the string "LLM"."""
+    ctrl = tmp_storage / "daemon_control.json"
+    ctrl.write_text(json.dumps({"prompt_complexity": "minimal"}))
+    router = ModeRouter(tmp_storage)
+
+    llm_council_result["mode"] = "judged"
+    result = router.format_council(llm_council_result)
+    assert result["mode"] == "judged"
 
 
 # ── Cognitive cycle ──

@@ -266,6 +266,35 @@ def decide(
 
 # ── council() ────────────────────────────────────────────────────────
 
+
+def engine_readiness(engine: ConsciousnessEngine) -> list[str]:
+    """Reasons the engine is NOT ready to act (calibration spec section 6.1).
+
+    Returns the reasons in a fixed order; an empty list means ready:
+    - "action_lockdown": the circuit-breaker latch, read from state
+      without forcing anything (BUG-37: a forced release here would
+      couple the gate to the breaker's side effects);
+    - "metabolic_critical": the metabolic state is critical;
+    - "low_coherence": ``last_coherence`` with a score below 0.5 (the
+      same threshold the architect already uses). A coherence that is
+      still None after the auto-reflect is NOT a reason: missing data
+      is not evidence of illness, and the reflect already ran first.
+    """
+    reasons: list[str] = []
+    state = getattr(engine, "_state", None)
+    if getattr(state, "action_lockdown", False):
+        reasons.append("action_lockdown")
+    metabolic = getattr(state, "metabolic", "")
+    if isinstance(metabolic, str) and "critical" in metabolic.lower():
+        reasons.append("metabolic_critical")
+    coherence = getattr(engine, "last_coherence", None)
+    if coherence is not None:
+        score = coherence.score if hasattr(coherence, "score") else float(coherence)
+        if score < 0.5:
+            reasons.append("low_coherence")
+    return reasons
+
+
 def council(
     engine: ConsciousnessEngine,
     question: str = "",
@@ -274,10 +303,24 @@ def council(
 ) -> dict:
     """Convene a 4-voice council for decision analysis.
 
-    Architect, Skeptic, Pragmatist are deterministic (engine state analysis).
-    Critic uses LLM adapter if awake + attached, otherwise deterministic fallback.
+    Architect, Skeptic, Pragmatist are deterministic (engine state
+    analysis). Critic is deterministic (the LLM adapter is a contract
+    boundary that this council never crosses — see C9).
 
-    Returns dict with voices, recommendation, question.
+    Calibration spec section 6: the deterministic voices and their
+    aggregated recommendation are ALWAYS computed (they are the
+    fallback and the explanation). If the shared config enables the
+    judge (``judge`` block + usable ``decision_adapter`` block), the
+    judge's choice replaces the recommendation (mode "judged");
+    otherwise the result stays deterministic and says so via
+    ``judge_status``. The readiness gate then lowers a ``proceed``
+    recommendation to ``hold`` when the engine is not ready — it never
+    promotes. ``dissenting_voices`` is computed against the FINAL
+    recommendation.
+
+    Returns dict with voices, recommendation, question, plus the
+    additive section-6.3 fields: ``mode``, ``judge_status``,
+    ``gate_reason`` and, judged mode only, ``judge``.
     """
     if not question:
         raise ValueError("question is required")
@@ -291,7 +334,7 @@ def council(
         try:
             engine.reflect()
         except Exception:
-            pass  # reflect failure should not block council
+            pass  # reflect failure should not block the council
 
     voice_calls = [
         ("architect", _voice_architect),
@@ -339,6 +382,41 @@ def council(
     recommendation_category = "asserted"
     consensus_strength = agreement_val  # deprecated alias of agreement["value"]
 
+    # ── Judge (calibration spec section 6.2, steps 3-4; emenda A57:
+    # load hands back the DecisionAdapter). The deterministic verdict
+    # above is the fallback; a loaded judge may replace it.
+    from . import judge
+
+    mode = "deterministic"
+    judge_status = "off"
+    verdict: judge.JudgeVerdict | None = None
+    loaded = judge.load()
+    if loaded is None:
+        judge_status = "off"
+    elif isinstance(loaded, str):
+        # "bad_config" / "no_key" / "no_adapter": no network call.
+        judge_status = loaded
+    else:
+        outcome = judge.ask(loaded, question, context, options)
+        if isinstance(outcome, judge.JudgeVerdict):
+            mode = "judged"
+            judge_status = "ok"
+            verdict = outcome
+            recommendation = outcome.choice
+        else:
+            # "timeout" / "network" / "http_<code>" / "malformed" /
+            # "internal_error": fall back to the deterministic verdict.
+            judge_status = outcome
+
+    # ── Readiness gate (spec section 6.2, step 5): it lowers a proceed
+    # to hold and NEVER promotes; hold and veto pass through intact.
+    reasons = engine_readiness(engine)
+    gate_reason: list[str] | None = None
+    if reasons and recommendation == "proceed":
+        recommendation = "hold"
+        gate_reason = reasons
+
+    # Step 6: dissent is measured against the FINAL recommendation.
     dissenting = [v["role"] for v in voices if v["vote"] != recommendation]
 
     result = {
@@ -354,7 +432,22 @@ def council(
             "hold": holds,
             "veto": vetoes,
         },
+        # Additive fields (spec section 6.3): the mode, the judge's
+        # status string, and the gate's reasons when it lowered.
+        "mode": mode,
+        "judge_status": judge_status,
+        "gate_reason": gate_reason,
     }
+    if verdict is not None:
+        # Judged mode only: the judge's own report — its verdict is the
+        # PRE-GATE choice, so judge["verdict"] != recommendation iff
+        # gate_reason is not None (spec section 6.3 invariant).
+        result["judge"] = {
+            "verdict": verdict.choice,
+            "probabilities": verdict.probabilities,
+            "confidence": verdict.confidence,
+            "model": verdict.model,
+        }
     engine.event_bus.emit("council:convened", "consciousness", result)
     # v4.7 P1: capture the decision with provenance — the verdict arrives
     # later via OutcomeStore.resolve() when the task's real outcome is known.
