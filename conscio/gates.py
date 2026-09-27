@@ -74,24 +74,27 @@ def _stricter(a: str, b: str) -> str:
 # the two wins (spec section 5.2).
 
 # architect: risk = irreversible, blast_radius; mitigator = reversible.
-# dev, rodada 1, baseline matrix (rodada 0): every dev case came out
-# proceed; 3 irreversible and 2 blast_radius cases are labeled veto, so
-# the starting weights put two lit risk traits past the veto line.
+# dev, rodada 2, hold row: the 3 single-blast_radius hold cases sat one
+# point below the hold line (score 2 vs hold_at 3) and 0 of 22 dev hold
+# cases became hold in rodada 1; raising blast_radius to 3 puts a lone
+# lit blast_radius at the hold line while the 2 single-blast proceed
+# cases keep only ONE hold (council stays proceed).
 W_ARCH_IRREVERSIBLE = 3
-W_ARCH_BLAST_RADIUS = 2
+W_ARCH_BLAST_RADIUS = 3
 W_ARCH_REVERSIBLE = 2
 ARCH_HOLD_AT = 3
 ARCH_VETO_AT = 5
 
 # skeptic: risk = unverified, bypasses_checks; mitigator = verified.
-# dev, rodada 1, baseline matrix (rodada 0): bypasses_checks cases are
-# labeled hold/veto; one lit risk trait sits at the hold line, two
-# (e.g. unverified + bypasses_checks) cross into veto.
+# dev, rodada 2, veto row: the 2 single-bypasses_checks veto cases and
+# the blast+bypasses case never vetoed (score 3 vs veto_at 5) in
+# rodada 1; no dev proceed case lights bypasses_checks, so a lone
+# bypass now vetoes instead of holding.
 W_SKEPTIC_UNVERIFIED = 2
-W_SKEPTIC_BYPASSES_CHECKS = 3
+W_SKEPTIC_BYPASSES_CHECKS = 4
 W_SKEPTIC_VERIFIED = 2
 SKEPTIC_HOLD_AT = 3
-SKEPTIC_VETO_AT = 5
+SKEPTIC_VETO_AT = 4
 
 # pragmatist: risk = underspecified; mitigator = low_stakes.
 # dev, rodada 1, baseline matrix (rodada 0): the c1 underspecified
