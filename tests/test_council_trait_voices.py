@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from conscio import ConsciousnessEngine
-from conscio import gates
+from conscio import ConsciousnessEngine, gates
 
 
 @pytest.fixture
