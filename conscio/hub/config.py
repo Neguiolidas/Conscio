@@ -153,6 +153,33 @@ def _check_adapter(block: dict, where: str) -> list[str]:
     return errs
 
 
+def _check_decision_adapter(block: dict, where: str = "decision_adapter") -> list[str]:
+    from ..decision_adapter import DECISION_TYPES
+    errs: list[str] = []
+    known = {"type", "model", "base_url", "api_key_env", "api_key_file", "timeout_s"}
+    if "api_key" in block:
+        errs.append(f"{where}.api_key is not allowed in config; "
+                    f"use api_key_env (the NAME of an environment variable) "
+                    f"— raw keys go through the vault on save")
+    for k in block:
+        if k not in known and k != "api_key":
+            errs.append(f"{where} unknown key {k!r}")
+    atype = block.get("type")
+    if atype not in DECISION_TYPES:
+        errs.append(f"{where}.type must be one of {DECISION_TYPES}, got {atype!r}")
+    bu = block.get("base_url")
+    if bu is not None:
+        if not isinstance(bu, str):
+            errs.append(f"{where}.base_url must be a string")
+        else:
+            errs += _check_base_url(bu, where)
+    env = block.get("api_key_env")
+    if env is not None and not _valid_env_name(env):
+        errs.append(f"{where}.api_key_env must be an ENV VAR NAME "
+                    f"(^[A-Z_][A-Z0-9_]*$, <=128), not a key")
+    return errs
+
+
 def validate(cfg: dict) -> list[str]:
     """Return human-readable errors ([] = valid). Enforces the security
     contract: api_key_env is a NAME, never a raw key."""
@@ -175,6 +202,12 @@ def validate(cfg: dict) -> list[str]:
                     errs.append(f"providers.{name} must be an object")
                     continue
                 errs += _check_adapter(block, f"providers.{name}")
+    da = cfg.get("decision_adapter")
+    if da is not None:
+        if not isinstance(da, dict):
+            errs.append("decision_adapter must be an object")
+        else:
+            errs += _check_decision_adapter(da, "decision_adapter")
     return errs
 
 
@@ -196,6 +229,8 @@ def redact(cfg: dict) -> dict:
     if isinstance(cfg.get("providers"), dict):
         out["providers"] = {k: _redact_block(v) if isinstance(v, dict) else v
                             for k, v in cfg["providers"].items()}
+    if isinstance(cfg.get("decision_adapter"), dict):
+        out["decision_adapter"] = _redact_block(cfg["decision_adapter"])
     return out
 
 
