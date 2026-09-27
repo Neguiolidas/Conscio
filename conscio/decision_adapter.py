@@ -122,8 +122,8 @@ class DecisionAdapter:
             raise ValueError(f"timeout_s must be finite and > 0, got {self.timeout_s!r}")
         if not isinstance(self.api_key, str) or not self.api_key:
             raise ValueError("api_key must be a non-empty string")
-        if not self.api_key.isprintable():
-            raise ValueError("api_key must contain only printable characters")
+        if not (self.api_key.isascii() and self.api_key.isprintable()):
+            raise ValueError("api_key must contain only printable ASCII characters")
 
     def decide(self, state: Any, questions: dict[str, dict]) -> Decision:
         """Query the model with state and questions, returning a typed Decision.
@@ -174,6 +174,9 @@ class DecisionAdapter:
         return self._parse_response(raw, questions)
 
     def _execute_transport(self, state: Any, questions: dict[str, dict]) -> bytes:
+        err_status: str | None = None
+        raw: bytes | None = None
+
         try:
             payload = json.dumps(
                 {"model": self.model, "questions": questions, "state": state},
@@ -188,17 +191,17 @@ class DecisionAdapter:
 
             deadline = time.monotonic() + self.timeout_s
             attempt = 0
-            raw: bytes | None = None
 
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise DecisionError("timeout") from None
+                    err_status = "timeout"
+                    break
 
-                request = urllib.request.Request(
-                    url, data=payload, headers=headers, method="POST"
-                )
                 try:
+                    request = urllib.request.Request(
+                        url, data=payload, headers=headers, method="POST"
+                    )
                     with urllib.request.urlopen(request, timeout=remaining) as response:
                         raw = response.read()
                     break
@@ -209,29 +212,47 @@ class DecisionAdapter:
                         if delay > 0:
                             time.sleep(delay)
                         continue
-                    raise DecisionError(f"http_{err.code}") from None
+                    err_status = f"http_{err.code}"
+                    break
                 except urllib.error.URLError as err:
                     reason = getattr(err, "reason", None)
                     if isinstance(reason, TimeoutError):
                         if deadline - time.monotonic() <= 0:
-                            raise DecisionError("timeout") from None
-                        raise DecisionError("network") from None
-                    raise DecisionError("network") from None
+                            err_status = "timeout"
+                        else:
+                            err_status = "network"
+                    else:
+                        err_status = "network"
+                    break
                 except (TimeoutError, ConnectionError, OSError) as err:
                     if isinstance(err, TimeoutError):
                         if deadline - time.monotonic() <= 0:
-                            raise DecisionError("timeout") from None
-                    raise DecisionError("network") from None
-
-            if raw is None:
-                raise DecisionError("network") from None
-            return raw
-        except DecisionError:
-            raise
+                            err_status = "timeout"
+                        else:
+                            err_status = "network"
+                    else:
+                        err_status = "network"
+                    break
+                except Exception:
+                    err_status = "network"
+                    break
         except Exception:
-            # Any unexpected transport error (e.g. invalid header from http.client, socket, etc.)
-            # MUST NOT include exc text or chain 'from exc' to prevent key leakage.
-            raise DecisionError("network") from None
+            err_status = "network"
+
+        # Transport errors must strictly maintain the invariant:
+        # __cause__ is None and __context__ is None, leaving zero reference
+        # to original transport exceptions (preventing secret key leakage).
+        if err_status is None and raw is None:
+            err_status = "network"
+
+        if err_status is not None:
+            err = DecisionError(err_status)
+            setattr(err, "__cause__", None)
+            setattr(err, "__context__", None)
+            raise err
+
+        assert raw is not None
+        return raw
 
     def _parse_response(self, raw: bytes, questions: dict[str, dict]) -> Decision:
         try:

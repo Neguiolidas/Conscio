@@ -12,9 +12,11 @@ Covers:
 from __future__ import annotations
 
 import copy
+import http.client
 import http.server
 import json
 import random
+import socket
 import threading
 import time
 import traceback
@@ -842,6 +844,8 @@ def test_transport_exception_never_leaks_secret_key_in_str_repr_args_traceback(m
 
     err = exc_info.value
     assert err.status == "network"
+    assert err.__cause__ is None
+    assert err.__context__ is None
     assert secret_key not in str(err)
     assert secret_key not in repr(err)
     for arg in err.args:
@@ -873,3 +877,90 @@ def test_local_validation_state_rejects_nan_and_non_serializable_without_io(monk
 
     with pytest.raises(ValueError, match="state is not valid JSON"):
         ad.decide({"obj": Unserializable()}, {"q1": {"type": "noul"}})
+
+
+# ── G33c ASCII key validation and __context__ clearing teeth ───────────────
+
+def test_construction_non_ascii_key_raises_valueerror_and_loader_returns_bad_config(monkeypatch):
+    bad_key = "SECRET€KEY"
+    with pytest.raises(ValueError) as exc_info:
+        DecisionAdapter("systemone", "https://api.example.com", "m", "K", None, 10.0, bad_key)
+    err_msg = str(exc_info.value)
+    assert bad_key not in err_msg
+
+    monkeypatch.setenv("CONSCIO_DECISION_KEY_NONASCII", bad_key)
+    cfg = {
+        "decision_adapter": {
+            "type": "systemone",
+            "base_url": "https://api.example.com",
+            "model": "m",
+            "api_key_env": "CONSCIO_DECISION_KEY_NONASCII",
+            "timeout_s": 10.0,
+        }
+    }
+    assert load_decision_adapter(cfg) == "bad_config"
+
+
+@pytest.mark.parametrize(
+    "exc_factory",
+    [
+        lambda s: ValueError(f"bad header Authorization: Bearer {s}"),
+        lambda s: OSError(f"os network error with {s}"),
+        lambda s: RuntimeError(f"runtime transport failure with {s}"),
+        lambda s: urllib.error.URLError(f"url error {s}"),
+        lambda s: KeyError(f"missing key {s}"),
+        lambda s: http.client.InvalidURL(f"invalid url containing {s}"),
+        lambda s: socket.timeout(f"socket timed out with {s}"),  # noqa: UP041
+        lambda s: UnicodeEncodeError("latin-1", f"bad header Bearer {s}", 0, 1, "ordinal not in range"),
+    ],
+    ids=[
+        "ValueError",
+        "OSError",
+        "RuntimeError",
+        "URLError",
+        "KeyError",
+        "InvalidURL",
+        "socket.timeout",
+        "UnicodeEncodeError",
+    ],
+)
+def test_transport_exceptions_clean_context_and_no_leak(monkeypatch, exc_factory):
+    secret_key = "TOP_SECRET_API_KEY_xyz123"
+    ad = DecisionAdapter("systemone", "https://api.example.com", "m", "K", None, 10.0, secret_key)
+
+    exc_to_raise = exc_factory(secret_key)
+
+    def _exploding_urlopen(req, timeout):
+        raise exc_to_raise
+
+    monkeypatch.setattr(urllib.request, "urlopen", _exploding_urlopen)
+
+    with pytest.raises(DecisionError) as exc_info:
+        ad.decide({"state": "ok"}, {"q1": {"type": "noul"}})
+
+    err = exc_info.value
+    assert err.status == "network"
+    assert err.__cause__ is None
+    assert err.__context__ is None
+    assert secret_key not in str(err)
+    assert secret_key not in repr(err)
+    for arg in err.args:
+        assert secret_key not in str(arg)
+
+    tb_str = "".join(traceback.format_exception(type(err), err, err.__traceback__))
+    assert secret_key not in tb_str
+
+    # Walk the full cause and context chain to None
+    visited = set()
+    curr: BaseException | None = err
+    while curr is not None:
+        assert id(curr) not in visited
+        visited.add(id(curr))
+        assert secret_key not in str(curr)
+        assert secret_key not in repr(curr)
+        for arg in curr.args:
+            assert secret_key not in str(arg)
+        if isinstance(curr, UnicodeEncodeError):
+            assert secret_key not in str(curr.object)
+        curr = curr.__cause__ or curr.__context__
+
