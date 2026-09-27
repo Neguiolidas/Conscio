@@ -275,3 +275,26 @@ def test_post_trigger_absence_does_not_cancel_risk_traits():
     Risk traits like blast_radius are never cancelled post-trigger."""
     assert extract_traits("Production is unavailable.").blast_radius is True
 
+
+def test_post_trigger_sentence_boundary_stops_the_scan():
+    """§5.1 it. 7 (S1): post-trigger scan stops at sentence boundary.
+    Absence predicates in subsequent sentences do not cancel triggers."""
+    assert extract_traits("We have a backup. None of that matters here.").reversible is True
+    assert extract_traits("We have a backup. Missing: the old logs.").reversible is True
+
+
+def test_post_trigger_negation_window_is_three_words():
+    """§5.1 it. 7 (S2): post-trigger window is strictly 3 words (NEGATION_WINDOW).
+    Distance 3 cancels; distance 4 does not."""
+    assert extract_traits("Backup is now missing.").reversible is False
+    assert extract_traits("Backup taken before the missing records were purged.").reversible is True
+
+
+def test_post_trigger_unavailable_cancels_mitigators():
+    """§5.1 it. 7 (S3): 'unavailable' belongs to the closed absence list.
+    Cancels reversible and verified."""
+    assert extract_traits("Rollback unavailable.").reversible is False
+    assert extract_traits("Verification unavailable.").verified is False
+    assert extract_traits("Verified unavailable.").verified is False
+
+
