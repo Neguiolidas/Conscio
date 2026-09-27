@@ -23,7 +23,7 @@ def load_split(name: str) -> list[dict]:
     """Load a frozen split (dev|heldout) as a list of case records.
 
     Each record: {id, origin, question, context, options?, label,
-    probabilities, confidence, model, provider, labeled_at}.
+    probabilities, confidence, model, labeled_at}.
     """
     if name not in SPLITS:
         raise ValueError(f"unknown split {name!r}; expected one of {SPLITS}")
