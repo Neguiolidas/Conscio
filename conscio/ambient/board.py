@@ -180,6 +180,29 @@ def _reading() -> Iterator[None]:
         raise
 
 
+def _set_wal_mode(db: sqlite3.Connection) -> None:
+    """Set WAL journal mode, retrying on busy/locked up to BUSY_TIMEOUT_MS.
+
+    SQLite deadlock avoidance returns BUSY/locked immediately (0-40 ms)
+    when upgrading to WAL if another connection holds a SHARED lock,
+    bypassing the busy handler. We retry with short pauses until the
+    deadline is reached.
+    """
+    deadline = time.monotonic() + (BUSY_TIMEOUT_MS / 1000.0)
+    pause = 0.005
+    while True:
+        try:
+            db.execute("PRAGMA journal_mode = WAL")
+            return
+        except sqlite3.OperationalError as exc:
+            if not _is_busy(exc):
+                raise
+            if time.monotonic() >= deadline:
+                raise BoardBusy() from None
+            time.sleep(pause)
+            pause = min(pause * 1.5, 0.050)
+
+
 def open_board(path: str | os.PathLike[str]) -> sqlite3.Connection:
     """Open the board, creating it when absent, and check its schema.
 
@@ -198,7 +221,7 @@ def open_board(path: str | os.PathLike[str]) -> sqlite3.Connection:
             found = int(db.execute("PRAGMA user_version").fetchone()[0])
             if found > SCHEMA_VERSION:
                 raise BoardTooNew(found, SCHEMA_VERSION)
-            db.execute("PRAGMA journal_mode = WAL")
+            _set_wal_mode(db)
             db.execute("PRAGMA foreign_keys = ON")
         if found < SCHEMA_VERSION:
             with _tx(db):
