@@ -396,22 +396,13 @@ conscio.vector_backend.SqliteVecBackend.get_signature
 # public API even though resolve_full_identity wraps it.
 conscio.mcp.host_identity.HostIdentity.is_empty
 conscio.mcp.server.resolve_identity_env
+# v4.8 council judge question hash (T3; kept by T5, A59)
+# question_sha256 is the frozen benchmark invariant: its only callers
+# are the test-suite harnesses (tests/ is not scanned by vulture).
+# T5 consumed the JudgeVerdict-field entries of the T3 block; this one
+# symbol outlived the block and is kept (existing entry, not new)
+# until a production consumer exists.
+from conscio.judge import question_sha256
 
-# ── v4.8 council judge (T3) ───────────────────────────────────────────
-# No production caller until T5 wires the Council judged mode in
-# gates.py; the tests exercise them (vulture does not scan tests/).
-# A57: the verdict fields are built by judge.ask but read only by T5,
-# so the field names (not the class) need the suppression here.
-# wired by T5 (Council judged mode); T5 MUST delete these entries
-from conscio.judge import JudgeVerdict, question_sha256
-
-JudgeVerdict.choice
-JudgeVerdict.probabilities
 question_sha256
 
-# ── v4.8 decision adapter (G33) ───────────────────────────────────────
-# Public API implemented in G33; consumed by conscio/judge.py in A57
-# (spec §6). Exercised by tests/test_decision_adapter.py.
-from conscio.decision_adapter import load_decision_adapter
-
-load_decision_adapter
