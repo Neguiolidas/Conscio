@@ -29,8 +29,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from conscio import ConsciousnessEngine
-from conscio import gates
+from conscio import ConsciousnessEngine, gates
 from conscio import judge as judge_mod
 from conscio.decision_adapter import Answer, Decision, DecisionAdapter
 from conscio.mcp.mode_router import ModeRouter
