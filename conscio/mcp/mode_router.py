@@ -36,19 +36,16 @@ class ModeRouter:
                 logger.warning("daemon_control.json corrupted, falling back to compact")
         return "compact"
 
-    @staticmethod
-    def _detect_mode(result: dict) -> str:
-        """Detecta se o resultado usa LLM (tem 'LLM analysis'
-        em qualquer voice) or deterministic."""
-        for voice in result.get("voices", []):
-            analysis = voice.get("analysis", "")
-            if "LLM" in analysis:
-                return "llm"
-        return "deterministic"
-
     def format_council(self, council_result: dict) -> dict:
-        """Formata resultado do council conforme o modo."""
-        mode = self._detect_mode(council_result)
+        """Formata resultado do council conforme o modo.
+
+        O modo vem do próprio resultado (calibration spec section 6.3/
+        6.4): o council() emite ``mode`` ("judged" ou "deterministic")
+        desde a T5. A detecção antiga pela string "LLM" na análise das
+        vozes era código morto desde a v4.6.8 (o critic nunca chama
+        LLM) e foi apagada, sem whitelist (section 6.4).
+        """
+        mode = council_result.get("mode", "deterministic")
         complexity = self.complexity
 
         if complexity == "minimal":
