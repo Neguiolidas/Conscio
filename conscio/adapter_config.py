@@ -35,6 +35,60 @@ def load_config() -> dict:
     return {}
 
 
+def _read_key_file(path: str, name: str) -> str:
+    """Read the key for ``name`` from a ``NOME=valor``-per-line file (BUG-38).
+
+    Strict name match: only a line whose key equals ``name`` yields a value.
+    No match, missing file, or unreadable file -> "". Never raises.
+    """
+    if not name or not path:
+        return ""
+    try:
+        with open(os.path.expanduser(path), encoding="utf-8") as f:
+            lines = f.readlines()
+    except (OSError, UnicodeDecodeError):
+        return ""
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, value = line.partition("=")
+        if not sep or key.strip() != name:
+            continue
+        value = value.strip()
+        if value:
+            return value
+    return ""
+
+
+def resolve_api_key(env_name: str, *, key_file: str | None = None) -> str:
+    """Resolve an API key by precedence: env -> Hub vault -> key_file.
+
+    Never raises; returns "" if not found.
+    """
+    if not env_name:
+        return ""
+    # 1. Environment variable
+    val = os.environ.get(env_name, "")
+    if val:
+        return val
+    # 2. Hub vault (lazy import: hub.config imports adapter_config)
+    try:
+        from .hub.config import vault_load
+        vault_val = vault_load(env_name)
+        if vault_val:
+            return vault_val
+    except Exception:
+        pass
+    # 3. Key file
+    if key_file:
+        try:
+            return _read_key_file(key_file, env_name)
+        except Exception:
+            return ""
+    return ""
+
+
 def build_adapter_from_config(cfg: dict, *,
                               fallback_model: str) -> tuple[Any, Any]:
     """Build an InferenceAdapter from the config's 'adapter' block.
@@ -60,20 +114,8 @@ def build_adapter_from_config(cfg: dict, *,
     )
 
     model = adapter_cfg.get("model") or fallback_model
-    api_key = adapter_cfg.get("api_key", "")
-    if not api_key:
-        env_name = adapter_cfg.get("api_key_env")
-        if env_name:
-            api_key = os.environ.get(env_name, "")
-            if not api_key:
-                # The Hub stores keys in its vault file, not the environment.
-                # Fall back to it so the daemon/MCP/CLI don't build a keyless
-                # adapter (-> 401). Lazy import: hub.config imports this module.
-                try:
-                    from .hub.config import vault_load
-                    api_key = vault_load(env_name) or ""
-                except Exception:               # hub optional; never break build
-                    api_key = ""
+    env_name = adapter_cfg.get("api_key_env")
+    api_key = adapter_cfg.get("api_key", "") or (resolve_api_key(env_name) if env_name else "")
     base_url = adapter_cfg.get("base_url")
 
     if atype == "lmstudio":
