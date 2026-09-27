@@ -396,3 +396,12 @@ conscio.vector_backend.SqliteVecBackend.get_signature
 # public API even though resolve_full_identity wraps it.
 conscio.mcp.host_identity.HostIdentity.is_empty
 conscio.mcp.server.resolve_identity_env
+
+# ── v4.8 council judge (T3) ───────────────────────────────────────────
+# No production caller until T5 wires the Council judged mode in
+# gates.py; the tests exercise them (vulture does not scan tests/).
+# wired by T5 (Council judged mode); T5 MUST delete these entries
+from conscio.judge import JudgeVerdict, question_sha256
+
+JudgeVerdict.probabilities
+question_sha256
