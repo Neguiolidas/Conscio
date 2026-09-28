@@ -6,7 +6,7 @@ and goal generation. Adapts behavior based on the underlying model's
 context window size.
 """
 
-__version__ = "4.7.3"
+__version__ = "4.8.0"
 __author__ = "Neguiolidas / Neguitech"
 
 from .agency import (

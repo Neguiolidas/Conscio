@@ -23,7 +23,7 @@ memory, self-judgment and procedural skill — and proves every claim by
 measurement, not assertion. Local-first and zero-dep at the core
 (`numpy` + stdlib `sqlite3`, nothing else).
 
-**Latest release — `v4.7.3` "The doctor asks the process, not the disk":** `relay doctor` now asks each process's own interpreter — the one it actually invoked, not the symlink-resolved base Python — which Conscio it really loads, reproducing its `sys.path[0]`, `PYTHON*` env and isolation flags, and flags a process that started before the code on disk was written, so an in-place upgrade can no longer masquerade as up-to-date.
+**Latest release — `v4.8.0` "The space survives, the machine has a board, the council can be measured":** Agent storage is decoupled into durable host-bound spaces under `~/.conscio/instances/<slug>`, a machine-wide ambient task board rides the relay reactor tick, and the four-voice council gains an opt-in typed decision judge with trait-sharpened offline calibration.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 
