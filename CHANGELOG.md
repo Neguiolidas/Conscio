@@ -110,7 +110,8 @@ doctor.
 
 ### Provisional constants (to be calibrated)
 Seven constants in `conscio/ambient/node.py` are provisional; the values are
-unchanged and changing them is the owner's call:
+unchanged and their calibration is deferred to the next patch, together with
+probe S4:
 - **Admission gate (spec §7.3):** `WAKE_FLOOR_MB=1500`,
   `LOAD1_DELTA_TOLERANCE=1.5`, `ADMISSION_WINDOW=36`, `ADMISSION_MAX_AGE_S=360`.
   Probe S3 measured a single `claude --bg` wake once: a peak RSS of 917 MB for
