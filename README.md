@@ -130,7 +130,7 @@ Full trigger table: [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules).
   ReflectionGate adapts.
 - **Feels agreement, not just votes** — the four-voice council measures agreement by
   vote entropy: four unanimous vetoes are full agreement that the answer is no.
-- **Judges its own quality** — confidence calibration measured against recorded
+- **Extended Self-Judgement** — confidence calibration measured against recorded
   outcomes (ECE/Brier), blind-spot detection, and coherence metrics that *name the
   dimensions they could not measure* rather than scoring them silently. Every
   number carries its category: `measured`, `derived`, `asserted`, or `none`.
@@ -142,9 +142,6 @@ Full trigger table: [USAGE.md](USAGE.md#when-to-call-conscio-mcp-trigger-rules).
   risk-gates, and only then executes, with a human gate for anything risky.
 - **Learns procedures** — successful audited plans become reusable skills, fed back to
   the actor as few-shot exemplars.
-- **Judges its own quality** — confidence calibration, blind-spot detection, and
-  coherence metrics that *name the dimensions they could not measure* rather than
-  scoring them silently.
 - **Governs its own decisions** — ADRs, a four-voice council, an autonomous-loop gate,
   a pre-close delivery check, and read-before-act verification.
 - **Stores & retrieves knowledge** — FTS5 BM25 dual-index with RRF merging, optional
