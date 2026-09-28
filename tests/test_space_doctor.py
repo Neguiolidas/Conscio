@@ -333,6 +333,6 @@ def test_refused_markers_reported(tmp_path, capsys):
     out = capsys.readouterr().out
 
     assert rc == 0
-    assert "space-refused.json" in out or "recusa" in out
+    assert "space-refused.json" in out
     assert "B5" in out
     assert "pointer target missing or inaccessible" in out

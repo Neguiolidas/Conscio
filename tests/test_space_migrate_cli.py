@@ -148,7 +148,7 @@ def test_gate_1_blocks_ancestor_conscio_holding_legacy_storage(tmp_path, monkeyp
     captured = capsys.readouterr()
     assert "migration deferred" in captured.err
     assert str(parent_pid) in captured.err
-    # Legado intacto
+    # Legacy intact
     assert (storage / "instance.json").exists()
     assert (storage / "obs.db").exists()
 
@@ -178,7 +178,7 @@ def test_gate_1_blocks_ancestor_conscio_without_open_fd(tmp_path, monkeypatch, c
     captured = capsys.readouterr()
     assert "migration deferred" in captured.err
     assert str(parent_pid) in captured.err
-    # Legado intacto
+    # Legacy intact
     assert (storage / "instance.json").exists()
     assert (storage / "obs.db").exists()
 
@@ -213,7 +213,7 @@ def test_gate_1_blocks_bash_ancestor_holding_legacy_fd(tmp_path, monkeypatch, ca
     captured = capsys.readouterr()
     assert "migration deferred" in captured.err
     assert str(parent_pid) in captured.err
-    # Legado intacto
+    # Legacy intact
     assert (storage / "instance.json").exists()
     assert (storage / "obs.db").exists()
 

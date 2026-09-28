@@ -1003,7 +1003,7 @@ def _report_space_diagnostics(
                         f"origin {origin_path} no longer exists (normal after the plugin was uninstalled)"
                     )
 
-            # Check D1: Orphan space (sem cartao e sem ponteiro)
+            # Check D1: Orphan space (no card and no pointer)
             has_pointer = entry_resolved in target_to_pointers
             has_card = (entry_resolved in known_spaces_in_cards) or (iid and iid in known_ids_in_cards)
             if not has_pointer and not has_card and not phantom_found:

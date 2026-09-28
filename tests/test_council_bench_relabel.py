@@ -75,7 +75,7 @@ class _StubAdapter:
 
 
 def test_relabel_without_opt_in_fails_with_no_calls(tmp_path, monkeypatch, capsys):
-    """Sem opt-in => exit code != 0 and zero judge/adapter calls."""
+    """Without opt-in => exit code != 0 and zero judge/adapter calls."""
     adapter = _StubAdapter()
     monkeypatch.setattr(judge, "load", lambda cfg=None: None)
 
