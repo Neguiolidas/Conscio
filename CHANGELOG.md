@@ -74,7 +74,7 @@ mint into durable space directly.
   shells while blocking active legacy processes) and quiet-minutes (verifies no
   file modifications within `--quiet-minutes`). Supports idempotent item-by-item
   resumption with tree and file equality checks.
-- **Space doctor (`conscio space doctor` / `relay doctor`).** Read-only
+- **Space checks in `relay doctor` (D1–D5).** Read-only
   diagnostics:
   - D1: lists orphan spaces in `instances/` (ignoring hidden dotfiles and lock
     files).
