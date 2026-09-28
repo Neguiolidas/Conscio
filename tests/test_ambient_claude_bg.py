@@ -70,9 +70,19 @@ def test_spawn_returns_the_short_id():
     assert got.session_id == "c8ce076a" and got.pid is None
 
 
+def test_spawn_exit_zero_with_parsed_id_succeeds_even_with_rate_limit_warning():
+    # A successful spawn (exit 0 + parsed id) wins over a rate-limit warning in stderr.
+    got = connectors.ClaudeBg(
+        run=_run_writing(0, _fix("bg_start.txt"), "warning: approaching rate limit")
+    ).spawn(entry={}, prompt="p", env={}, cwd="/")
+    assert got.session_id == "c8ce076a" and got.pid is None
+
+
 @pytest.mark.parametrize(("rc", "out", "err", "reason"), [
     (1, "", _fix("bg_untrusted.stderr"), "spawn_error"),            # A-2: $HOME refused
     (1, "", "API Error: 429 rate_limit_error", "rate_limited"),
+    (1, "", "429 Too Many Requests", "rate_limited"),
+    (0, "started, but no id line", "rate limit reached", "rate_limited"),
     (0, "started, but no id line", "", "spawn_error"),
 ])
 def test_spawn_failures_map_to_reasons(rc, out, err, reason):
@@ -126,6 +136,16 @@ def test_stop_calls_claude_stop():
         return subprocess.CompletedProcess(argv, 0)
     connectors.ClaudeBg(run=run_stop).stop("c8ce076a")
     assert called == [(["claude", "stop", "c8ce076a"], {"capture_output": True, "text": True, "timeout": 15, "check": False})]
+
+
+def test_stop_exit_nonzero_raises_runtime_error():
+    # Stop with non-zero exit code raises RuntimeError with exit details.
+    def run_stop_fail(argv, **kw):
+        return subprocess.CompletedProcess(argv, 1, stdout="stopping...", stderr="permission denied")
+    with pytest.raises(RuntimeError) as caught:
+        connectors.ClaudeBg(run=run_stop_fail).stop("c8ce076a")
+    assert "exit 1" in str(caught.value)
+    assert "permission denied" in str(caught.value)
 
 
 def test_registered():

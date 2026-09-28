@@ -221,7 +221,6 @@ def test_xdg_runtime_dir_passes_through_and_dbus_does_not(rig, tmp_path):
     assert "DBUS_SESSION_BUS_ADDRESS" not in call["env"]
 
 
-
 def test_spawn_failure_releases_immediately_no_retry_same_sweep(rig):
     make, clock = rig
     _registry({"A": {"connector": "fake", "wake_budget_per_day": 5},
@@ -459,3 +458,27 @@ def test_gate_order_is_connector_budget_admission_liveness_concurrency(rig):
         db.close()
     n.close()
 
+
+def test_stop_failure_logs_warning_and_session_marked_stopped(rig, caplog):
+    # When connector stop raises, _stop logs a warning and marks session stopped.
+    make, clock = rig
+
+    class FailingStopFake(FakeConnector):
+        def stop(self, session_id):
+            raise RuntimeError(f"exit 1: failed to stop {session_id}")
+
+    fake = FailingStopFake()
+    n = make(fake)
+    tid = _task()
+    db = board.open_board(paths.board_path())
+    try:
+        board.session_started(db, session_id="s_fail", instance_id="A", task_id=tid,
+                              connector="fake", pid=None, fence=1, now=clock[0])
+        with caplog.at_level("WARNING"):
+            n._stop(db, "s_fail", now=clock[0])
+        assert "stop s_fail failed: exit 1: failed to stop s_fail" in caplog.text
+        row = board.session_row(db, "s_fail")
+        assert row is not None and row["state"] == "stopped"
+    finally:
+        db.close()
+    n.close()
