@@ -43,7 +43,7 @@ def _canonical_choice_response(
     choice: str = "proceed",
     probs: dict[str, float] | None = None,
     confidence: float = 0.95,
-    model: str = "jev-latest",
+    model: str = "decision-model",
 ) -> dict[str, Any]:
     return {
         "model": model,
@@ -583,7 +583,7 @@ def test_local_validation_does_zero_network_requests():
 
 def test_decide_choice_success():
     resp_body = {
-        "model": "jev-v1",
+        "model": "decision-model-v1",
         "answers": {
             "q_proceed": {
                 "type": "choice",
@@ -604,7 +604,7 @@ def test_decide_choice_success():
         }
         dec = ad.decide({"ctx": 123}, questions)
         assert isinstance(dec, Decision)
-        assert dec.model == "jev-v1"
+        assert dec.model == "decision-model-v1"
         assert "q_proceed" in dec.answers
         ans = dec.answers["q_proceed"]
         assert isinstance(ans, Answer)
@@ -650,7 +650,7 @@ def test_decide_posts_to_exact_url_without_appending_path():
 
 def test_decide_noul_success():
     resp_body = {
-        "model": "jev-v1",
+        "model": "decision-model-v1",
         "answers": {
             "q_prob": {
                 "type": "noul",
@@ -675,7 +675,7 @@ def test_decide_noul_success():
 
 def test_decide_score_success():
     resp_body = {
-        "model": "jev-v1",
+        "model": "decision-model-v1",
         "answers": {
             "q_score": {
                 "type": "score",
@@ -1277,7 +1277,7 @@ def test_envelope_top_level_keys_are_exact():
 
 def _choice_response_with_confidence(confidence: Any) -> dict:
     body: dict[str, Any] = {
-        "model": "jev-latest",
+        "model": "decision-model",
         "answers": {
             "q_choice": {
                 "type": "choice",

@@ -41,7 +41,7 @@ def _adapter_returning(choice: str, confidence: float = 0.9) -> DecisionAdapter:
     returns the canned Decision directly."""
     adapter = DecisionAdapter(
         url="http://127.0.0.1:1/unused",
-        model="jev-latest",
+        model="decision-model",
         api_key_env="T5_TEST_KEY",
         api_key_file=None,
         timeout_s=10.0,
@@ -54,7 +54,7 @@ def _adapter_returning(choice: str, confidence: float = 0.9) -> DecisionAdapter:
                  for name in criteria}
         probs[choice] = confidence
         return Decision(
-            model="jev-latest",
+            model="decision-model",
             answers={"decision": Answer(
                 type="choice",
                 value=choice,
@@ -87,7 +87,7 @@ def _judge_off(monkeypatch):
 def _start_canonical_stub() -> tuple[http.server.ThreadingHTTPServer, int]:
     """A loopback server answering the canonical Jev shape (choice)."""
     response = {
-        "model": "jev-latest",
+        "model": "decision-model",
         "answers": {
             "decision": {
                 "type": "choice",
@@ -122,7 +122,7 @@ def test_c2_judged_end_to_end_with_stub(engine, monkeypatch):
     try:
         adapter = DecisionAdapter(
             url=f"http://127.0.0.1:{port}",
-            model="jev-latest",
+            model="decision-model",
             api_key_env="T5_TEST_KEY",
             api_key_file=None,
             timeout_s=5.0,
@@ -141,7 +141,7 @@ def test_c2_judged_end_to_end_with_stub(engine, monkeypatch):
     assert judge["verdict"] == "veto"
     assert judge["probabilities"] == {"proceed": 0.02, "hold": 0.06, "veto": 0.92}
     assert judge["confidence"] == 0.92
-    assert judge["model"] == "jev-latest"
+    assert judge["model"] == "decision-model"
 
 
 # ── engine_readiness (spec section 6.1) ──────────────────────────────

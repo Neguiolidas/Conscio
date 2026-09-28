@@ -57,7 +57,7 @@ class _StubAdapter:
 def _canned_decision(choice: str = "veto",
                      probs: tuple[float, float, float] = (0.05, 0.03, 0.92),
                      confidence: float = 0.87,
-                     model: str | None = "jev-latest") -> Decision:
+                     model: str | None = "decision-model") -> Decision:
     """A choice Decision in the frozen a01 shape: the reported
     confidence (0.87) deliberately diverges from P(veto) (0.92) —
     emenda A51."""
@@ -100,7 +100,7 @@ def test_load_judge_with_any_key_is_bad_config(monkeypatch):
     field."""
     monkeypatch.delenv("DECISION_API_KEY", raising=False)
     for bad in ({"judge": {"url": "https://judge.example/v1"}},
-                {"judge": {"model": "jev-latest"}},
+                {"judge": {"model": "decision-model"}},
                 {"judge": {"api_key_env": "DECISION_API_KEY"}},
                 {"judge": {"api_key_file": "~/judge-keys.env"}},
                 {"judge": {"timeout_s": 5}},
@@ -188,7 +188,7 @@ def test_fuzz_load_contract(tmp_path, monkeypatch):
     monkeypatch.setenv("CONSCIO_VAULT_DIR", str(vault))
     pools = {
         "judge": [None, {}, {"url": "https://judge.example/v1"},
-                  {"model": "jev-latest"}, {"timeout_s": 5}, "on", 5, [1]],
+                  {"model": "decision-model"}, {"timeout_s": 5}, "on", 5, [1]],
         "decision_adapter": [None, {},
                              {"url": "https://decision.example/v1/decide",
                               "model": "jev",
@@ -277,7 +277,7 @@ def test_ask_canonical_verdict_c2():
     assert verdict.probabilities == {"proceed": 0.05, "hold": 0.03, "veto": 0.92}
     assert verdict.confidence == 0.87
     assert verdict.confidence != verdict.probabilities[verdict.choice]
-    assert verdict.model == "jev-latest"
+    assert verdict.model == "decision-model"
 
 
 def test_ask_model_none_is_empty_string():
