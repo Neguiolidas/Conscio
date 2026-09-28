@@ -121,8 +121,14 @@ unchanged and changing them is the owner's call:
   so it stays at 1.
 
 ### Tests
-The full suite was run one test file per process (347 files). Measured at
-close: **4442 tests across 347 files, 0 failures, 0 collection errors.** The
+The full suite was run one test file per process (359 files). Measured at
+close: **4708 tests across 359 files — 4703 passed, 2 xfailed, 3 skipped;
+0 failures, 0 collection errors.** The two xfails are documented limits: the
+council calibration baseline sits below the acceptance criterion, and the trait
+extractor leaves a second mitigator unlit when an absence word sits just before
+it in the same sentence (the conservative side). Two tests check that a
+shipped file is tracked by git (`test_cc_materialize`, `test_plugin_hook_paths`);
+they fail by design outside a checkout, so they were run in the git worktree. The
 five `guard`/`contract`/`invariant`/`no_` suites
 (`test_agency_contracts`, `test_agency_no_network`, `test_assets_no_phantom_tools`,
 `test_durable_guards`, `test_mcp_dispatch_contract` — 41 tests) were run
