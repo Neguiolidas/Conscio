@@ -9,6 +9,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.8.0] - 2026-09-27 — The space survives, the machine has a board, the council can be measured
+
+This release decouples agent storage from disposable plugin paths into durable,
+host-bound spaces (`~/.conscio/instances/<slug>`), introduces a machine-level
+ambient task board swept by the relay reactor, and delivers a calibration harness
+with an opt-in typed decision judge for the four-voice council.
+
+### Added — Durable space (v4.8 S1)
+
+Decouples agent state from disposable plugin directories (which are wiped on
+updates) by binding spaces per host identity under `~/.conscio/instances/<slug>`.
+Existing plugin-bound spaces remain untouched until migrated; fresh installations
+mint into durable space directly.
+
+- **Pure space resolver (`conscio/installer/durable.py`).** `resolve_space(storage, env)`
+  classifies the environment across states B0–B6 and migration locks without
+  side effects (`repair_pointer=True` signals the caller to create or update the
+  pointer):
+  - **B0 (Legacy):** unmigrated plugin space; prints stderr announcement to run
+    `conscio space migrate` and uses the legacy path byte-for-byte.
+  - **B1 (Bound):** valid `space-pointer.json` pointing to an existing durable
+    target; follows the pointer.
+  - **B2 (Adopted):** plugin directory wiped without local identity, but durable
+    space exists; adopts the durable space (`repair_pointer=True`) and warns to
+    re-arm the relay reactor if `migrated-from.json` tombstone is present.
+  - **B3 (Conflict / Divergence):** two copies found (plugin and durable);
+    refuses boot with a message distinguishing identical IDs (copies may have
+    diverged) from distinct IDs (identity conflict).
+  - **B4 (Residual evidence):** previous identity evidence found (tombstone or
+    local relay card) but no live space exists; refuses boot without minting
+    silently. Fails closed with an explicit error if the relay directory cannot
+    be read.
+  - **B5 (Dangling pointer):** pointer exists but target is missing; refuses
+    boot.
+  - **B6 (Fresh mint):** neither space nor evidence exists; mints into durable
+    space under exclusive flock with `repair_pointer=True`.
+- **Pointer minting with exclusive flock (`conscio/installer/spaces.py`).**
+  Concurrent boots serialize via an exclusive `flock` on
+  `~/.conscio/instances/.minting-<slug>` (5 s timeout) with a mandatory re-read of
+  `instance.json` upon acquisition to prevent ID divergence. Degrades safely with
+  a warning on filesystems without full lock support (`ENOLCK` / `EOPNOTSUPP`).
+- **Refusal markers (`space-refused.json`).** When `target is None`
+  (B3/B4/B5/lock), the server writes an atomic `space-refused.json` marker in the
+  plugin data directory and exits 2 without touching storage or minting. Cleared
+  automatically upon successful resolution or migration.
+- **Stdlib hooks cascade ("when in doubt, do not write").** Pure stdlib hooks
+  (`deepminer`, `obsstore`, `honesty`, `wake`) run in isolated processes and
+  evaluate files locally: pointer → migration lock → refusal marker → legacy B0
+  → silent exit 0. Hooks never block agent turns.
+- **Atomic migration command (`conscio space migrate`).** Migrates legacy
+  plugin-bound spaces to durable instances via 8 strict atomic steps:
+  1. acquire `.migrating-<slug>` lock;
+  2. create timestamped backup in `~/.conscio/backups/pre-migrate-*` (keeps 2
+     generations);
+  3. move content of `space/` while preserving the folder;
+  4. write `migrated-from.json` tombstone in durable root;
+  5. atomically write `space-pointer.json` in plugin directory;
+  6. remove `space-refused.json`;
+  7. release migration lock;
+  8. print regenerated systemd user unit definitions for the durable path.
+  Protected by two pre-flight gates: process-zero (inspects `/proc/*/cmdline`,
+  checking launcher names and open file descriptors to safely exempt parent
+  shells while blocking active legacy processes) and quiet-minutes (verifies no
+  file modifications within `--quiet-minutes`). Supports idempotent item-by-item
+  resumption with tree and file equality checks.
+- **Space doctor (`conscio space doctor` / `relay doctor`).** Read-only
+  diagnostics:
+  - D1: lists orphan spaces in `instances/` (ignoring hidden dotfiles and lock
+    files).
+  - D2: flags downgrade ghosts and suggests `conscio relay forget`.
+  - D3: identifies orphan `migrated-from.json` tombstones.
+  - D4: reports deferred migrations with active process PIDs.
+  - D5: detects stale migration locks with dead PIDs and suggests resuming via
+    `conscio space migrate --slug <slug>` (never deletes automatically).
+  - Lists active `space-refused.json` refusal markers with state and age.
+
 ### Added — Council calibration (v4.8)
 
 A calibration round for the four-voice council: an opt-in judge, trait-
@@ -107,6 +183,66 @@ doctor.
 - **`doctor` reports the machine side too:** `units:` (the
   `conscio-relay-reactor*` user units) and `claude:` (`claude --version`). A
   command that fails reads `unknown (…)`; the doctor never raises.
+
+### Changed
+
+- **Universal observation retention cap raised to 3 GB (commit `0dcdff0`).** The
+  observation store retention cap is increased from 2 GB to 3 GB across all
+  producers (`conscio/obsstore.py` default `max_bytes`, the vendored copy in
+  Claude Code assets, and the `RETENTION_BYTES` constant in
+  `conscio_deepminer.py`). Retention age remains unchanged at 30 days.
+
+### Fixed
+
+- **Host identity fallback keys demoted to last resort (commit `d98a9ee`).**
+  `ZCODE_FALLBACK` and `ANTIGRAVITY_FALLBACK` keys no longer override
+  plugin-scoped primary signals when processes inherit ambient environment
+  variables from host IDE sessions (such as Claude or Hermes running inside
+  ZCode). Evaluation order is now: ZCode primary → Antigravity primary → Claude
+  → Hermes → OpenCode → ZCode fallback → Antigravity fallback → none.
+- **Space migration and resolver fixes:**
+  - Upfront plugin pointer validation: `conscio space migrate` validates
+    pointer resolution before any destructive step or writing tombstones,
+    exiting 3 cleanly if the legacy space is not plugin-bound (`a859957`).
+  - Restored observatory CLI routing: restored `conscio observatory` dispatch
+    block in `cli.py` that was displaced during space CLI addition (`32a6f88`).
+  - Ancestor process chain filtering: migration process-zero gate inspects open
+    file descriptors and launcher names (`bash`, `sh`, `dash`, `zsh`, `fish`,
+    `env`, `timeout`, `nohup`), allowing shell wrapper invocations without
+    false-positive blocks (`08affe5`, `4195846`).
+  - Quiet minutes logging: quiet minutes check is only logged when
+    `quiet_minutes > 0` (`4c8f05b`).
+  - Resumption on stale lock: doctor suggests `conscio space migrate --slug
+    <slug>` resumption rather than manual `rm` when encountering stale locks
+    (`0ac7d81`).
+  - Plugin-bound refusal cleanup: marker cleanup only touches subpaths for
+    plugin-bound storage (`1b2a3fb`).
+  - Resolver slug and runtime consistency: server uses resolved slug and
+    runtime for pointer repair and minting locks (`58cd4e2`).
+  - Skip space resolution without `--storage`: MCP server skips durable space
+    resolution when `--storage` is omitted (`51cf0c5`).
+  - Remote card handling in B4: skip remote relay cards when checking local
+    residual evidence; report corrupt `instance.json` as unreadable instead of
+    crashing (`5015843`).
+  - Closed B4 refusal on directory read error: fail closed with clear refusal
+    message if `directory.peers()` errors during evidence lookup (`d622b3e`).
+  - Non-blocking flock fallback: warn on `ENOLCK` or `EOPNOTSUPP` during minting
+    lock on filesystems lacking lock support (`4fad1d7`).
+  - Resumption tree comparison: item-by-item migration resumption verifies tree
+    and file equality checks (`f4ea2cb`).
+  - Variable expansion in known dirs: ignore unexpanded variables and relative
+    paths in known plugin data dirs (`97adfbd`).
+  - Typed resolved slug variable: explicit typing of resolved slug variable in
+    migrate command (`d47fbdc`).
+- **Ambient reactor and decision adapter fixes:**
+  - Reactor survives broken ambient package at boot (`2ac2183`).
+  - SQLite WAL journal mode retry on busy during board node connection
+    (`0417e4b`).
+  - Connector spawn prioritizes exit code over rate limit warning, and stop
+    raises RuntimeError on non-zero exit (`35df025`).
+  - Decision adapter transport enforces ASCII `api_key`, strict key resolution
+    from environment, and suppresses `__context__` leaks on network exceptions
+    (`b1e6ce1`, `ce736fc`, `436e86f`).
 
 ### Provisional constants (to be calibrated)
 Seven constants in `conscio/ambient/node.py` are provisional; the values are
