@@ -221,7 +221,6 @@ def test_xdg_runtime_dir_passes_through_and_dbus_does_not(rig, tmp_path):
     assert "DBUS_SESSION_BUS_ADDRESS" not in call["env"]
 
 
-
 def test_spawn_failure_releases_immediately_no_retry_same_sweep(rig):
     make, clock = rig
     _registry({"A": {"connector": "fake", "wake_budget_per_day": 5},
@@ -461,8 +460,7 @@ def test_gate_order_is_connector_budget_admission_liveness_concurrency(rig):
 
 
 def test_stop_failure_logs_warning_and_session_marked_stopped(rig, caplog):
-    # f) node: com um conector fake cujo stop levanta, o _stop registra o warning (caplog)
-    # E a sessão termina 'stopped' no board (o comportamento atual se mantém).
+    # When connector stop raises, _stop logs a warning and marks session stopped.
     make, clock = rig
 
     class FailingStopFake(FakeConnector):
@@ -484,5 +482,3 @@ def test_stop_failure_logs_warning_and_session_marked_stopped(rig, caplog):
     finally:
         db.close()
     n.close()
-
-
