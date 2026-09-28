@@ -90,19 +90,35 @@ doctor.
 - **Wake registry with a zero default budget.** `<relay_root>/ambient/agents.json`
   names the connectors a machine may use; every agent's `wake_budget_per_day`
   defaults to **0**, so nobody is woken until the owner opts them in.
-
-### Not in this slice
-- The **`claude-bg` connector is not yet included.** The S1/S2 probes that
-  capture its output are authorized and run after this task; the changelog is
-  amended when the connector lands.
+- **The `claude-bg` connector.** The one connector in this release. A wake
+  runs `claude --bg [--model M] <prompt>` inside its own
+  `systemd-run --user --scope`, so the session outlives a reactor restart; its
+  output goes to temporary files, stdin is `/dev/null`, and the call times out
+  after 60 s. The session id is read from the `backgrounded · <id>` line. A
+  spawn that exits 0 with an id is a success; otherwise a `429`/rate-limit
+  message is recorded as `rate_limited` and anything else as `spawn_error`.
+  Liveness reads `claude agents --json`: `working` is live; `done`, `failed` or
+  a session missing from the list is not; `blocked`, an unrecognised state, a
+  non-zero exit or output that is not the known JSON shape is *unknown* — and
+  unknown never wakes. A failed `claude stop` is logged and the session is
+  still recorded as stopped. The wake environment is built from scratch and now carries
+  `XDG_RUNTIME_DIR` alongside `PATH`, `HOME` and `LANG` (`systemd-run --user`
+  needs it).
+- **`doctor` reports the machine side too:** `units:` (the
+  `conscio-relay-reactor*` user units) and `claude:` (`claude --version`). A
+  command that fails reads `unknown (…)`; the doctor never raises.
 
 ### Provisional constants (to be calibrated)
-Six constants are provisional (measured in `conscio/ambient/node.py`):
-- **Not determined until probe S3 (spec §7.3, admission gate):** `WAKE_FLOOR_MB=1500`,
-  `LOAD1_DELTA_TOLERANCE=1.5` (renamed from `DELTA_TOLERADO`),
-  `ADMISSION_WINDOW=36`, `ADMISSION_MAX_AGE_S=360`.
-- **Not determined by spec §7.4 (no associated probe):** `WAKE_GRACE_S=600`,
-  `RENOTIFY_MAX=3`.
+Seven constants in `conscio/ambient/node.py` are provisional; the values are
+unchanged and changing them is the owner's call:
+- **Admission gate (spec §7.3):** `WAKE_FLOOR_MB=1500`,
+  `LOAD1_DELTA_TOLERANCE=1.5`, `ADMISSION_WINDOW=36`, `ADMISSION_MAX_AGE_S=360`.
+  Probe S3 measured a single `claude --bg` wake once: a peak RSS of 917 MB for
+  the whole process tree, under the 1500 MB floor. Its `load1` reading was taken
+  with other agents running and cannot calibrate `LOAD1_DELTA_TOLERANCE`.
+- **No associated probe (spec §7.4):** `WAKE_GRACE_S=600`, `RENOTIFY_MAX=3`.
+- **`MAX_CONCURRENT_WAKES=1`:** probe S4 (two simultaneous wakes) did not run,
+  so it stays at 1.
 
 ### Tests
 The full suite was run one test file per process (347 files). Measured at

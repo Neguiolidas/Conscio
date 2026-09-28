@@ -537,9 +537,16 @@ working either way). `conscio ambient enable` / `disable` toggles the flag.
 - `board.propose` is the one board write that travels over the relay (remote
   peers ask for work); it is a reserved type that the generic relay refuses.
 
-Not in this slice: the `claude-bg` connector (it lands after the S1/S2 probes),
-and `WAKE_GRACE_S` / `RENOTIFY_MAX` are provisional constants until probe S3.
-Full walkthrough in `docs/guides/ambient.md`.
+- **Connector**: `claude-bg` is the one connector. A wake runs
+  `claude --bg [--model M] <prompt>` in its own `systemd-run --user --scope`;
+  liveness comes from `claude agents --json`, and an *unknown* answer never
+  wakes (the agent may still be running). Give each agent a `cwd` that is a trusted
+  project directory: `claude --bg` refuses an untrusted workspace, and the home
+  directory is trusted only one session at a time.
+
+The gate constants (`WAKE_FLOOR_MB`, `LOAD1_DELTA_TOLERANCE`, `ADMISSION_WINDOW`,
+`ADMISSION_MAX_AGE_S`, `WAKE_GRACE_S`, `RENOTIFY_MAX`, `MAX_CONCURRENT_WAKES`)
+are provisional until calibrated. Full walkthrough in `docs/guides/ambient.md`.
 
 ## Top pitfalls
 

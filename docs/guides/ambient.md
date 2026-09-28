@@ -39,10 +39,16 @@ in, per machine:
 
 ```json
 {
-  "9f2c…": {"connector": "claude-bg", "model": "claude-opus-5",
+  "9f2c…": {"connector": "claude-bg", "model": "sonnet",
             "wake_budget_per_day": 4, "cwd": "/srv/app"}
 }
 ```
+
+`model` is passed to `claude --bg --model` as is; omit it to use Claude Code's
+default. Set `cwd` to a trusted project directory. Without it the wake runs in
+the home directory, and `claude --bg` refuses an untrusted workspace ("The home
+directory is trusted one session at a time"), which is recorded as
+`spawn_error`.
 
 An absent registry means *nobody is woken* (not an error). A malformed one is
 reported by `conscio ambient doctor` as `registry: agents.json …`, and the gate
@@ -81,7 +87,8 @@ told about it.
 ## `doctor` and `report`
 
 ```
-conscio ambient doctor            # flag, board, sweeper, admission, wake residue
+conscio ambient doctor            # flag, board, sweeper, admission, wake residue,
+                                  # reactor units, claude --version
 conscio ambient doctor --prune    # also drop events / done-cancelled tasks > 90 days
 
 conscio ambient report            # board events counted by kind
@@ -93,7 +100,7 @@ what is present, what is missing, and why the gate would (or would not) wake an
 agent. `report` is the plain count of `board_events` by kind over a window —
 useful for the refused-wake and stalled-review signals.
 
-## Waking (and what is *not* in this slice)
+## Waking
 
 The gate order is `connector → budget → admission → liveness → concurrency`;
 the first "no" is the answer and is recorded once per (task, fence) so a
@@ -101,11 +108,46 @@ stuck reason is visible without event spam. `conscio ambient wake <id> --dry-run
 runs the whole gate and records a `wake_dry_run` event — it **never** spawns.
 In v4.8 only the node spawns, never the CLI.
 
-The `claude-bg` connector is **not yet included**: the S1/S2 probes that capture
-its output are authorized and run after this task. Six gate constants are
-provisional until they are calibrated — `WAKE_FLOOR_MB`, `LOAD1_DELTA_TOLERANCE`
-(renamed from `DELTA_TOLERADO`), `ADMISSION_WINDOW`, `ADMISSION_MAX_AGE_S`
-(spec §7.3, probe S3) and `WAKE_GRACE_S`, `RENOTIFY_MAX` (spec §7.4, no probe).
+### The `claude-bg` connector
+
+The one connector in v4.8. A wake runs `claude --bg [--model M] <prompt>` inside
+its own `systemd-run --user --scope`, so the session survives a reactor
+restart. The environment is built from scratch (`PATH`, `HOME`, `LANG`,
+`XDG_RUNTIME_DIR`, plus the Conscio identity variables); the prompt is a fixed
+template carrying only the task id, passed as a single argument. Output goes to
+temporary files, stdin is `/dev/null`, and the call times out after 60 s.
+
+| `claude --bg` outcome | recorded as |
+|---|---|
+| exits 0 and prints `backgrounded · <id>` | a running session with that id |
+| fails and mentions `429` or a rate limit | `rate_limited` |
+| any other failure, timeout, or no id | `spawn_error` / `timeout` |
+
+Liveness is read from `claude agents --json`:
+
+| session in the listing | liveness |
+|---|---|
+| `working` | live — the gate refuses a second wake |
+| `done`, `failed`, or absent from the listing | not live |
+| `blocked`, an unrecognised state | unknown |
+| the command fails or prints something that is not the known JSON | unknown |
+
+**Unknown never wakes** — the agent may still be running. A failed
+`claude stop` is logged, and the session is still recorded as stopped on the
+board.
+
+### Provisional constants
+
+Seven constants in `conscio/ambient/node.py` are provisional until they are
+calibrated, and changing them is the owner's call: the admission gate's
+`WAKE_FLOOR_MB`, `LOAD1_DELTA_TOLERANCE`, `ADMISSION_WINDOW`, `ADMISSION_MAX_AGE_S`
+(spec §7.3); `WAKE_GRACE_S`, `RENOTIFY_MAX` (spec §7.4); and
+`MAX_CONCURRENT_WAKES=1`. A single measured wake peaked at 917 MB RSS for the
+whole process tree, under the 1500 MB floor; two simultaneous wakes were never
+measured, so concurrency stays at one.
+
+### Proposals over the relay
+
 `board.propose` is the one board write that travels over the relay:
 a remote peer asks for work by sending `board.propose`, which becomes a
 `proposed` task with `creator = sender` and `origin = <message id>` (a redelivery
