@@ -459,3 +459,30 @@ def test_gate_order_is_connector_budget_admission_liveness_concurrency(rig):
         db.close()
     n.close()
 
+
+def test_stop_failure_logs_warning_and_session_marked_stopped(rig, caplog):
+    # f) node: com um conector fake cujo stop levanta, o _stop registra o warning (caplog)
+    # E a sessão termina 'stopped' no board (o comportamento atual se mantém).
+    make, clock = rig
+
+    class FailingStopFake(FakeConnector):
+        def stop(self, session_id):
+            raise RuntimeError(f"exit 1: failed to stop {session_id}")
+
+    fake = FailingStopFake()
+    n = make(fake)
+    tid = _task()
+    db = board.open_board(paths.board_path())
+    try:
+        board.session_started(db, session_id="s_fail", instance_id="A", task_id=tid,
+                              connector="fake", pid=None, fence=1, now=clock[0])
+        with caplog.at_level("WARNING"):
+            n._stop(db, "s_fail", now=clock[0])
+        assert "stop s_fail failed: exit 1: failed to stop s_fail" in caplog.text
+        row = board.session_row(db, "s_fail")
+        assert row is not None and row["state"] == "stopped"
+    finally:
+        db.close()
+    n.close()
+
+

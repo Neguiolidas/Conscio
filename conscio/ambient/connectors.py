@@ -98,14 +98,15 @@ class ClaudeBg:
             err.seek(0)
             stdout = out.read().decode("utf-8", "replace")
             text = f"{stdout}\n{err.read().decode('utf-8', 'replace')}"
+        if cp.returncode == 0:
+            sid = parse_bg_session_id(stdout)
+            if sid is not None:
+                return Spawned(session_id=sid, pid=None)
         if _RATE_LIMITED.search(text):
             raise SpawnFailed("rate_limited", text[-200:])
         if cp.returncode != 0:
             raise SpawnFailed("spawn_error", f"exit {cp.returncode}: {text[-200:]}")
-        sid = parse_bg_session_id(stdout)
-        if sid is None:
-            raise SpawnFailed("spawn_error", "no session id in claude --bg output")
-        return Spawned(session_id=sid, pid=None)
+        raise SpawnFailed("spawn_error", "no session id in claude --bg output")
 
     def is_active(self, session_id: str) -> bool | None:
         try:
@@ -119,8 +120,11 @@ class ClaudeBg:
         return None if table is None else table.get(session_id, False)
 
     def stop(self, session_id: str) -> None:
-        self.run([self.binary, "stop", session_id], capture_output=True, text=True,
-                 timeout=15, check=False)
+        cp = self.run([self.binary, "stop", session_id], capture_output=True, text=True,
+                      timeout=15, check=False)
+        if cp.returncode != 0:
+            text = f"{cp.stdout or ''}\n{cp.stderr or ''}".strip()
+            raise RuntimeError(f"exit {cp.returncode}: {text[-200:]}")
 
 
 CONNECTORS: dict[str, Connector] = {"claude-bg": ClaudeBg()}
