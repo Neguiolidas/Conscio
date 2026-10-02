@@ -105,36 +105,35 @@ _RAW_SAMPLE_CHARS = 200
 
 def json_instructions(tool_names: list[str] | None = None) -> str:
     if tool_names:
-        tools_list = ", ".join(tool_names)
-        tool_spec = (f"exactly one of [{tools_list}] (pure name only, "
-                     f"without quotes, backticks, or parentheses)")
+        tools_list = ", ".join(sorted(tool_names))
+        tool_desc = (f'"tool": one of: {tools_list} - the bare name (pure name only, '
+                     f'without quotes, backticks, or parentheses)')
     else:
-        tool_spec = ("exact name of the tool to call (pure name only, "
-                     "without quotes, backticks, or parentheses)")
+        tool_desc = ('"tool": exact name of the tool to call (pure name only, '
+                     'without quotes, backticks, or parentheses)')
     return (
-        "\n\nRespond with ONE JSON object only, no prose, exactly these keys:\n"
-        '{"tool": "' + tool_spec + '", "args": {<tool arguments>}, '
-        '"rationale": "<why>", "expected_outcome": "<what should happen>"}')
+        "\n\nRespond with ONE JSON object only, no prose, with these keys:\n"
+        f"- {tool_desc}\n"
+        '- "args": object with the tool\'s arguments, {} if none\n'
+        '- "rationale": why this action was chosen\n'
+        '- "expected_outcome": what should happen')
 
 
 def kv_instructions(tool_names: list[str] | None = None) -> str:
     if tool_names:
-        tools_list = ", ".join(tool_names)
-        tool_line = (f"TOOL: exactly one of [{tools_list}] (pure name only, "
-                     f"without quotes, backticks, or parentheses)")
+        tools_list = ", ".join(sorted(tool_names))
+        tool_desc = (f"TOOL must be one of: {tools_list} (pure name only, "
+                     "without quotes, backticks, or parentheses).\n")
     else:
-        tool_line = ("TOOL: exact name of the tool to call (pure name only, "
-                     "without quotes, backticks, or parentheses)")
+        tool_desc = ("TOOL must be the exact name of the tool to call (pure name only, "
+                     "without quotes, backticks, or parentheses).\n")
     return (
-        "\n\nRespond with EXACTLY these lines and nothing else:\n"
-        f"{tool_line}\n"
+        f"\n\n{tool_desc}"
+        "Respond with EXACTLY these lines and nothing else:\n"
+        "TOOL: <name>\n"
         "ARG <name> = <value>   (one line per argument; omit if none)\n"
         "WHY: <one sentence>\n"
         "EXPECT: <one sentence>")
-
-
-_JSON_INSTRUCTIONS = json_instructions()
-_KV_INSTRUCTIONS = kv_instructions()
 
 
 
