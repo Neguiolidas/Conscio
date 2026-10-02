@@ -170,7 +170,7 @@ class ActPipeline:
                 tool_names=self.registry.names())
         except GatewayError as exc:
             return self._fail(goal_fp, tool="", args={},
-                              reason=f"decode failed: {exc}",
+                              reason=f"gateway: {exc}",
                               goal_text=goal_text, infra=exc.infra)
 
         # deterministic checks (skeptic checks 1-2 + sandbox — no LLM)
@@ -400,7 +400,8 @@ class ActPipeline:
                                     tool=tool or "(none)",
                                     args_json=json.dumps(args), rationale="",
                                     tier=self.gateway.last_tier or "T2",
-                                    status="failed")
+                                    status="failed",
+                                    error=reason)
         if verdict is not None:
             self.ledger.update_verdict(row_id, verdict.verdict,
                                        verdict.reasons)

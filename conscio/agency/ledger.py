@@ -93,7 +93,8 @@ class ActionLedger:
                rationale: str, tier: str, status: str, ok: bool | None = None,
                tokens_in: int = 0, tokens_out: int = 0,
                adapter: str = "", model: str = "",
-               goal_text: str = "", approval_policy: str = "") -> int:
+               goal_text: str = "", approval_policy: str = "",
+               error: str = "") -> int:
         # BUG-48: executed_since filters ok=1, but record(status='executed')
         # without an explicit ok= argument left ok=NULL. Distill reads
         # executed_since, so skills were never generated. Default ok=True
@@ -104,11 +105,11 @@ class ActionLedger:
         cur = self._conn.execute(
             "INSERT INTO actions (ts, goal_fp, goal_text, tool, args_json,"
             " rationale, tier, status, ok, tokens_in, tokens_out, adapter,"
-            " model, approval_policy, outcome)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " model, approval_policy, outcome, error)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (time.time(), goal_fp, goal_text, tool, args_json, rationale,
              tier, status, None if ok is None else int(ok), tokens_in,
-             tokens_out, adapter, model, approval_policy, PENDING))
+             tokens_out, adapter, model, approval_policy, PENDING, error))
         self._conn.commit()
         return int(cur.lastrowid or 0)
 
