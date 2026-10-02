@@ -68,14 +68,35 @@ class ToolResult:
     duration_ms: int = 0
 
 
+def normalize_tool_name(raw: str) -> str:
+    """Normalize tool name proposed by model (fail-closed).
+
+    Strips whitespace, repeated wrapping quotes/backticks, and a single
+    trailing empty (). Does not lowercase, does not do fuzzy matching.
+    """
+    if not isinstance(raw, str):
+        return raw
+    s = raw.strip()
+    while len(s) >= 2 and (
+        (s.startswith("`") and s.endswith("`"))
+        or (s.startswith('"') and s.endswith('"'))
+        or (s.startswith("'") and s.endswith("'"))
+    ):
+        s = s[1:-1].strip()
+    if s.endswith("()"):
+        s = s[:-2].strip()
+    return s
+
+
 def proposal_from_dict(data: dict, *, goal_id: str = "") -> ActionProposal:
     """Build an ActionProposal from an already-validated dict.
 
     IDs are never produced by the LLM — the pipeline assigns them here.
     """
     return ActionProposal(
-        tool=data["tool"], args=data["args"], rationale=data["rationale"],
-        expected_outcome=data["expected_outcome"], goal_id=goal_id)
+        tool=normalize_tool_name(data["tool"]), args=data["args"],
+        rationale=data["rationale"], expected_outcome=data["expected_outcome"],
+        goal_id=goal_id)
 
 
 VERDICT_SCHEMA: dict[str, dict] = {

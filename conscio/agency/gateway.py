@@ -103,17 +103,39 @@ def coerce(value: str, type_name: str) -> Any:
 # Enough of the reply to recognise its shape; short enough to log every time.
 _RAW_SAMPLE_CHARS = 200
 
-_JSON_INSTRUCTIONS = (
-    "\n\nRespond with ONE JSON object only, no prose, exactly these keys:\n"
-    '{"tool": "<tool name>", "args": {<tool arguments>}, '
-    '"rationale": "<why>", "expected_outcome": "<what should happen>"}')
+def json_instructions(tool_names: list[str] | None = None) -> str:
+    if tool_names:
+        tools_list = ", ".join(tool_names)
+        tool_spec = (f"exactly one of [{tools_list}] (pure name only, "
+                     f"without quotes, backticks, or parentheses)")
+    else:
+        tool_spec = ("exact name of the tool to call (pure name only, "
+                     "without quotes, backticks, or parentheses)")
+    return (
+        "\n\nRespond with ONE JSON object only, no prose, exactly these keys:\n"
+        '{"tool": "' + tool_spec + '", "args": {<tool arguments>}, '
+        '"rationale": "<why>", "expected_outcome": "<what should happen>"}')
 
-_KV_INSTRUCTIONS = (
-    "\n\nRespond with EXACTLY these lines and nothing else:\n"
-    "TOOL: <tool name>\n"
-    "ARG <name> = <value>   (one line per argument; omit if none)\n"
-    "WHY: <one sentence>\n"
-    "EXPECT: <one sentence>")
+
+def kv_instructions(tool_names: list[str] | None = None) -> str:
+    if tool_names:
+        tools_list = ", ".join(tool_names)
+        tool_line = (f"TOOL: exactly one of [{tools_list}] (pure name only, "
+                     f"without quotes, backticks, or parentheses)")
+    else:
+        tool_line = ("TOOL: exact name of the tool to call (pure name only, "
+                     "without quotes, backticks, or parentheses)")
+    return (
+        "\n\nRespond with EXACTLY these lines and nothing else:\n"
+        f"{tool_line}\n"
+        "ARG <name> = <value>   (one line per argument; omit if none)\n"
+        "WHY: <one sentence>\n"
+        "EXPECT: <one sentence>")
+
+
+_JSON_INSTRUCTIONS = json_instructions()
+_KV_INSTRUCTIONS = kv_instructions()
+
 
 
 class OutputGateway:
@@ -207,20 +229,23 @@ class OutputGateway:
             if data is None and not self._no_lower_tier_can_help():  # one/cycle
                 if caps.json_mode:
                     self.last_tier = "T2"
-                    data = self._try_json(base_prompt, schema)
+                    data = self._try_json(base_prompt, schema, tool_names=tool_names)
                 else:
                     self.last_tier = "T3"
-                    data = self._try_kv(base_prompt, schema, attempts=1)
+                    data = self._try_kv(base_prompt, schema, attempts=1,
+                                        tool_names=tool_names)
         elif tier == "T2":
             self.last_tier = "T2"
-            data = self._try_json(base_prompt, schema)
+            data = self._try_json(base_prompt, schema, tool_names=tool_names)
             if data is None and not self._no_lower_tier_can_help():  # T2 -> T3
                 self.last_tier = "T3"
-                data = self._try_kv(base_prompt, schema, attempts=1)
+                data = self._try_kv(base_prompt, schema, attempts=1,
+                                    tool_names=tool_names)
         else:
             self.last_tier = "T3"
             data = self._try_kv(base_prompt, schema,
-                                attempts=1 + self.max_retries)
+                                attempts=1 + self.max_retries,
+                                tool_names=tool_names)
         if data is None:
             # v3.1: check if failure was PERMANENT — if so, don't try more tiers
             if self.last_adapter_error is not None:
@@ -252,7 +277,8 @@ class OutputGateway:
             return False          # a plain decode failure — that is what T3 is for
         if isinstance(self.last_adapter_error, _UNREACHABLE):
             return True
-        from conscio.failure import FailureClass as _FC, FailureGovernor as _FG
+        from conscio.failure import FailureClass as _FC
+        from conscio.failure import FailureGovernor as _FG
         cls = _FG.classify(self.last_adapter_error)
         if cls in (_FC.RATE_LIMIT, _FC.PROVIDER_OUTAGE):
             return True
@@ -287,7 +313,7 @@ class OutputGateway:
         from .grammar import compile_schema_grammar
         enums = {"tool": sorted(tool_names)} if tool_names else {}
         grammar = compile_schema_grammar(schema, enums=enums)
-        prompt = base_prompt + _JSON_INSTRUCTIONS
+        prompt = base_prompt + json_instructions(tool_names)
         feedback = ""
         for _ in range(1 + self.max_retries):
             try:
@@ -314,8 +340,9 @@ class OutputGateway:
                         + "; ".join(errors) + ". Fix and resend JSON only.")
         return None
 
-    def _try_json(self, base_prompt: str, schema: dict) -> dict | None:
-        prompt = base_prompt + _JSON_INSTRUCTIONS
+    def _try_json(self, base_prompt: str, schema: dict,
+                  tool_names: list[str] | None = None) -> dict | None:
+        prompt = base_prompt + json_instructions(tool_names)
         feedback = ""
         for _ in range(1 + self.max_retries):
             try:
@@ -343,8 +370,9 @@ class OutputGateway:
         return None
 
     def _try_kv(self, base_prompt: str, schema: dict,
-                *, attempts: int) -> dict | None:
-        prompt = base_prompt + _KV_INSTRUCTIONS
+                *, attempts: int,
+                tool_names: list[str] | None = None) -> dict | None:
+        prompt = base_prompt + kv_instructions(tool_names)
         feedback = ""
         for _ in range(attempts):
             try:
