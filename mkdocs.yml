@@ -40,6 +40,8 @@ exclude_docs: |
   Report-*.md
   RELAY_*.md
   *-ideas.md
+  v*-patch.md
+  handoff/
   Knolayer.md
   f3-*.md
   verdent-*
