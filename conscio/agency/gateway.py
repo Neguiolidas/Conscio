@@ -252,8 +252,12 @@ class OutputGateway:
             return False          # a plain decode failure — that is what T3 is for
         if isinstance(self.last_adapter_error, _UNREACHABLE):
             return True
-        from conscio.failure import FailureGovernor as _FG
-        return not _FG.should_retry(_FG.classify(self.last_adapter_error))
+        from conscio.failure import FailureClass as _FC, FailureGovernor as _FG
+        cls = _FG.classify(self.last_adapter_error)
+        if cls in (_FC.RATE_LIMIT, _FC.PROVIDER_OUTAGE):
+            return True
+        # TIMEOUT stays as is: local grammar can be slow, T3 may still succeed
+        return not _FG.should_retry(cls)
 
     def _decode_detail(self) -> str:
         """What the model said and why it was rejected, for the error message.
