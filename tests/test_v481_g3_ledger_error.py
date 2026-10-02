@@ -1,7 +1,6 @@
 import json
 import sqlite3
 from unittest.mock import MagicMock
-import pytest
 
 from conscio.agency.act import ActPipeline, ActStatus
 from conscio.agency.adapter import AdapterCaps, AdapterHTTPError, InferenceAdapter

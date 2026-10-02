@@ -2,6 +2,7 @@ import io
 import urllib.error
 import urllib.request
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 from conscio.agency.adapter import (
@@ -70,9 +71,11 @@ def test_post_json_raises_adapter_http_error_on_urllib_http_error():
         fp=io.BytesIO(b"rate limited"),
     )
 
-    with patch("urllib.request.urlopen", side_effect=http_err):
-        with pytest.raises(AdapterHTTPError) as exc_info:
-            _post_json(url, {"prompt": "hi"}, timeout=5.0)
+    with (
+        patch("urllib.request.urlopen", side_effect=http_err),
+        pytest.raises(AdapterHTTPError) as exc_info,
+    ):
+        _post_json(url, {"prompt": "hi"}, timeout=5.0)
 
     err = exc_info.value
     assert isinstance(err, AdapterBadResponse)

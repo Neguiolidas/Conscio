@@ -1,4 +1,3 @@
-from unittest.mock import MagicMock
 import pytest
 
 from conscio.agency.adapter import (
