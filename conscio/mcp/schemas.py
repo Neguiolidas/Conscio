@@ -368,7 +368,8 @@ BASE_TOOL_DEFS: list[dict] = [
                                     "full": {"type": "boolean"},
                                     "scope": {"type": "string",
                                               "enum": ["session", "project", "all"]},
-                                    "project": {"type": "string"}},
+                                    "project": {"type": "string"},
+                                    "session_id": {"type": "string"}},
                      "required": ["query"]}},
 ]
 

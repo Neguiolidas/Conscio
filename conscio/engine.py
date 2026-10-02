@@ -1722,6 +1722,7 @@ class ConsciousnessEngine:
         the 'unknown' sid mismatch)."""
         if session_id:
             self._obs_session = session_id
+            self._session_explicitly_set = True
 
     def observe(
         self,
@@ -1801,7 +1802,7 @@ class ConsciousnessEngine:
         full: bool = False,
         scope: str = "session",
         project: str = "",
-        session_id: str = "",
+        session_id: str | None = None,
     ) -> list[dict]:
         """Full-text (FTS5) search over raw tool observations.
 
@@ -1824,6 +1825,7 @@ class ConsciousnessEngine:
         appears, and the padding around it is billed to their context. Pass
         ``full=True`` when the entire observation is the answer.
         """
+        sid = self._obs_session if session_id is None else session_id
         try:
             with self._obs_lock:
                 return _obs_search(
@@ -1832,7 +1834,7 @@ class ConsciousnessEngine:
                     k=k,
                     full=full,
                     scope=scope,
-                    session_id=session_id or self._obs_session,
+                    session_id=sid,
                     project=project,
                     snippet_tokens=_SNIPPET_TOKENS,
                 )
@@ -1841,6 +1843,13 @@ class ConsciousnessEngine:
         except Exception as exc:
             logger.debug("recall_observations swallowed: %s", exc)
             return []
+
+    def latest_session_for_project(self, project: str) -> str:
+        """Find the session_id of the most recent observation in the given project."""
+        from .obsstore import latest_session_for_project as _obs_latest_session
+
+        with self._obs_lock:
+            return _obs_latest_session(self._obs_conn(), project)
 
     def compress_observations(self, session_id: str = "") -> dict:
         """Compress raw tool observations into a handoff via the EXISTING formatter.

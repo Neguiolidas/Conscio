@@ -619,17 +619,57 @@ class Bindings:
         A bad scope is the caller's mistake, so it comes back as INVALID_PARAMS
         with the reason — "internal error" would give an agent nothing to correct.
         """
+        from ..obsstore import project_root
+
+        query = self._require(args, "query")
+        k = int(args.get("k", 5))
+        full = bool(args.get("full", False))
+        scope = str(args.get("scope", "session"))
+        raw_project = str(args.get("project", "")).strip()
+        raw_sid = str(args.get("session_id", "")).strip()
+
+        resolved_sid = ""
+        session_source = ""
+        project = raw_project
+
+        if scope == "session":
+            if raw_sid:
+                resolved_sid = raw_sid
+                session_source = "explicit"
+            elif getattr(self.engine, "_session_explicitly_set", False):
+                resolved_sid = getattr(self.engine, "_obs_session", "")
+                session_source = "explicit"
+            else:
+                target_project = raw_project or project_root(os.getcwd())
+                resolved_sid = self.engine.latest_session_for_project(target_project)
+                if not resolved_sid and not raw_project:
+                    resolved_sid = self.engine.latest_session_for_project("")
+                if not resolved_sid:
+                    raise j.InvalidParams(
+                        "scope='session' requires a session_id or an existing "
+                        f"observation in project {target_project!r}"
+                    )
+                session_source = "latest_in_project"
+                if not project and raw_project:
+                    project = target_project
+
         try:
             found = self.engine.recall_observations(
-                self._require(args, "query"),
-                int(args.get("k", 5)),
-                bool(args.get("full", False)),
-                str(args.get("scope", "session")),
-                str(args.get("project", "")),
+                query,
+                k,
+                full,
+                scope,
+                project,
+                session_id=resolved_sid,
             )
         except ValueError as exc:
             raise j.InvalidParams(str(exc)) from exc
-        return {"observations": found}
+
+        res: dict[str, Any] = {"observations": found}
+        if scope == "session":
+            res["session_id"] = resolved_sid
+            res["session_source"] = session_source
+        return res
 
     def _relay_broadcast(self, args: dict) -> dict:
         """v2.8.2: fan-out a relay message to ALL allowlisted peers. Best-effort
