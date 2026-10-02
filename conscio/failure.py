@@ -10,6 +10,7 @@ import enum
 from conscio.agency.adapter import (
     AdapterBadResponse,
     AdapterConnectionError,
+    AdapterHTTPError,
     AdapterTimeout,
 )
 
@@ -43,6 +44,14 @@ class FailureGovernor:
             return FailureClass.TIMEOUT
         if isinstance(exc, AdapterConnectionError):
             return FailureClass.PROVIDER_OUTAGE
+        if isinstance(exc, AdapterHTTPError):
+            if exc.status == 429:
+                return FailureClass.RATE_LIMIT
+            if exc.status in (401, 403):
+                return FailureClass.PERMANENT
+            if exc.status >= 500:
+                return FailureClass.PROVIDER_OUTAGE
+            return FailureClass.MALFORMED_STREAM
         if isinstance(exc, AdapterBadResponse):
             return FailureClass.MALFORMED_STREAM
 

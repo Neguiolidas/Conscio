@@ -16,6 +16,7 @@ from .adapter import (
     AdapterBadResponse,
     AdapterCaps,
     AdapterConnectionError,
+    AdapterHTTPError,
     AdapterTimeout,
     InferenceAdapter,
     InferenceResult,
@@ -46,8 +47,9 @@ def _post_json(url: str, payload: dict, timeout: float,
     except TimeoutError as exc:
         raise AdapterTimeout(f"{where}: {exc}") from exc
     except urllib.error.HTTPError as exc:        # server responded 4xx/5xx
-        raise AdapterBadResponse(
-            f"{where}: HTTP {exc.code}: {exc.reason}") from exc
+        raise AdapterHTTPError(
+            f"{where}: HTTP {exc.code}: {exc.reason}",
+            status=exc.code) from exc
     except urllib.error.URLError as exc:
         if isinstance(getattr(exc, "reason", None), TimeoutError):
             raise AdapterTimeout(f"{where}: {exc}") from exc

@@ -30,6 +30,14 @@ class AdapterBadResponse(AdapterError):
     pass
 
 
+class AdapterHTTPError(AdapterBadResponse):
+    """HTTP error from an inference backend carrying the status code."""
+
+    def __init__(self, message: str, status: int) -> None:
+        super().__init__(message)
+        self.status = int(status)
+
+
 @dataclass
 class InferenceResult:
     text: str
