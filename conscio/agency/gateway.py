@@ -143,8 +143,7 @@ class OutputGateway:
     def __init__(self, adapter: InferenceAdapter, *, max_retries: int = 2,
                  tier: str | None = None,
                  intercepter: Intercepter | None = None,
-                 max_intercept_iterations: int = 3,
-                 failure_governor=None):
+                 max_intercept_iterations: int = 3):
         self.adapter = adapter
         self.max_retries = max_retries
         self.tier = tier         # explicit "T1"/"T2"/"T3"; None = caps auto
@@ -161,9 +160,6 @@ class OutputGateway:
         self.last_tokens_in = 0
         self.last_tokens_out = 0
         self._token_ledger = None
-        # v3.1: failure classification + circuit breaker
-        from conscio.failure import FailureGovernor
-        self._failure_gov = failure_governor or FailureGovernor(max_consecutive=3)
         # Intercepter integration (v2.7)
         self._loop: InterceptionLoop | None = None
         if intercepter is not None:

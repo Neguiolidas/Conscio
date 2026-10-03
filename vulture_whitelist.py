@@ -5,10 +5,6 @@ that are used externally or by convention but not detectable by static analysis.
 from conscio.agency.gateway import OutputGateway, coerce
 
 coerce
-# _failure_gov: constructed in __init__, not yet consulted by the retry
-# loop — v3.1 wiring left unfinished, not v3.6 scope. Whitelisted to keep
-# the pre-existing lint gate green; the actual gap is worth a follow-up.
-OutputGateway._failure_gov
 OutputGateway.attach_ledger
 
 from conscio.agency.fallback_adapter import FallbackAdapter
