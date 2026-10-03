@@ -310,6 +310,44 @@ class TestPromptorVoice:
             sections = self._sections(r.refined_prompt)
             assert "[UNSPECIFIED" in sections["Constraints"], ask
 
+    # ── T3c: three more limit-detection defects, exact fragments ──────
+
+    def test_t3c_limit_without_to_counts_with_number(self):
+        # Regression: bare "limit" stopped counting when "limit(ed) to"
+        # became the unambiguous tier. With a number within three words
+        # it is a limit again.
+        v = PromptorVoice()
+        r = v.analyze({"question": "Summarize the report, limit the "
+                                   "answer to 3 bullets", "context": ""})
+        assert self._sections(r.refined_prompt)["Constraints"] == \
+            "- limit the answer to 3 bullets"
+
+    def test_t3c_currency_symbol_before_number(self):
+        # Regression: "$5" broke the \s+\d tail of the number tier.
+        v = PromptorVoice()
+        r = v.analyze({"question": "Plan the trip, keep it under $5 "
+                                   "per day", "context": ""})
+        assert self._sections(r.refined_prompt)["Constraints"] == \
+            "- under $5 per day"
+
+    def test_t3c_abbreviation_period_stays_in_clause(self):
+        # Old bug: "max." ended a unit for the unit splitter, sending
+        # "300 words" away and leaving a useless "- max." fragment.
+        v = PromptorVoice()
+        r = v.analyze({"question": "Write the summary, max. 300 words",
+                       "context": ""})
+        assert self._sections(r.refined_prompt)["Constraints"] == \
+            "- max. 300 words"
+
+    def test_t3c_currency_control_still_counts(self):
+        # Control (passes on both commits, must keep passing): accented
+        # "até" is unambiguous and the fragment runs to the clause end.
+        v = PromptorVoice()
+        r = v.analyze({"question": "Resuma o relatório, até R$ 50 por mês",
+                       "context": ""})
+        assert self._sections(r.refined_prompt)["Constraints"] == \
+            "- até R$ 50 por mês"
+
     def test_t3b_real_limits_still_count(self):
         v = PromptorVoice()
         for ask, fragment in (

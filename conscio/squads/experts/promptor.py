@@ -77,15 +77,15 @@ _SEM_CLAUSE_START = re.compile(r"^\s*sem\b", re.IGNORECASE)
 # work.
 _LIMIT_ALWAYS_RE = re.compile(
     r"\b(?:at most|at least|no more than|no less than|"
-    r"limit(?:ed)?\s+to|"
     r"to\s+a\s+(?:minimum|maximum)|ao\s+(?:m[íi]nimo|m[áa]ximo)|"
     r"no\s+m[áa]ximo|no\s+m[íi]nimo|limite\s+de|at[é])\b",
     re.IGNORECASE,
 )
 _LIMIT_IF_NUMBER_RE = re.compile(
     r"\b(?:max|maximum|minimum|min|m[áa]ximo|m[íi]nimo|"
-    r"up\s+to|under|over|mais\s+de|menos\s+de|ate)\b"
-    r"(?:\s+[^\W\d_]\S*){0,3}\s+\d",
+    r"up\s+to|under|over|mais\s+de|menos\s+de|ate|limit(?:ed)?)\b\.?"
+    r"(?:\s+[^\W\d_]\S*){0,3}"
+    r"(?:\s+(?:R\$|US\$|[$€£])\s*|\s*(?:R\$|US\$|[$€£])\s*|\s+)\d",
     re.IGNORECASE,
 )
 
@@ -108,11 +108,18 @@ _PREP_BEFORE = re.compile(
     re.IGNORECASE,
 )
 
-# A clause carrier ends at a newline, a sentence end, or a comma: the
-# newline matters because the question and the context are joined with
-# one — without it an unpunctuated question + context would read as a
-# single sentence and leak whole sections into every match (D1).
-_UNIT_SPLIT = re.compile(r"\n+|(?<=[.!?])\s+")
+# A clause carrier ends at a newline, a sentence end, or a comma — but
+# NOT after a limit abbreviation ("max." / "min." / "máx." / "mín.",
+# case-insensitive): "max. 300 words" is one clause, and splitting
+# after "max." used to leave a useless fragment (T3c). The two
+# fixed-width negative lookbehinds keep those periods attached; the
+# newline still matters because the question and the context are
+# joined with one — without it an unpunctuated question + context
+# would read as a single sentence and leak whole sections into every
+# match (D1).
+_UNIT_SPLIT = re.compile(
+    r"\n+|(?<![mM][áa][xX]\.)(?<![mM][íi][nN]\.)(?<=[.!?])\s+"
+)
 _CLAUSE_SPLIT = re.compile(r",\s+")
 
 # Gap markers: the refiner's own words, always bracketed and always an
