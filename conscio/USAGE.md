@@ -300,7 +300,7 @@ eng = ConsciousnessEngine("glm-5.1")
 eng.set_session("session-123")             # share the platform session id
 
 # fire-and-forget capture — never raises, never blocks (returns obs id, or -1)
-eng.observe("edit_file", "fix auth bug", "done", project="/home/me/proj")
+eng.observe("edit_file", "fix auth bug", "done", project="/path/to/proj")
 
 # full-text recall over raw tool calls (query bound as a literal FTS phrase).
 # input/output carry a snippet window around the hit, not the whole row.
@@ -429,8 +429,8 @@ For hosts that cannot customize MCP CLI arguments directly (e.g. plugins or cont
 
 | Variable | Description | Example |
 |---|---|---|
-| `CONSCIO_IDENTITY_MODEL` | Explicit model name | `gemini-3.8-flash`, `claude-opus-5`, `agnes-3.0-flash` |
-| `CONSCIO_IDENTITY_FAMILIA` | Model family | `gemini`, `claude`, `agnes`, `glm`, `deepseek`, `openai`, `qwen` |
+| `CONSCIO_IDENTITY_MODEL` | Explicit model name | `gemini-3.8-flash`, `claude-opus-5`, `qwen-2.5-coder` |
+| `CONSCIO_IDENTITY_FAMILIA` | Model family | `gemini`, `claude`, `glm`, `deepseek`, `openai`, `qwen` |
 | `CONSCIO_IDENTITY_RUNTIME` | Host runtime environment | `antigravity`, `claude-code`, `zcode`, `hermes`, `opencode` |
 | `CONSCIO_IDENTITY_PAPEL` | Fleet role | `executor` (default), `orchestrator`, `architect` |
 
@@ -449,7 +449,7 @@ When neither CLI flags nor `CONSCIO_IDENTITY_*` variables are provided, Conscio 
   - `opencode`: Detected via `OPENCODE_CONFIG_DIR`, `OPENCODE_SERVER`, or `OPENCODE_PROJECT`.
 - **Model and family rules**:
   - Model is **never** guessed from generic environment variables; it remains empty unless explicitly declared via flag or `CONSCIO_IDENTITY_MODEL`.
-  - Family (`familia`) is derived strictly from a known model name using declarative prefix mapping (`claude`, `gemini`, `agnes`, `glm`, `deepseek`, `openai`, `qwen`). Without a verified model, `familia` remains empty.
+  - Family (`familia`) is derived strictly from a known model name using declarative prefix mapping (`claude`, `gemini`, `glm`, `deepseek`, `openai`, `qwen`). Without a verified model, `familia` remains empty.
   - Role (`papel`) defaults to `executor` only when a host runtime is positively detected.
 - **None contract**: When no host signals are detected, Conscio outputs an empty identity with `source="none"` (honoring the contract: absence is not a prior, never invent values).
 

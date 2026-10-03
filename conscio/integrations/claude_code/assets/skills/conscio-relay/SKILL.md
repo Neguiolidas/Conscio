@@ -126,7 +126,7 @@ for 3+ days is `DORMANT`: broadcasts skip it, and a direct send to it returns a
   `conscio-relay-wake` gateway plugin. Same spool rules; the directory, not the
   runtime, decides where a peer lives.
 - **Any runtime:** peers are named by instance_id (or an alias card, e.g.
-  `peers/hermet.json` → the same UUID card). Cross-machine needs
+  `peers/peer-b.json` → the same UUID card). Cross-machine needs
   `conscio relay pair` once per remote peer (token + tailscale URL) — pairing
   points one way, so two machines need one `pair` each.
 

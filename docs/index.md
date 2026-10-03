@@ -84,6 +84,22 @@ one more, `conscio_hall`, carrying 7, on top of whatever surface the mode
 serves. See the
 [relay guide](RELAY.md).
 
+**v4.7** ("Calibration you can trust") adds empirical confidence calibration:
+four-tier ConfidenceValue provenance (`none`, `asserted`, `derived`, `measured`),
+ECE and Brier tracking, vote-entropy agreement, a per-tool Beta posterior
+over the decision ledger that sizes up risk without LLM calls,
+native-only embeddings, vector signatures, and an outcome store.
+
+**v4.8** ("The space survives") moves agent state out of disposable plugin
+directories into durable, host-bound spaces (`~/.conscio/instances/<slug>`),
+adds a machine-level ambient task board swept by the relay reactor (off by
+default), and ships a calibration harness with an opt-in typed judge for the
+four-voice council. **4.8.1** stops Awake Mode from paying to confirm that
+nothing happened: a 60-minute maintenance cooldown, one maintenance cycle per
+heartbeat, a rolling 24h ceiling of 120 act attempts, and a gateway that stops
+on rate limits and provider outages instead of repeating the call down the
+fallback tiers.
+
 ## Install
 
 ```bash

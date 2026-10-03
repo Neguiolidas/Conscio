@@ -36,7 +36,7 @@ command:
   daemon provider types are also built from `~/.config/conscio/config.json`
   (`lmstudio`/`ollama`/`openai`/`anthropic`/`gemini`/`openai-compat`). Without any
   adapter, read tools still work and `propose_*` / `act` fail closed.
-- `--mode lite|balanced|ultra` — how many tools to advertise (see
+- `--mode lite|balanced|high|ultra` — how many tools to advertise (see
   [Tool surfaces](#tool-surfaces)).
 - `--enable-act` (off by default) / `--awake` — opt into audited `act` (see
   [Audited act](#audited-act-v201-opt-in)).
@@ -613,7 +613,7 @@ $$\text{CLI flag } (--\text{identity-*}) > \text{ Environment } (\text{CONSCIO\_
    - `hermes`: Detected via `HERMES_HOME`, `HERMES_SESSION_ID`, or `HERMES_AGENT`.
    - `opencode`: Detected via `OPENCODE_CONFIG_DIR`, `OPENCODE_SERVER`, or `OPENCODE_PROJECT`.
    - Model is never derived from generic environment variables.
-   - Family is derived only when a model is verified via prefix mapping (`claude`, `gemini`, `agnes`, `glm`, `deepseek`, `openai`, `qwen`).
+   - Family is derived only when a model is verified via prefix mapping (`claude`, `gemini`, `glm`, `deepseek`, `openai`, `qwen`).
    - Papel defaults to `executor` only when a host runtime is detected.
 4. **Empty fallback**: Absence of signals produces `source="none"` and empty fields without inventing values.
 
