@@ -9,6 +9,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.8.1] - 2026-10-02 — Awake stops paying to confirm that nothing happened
+
+A field run of Awake Mode drained its provider quota: the maintenance goal
+re-proposed `host_health` on every heartbeat (~300 LLM calls/day to re-confirm
+"all normal", measured on the field ledger), a 429 storm cascaded through every
+gateway tier, and the ledger recorded the failures with an empty `error`. This
+patch caps the call volume, makes the gateway stop on rate limits, and fixes the
+smaller defects the same report and the follow-up audit surfaced. No schema
+change: the ledger gains no column, so existing databases open unchanged.
+
+### Fixed — Awake Mode call volume (`conscio/awake/calibration.py`)
+
+- **Maintenance cooldown.** The `daemon_check` maintenance goal expires after
+  its act and is regenerated only after `MAINTENANCE_COOLDOWN_MIN = 60` minutes,
+  read from the action ledger (the last attempt for that goal fingerprint), so
+  the cooldown survives daemon restarts. The reflect cycle still runs on every
+  heartbeat; only the LLM-backed act is gated.
+- **One maintenance cycle per heartbeat.** When the maintenance goal is the only
+  active goal, the loop runs it once and stops (`stopped: "maintenance_cycle_cap"`)
+  instead of repeating it for the whole `max_cycles` budget. A failed attempt
+  still counts as the one cycle; a heartbeat that also holds another goal is
+  never capped.
+- **Rolling 24h attempt ceiling.** `DAILY_LLM_CEILING = 120` act attempts by the
+  autonomous loop per rolling 24h window (`tier != 'host'`, so host-approved
+  acts never consume it). Failed attempts count whatever their token count: a
+  429 storm writes `tokens = 0` rows and still burns quota. When the ceiling
+  trips, awake degrades to perceive + reflect, emits the trip on the event bus,
+  and the heartbeat's `last_run.stopped` reads `daily_cost_ceiling`.
+- **No active goals is IDLE, not a failure.** A heartbeat with no executable goal
+  returns `ActStatus.IDLE` (`stopped: "idle"`); it no longer feeds the failure-rate brake, which
+  used to stop a healthy idle daemon after a few heartbeats. The IDLE break runs
+  after dream housekeeping, so an idle daemon still prunes its ledgers.
+
+### Fixed — Gateway failure handling (`conscio/agency/`)
+
+- **Typed HTTP status.** HTTP errors from inference backends raise
+  `AdapterHTTPError` (a subclass of `AdapterBadResponse`) carrying `status`.
+  `FailureGovernor.classify` maps 429 → `RATE_LIMIT`, 401/403 → `PERMANENT`,
+  5xx → `PROVIDER_OUTAGE`, any other status → `MALFORMED_STREAM`.
+- **Fast-fail on rate limit and outage.** On `RATE_LIMIT` or `PROVIDER_OUTAGE`
+  the gateway stops instead of falling back to a lower tier: every tier calls
+  the same provider, so the fallback only repeated the 429. `TIMEOUT` still
+  falls through (local grammar decoding can be slow and T3 may succeed).
+- **Failure reason in the ledger.** Failed act rows persist the reason in the
+  existing `error` column (`gateway: …`, `decode failed: …`) instead of `''`.
+- **Tool-name normalization.** A proposed tool name is stripped of whitespace,
+  wrapping quotes/backticks and a trailing `()` before lookup (`host_health()`
+  resolves to `host_health`); no lowercasing and no fuzzy matching.
+- **Instructions without value slots.** The JSON and key-value format
+  instructions describe each field in prose instead of a `"<tool name>"`
+  placeholder the model echoed back verbatim; tool names are listed sorted, and
+  the dead instruction constants were removed.
+
+### Fixed — Recall and council
+
+- **`conscio_recall_observations` session scope.** The default `scope="session"`
+  filtered on the MCP server's own session id, which no capture hook ever
+  writes, so it silently matched nothing. It now resolves the session in order:
+  an explicit `session_id` (exposed in the tool schema), the session the
+  platform wired into the engine, the most recent session recorded for the
+  project (the current repository by default) and, when no `project` was
+  given, the most recent session among observations recorded without one. If
+  none exists it answers `INVALID_PARAMS` saying so. The project path is
+  canonicalized (`~` expanded and, when the path exists, resolved to the
+  enclosing repository root) so a subdirectory or a tilde path matches the
+  stored project.
+- **Council trait negation.** A post-trigger absence predicate ("backups are
+  missing") is consumed by the trigger it negates and can no longer also act as
+  a pre-trigger negator for a later trigger in the same sentence.
+
+### Security and hygiene
+
+- **Bandit HIGH findings: 3 → 0.** The two non-security `sha1` digests (short
+  ids in `integrations/neurata.py` and `outcomes.py`) pass
+  `usedforsecurity=False`; the relay reactor's `shell=True` call
+  runs the operator's own notify pipeline with the payload on stdin, never
+  interpolated, and carries a `# nosec B602` annotation that says so.
+- **Dead code removed.** `OutputGateway` loses the unused `_failure_gov`
+  attribute and `failure_governor` parameter, and the vulture whitelist entry
+  that hid them.
+
 ## [4.8.0] - 2026-09-27 — The space survives, the machine has a board, the council can be measured
 
 This release decouples agent storage from disposable plugin paths into durable,
