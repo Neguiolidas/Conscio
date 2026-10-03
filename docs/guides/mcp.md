@@ -119,7 +119,7 @@ crippled by 10. Four nested surfaces size the list to the model:
 **`high`** adds — `acceptance_criteria`, `delivery_check`, `eval_harness`,
 `evaluate`, `investigate`, `rules_distill` and the two squad wrapper tools
 `squad_experts`, `squad_opositors` (which expose Expert and Opositor voices via
-parameterised `voices` arrays; see [Squads](#squads) below). Each wrapper
+parameterised `voices` arrays; see [Squads](#squads-v44) below). Each wrapper
 replaces what would be 4 individual voice tools — a 75% token saving over a
 per-voice surface.
 **`ultra`** adds the remaining 10 base tools documented below.
@@ -222,13 +222,29 @@ records every tool call already.
 {"tool": "edit_file", "input": "fix auth bug", "output": "done", "project": "/proj"}
 ```
 
-### `conscio_recall_observations(query, k?, full?)` (pure read)
+### `conscio_recall_observations(query, k?, full?, scope?, project?, session_id?)` (pure read)
 
 FTS5 full-text search over recorded observations — distinct from
 `conscio_recall`, which searches the content store. `input`/`output` carry the
 **snippet window** around the hit (elided with `…`), not the whole stored row:
 measured on real transcripts, ~110 tokens per recall instead of ~350. Pass
 `full: true` when the entire observation is the answer.
+
+`scope` is `session` (default), `project` or `all`; `scope: "project"` requires
+`project`. A `project` path is canonicalized before matching (`~` expanded and,
+when the path exists, resolved to the enclosing repository root), so a subdirectory finds the
+observations the capture hook stored under the repository. With
+`scope: "session"` the session is resolved in this order (v4.8.1):
+
+1. an explicit `session_id`;
+2. the session the platform wired into the engine;
+3. the most recent session recorded for `project` (the server's current
+   repository when `project` is omitted);
+4. when `project` is omitted, the most recent session among observations
+   recorded without a project.
+
+If none exists the call answers `INVALID_PARAMS` saying so — never an empty
+list that looks like "no matches".
 
 ```json
 {"query": "authentication", "k": 5, "full": false}

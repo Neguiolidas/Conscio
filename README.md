@@ -23,7 +23,7 @@ memory, self-judgment and procedural skill — and proves every claim by
 measurement, not assertion. Local-first and zero-dep at the core
 (`numpy` + stdlib `sqlite3`, nothing else).
 
-**Latest release — `v4.8.0` "The space survives, the machine has a board, the council can be measured":** Agent storage is decoupled into durable host-bound spaces under `~/.conscio/instances/<slug>`, a machine-wide ambient task board rides the relay reactor tick, and the four-voice council gains an opt-in typed decision judge with trait-sharpened offline calibration.
+**Latest release — `v4.8.1` "Awake stops paying to confirm that nothing happened":** Awake Mode caps its LLM volume — the maintenance check runs at most hourly and a rolling 24h ceiling of 120 autonomous act attempts degrades the daemon to perceive + reflect when it trips — the gateway stops on HTTP 429 and provider outages instead of cascading the same failure through every tier, failed acts record their reason in the ledger, and an idle daemon reports IDLE instead of tripping its own failure brake.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 

@@ -82,6 +82,19 @@ cycle it writes `<storage>/daemon_heartbeat.json`:
 heartbeat's [`RunReport`](../reference/public-api.md) summary; `advisory` is the
 full snapshot above.
 
+`last_run.stopped` says why the heartbeat ended:
+
+| `stopped` | Meaning |
+|---|---|
+| `max_cycles` | ran its whole cycle budget |
+| `failure_rate` | the aggregate failure brake tripped (also emitted on the event bus) |
+| `lockdown` | the circuit breaker locked autonomous action |
+| `idle` | no executable goal: a healthy idle daemon, not a failure |
+| `maintenance_cycle_cap` | the maintenance check was the only goal and ran its one cycle |
+| `daily_cost_ceiling` | the rolling 24h act-attempt ceiling tripped; perceive + reflect only |
+| `asleep` | Awake Mode is off: perceive + reflect only |
+| `no adapter attached` | no inference adapter, so the loop could not act |
+
 ## Structural cognition
 
 Conscio can give the refined model **structural awareness of the codebase it is
