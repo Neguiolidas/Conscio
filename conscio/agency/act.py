@@ -74,6 +74,14 @@ class ActStatus(str, Enum):
     REJECTED = "rejected"
     FAILED = "failed"
     LOCKED = "locked"
+    # v4.8.1 (lote H, round 3): no active goals is HEALTHY IDLE, not
+    # failure. Before the cooldown expired the maintenance goal, "no
+    # active goals" was rare (the goal regenerated every heartbeat);
+    # now it is the normal state 3 of 4 heartbeats inside the window —
+    # and counting it in the failure-rate brake made a healthy daemon
+    # look broken (stopped='failure_rate', failures=2, event emitted
+    # every 15 min). IDLE is outside _FAILURE_STATUSES.
+    IDLE = "idle"
 
 
 @dataclass
@@ -130,7 +138,9 @@ class ActPipeline:
             return ActReport(status=ActStatus.LOCKED,
                              reason="action_lockdown active")
         if not state.active_goals:
-            return ActReport(status=ActStatus.FAILED,
+            # v4.8.1 (lote H, round 3): healthy idle, not failure — see the
+            # IDLE enum. The loop stops immediately with stopped='idle'.
+            return ActReport(status=ActStatus.IDLE,
                              reason="no active goals")
 
         goal_text = self.arbiter.choose(state)
@@ -396,12 +406,25 @@ class ActPipeline:
               report_status: ActStatus = ActStatus.FAILED,
               proposal: ActionProposal | None = None,
               infra: bool = False) -> ActReport:
+        # v4.8.1 (lote H round 5, #866): a failed attempt PAID for its LLM
+        # requests (every _fail call site is downstream of
+        # gateway.request_action). Record the gateway's accumulated usage
+        # so the row tells the truth about what it cost — and so any
+        # token-based accounting sees attempts, not just successes.
+        tokens_in = getattr(self.gateway, "last_tokens_in", 0) or 0
+        tokens_out = getattr(self.gateway, "last_tokens_out", 0) or 0
         row_id = self.ledger.record(goal_fp=goal_fp, goal_text=goal_text,
                                     tool=tool or "(none)",
                                     args_json=json.dumps(args), rationale="",
                                     tier=self.gateway.last_tier or "T2",
                                     status="failed",
-                                    error=reason)
+                                    error=reason,
+                                    tokens_in=tokens_in, tokens_out=tokens_out)
+        # v4.8.1 (#866): a new attempt starts a new usage window — without
+        # this reset, one adapter call's tokens would be re-counted into
+        # every subsequent failure row in the same cycle.
+        self.gateway.last_tokens_in = 0
+        self.gateway.last_tokens_out = 0
         if verdict is not None:
             self.ledger.update_verdict(row_id, verdict.verdict,
                                        verdict.reasons)

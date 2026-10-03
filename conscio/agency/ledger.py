@@ -251,5 +251,67 @@ class ActionLedger:
                 break
         return streak
 
+    # ── v4.8.1 (lote H): calibration queries ─────────────────────────────
+    # Public API so calibration code never touches the private _conn.
+    # Every attempt counts (executed/failed/rejected): a failed attempt
+    # burned provider quota exactly like a successful one.
+
+    def last_attempt_ts(self, goal_fp: str) -> float | None:
+        """ts of the most recent row for this goal fingerprint, whatever
+        its status; None when the goal never reached the ledger."""
+        row = self._conn.execute(
+            "SELECT ts FROM actions WHERE goal_fp=?"
+            " ORDER BY id DESC LIMIT 1", (goal_fp,)).fetchone()
+        return float(row[0]) if row else None
+
+    def max_id(self) -> int:
+        """Current highest row id — run-scoped counting baseline."""
+        row = self._conn.execute(
+            "SELECT COALESCE(MAX(id), 0) FROM actions").fetchone()
+        return int(row[0])
+
+    def count_since_id(self, goal_fp: str, after_id: int) -> int:
+        """Rows of this goal fingerprint newer than `after_id` — how many
+        cycles of this goal a run has already consumed."""
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM actions WHERE goal_fp=? AND id > ?",
+            (goal_fp, after_id)).fetchone()
+        return int(row[0])
+
+    def count_costed_since(self, ts: float, *, now: float | None = None) -> int:
+        """AUTONOMOUS-LOOP attempt rows in the window (ts, now].
+
+        v4.8.1 (lote H round 6, #866): counts actions rows of the AWAKE
+        pipeline only — tier != 'host'. Every such row is one attempt
+        downstream of gateway.request_action, which paid for at least
+        one LLM request whatever the outcome (executed, failed,
+        rejected). A row with tokens=0 in a 429 storm still burned RPM;
+        the first cut filtered on (tokens_in>0 OR tokens_out>0) and was
+        blind to exactly the failure storm it existed to cap.
+
+        Why tier != 'host' (round-6 review): the actions table is
+        shared by the whole space — the MCP server's host_act channel
+        writes its own rows into the same conscio.db the ceiling
+        reads. The ceiling is the budget of the AUTONOMOUS loop, so
+        host-originated spend (audit calls, rejected proposals) is the
+        HOST's budget, outside awake's control. Two facts close the
+        case: host_act._reject writes tier='host' rows with ZERO LLM
+        calls (a host spamming malformed proposals must not lock the
+        awake loop for 24h — the inverse of what the ceiling protects),
+        and host rows land exactly in the window the ceiling watches
+        because _gate only accepts host proposals while the engine is
+        AWAKE. Grep of every writer to actions: act.py:223/419
+        (tier=last_tier or 'T2' — T1/T2/T3/'' only, never 'host'),
+        host_act.py:51/88 (tier='host'), bench.py:380/386 (offline
+        harness, tier=gateway.last_tier), gateway.py:182 is the
+        token_ledger, a different table.
+        """
+        now = time.time() if now is None else now
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM actions"
+            " WHERE ts > ? AND ts <= ? AND tier != 'host'",
+            (float(ts), float(now))).fetchone()
+        return int(row[0])
+
     def close(self) -> None:
         self._conn.close()

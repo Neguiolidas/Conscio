@@ -116,6 +116,18 @@ class AutonomyLoop:
         calls0, tokens0 = self.meter.calls, self.meter.tokens
         max_cycles = budget.max_cycles
         cap0 = self.pipeline.autonomy_cap
+        # v4.8.1 (lote H): one maintenance cycle per run. A maintenance-only
+        # heartbeat (daemon_check) re-confirms "all normal"; letting it eat
+        # the whole max_cycles budget triples the LLM spend with zero new
+        # information. Counted from the LEDGER: rows of the maintenance
+        # goal fingerprint with id greater than this run's baseline. This
+        # is the same key act.py records (hostile review, lever 2 — goal
+        # STATUS never changes on execution, so watching the goal store
+        # was inert). Failures count: a 429'd attempt burned a proposal.
+        from ..awake.calibration import maintenance_goal_fingerprint
+        ledger = getattr(self.pipeline, "ledger", None)
+        maint_fp = maintenance_goal_fingerprint() if ledger is not None else None
+        baseline_id = ledger.max_id() if ledger is not None else 0
         try:
             while True:
                 report.wall_s = time.monotonic() - start
@@ -126,6 +138,12 @@ class AutonomyLoop:
                     report.stopped = stopped
                     if stopped == "failure_rate":
                         self._emit_failure_brake(report)
+                    break
+                if (maint_fp is not None
+                        and ledger is not None
+                        and ledger.count_since_id(maint_fp, baseline_id) >= 1
+                        and not self._has_non_maintenance_goal()):
+                    report.stopped = "maintenance_cycle_cap"
                     break
                 self.engine.reflect(world_state=world_state)
                 state = self.engine.state
@@ -147,8 +165,24 @@ class AutonomyLoop:
                 # v3.9.4: housekeeping, not autonomy — DreamCycle makes no model
                 # call. This ran *after* the lockdown check, so the break jumped
                 # over it and a locked-down mind never pruned its ledgers again.
+                # v4.8.1 (lote H, round 4): the IDLE break below must stay
+                # AFTER this too — idle is now the normal state 3 of 4
+                # heartbeats; skipping the dream here would leave the ledgers
+                # unpruned except on the hourly maintenance cycle (the same
+                # orphaned-invariant bug, reintroduced by moving the break
+                # above the housekeeping in round 3).
                 if self.engine.dream_recommended.recommended:
                     self.engine.dream()
+                # v4.8.1 (lote H, round 3): IDLE (no active goals) is the
+                # healthy state inside the maintenance cooldown — stop the
+                # run immediately instead of burning the remaining cycles
+                # on idle acts. Not a failure: no brake event, failures=0.
+                # (Round 4: moved below the dream housekeeping; the stop is
+                # still immediate — dream() is the only thing that may run
+                # between the idle act and the break.)
+                if act_report.status is ActStatus.IDLE:
+                    report.stopped = "idle"
+                    break
                 if (act_report.lockdown or state.action_lockdown
                         or act_report.status is ActStatus.LOCKED):
                     report.stopped = "lockdown"
@@ -159,6 +193,26 @@ class AutonomyLoop:
         report.llm_calls = self.meter.calls - calls0
         report.tokens = self.meter.tokens - tokens0
         return report
+
+    def _has_non_maintenance_goal(self) -> bool:
+        """v4.8.1 (lote H): whether an actable, non-maintenance goal exists.
+        The one-maintenance-cycle cap only stops a run whose remaining work
+        is all daemon_check; a real goal must never be starved by it."""
+        goals = getattr(self.engine, "goals", None)
+        if goals is None:
+            return False
+        breaker = getattr(self.pipeline, "breaker", None)
+        from ..agency.fingerprint import goal_fingerprint
+        for g in getattr(goals, "_goals", []):
+            if g.status != "active" or not g.executable:
+                continue
+            if g.drive is not None and g.drive.value == "maintenance":
+                continue
+            if breaker is not None and breaker.is_quarantined(
+                    goal_fingerprint(g.description)):
+                continue
+            return True
+        return False
 
     @staticmethod
     def _budget_stop(report: RunReport, budget: ActBudget,
