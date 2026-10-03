@@ -350,3 +350,49 @@ def test_failed_attempt_records_gateway_tokens(tmp_path):
     assert row["tokens_out"] == 12
     # and the window resets for the next attempt
     assert gw.last_tokens_in == 0
+
+
+# ── round 6: the ceiling counts ONLY the autonomous loop (tier != host) ────
+
+def test_host_rows_do_not_trip_ceiling(tmp_path):
+    """A host spamming 200 malformed proposals (tier='host', zero LLM
+    cost, the _reject path) must NOT lock the awake loop for 24h."""
+    led = ActionLedger(tmp_path / "host_spam.db")
+    real_now = time.time()
+    for i in range(200):
+        led.record(goal_fp=f"host_goal_{i}", tool="(none)",
+                   args_json="{}", rationale="", tier="host",
+                   status="failed" if i % 2 else "proposed",
+                   tokens_in=0, tokens_out=0)
+    ceil = DailyAttemptCeiling(max_attempts_per_day=5, ledger=led,
+                               now_fn=lambda: real_now + 60)
+    assert ceil.allows_more() is True, (
+        "200 host-originated rows must not trip the awake ceiling")
+    assert ceil._spent() == 0
+
+
+def test_awake_rows_trip_ceiling(tmp_path):
+    """5 autonomous rows (T1/T2) vs ceiling 5 -> trips."""
+    led = ActionLedger(tmp_path / "awake_rows.db")
+    real_now = time.time()
+    for i in range(5):
+        led.record(goal_fp=f"g{i}", tool="host_health",
+                   args_json="{}", rationale="", tier="T2",
+                   status="executed", tokens_in=10, tokens_out=2)
+    ceil = DailyAttemptCeiling(max_attempts_per_day=5, ledger=led,
+                               now_fn=lambda: real_now + 60)
+    assert ceil.allows_more() is False
+
+
+def test_empty_tier_failure_counts(tmp_path):
+    """A failure BEFORE the gateway writes tier='' (last_tier reset) —
+    it is still an autonomous attempt and must count."""
+    led = ActionLedger(tmp_path / "empty_tier.db")
+    real_now = time.time()
+    for i in range(6):
+        led.record(goal_fp=f"g{i}", tool="(none)",
+                   args_json="{}", rationale="", tier="",
+                   status="failed", tokens_in=0, tokens_out=0)
+    ceil = DailyAttemptCeiling(max_attempts_per_day=5, ledger=led,
+                               now_fn=lambda: real_now + 60)
+    assert ceil.allows_more() is False, "tier='' failures must count"
