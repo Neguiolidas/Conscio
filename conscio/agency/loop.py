@@ -119,9 +119,15 @@ class AutonomyLoop:
         # v4.8.1 (lote H): one maintenance cycle per run. A maintenance-only
         # heartbeat (daemon_check) re-confirms "all normal"; letting it eat
         # the whole max_cycles budget triples the LLM spend with zero new
-        # information. Non-maintenance goals never hit this cap.
-        from ..awake.calibration import maintenance_cycles
-        ran_cycles: list[tuple[str, str]] = []
+        # information. Counted from the LEDGER: rows of the maintenance
+        # goal fingerprint with id greater than this run's baseline. This
+        # is the same key act.py records (hostile review, lever 2 — goal
+        # STATUS never changes on execution, so watching the goal store
+        # was inert). Failures count: a 429'd attempt burned a proposal.
+        from ..awake.calibration import maintenance_goal_fingerprint
+        ledger = getattr(self.pipeline, "ledger", None)
+        maint_fp = maintenance_goal_fingerprint() if ledger is not None else None
+        baseline_id = ledger.max_id() if ledger is not None else 0
         try:
             while True:
                 report.wall_s = time.monotonic() - start
@@ -133,11 +139,12 @@ class AutonomyLoop:
                     if stopped == "failure_rate":
                         self._emit_failure_brake(report)
                     break
-                if (maintenance_cycles(ran_cycles) >= 1
+                if (maint_fp is not None
+                        and ledger is not None
+                        and ledger.count_since_id(maint_fp, baseline_id) >= 1
                         and not self._has_non_maintenance_goal()):
                     report.stopped = "maintenance_cycle_cap"
                     break
-                before = self._maintenance_goal_active()
                 self.engine.reflect(world_state=world_state)
                 state = self.engine.state
                 tier = MetabolicContext.assess(
@@ -153,13 +160,6 @@ class AutonomyLoop:
                 act_report = self.engine.act()
                 report.reports.append(act_report)
                 report.cycles += 1
-                # v4.8.1 (lote H): a maintenance cycle is counted by observing
-                # the goal store — a daemon_check that was active before the
-                # act and is no longer active after it ran. This keeps the
-                # ActReport contract untouched (that is lote G territory).
-                if before and not self._maintenance_goal_active():
-                    ran_cycles.append(("maintenance:daemon_check",
-                                       str(act_report.status)))
                 if act_report.status in _FAILURE_STATUSES:
                     report.failures += 1
                 # v3.9.4: housekeeping, not autonomy — DreamCycle makes no model
@@ -177,19 +177,6 @@ class AutonomyLoop:
         report.llm_calls = self.meter.calls - calls0
         report.tokens = self.meter.tokens - tokens0
         return report
-
-    def _maintenance_goal_active(self) -> bool:
-        """v4.8.1 (lote H): whether a daemon_check goal is active right now."""
-        goals = getattr(self.engine, "goals", None)
-        if goals is None:
-            return False
-        for g in getattr(goals, "_goals", []):
-            if (g.status == "active"
-                    and g.drive is not None
-                    and g.drive.value == "maintenance"
-                    and g.metadata.get("check_type") == "daemon_check"):
-                return True
-        return False
 
     def _has_non_maintenance_goal(self) -> bool:
         """v4.8.1 (lote H): whether an actable, non-maintenance goal exists.

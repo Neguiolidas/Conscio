@@ -74,6 +74,15 @@ def origin_of(source: str) -> GoalOrigin:
 class Goal:
     """A single goal with drive source, priority, and status."""
 
+    # v4.8.1 (lote H): the maintenance description the engine regenerates.
+    # Single source of truth: generate_from_maintenance builds its Goal with
+    # this exact text, and the ledger key of that goal is
+    # goal_fingerprint(MAINTENANCE_DAEMON_CHECK_DESCRIPTION). Calibration
+    # derives the key from here (maintenance_goal_fingerprint) — a hand-copied
+    # literal here or in calibration.py is how the cooldown went inert.
+    MAINTENANCE_DAEMON_CHECK_DESCRIPTION = (
+        "Maintenance: host health check — run diagnostics and record state")
+
     def __init__(
         self,
         description: str,
@@ -265,6 +274,14 @@ class GoalGenerator:
         the instruction.
 
         Examples: "check system health", "verify data consistency", "prune stale entries"
+
+        v4.8.1 (lote H): the goal description is the SINGLE SOURCE the act
+        ledger fingerprints (goal_fingerprint(description)). Calibration
+        code that needs the ledger key of a maintenance goal derives it
+        from the same construction below via
+        ``maintenance_goal_fingerprint(check_type)`` — never a hand-copied
+        string, which drifted from the real one and made the cooldown
+        read a column that never matched (hostile review, lever 1).
         """
         strength = self.drives.get(Drive.MAINTENANCE, 0.5)
         if strength < 0.3:

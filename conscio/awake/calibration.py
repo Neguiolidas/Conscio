@@ -1,23 +1,32 @@
 """Lote H (v4.8.1) — calibration helpers for Awake Mode LLM volume.
 
-Three levers, each derived from the H1 measurements (~300 maintenance
-calls/day burn the shared provider quota):
+Retworked after the hostile review (Claude fbb0ceed, 2026-10-02): the first
+cut read a hand-copied ledger key that never matched what act.py records,
+counted maintenance cycles by watching goal status that act() does not
+change, and froze its rolling window at cache time. This module now has
+one source of truth for the ledger key — ``maintenance_goal_fingerprint``
+derives it from the same constant the engine regenerates — and the window
+is recomputed on every check.
 
-1. ``MaintenanceCooldown`` — do not regenerate the ``daemon_check`` goal
-   when the last one ran less than N minutes ago (the world state rarely
-   changes between heartbeats; re-proposing "everything is normal" is
-   the measured waste).
+The three levers (measured burn: 267 costed actions/day on the muse
+ledger, 2026-10-01):
 
-2. ``maintenance_cycles`` — at most ONE maintenance cycle per run, so a
-   maintenance-only heartbeat costs a single LLM proposal instead of
-   ``max_cycles`` (3).
+1. ``MaintenanceCooldown`` — reflect() does not regenerate the
+   ``daemon_check`` goal while the last ATTEMPT of that exact ledger key
+   (executed, failed or rejected — each burned provider quota) is inside
+   the window.
 
-3. ``DailyCallCeiling`` — a configurable daily budget of LLM calls for
-   the awake loop, counted from the action ledger (SQLite, survives any
-   restart). When the ceiling is hit the awake loop keeps perceiving and
-   reflecting but skips act(); the trip is REPORTED, never silent.
+2. Run-scoped maintenance cap (``AutonomyLoop``) — at most one
+   ``daemon_check`` cycle per run, counted by ledger rows of the goal
+   fingerprint with id greater than the run's baseline. Failures count;
+   a failing maintenance loop never earns a second proposal in one run.
 
-All three are pure/cheap: no LLM calls, only ledger reads and time math.
+3. ``DailyCostCeiling`` — a rolling 24h budget of COST-CARRYING ledger
+   rows (tokens > 0). The window moves: every check recomputes
+   ``now - 24h``, so a cached ceiling ages old rows out instead of
+   freezing (the daemon restarts every 6h on the muse, but a long-lived
+   daemon must not degrade permanently). When the ceiling trips, run()
+   degrades to perceive+reflect and REPORTS the trip.
 """
 from __future__ import annotations
 
@@ -25,73 +34,82 @@ import time
 from typing import Any
 
 _MAINTENANCE_CHECK = "daemon_check"
-_MAINTENANCE_KEY = f"maintenance:{_MAINTENANCE_CHECK}"
+
+
+def maintenance_goal_fingerprint() -> str:
+    """Ledger key of the daemon_check maintenance goal.
+
+    Single source of truth: the description constant the engine passes to
+    ``GoalGenerator.generate_from_maintenance``, fingerprinted exactly the
+    way act.py fingerprints the goal it runs
+    (``goal_fingerprint(goal.description)``, where the description is
+    ``"Maintenance: " + target``). Deriving — not hand-copying — is what
+    keeps this in step with the engine text (hostile review, lever 1).
+    """
+    from ..agency.fingerprint import goal_fingerprint
+    from ..goal_generator import Goal
+
+    return goal_fingerprint(Goal.MAINTENANCE_DAEMON_CHECK_DESCRIPTION)
 
 
 class MaintenanceCooldown:
     """Gate for regenerating the daemon_check maintenance goal.
 
-    ``should_generate`` answers whether reflect() may spawn a fresh
-    ``daemon_check``: ``None`` (never executed) always allows — the very
-    first check must happen — and anything inside the window blocks.
+    ``should_generate`` consults the ledger through the PUBLIC
+    ``last_attempt_ts`` (any status: executed, failed, rejected — a failed
+    attempt burned provider quota exactly like a successful one, and
+    re-proposing into a rate limit every 15 min was the measured waste).
+    ``None`` (never attempted) always allows — the very first check must
+    happen.
     """
 
-    def __init__(self, minutes: int = 60) -> None:
+    def __init__(self, minutes: int = 60, *,
+                 now_fn: Any = time.time) -> None:
         self.window_s = max(0, int(minutes)) * 60
+        self._now_fn = now_fn
 
-    def should_generate(self, *, last_run_ts: float | None) -> bool:
-        if last_run_ts is None:
+    def should_generate(self, *, last_attempt_ts: float | None) -> bool:
+        if last_attempt_ts is None:
             return True
-        return (time.time() - float(last_run_ts)) >= self.window_s
+        return (float(self._now_fn()) - float(last_attempt_ts)) >= self.window_s
 
 
-def maintenance_cycles(cycle_summaries: list[tuple[str, str]]) -> int:
-    """How many maintenance cycles a run has already consumed.
+class DailyCostCeiling:
+    """Rolling 24h budget of cost-carrying actions for the awake loop.
 
-    ``cycle_summaries`` is a list of ``(goal_key, status)`` pairs for the
-    cycles executed so far in this run. Only ``daemon_check`` counts; a
-    failed cycle still counts — it burned a proposal, and not counting it
-    would let a failing maintenance loop retry endlessly within one run.
-    """
-    return sum(1 for key, _status in cycle_summaries
-               if key == _MAINTENANCE_KEY)
+    The count is a ledger query (``count_costed_since``), so the budget
+    survives any process restart: the ledger IS the state. The window is
+    recomputed on every ``allows_more``/``report`` call — ``now`` is
+    evaluated per check (injectable only for tests), never captured at
+    construction, so a cached ceiling ages old rows out of the window
+    instead of tripping forever (hostile review, lever 3).
 
-
-class DailyCallCeiling:
-    """Daily LLM-call budget for the awake loop, read from the ledger.
-
-    Counts ledger rows from the last 24h that represent real LLM
-    proposals (tokens > 0 — T1/grammar rows are deterministic and cost
-    nothing). The count is a ledger query, so the budget survives any
-    process restart: the ledger IS the state.
-
-    ``report()`` returns a human-readable trip line for the event log;
-    the caller must emit it (H2: reported, never silent).
+    Name says COST, not CALLS: it counts ledger actions that carry tokens
+    (tokens_in > 0 or tokens_out > 0). One action may hide several LLM
+    requests (T2 proposal, T3 fallback, skeptic) — the doc must not claim
+    "calls".
     """
 
-    def __init__(self, *, max_calls_per_day: int,
+    def __init__(self, *, max_costed_per_day: int,
                  ledger: Any,
-                 now: float | None = None) -> None:
-        self.max_calls = int(max_calls_per_day)
+                 now_fn: Any = time.time,
+                 window_s: float = 24 * 3600.0) -> None:
+        self.max_costed = int(max_costed_per_day)
         self._ledger = ledger
-        self._now = now if now is not None else time.time()
+        self._now_fn = now_fn
+        self.window_s = float(window_s)
 
     def _spent(self) -> int:
-        row = self._ledger._conn.execute(
-            "SELECT COUNT(*) FROM actions"
-            " WHERE ts > ?"
-            "   AND (tokens_in > 0 OR tokens_out > 0)",
-            (self._now - 24 * 3600.0,),
-        ).fetchone()
-        return int(row[0])
+        now = float(self._now_fn())
+        return self._ledger.count_costed_since(now - self.window_s, now=now)
 
     def allows_more(self) -> bool:
-        return self._spent() < self.max_calls
+        return self._spent() < self.max_costed
 
     def report(self) -> str:
         spent = self._spent()
-        if spent < self.max_calls:
+        if spent < self.max_costed:
             return ""
-        return (f"daily LLM ceiling reached: {spent} calls in the last 24h"
-                f" (ceiling {self.max_calls}); awake loop skipping act(),"
-                " perceive+reflect continue")
+        return (f"daily cost ceiling reached: {spent} cost-carrying actions"
+                f" in the last 24h (ceiling {self.max_costed});"
+                " awake loop skipping act(), perceive+reflect continue")

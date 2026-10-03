@@ -250,5 +250,45 @@ class ActionLedger:
                 break
         return streak
 
+    # ── v4.8.1 (lote H): calibration queries ─────────────────────────────
+    # Public API so calibration code never touches the private _conn.
+    # Every attempt counts (executed/failed/rejected): a failed attempt
+    # burned provider quota exactly like a successful one.
+
+    def last_attempt_ts(self, goal_fp: str) -> float | None:
+        """ts of the most recent row for this goal fingerprint, whatever
+        its status; None when the goal never reached the ledger."""
+        row = self._conn.execute(
+            "SELECT ts FROM actions WHERE goal_fp=?"
+            " ORDER BY id DESC LIMIT 1", (goal_fp,)).fetchone()
+        return float(row[0]) if row else None
+
+    def max_id(self) -> int:
+        """Current highest row id — run-scoped counting baseline."""
+        row = self._conn.execute(
+            "SELECT COALESCE(MAX(id), 0) FROM actions").fetchone()
+        return int(row[0])
+
+    def count_since_id(self, goal_fp: str, after_id: int) -> int:
+        """Rows of this goal fingerprint newer than `after_id` — how many
+        cycles of this goal a run has already consumed."""
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM actions WHERE goal_fp=? AND id > ?",
+            (goal_fp, after_id)).fetchone()
+        return int(row[0])
+
+    def count_costed_since(self, ts: float, *, now: float | None = None) -> int:
+        """Cost-carrying rows (tokens > 0) in the window (ts, now].
+        The rolling daily ceiling calls this with ts = now-24h on EVERY
+        check so the window moves with time — a cached object must never
+        freeze its anchor (hostile review, lever 3)."""
+        now = time.time() if now is None else now
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM actions"
+            " WHERE ts > ? AND ts <= ?"
+            "   AND (tokens_in > 0 OR tokens_out > 0)",
+            (float(ts), float(now))).fetchone()
+        return int(row[0])
+
     def close(self) -> None:
         self._conn.close()

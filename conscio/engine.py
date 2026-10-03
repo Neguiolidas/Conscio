@@ -265,11 +265,12 @@ class ConsciousnessEngine:
     # loss of coverage (the reflect cycle still runs every heartbeat).
     MAINTENANCE_COOLDOWN_MIN = 60
 
-    # v4.8.1 (lote H): daily ceiling of LLM calls for the awake loop,
-    # counted from the action ledger over the last 24h. 120 covers the
-    # legitimate ceiling (96 heartbeats/day × 1 maintenance cycle) with
-    # headroom for real goals; when it trips, awake degrades to
-    # perceive+reflect and reports the trip.
+    # v4.8.1 (lote H): rolling 24h ceiling of COST-CARRYING ledger actions
+    # (tokens > 0) for the awake loop. 120 covers the legitimate ceiling
+    # (96 heartbeats/day × 1 maintenance cycle) with headroom for real
+    # goals; when it trips, awake degrades to perceive+reflect and
+    # reports the trip. Counts ACTIONS with cost, not raw LLM requests
+    # (one action may bundle proposal+fallback+skeptic calls).
     DAILY_LLM_CEILING = 120
 
     def __init__(
@@ -716,10 +717,16 @@ class ConsciousnessEngine:
                     cooldown = self._maintenance_cooldown = \
                         MaintenanceCooldown(minutes=self.MAINTENANCE_COOLDOWN_MIN)
                 if cooldown.should_generate(
-                        last_run_ts=self._last_daemon_check_ts()):
+                        last_attempt_ts=self._last_daemon_check_ts()):
+                    # v4.8.1 (lote H): description from the Goal constant —
+                    # the same text the calibration fingerprints, so the
+                    # ledger key always matches (hostile review, lever 1).
+                    from .goal_generator import Goal as _Goal
+                    target = _Goal.MAINTENANCE_DAEMON_CHECK_DESCRIPTION[
+                        len("Maintenance: "):]
                     self.goals.generate_from_maintenance(
                         "daemon_check",
-                        "host health check — run diagnostics and record state",
+                        target,
                         source="daemon",
                     )
 
@@ -2495,16 +2502,16 @@ class ConsciousnessEngine:
         return profile
 
     def _last_daemon_check_ts(self) -> float | None:
-        """v4.8.1 (lote H): when the last daemon_check cycle ran, from the
-        action ledger — None when it never did. Ledger-backed on purpose:
-        the cooldown must survive engine restarts, and memory does not."""
+        """v4.8.1 (lote H): when the last daemon_check ATTEMPT hit the
+        ledger — any status (executed/failed/rejected all burned quota).
+        None when it never did. Uses the PUBLIC ledger API and the
+        fingerprint DERIVED from the same description constant the engine
+        regenerates (hostile review, lever 1)."""
         ledger = getattr(getattr(self, "_act_pipeline", None), "ledger", None)
         if ledger is None:
             return None
-        row = ledger._conn.execute(
-            "SELECT ts FROM actions WHERE goal_fp='maintenance:daemon_check'"
-            " AND status='executed' ORDER BY id DESC LIMIT 1").fetchone()
-        return float(row[0]) if row else None
+        from .awake.calibration import maintenance_goal_fingerprint
+        return ledger.last_attempt_ts(maintenance_goal_fingerprint())
 
     def run(self, budget=None, *, world_state=""):
         """L3 heartbeat: reflect -> arbiter/act -> (dream), repeated
@@ -2533,16 +2540,21 @@ class ConsciousnessEngine:
             if self.dream_recommended.recommended:
                 self.dream()
             return RunReport(stopped="no adapter attached")
-        self.probe()
-        # v4.8.1 (lote H): daily LLM-call ceiling for the awake loop,
-        # counted from the action ledger (survives restarts). When the
-        # ceiling trips: perceive + reflect continue, act() is skipped,
-        # and the trip is REPORTED — never silent.
-        from .awake.calibration import DailyCallCeiling
-        ceiling = getattr(self, "_daily_call_ceiling", None)
+        # v4.8.1 (lote H): rolling 24h cost ceiling for the awake loop,
+        # counted from the action ledger (survives restarts). Checked
+        # BEFORE probe(): the ProbeSuite runs real model calls when no
+        # cached profile exists, so an over-budget loop must not pay for
+        # a probe it cannot use. When the ceiling trips: perceive +
+        # reflect continue, act() is skipped, and the trip is REPORTED on
+        # the event bus — never silent. The daemon already persists
+        # RunReport.stopped in its heartbeat file (daemon.py), so the
+        # 'daily_cost_ceiling' stop reason reaches operators with no new
+        # channel.
+        from .awake.calibration import DailyCostCeiling
+        ceiling = getattr(self, "_daily_cost_ceiling", None)
         if ceiling is None:
-            ceiling = self._daily_call_ceiling = DailyCallCeiling(
-                max_calls_per_day=self.DAILY_LLM_CEILING,
+            ceiling = self._daily_cost_ceiling = DailyCostCeiling(
+                max_costed_per_day=self.DAILY_LLM_CEILING,
                 ledger=self._act_pipeline.ledger)
         if not ceiling.allows_more():
             self.reflect(world_state=world_state)
@@ -2555,7 +2567,8 @@ class ConsciousnessEngine:
                              priority=7)
                 except Exception:          # a strict bus must not crash run()
                     pass
-            return RunReport(stopped="daily_llm_ceiling")
+            return RunReport(stopped="daily_cost_ceiling")
+        self.probe()
         loop = AutonomyLoop(self, self._act_pipeline, self._act_meter)
         if budget is None and self.awake:
             from .awake.budget import AwakeBudget
