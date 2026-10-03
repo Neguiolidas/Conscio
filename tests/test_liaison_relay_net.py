@@ -138,6 +138,22 @@ class TestServerClient:
             {"from": "a", "to": "b", "type": "chat", "payload": {}}, token="x")
         assert ok is False
 
+    def test_post_tells_a_refusal_from_a_silence(self):
+        """401 means a live bridge said no; a closed port means nobody is
+        there. Only the second may be parked for a pulling peer."""
+        _known("agent-b")
+        srv, url = self._serve()
+        msg = {"from": "peer-x", "to": "agent-b", "type": "chat", "payload": {}}
+        try:
+            assert relay_net.transport_post(url, msg, token="sekret") == \
+                relay_net.ACCEPTED
+            assert relay_net.transport_post(url, msg, token="errado") == \
+                relay_net.REJECTED
+        finally:
+            srv.shutdown(); srv.server_close()
+        assert relay_net.transport_post("http://127.0.0.1:1/none", msg,
+                                        token="x") == relay_net.UNREACHABLE
+
     def test_two_servers_do_not_share_class_state(self):
         """A12: estado por instância, não atributo de classe."""
         s1 = relay_net.make_server("127.0.0.1", 0, "token-1")

@@ -1222,3 +1222,54 @@ def test_relay_send_to_live_peer_has_no_warning(tmp_path):
     finally:
         seen.close()
         eng.close()
+
+
+def _remote_answers(monkeypatch, outcome):
+    from conscio.liaison import relay_transport
+    monkeypatch.setattr(relay_transport, "transport_post",
+                        lambda url, msg, token, **kw: outcome)
+
+
+def test_relay_send_to_silent_remote_parks_it_for_pull(tmp_path, monkeypatch):
+    """2026-10-03: Jade's card points at a port nobody listens on; she pulls
+    this host's spool instead. Every send failed "unreachable" while her
+    mailbox sat one directory away."""
+    from conscio.liaison import directory, relay_transport
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("J",), liaison_db=db)
+    directory.publish({"instance_id": "J", "spool": "",
+                       "url": "http://10.0.0.9:8788"})
+    _remote_answers(monkeypatch, relay_transport.UNREACHABLE)
+    try:
+        r = b._relay_send({"to": "J", "type": "chat", "payload": {"t": "oi"}})
+        assert r["ok"] is True
+        assert "parked" in r["warning"] and "http://10.0.0.9:8788" in r["warning"]
+        parked = list(directory.spool_dir("J").glob("*.json"))
+        assert len(parked) == 1
+        assert '"oi"' in parked[0].read_text(encoding="utf-8")
+        # the outbox row exists only because the delivery was accepted (A4)
+        assert [m["id"] for m in mailbox.thread(db, "A", "J")] == [r["id"]]
+    finally:
+        seen.close()
+        eng.close()
+
+
+def test_relay_send_to_rejecting_remote_fails_and_parks_nothing(tmp_path,
+                                                                 monkeypatch):
+    """A bridge that ANSWERS no (bad token) is alive and misconfigured — that
+    must surface, not be papered over by parking."""
+    from conscio.liaison import directory, relay_transport
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("J",), liaison_db=db)
+    directory.publish({"instance_id": "J", "spool": "",
+                       "url": "http://10.0.0.9:8788"})
+    _remote_answers(monkeypatch, relay_transport.REJECTED)
+    try:
+        r = b._relay_send({"to": "J", "type": "chat", "payload": {}})
+        assert r["ok"] is False and "unreachable" in r["reason"]
+        assert list(directory.spool_dir("J").glob("*.json")) == []
+    finally:
+        seen.close()
+        eng.close()

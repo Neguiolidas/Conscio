@@ -37,24 +37,51 @@ def test_deliver_ignores_spool_path_from_card(tmp_path):
 
 def test_remote_card_uses_http(monkeypatch):
     sent = {}
-    monkeypatch.setattr(relay_transport, "transport_send",
+    monkeypatch.setattr(relay_transport, "transport_post",
                         lambda url, msg, token, **kw: sent.update(
-                            url=url, token=token) or True)
+                            url=url, token=token) or relay_transport.ACCEPTED)
     card = {"instance_id": "b", "spool": "", "url": "http://h:8789"}
     remotes = relay_transport.remotes_path()
     remotes.parent.mkdir(parents=True, exist_ok=True)
     remotes.write_text(json.dumps({"b": {"url": "http://h:8789",
                                          "token": "tk"}}), encoding="utf-8")
-    assert relay_transport.deliver(card, _msg()) is True
+    assert relay_transport.deliver_route(card, _msg()) == relay_transport.VIA_HTTP
     assert sent == {"url": "http://h:8789", "token": "tk"}
+    assert list(directory.spool_dir("b").glob("*.json")) == []
 
 
-def test_remote_failure_returns_false(monkeypatch):
+def test_silent_remote_is_parked_in_its_spool_here(monkeypatch):
+    """A remote that never answers may be a client-only peer that pulls this
+    host's spool (Jade, 2026-10-03): park its mail there instead of dropping."""
     def boom(url, msg, token, **kw):
         raise OSError("connection refused")
-    monkeypatch.setattr(relay_transport, "transport_send", boom)
+    monkeypatch.setattr(relay_transport, "transport_post", boom)
+    card = {"instance_id": "b", "spool": "", "url": "http://h:8789"}
+    assert relay_transport.deliver_route(card, _msg()) == relay_transport.PARKED
+    assert relay_transport.deliver(card, _msg()) is True
+    parked = sorted(directory.spool_dir("b").glob("*.json"))
+    assert len(parked) == 2
+    assert json.loads(parked[0].read_text(encoding="utf-8")) == _msg()
+
+
+def test_rejecting_remote_is_not_parked(monkeypatch):
+    """A bridge that answered "no" is alive and misconfigured: surface it."""
+    monkeypatch.setattr(relay_transport, "transport_post",
+                        lambda url, msg, token, **kw: relay_transport.REJECTED)
     card = {"instance_id": "b", "spool": "", "url": "http://h:8789"}
     assert relay_transport.deliver(card, _msg()) is False
+    assert list(directory.spool_dir("b").glob("*.json")) == []
+
+
+def test_silent_remote_with_unwritable_spool_is_false(monkeypatch):
+    monkeypatch.setattr(relay_transport, "transport_post",
+                        lambda url, msg, token, **kw: relay_transport.UNREACHABLE)
+
+    def no_disk(cid, msg):
+        raise OSError("read-only file system")
+    monkeypatch.setattr(relay_transport.spool, "deposit", no_disk)
+    card = {"instance_id": "b", "spool": "", "url": "http://h:8789"}
+    assert relay_transport.deliver_route(card, _msg()) == ""
 
 
 def test_card_without_any_address_is_false():

@@ -568,10 +568,13 @@ class Bindings:
         # v4.7.2: a direct send to a dormant peer is honoured — the sender
         # named it — but not silently: "ok" alone reads as "it will be seen".
         from ..liaison import directory
+        warnings = [reason] if reason else []
         silent = directory.dormant_for(directory.get(to))
         if silent is not None:
-            out["warning"] = (f"{to} has been silent for {silent / 86400:.0f}d;"
-                              " the message is parked until it comes back")
+            warnings.append(f"{to} has been silent for {silent / 86400:.0f}d;"
+                            " the message is parked until it comes back")
+        if warnings:
+            out["warning"] = "; ".join(warnings)
         return out
 
     def _retention_tick(self) -> None:
@@ -601,7 +604,9 @@ class Bindings:
 
         Single delivery path for send / broadcast / hall fan-out: three copies
         of "how do I reach a peer" is how one of them keeps writing into a db
-        nobody reads.
+        nobody reads. On success ``reason`` is empty, or a note the sender
+        should see — a remote peer that did not answer gets its mail parked
+        here for it to pull, and "ok" alone would read as "it arrived".
         """
         from ..liaison import directory, relay_transport
         card = directory.get(to)
@@ -609,8 +614,12 @@ class Bindings:
             return False, f"peer {to} is not in the directory"
         envelope = {"from": self.self_instance_id, "to": to, "type": mtype,
                     "payload": mailbox.with_envelope(payload, identity, hall)}
-        if not relay_transport.deliver(card, envelope):
+        route = relay_transport.deliver_route(card, envelope)
+        if not route:
             return False, f"peer {to} unreachable"
+        if route == relay_transport.PARKED:
+            return True, (f"{to} did not answer at {card.get('url')}; the message"
+                          " is parked in this host's spool for it to pull")
         return True, ""
 
     def _recall_observations(self, args: dict) -> dict:

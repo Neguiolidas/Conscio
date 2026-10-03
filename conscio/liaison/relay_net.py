@@ -184,9 +184,20 @@ def make_server(host: str, port: int, token: str) -> ThreadingHTTPServer:
 
 # ── client ─────────────────────────────────────────────────────────────
 
-def transport_send(base_url: str, msg: dict, *, token: str,
-                   timeout: float = 5.0) -> bool:
-    """POST a relay message dict to a peer's bridge. True on 2xx."""
+ACCEPTED = "accepted"
+REJECTED = "rejected"          # the bridge ANSWERED and said no (4xx/5xx, non-200)
+UNREACHABLE = "unreachable"    # nobody answered at that address
+
+
+def transport_post(base_url: str, msg: dict, *, token: str,
+                   timeout: float = 5.0) -> str:
+    """POST a relay message dict to a peer's bridge; say how it went.
+
+    A refusal and a silence are different facts: a peer that answers 401 is
+    alive and misconfigured, a peer that never answers may simply not listen
+    at all (a client-only peer that pulls its mail instead). The caller needs
+    to tell them apart, so this never collapses them into one False.
+    """
     try:
         data = json.dumps(msg, ensure_ascii=False).encode("utf-8")
         req = request.Request(
@@ -195,10 +206,21 @@ def transport_send(base_url: str, msg: dict, *, token: str,
                      _AUTH_HEADER: f"Bearer {token}"},
             method="POST")
         with request.urlopen(req, timeout=timeout) as resp:
-            return resp.status == 200
-    except (urlerror.URLError, OSError, ValueError, json.JSONDecodeError):
+            return ACCEPTED if resp.status == 200 else REJECTED
+    except urlerror.HTTPError as exc:        # before URLError: it subclasses it
+        log.warning("relay_net: %s rejected the message (HTTP %s)",
+                    base_url, exc.code)
+        return REJECTED
+    except (urlerror.URLError, OSError, ValueError):
         log.warning("relay_net: transport_send failed to %s", base_url)
-        return False
+        return UNREACHABLE
+
+
+def transport_send(base_url: str, msg: dict, *, token: str,
+                   timeout: float = 5.0) -> bool:
+    """POST a relay message dict to a peer's bridge. True on 200."""
+    return transport_post(base_url, msg, token=token,
+                          timeout=timeout) == ACCEPTED
 
 
 # ── CLI ────────────────────────────────────────────────────────────────
