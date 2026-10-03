@@ -123,6 +123,83 @@ class TestPromptorVoice:
         assert "[UNSPECIFIED" not in r.changes  # markers live in the prompt
         assert r.changes  # but the change list explains what was added
 
+    # ── reviewer findings D1/D2: no section repeats another, limits
+    #    count as constraints ──────────────────────────────────────────
+
+    REPRO_QUESTION = (
+        "Write a summary of the quarterly sales report for the board, "
+        "in markdown, max 300 words"
+    )
+    REPRO_CONTEXT = "Board meets Monday; they care about churn"
+
+    @staticmethod
+    def _sections(refined: str) -> dict[str, str]:
+        """Map 'Objective'/'Context'/... to each section's body text."""
+        out: dict[str, str] = {}
+        for block in refined.split("\n\n"):
+            label, _, body = block.partition(":")
+            out[label.strip()] = body.strip()
+        return out
+
+    def test_context_stays_in_its_section(self):
+        # D1: the question+context join is a clause boundary; without it
+        # the context leaked into Constraints/Output format bullets.
+        v = PromptorVoice()
+        r = v.analyze({
+            "question": self.REPRO_QUESTION,
+            "context": self.REPRO_CONTEXT,
+        })
+        sections = self._sections(r.refined_prompt)
+        hits = [name for name, body in sections.items()
+                if "Board meets Monday" in body]
+        assert hits == ["Context"], f"context leaked into {hits}"
+
+    def test_no_section_repeats_another(self):
+        # D1: an unpunctuated question with no comma must not come back
+        # verbatim inside another section (Objective is already it).
+        v = PromptorVoice()
+        for question, context in (
+            (self.REPRO_QUESTION, self.REPRO_CONTEXT),
+            ("Summarize the report in markdown", ""),
+        ):
+            r = v.analyze({"question": question, "context": context})
+            sections = self._sections(r.refined_prompt)
+            bodies = list(sections.values())
+            assert len(bodies) == len(set(bodies)), (
+                f"duplicated section body for {question!r}: {sections}"
+            )
+            assert question not in sections.get("Output format", "")
+            assert question not in sections.get("Constraints", "")
+
+    def test_limit_counts_as_constraint(self):
+        # D2: "max 300 words" is an explicit limit — Constraints must
+        # quote it, never claim the constraints are unspecified.
+        v = PromptorVoice()
+        r = v.analyze({
+            "question": self.REPRO_QUESTION,
+            "context": self.REPRO_CONTEXT,
+        })
+        constraints = self._sections(r.refined_prompt)["Constraints"]
+        assert "max 300 words" in constraints
+        assert "[UNSPECIFIED" not in constraints
+        # and the format clause keeps its own section
+        fmt = self._sections(r.refined_prompt)["Output format"]
+        assert "in markdown" in fmt
+        assert "max 300 words" not in fmt
+
+    def test_limit_words_do_not_match_inside_words(self):
+        # The limit matcher uses word boundaries: "understand"/"admin"
+        # must not light the "under"/"min" limit words.
+        v = PromptorVoice()
+        r = v.analyze({
+            "question": "Help me understand the admin panel",
+            "context": "",
+        })
+        constraints = self._sections(r.refined_prompt)["Constraints"]
+        assert "[UNSPECIFIED" in constraints
+        assert "understand" not in constraints
+        assert "admin" not in constraints
+
     def test_refinement_is_deterministic_exact_shape(self):
         # Exact expected output for the empty-context vague case: only
         # section labels, verbatim ask, and markers — nothing else.

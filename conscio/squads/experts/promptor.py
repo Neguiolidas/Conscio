@@ -35,21 +35,37 @@ _TARGET_AI = re.compile(
     re.IGNORECASE,
 )
 
-# Keywords whose sentences are quoted verbatim into the Constraints
+# Keywords whose clauses are quoted verbatim into the Constraints
 # section (the caller's own words, never paraphrased into new rules).
+# Substring-safe words only; the short limit words are matched with
+# word boundaries by _LIMIT_RE below ("admin" must not match "min").
 _CONSTRAINT_KEYWORDS = (
     "requirement", "constraint", "must", "should", "cannot", "can't",
     "don't", "do not", "avoid", "only", "without",
 )
 
-# Keywords whose sentences are quoted verbatim into the Output-format
+# Verbal and numeric limits are constraints too: "max 300 words",
+# "at least two options", "under 5 seconds". Word boundaries keep
+# "understand"/"admin" from matching "under"/"min".
+_LIMIT_RE = re.compile(
+    r"\b(?:max|maximum|minimum|min|at most|at least|no more than|"
+    r"no less than|up to|under|over|limit(?:ed)?(?:\s+to)?)\b",
+    re.IGNORECASE,
+)
+
+# Keywords whose clauses are quoted verbatim into the Output-format
 # section.
 _FORMAT_KEYWORDS = (
     "format", "json", "yaml", "markdown", "table", "bullet", "list",
     "length", "words", "paragraph", "tone", "audience", "style",
 )
 
-_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+# A clause carrier ends at a newline, a sentence end, or a comma: the
+# newline matters because the question and the context are joined with
+# one — without it an unpunctuated question + context would read as a
+# single sentence and leak whole sections into every match (D1).
+_UNIT_SPLIT = re.compile(r"\n+|(?<=[.!?])\s+")
+_CLAUSE_SPLIT = re.compile(r",\s+")
 
 # Gap markers: the refiner's own words, always bracketed and always an
 # instruction to supply the missing piece — never a fabricated value.
@@ -80,14 +96,36 @@ class PromptRefinement(VoiceResult):
         return {"refined_prompt": self.refined_prompt, "changes": list(self.changes)}
 
 
-def _sentences_with(blob: str, keywords: tuple[str, ...]) -> list[str]:
-    """Verbatim sentences of ``blob`` containing any keyword."""
-    hits: list[str] = []
-    for sentence in _SENTENCE_SPLIT.split(blob):
-        low = sentence.lower()
-        if any(k in low for k in keywords) and sentence.strip():
-            hits.append(sentence.strip())
-    return hits
+def _pick_clauses(question: str, context: str) -> tuple[list[str], list[str]]:
+    """Split the input into verbatim constraint and format fragments.
+
+    Units end at newlines and sentence ends; units are then split into
+    comma clauses. A clause equal to the ENTIRE question or the ENTIRE
+    context is never quoted — repeating Objective or Context inside
+    another section would make the refined prompt larger, not clearer.
+    Clauses with a limit or a constraint keyword go to Constraints;
+    remaining clauses with a format keyword go to Output format.
+    """
+    whole = {s.lower() for s in (question, context) if s}
+    constraints: list[str] = []
+    formats: list[str] = []
+    for unit in _UNIT_SPLIT.split(f"{question}\n{context}"):
+        for clause in _CLAUSE_SPLIT.split(unit):
+            c = clause.strip()
+            if not c or c.lower() in whole:
+                continue
+            low = c.lower()
+            if any(k in low for k in _CONSTRAINT_KEYWORDS) or _LIMIT_RE.search(c):
+                constraints.append(c)
+            elif any(k in low for k in _FORMAT_KEYWORDS):
+                formats.append(c)
+    seen_c: set[str] = set()
+    constraints = [c for c in constraints
+                   if not (c.lower() in seen_c or seen_c.add(c.lower()))]
+    seen_f: set[str] = set()
+    formats = [c for c in formats
+               if not (c.lower() in seen_f or seen_f.add(c.lower()))]
+    return constraints, formats
 
 
 class PromptorVoice(Voice):
@@ -127,21 +165,20 @@ class PromptorVoice(Voice):
             )
             changes.append("flagged the missing context with an explicit marker")
 
-        # Constraints — the caller's own constraint sentences, verbatim.
-        constraint_sentences = _sentences_with(blob, _CONSTRAINT_KEYWORDS)
-        if constraint_sentences:
+        # Constraints — the caller's own limit/constraint clauses, verbatim.
+        constraint_clauses, format_clauses = _pick_clauses(question, context)
+        if constraint_clauses:
             sections.append(
-                "Constraints:\n" + "\n".join(f"- {s}" for s in constraint_sentences)
+                "Constraints:\n" + "\n".join(f"- {s}" for s in constraint_clauses)
             )
         else:
             sections.append(f"Constraints: {_CONSTRAINTS_GAP}")
             changes.append("flagged unspecified constraints with an explicit marker")
 
-        # Output format — the caller's own format sentences, verbatim.
-        format_sentences = _sentences_with(blob, _FORMAT_KEYWORDS)
-        if format_sentences:
+        # Output format — the caller's own format clauses, verbatim.
+        if format_clauses:
             sections.append(
-                "Output format:\n" + "\n".join(f"- {s}" for s in format_sentences)
+                "Output format:\n" + "\n".join(f"- {s}" for s in format_clauses)
             )
         elif not _TARGET_AI.search(blob):
             # A prompt that names no target model and no format is the
