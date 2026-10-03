@@ -293,6 +293,40 @@ class TestPromptorVoice:
         assert "[UNSPECIFIED" in sections["Constraints"]
         assert "[UNSPECIFIED" in sections["Output format"]
 
+    # ── T3b: ambiguous limit words need a nearby number; "ate" (EN)
+    #    never counts, "até" (PT) always does ────────────────────────────
+
+    def test_t3b_ambiguous_limits_without_number_stay_unspecified(self):
+        v = PromptorVoice()
+        for ask in ("Look over the PR and fix what is broken",
+                    "Find out what the team is up to this sprint",
+                    "Explain what happens under the hood",
+                    "Build a minimum viable product",
+                    "Ship it over the weekend",
+                    "Max out the cache, then measure",
+                    ("The dog ate the homework, write an apology note "
+                     "to the teacher")):
+            r = v.analyze({"question": ask, "context": ""})
+            sections = self._sections(r.refined_prompt)
+            assert "[UNSPECIFIED" in sections["Constraints"], ask
+
+    def test_t3b_real_limits_still_count(self):
+        v = PromptorVoice()
+        for ask, fragment in (
+            ("Summarize the report in under 200 words", "under 200 words"),
+            ("Write the summary, max 300 words", "max 300 words"),
+            ("Draft the notes, up to 5 bullets", "up to 5 bullets"),
+            ("Pick at most 3 items", "at most 3 items"),
+            ("Keep comments to a minimum", "to a minimum"),
+            ("Atualize a doc, até sexta", "até sexta"),
+            ("Coma ate 200 palavras", "ate 200 palavras"),
+            ("Resuma, no máximo 300 palavras", "no máximo 300 palavras"),
+        ):
+            r = v.analyze({"question": ask, "context": ""})
+            constraints = self._sections(r.refined_prompt)["Constraints"]
+            assert fragment in constraints, (ask, constraints)
+            assert "[UNSPECIFIED" not in constraints, (ask, constraints)
+
     def test_refinement_is_deterministic_exact_shape(self):
         # Exact expected output for the empty-context vague case: only
         # section labels, verbatim ask, and markers — nothing else.

@@ -66,13 +66,26 @@ _SEM_CLAUSE_START = re.compile(r"^\s*sem\b", re.IGNORECASE)
 
 # Verbal and numeric limits are constraints too: "max 300 words",
 # "at least two options", "under 5 seconds"; PT: "no máximo 300 palavras".
-# Word boundaries keep "understand"/"admin" from matching "under"/"min".
-# \b is Unicode-aware in Python str regex, so "até"/"não" work accented.
-_LIMIT_RE = re.compile(
-    r"\b(?:max|maximum|minimum|min|at most|at least|no more than|"
-    r"no less than|up to|under|over|limit(?:ed)?(?:\s+to)?|"
-    r"no\s+m[áa]ximo|m[áa]ximo|no\s+m[íi]nimo|m[íi]nimo|at[ée]|"
-    r"menos\s+de|mais\s+de|limite\s+de)\b",
+# Two tiers (T3b): UNAMBIGUOUS phrases always count — including the
+# accented "até" and the explicit "to a minimum" / "ao máximo" family —
+# while AMBIGUOUS words ("max", "under", "over", "up to", the unaccented
+# English "ate"...) only count when a DIGIT lands within the next three
+# words: "Max out the cache" is a verb, "max 300 words" is a limit;
+# "The dog ate the homework" is past tense, "ate 200 palavras" is a
+# limit. Word boundaries keep "understand"/"admin" from matching
+# "under"/"min"; \b is Unicode-aware in Python str regex, so accents
+# work.
+_LIMIT_ALWAYS_RE = re.compile(
+    r"\b(?:at most|at least|no more than|no less than|"
+    r"limit(?:ed)?\s+to|"
+    r"to\s+a\s+(?:minimum|maximum)|ao\s+(?:m[íi]nimo|m[áa]ximo)|"
+    r"no\s+m[áa]ximo|no\s+m[íi]nimo|limite\s+de|at[é])\b",
+    re.IGNORECASE,
+)
+_LIMIT_IF_NUMBER_RE = re.compile(
+    r"\b(?:max|maximum|minimum|min|m[áa]ximo|m[íi]nimo|"
+    r"up\s+to|under|over|mais\s+de|menos\s+de|ate)\b"
+    r"(?:\s+[^\W\d_]\S*){0,3}\s+\d",
     re.IGNORECASE,
 )
 
@@ -174,9 +187,11 @@ def _pick_clauses(question: str, context: str) -> tuple[list[str], list[str]]:
                 continue
             low = c.lower()
             c_match = _CONSTRAINT_RE.search(c) or _SEM_CLAUSE_START.match(c)
-            l_match = _LIMIT_RE.search(c)
-            first = min((m.start() for m in (c_match, l_match) if m),
-                        default=None)
+            l_starts = [m.start() for m in (
+                _LIMIT_ALWAYS_RE.search(c), _LIMIT_IF_NUMBER_RE.search(c),
+            ) if m]
+            starts = l_starts + ([c_match.start()] if c_match else [])
+            first = min(starts) if starts else None
             if first is not None:
                 frag = _fragment(c, first)
                 if not (frag.lower() == low and low in whole):
