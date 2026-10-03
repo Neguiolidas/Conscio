@@ -27,6 +27,20 @@ After this, no secrets are needed — the `publish` job authenticates via OIDC.
    __version__ = "1.3.0"
    ```
    (`pyproject.toml` reads it dynamically; do **not** edit a version there.)
+
+   Three SHIPPED copies must be bumped to the same value in the same
+   commit — `tests/test_marketplace_version.py` fails the gate if any
+   drifts:
+   - `conscio/integrations/claude_code/assets/.claude-plugin/plugin.json`
+     (`"version"`);
+   - `.claude-plugin/marketplace.json` (the plugin entry's `"version"` —
+     the zcode auto-update compares the installed version against THIS
+     field; a missing or stale value hides the release from the
+     auto-update flow);
+   - `conscio/integrations/claude_code/assets/.mcp.json` (the
+     `--from conscio==x.y.z` uvx pin — a stale pin makes the plugin's
+     MCP server run the old package even after the plugin cache
+     updates).
 2. **Update `CHANGELOG.md`** — add the `[x.y.z] — DATE` section.
 3. **Update `README.md`** and `docs/CLAIMS.md` if the surface changed
    (shipped-state only).
