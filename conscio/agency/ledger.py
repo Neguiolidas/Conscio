@@ -301,9 +301,10 @@ class ActionLedger:
         and host rows land exactly in the window the ceiling watches
         because _gate only accepts host proposals while the engine is
         AWAKE. Grep of every writer to actions: act.py:223/419
-        (tier=last_tier or 'T2' — T1/T2/T3/'' only, never 'host'),
-        host_act.py:51/88 (tier='host'), bench.py:380/386 (offline
-        harness, tier=gateway.last_tier), gateway.py:182 is the
+        (tier=last_tier or 'T2' — T1/T2/T3 only: an empty last_tier
+        falls back to 'T2', never 'host'), host_act.py:51/88
+        (tier='host'), bench.py:380/386 (offline harness,
+        tier=gateway.last_tier, which may be ''), gateway.py:182 is the
         token_ledger, a different table.
         """
         now = time.time() if now is None else now
