@@ -177,9 +177,11 @@ BASE_TOOL_DEFS: list[dict] = [
                      "required": ["question"]}},
     # ── v4.4 Squad tools ─────────────────────────────────────────
     {"name": "conscio_squad_experts",
-     "description": "Convene the Experts squad (optimizer, auditor, qa, promptor) "
-                    "for constructive technical review. Returns voice analyses "
-                    "and recommendation.",
+     "description": "Convene the Experts squad (optimizer, auditor, qa, "
+                    "promptor) for constructive technical review; the "
+                    "promptor returns a refined prompt (refined_prompt plus "
+                    "changes) and does not vote. Returns voice analyses and "
+                    "recommendation.",
      "inputSchema": {"type": "object",
                      "properties": {"question": {"type": "string"},
                                     "context": {"type": "string"},

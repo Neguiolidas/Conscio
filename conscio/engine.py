@@ -1565,7 +1565,12 @@ class ConsciousnessEngine:
     def squad_experts(self, *, question: str = "", context: str = "",
                       voices: list[str] | None = None,
                       use_llm: bool = False) -> dict:
-        """Convene the Experts squad (Optimizer, Auditor, QA, Promptor)."""
+        """Convene the Experts squad (Optimizer, Auditor, QA, Promptor).
+
+        The Promptor is the squad's prompt refiner: its entry carries
+        ``refined_prompt`` and ``changes`` instead of a vote, and it is
+        excluded from ``recommendation``/``votes_summary``.
+        """
         from .squads.convene import convene_squad
         return convene_squad(
             self, squad="experts", question=question, context=context,

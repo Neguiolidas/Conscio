@@ -132,6 +132,7 @@ def convene_squad(
             adapter = getattr(pipeline, "adapter", None)
 
     voice_results: list[dict] = []
+    voting_results: list[VoiceResult] = []
     for name in resolved:
         voice = get_voice(name)
         if voice is None:
@@ -155,19 +156,32 @@ def convene_squad(
                 concerns=["Voice could not analyze"],
                 vote="hold",
             )
-        voice_results.append({
+        # Standard entry keys, plus any artefact fields the voice
+        # attaches via extras() (e.g. the promptor's refined_prompt and
+        # changes) — additive; consumers treat unknown keys as opaque
+        # payload.
+        entry = {
             "role": result.role,
             "analysis": result.analysis,
             "concerns": result.concerns,
             "vote": result.vote,
-        })
+        }
+        entry.update(result.extras())
+        if not getattr(voice, "voting", True):
+            # Non-voting voice: no verdict in its payload and no weight
+            # in the recommendation — it produces an artefact, not a
+            # judgement.
+            entry["vote"] = ""
+        else:
+            voting_results.append(result)
+        voice_results.append(entry)
 
     recommendation = _compute_recommendation(
-        [VoiceResult(**v) for v in voice_results],
+        voting_results,
         strict=(squad == "opositors"),
     )
 
-    votes = [v["vote"] for v in voice_results]
+    votes = [v.vote for v in voting_results]
     result = {
         "question": question,
         "squad": squad,
