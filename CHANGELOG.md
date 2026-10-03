@@ -89,6 +89,13 @@ change: the ledger gains no column, so existing databases open unchanged.
 - **Dead code removed.** `OutputGateway` loses the unused `_failure_gov`
   attribute and `failure_governor` parameter, and the vulture whitelist entry
   that hid them.
+- **Internal plans out of the repo and the site.** The v4.5 relay-halls
+  implementation plans (`docs/plans/`) are no longer tracked or published on
+  the docs site; `.gitignore` and mkdocs `exclude_docs` now cover them, along
+  with local per-agent harness files.
+- **`uv.lock` back in sync.** The lockfile was missing the `build` dev
+  dependency that `pyproject.toml` has declared since v4.0.0, so
+  `uv lock --check` failed on a clean checkout.
 
 ## [4.8.0] - 2026-09-27 — The space survives, the machine has a board, the council can be measured
 

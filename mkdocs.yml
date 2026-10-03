@@ -28,6 +28,8 @@ theme:
 # does not stop mkdocs from publishing it, because the build reads the disk.
 exclude_docs: |
   superpowers/
+  plans/
+  AGENTS*.md
   noosphere/
   patterns/
   roadmap.md
