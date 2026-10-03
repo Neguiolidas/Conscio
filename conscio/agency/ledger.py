@@ -278,15 +278,29 @@ class ActionLedger:
         return int(row[0])
 
     def count_costed_since(self, ts: float, *, now: float | None = None) -> int:
-        """Cost-carrying rows (tokens > 0) in the window (ts, now].
-        The rolling daily ceiling calls this with ts = now-24h on EVERY
-        check so the window moves with time — a cached object must never
-        freeze its anchor (hostile review, lever 3)."""
+        """ATTEMPT rows in the window (ts, now].
+
+        v4.8.1 (lote H round 5, #866): counts EVERY action row in the
+        window, not just token-carrying ones. Every production row in
+        the actions table represents one act attempt downstream of
+        gateway.request_action — which paid for at least one LLM request
+        whatever the outcome (executed, failed, rejected). A row with
+        tokens=0 in a 429 storm still burned RPM; the first cut filtered
+        on (tokens_in>0 OR tokens_out>0) and was blind to exactly the
+        failure storm it existed to cap (hostile review #866, measured:
+        a decode-failure storm tripped nothing).
+
+        Known zero-cost rows are NOT a problem for the awake loop:
+        host_act (proposal from the host, no LLM call) and bench (offline)
+        are the only recorders outside act.py (grep with positive
+        control: act.py:219/416, host_act.py:46/85, bench.py:378/383,
+        gateway.py:182 is the token_ledger, a different table), and
+        neither runs inside engine.run()/awake.
+        """
         now = time.time() if now is None else now
         row = self._conn.execute(
             "SELECT COUNT(*) FROM actions"
-            " WHERE ts > ? AND ts <= ?"
-            "   AND (tokens_in > 0 OR tokens_out > 0)",
+            " WHERE ts > ? AND ts <= ?",
             (float(ts), float(now))).fetchone()
         return int(row[0])
 

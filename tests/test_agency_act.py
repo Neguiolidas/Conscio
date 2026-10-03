@@ -109,11 +109,15 @@ class TestProposeFlow:
         assert report.status is ActStatus.FAILED
         assert "unknown tool" in report.reason
 
-    def test_no_goals_fails_cleanly(self, tmp_path):
+    def test_no_goals_is_idle(self, tmp_path):
+        """v4.8.1 (lote H round 3): no active goals is HEALTHY IDLE, not
+        failure — the cooldown makes it the normal state most heartbeats.
+        IDLE writes NO ledger row (nothing was attempted)."""
         pipeline, _, _ = _pipeline(tmp_path, MockAdapter(script=[]))
         report = pipeline.act(ConsciousnessState(active_goals=[]))
-        assert report.status is ActStatus.FAILED
+        assert report.status is ActStatus.IDLE
         assert "no active goals" in report.reason
+        assert report.ledger_id is None
 
     def test_phases_emit_tool_call_events(self, tmp_path):
         pipeline, _, bus = _pipeline(

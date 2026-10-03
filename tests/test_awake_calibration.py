@@ -20,7 +20,7 @@ from conscio.agency.fingerprint import goal_fingerprint
 from conscio.agency.ledger import ActionLedger
 from conscio.agency.loop import ActBudget, AutonomyLoop
 from conscio.awake.calibration import (
-    DailyCostCeiling,
+    DailyAttemptCeiling,
     MaintenanceCooldown,
     maintenance_goal_fingerprint,
 )
@@ -233,7 +233,7 @@ def test_ceiling_window_moves_on_cached_object(tmp_path):
     old row age out of the window — the first cut froze the anchor."""
     led = _ceiling_ledger(tmp_path)
     real_now = time.time()
-    ceil = DailyCostCeiling(max_costed_per_day=2, ledger=led,
+    ceil = DailyAttemptCeiling(max_attempts_per_day=2, ledger=led,
                              now_fn=lambda: real_now)
     assert ceil._spent() == 1
     # same cached object queried 25h later: window moved, row aged out
@@ -244,33 +244,32 @@ def test_ceiling_window_moves_on_cached_object(tmp_path):
 
 def test_ceiling_trips_and_reports(tmp_path):
     led = _ceiling_ledger(tmp_path)
-    ceil = DailyCostCeiling(max_costed_per_day=1, ledger=led,
+    ceil = DailyAttemptCeiling(max_attempts_per_day=1, ledger=led,
                              now_fn=time.time)
     assert ceil.allows_more() is False
     assert "1" in ceil.report() and "ceiling" in ceil.report()
 
 
-def test_ceiling_ignores_zero_token_rows(tmp_path):
+def test_ceiling_counts_zero_token_rows(tmp_path):
+    """v4.8.1 round 5 (#866): a tokens=0 row is an ATTEMPT that paid
+    (429 storms burn RPM writing empty rows) — it must count."""
     led = _ceiling_ledger(tmp_path)
     led.record(goal_fp="g", tool="world_prune", args_json="{}",
-               rationale="", tier="T1", status="executed",
+               rationale="", tier="T1", status="failed",
                tokens_in=0, tokens_out=0, adapter="grammar", model="")
-    ceil = DailyCostCeiling(max_costed_per_day=1, ledger=led,
+    ceil = DailyAttemptCeiling(max_attempts_per_day=2, ledger=led,
                             now_fn=time.time)
-    assert ceil.allows_more() is False   # the costed row spent it
-    ceil2 = DailyCostCeiling(max_costed_per_day=2, ledger=led,
-                             now_fn=time.time)
-    assert ceil2.allows_more() is True   # the T1 row never counts
+    assert ceil.allows_more() is False  # BOTH rows count (2 attempts)
 
 
 def test_ceiling_survives_restart_same_ledger(tmp_path):
     led = _ceiling_ledger(tmp_path)
     db_path = led._conn.execute("PRAGMA database_list").fetchall()[0][2]
-    c1 = DailyCostCeiling(max_costed_per_day=1, ledger=led,
+    c1 = DailyAttemptCeiling(max_attempts_per_day=1, ledger=led,
                           now_fn=time.time)
     assert c1.allows_more() is False
     led2 = ActionLedger(db_path)          # fresh object, same ledger
-    c2 = DailyCostCeiling(max_costed_per_day=1, ledger=led2,
+    c2 = DailyAttemptCeiling(max_attempts_per_day=1, ledger=led2,
                           now_fn=time.time)
     assert c2.allows_more() is False
 
@@ -283,4 +282,71 @@ def test_engine_has_calibration_seams():
     from conscio.engine import ConsciousnessEngine
     src = inspect.getsource(ConsciousnessEngine)
     assert "MaintenanceCooldown" in src
-    assert "DailyCostCeiling" in src
+    assert "DailyAttemptCeiling" in src
+
+
+# ── round 5 (#866): the ceiling must see failure storms ─────────────────────
+
+def test_ceiling_trips_on_decode_failure_storm(tmp_path):
+    """Every _fail row is an attempt that PAID — a decode-failure storm
+    must exhaust the ceiling, not sail past it (the round-4 cut counted
+    tokens and saw nothing: measured 14 adapter calls, ceiling never
+    tripped)."""
+    led = ActionLedger(tmp_path / "storm.db")
+    real_now = time.time()
+    # 12 failed attempts, exactly what the review's probe produced
+    for _ in range(12):
+        led.record(goal_fp="35505f1183e0524b", tool="(none)",
+                   args_json="{}", rationale="", tier="T3",
+                   status="failed", tokens_in=0, tokens_out=0)
+    # records carry ts > real_now (captured before them); the window is
+    # (now-24h, now] — anchor 'now' AHEAD of the rows so they fall inside
+    ceil = DailyAttemptCeiling(max_attempts_per_day=5, ledger=led,
+                               now_fn=lambda: real_now + 60)
+    assert ceil.allows_more() is False, (
+        "12 failed attempts must trip a ceiling of 5")
+    assert "12" in ceil.report()
+
+
+def test_ceiling_trips_on_429_storm(tmp_path):
+    """A 429 storm writes rows via _fail(infra=True) — no tokens (HTTP
+    error), no breaker trip (infra), and it burns RPM. The ceiling is
+    the ONLY limiter that may see it."""
+    led = ActionLedger(tmp_path / "storm429.db")
+    real_now = time.time()
+    for _ in range(20):
+        led.record(goal_fp="any_goal", tool="(none)",
+                   args_json="{}", rationale="", tier="T2",
+                   status="failed", tokens_in=0, tokens_out=0)
+    ceil = DailyAttemptCeiling(max_attempts_per_day=10, ledger=led,
+                               now_fn=lambda: real_now + 60)
+    assert ceil.allows_more() is False
+
+
+def test_failed_attempt_records_gateway_tokens(tmp_path):
+    """(a) of the review: _fail must write the gateway's accumulated
+    usage so the row tells the truth about what the attempt cost."""
+    from types import SimpleNamespace
+
+    from conscio.agency.act import ActPipeline
+    # build the minimal pipeline a _fail needs
+    gw = SimpleNamespace(last_tier="T2", last_tokens_in=48,
+                         last_tokens_out=12)
+    led = ActionLedger(tmp_path / "tokens.db")
+    class _Ledgered:
+        pass
+    pipeline = ActPipeline.__new__(ActPipeline)
+    pipeline.gateway = gw
+    pipeline.ledger = led
+    pipeline.breaker = SimpleNamespace(should_trip=lambda *a, **k: False,
+                                       trip=lambda *a, **k: None,
+                                       global_lockdown_due=lambda: False)
+    report = pipeline._fail("fp", tool="", args={},
+                            reason="decode failed: storm",
+                            goal_text="g")
+    assert report.status is not None
+    row = led.get(report.ledger_id)
+    assert row["tokens_in"] == 48, "gateway usage must land in the row"
+    assert row["tokens_out"] == 12
+    # and the window resets for the next attempt
+    assert gw.last_tokens_in == 0

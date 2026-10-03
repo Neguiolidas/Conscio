@@ -74,8 +74,15 @@ class MaintenanceCooldown:
         return (float(self._now_fn()) - float(last_attempt_ts)) >= self.window_s
 
 
-class DailyCostCeiling:
-    """Rolling 24h budget of cost-carrying actions for the awake loop.
+class DailyAttemptCeiling:
+    """Rolling 24h budget of ACT ATTEMPTS for the awake loop.
+
+    v4.8.1 (lote H round 5, #866): counts ATTEMPTS (every actions row in
+    the window), not cost-carrying rows — a failed attempt paid for its
+    LLM requests exactly like a successful one, and a 429 storm burns
+    RPM while writing tokens=0 rows. The first cut (DailyCostCeiling,
+    filtering on tokens>0) was blind to the failure storm it existed to
+    cap.
 
     The count is a ledger query (``count_costed_since``), so the budget
     survives any process restart: the ledger IS the state. The window is
@@ -83,18 +90,13 @@ class DailyCostCeiling:
     evaluated per check (injectable only for tests), never captured at
     construction, so a cached ceiling ages old rows out of the window
     instead of tripping forever (hostile review, lever 3).
-
-    Name says COST, not CALLS: it counts ledger actions that carry tokens
-    (tokens_in > 0 or tokens_out > 0). One action may hide several LLM
-    requests (T2 proposal, T3 fallback, skeptic) — the doc must not claim
-    "calls".
     """
 
-    def __init__(self, *, max_costed_per_day: int,
+    def __init__(self, *, max_attempts_per_day: int,
                  ledger: Any,
                  now_fn: Any = time.time,
                  window_s: float = 24 * 3600.0) -> None:
-        self.max_costed = int(max_costed_per_day)
+        self.max_attempts = int(max_attempts_per_day)
         self._ledger = ledger
         self._now_fn = now_fn
         self.window_s = float(window_s)
@@ -104,12 +106,12 @@ class DailyCostCeiling:
         return self._ledger.count_costed_since(now - self.window_s, now=now)
 
     def allows_more(self) -> bool:
-        return self._spent() < self.max_costed
+        return self._spent() < self.max_attempts
 
     def report(self) -> str:
         spent = self._spent()
-        if spent < self.max_costed:
+        if spent < self.max_attempts:
             return ""
-        return (f"daily cost ceiling reached: {spent} cost-carrying actions"
-                f" in the last 24h (ceiling {self.max_costed});"
+        return (f"daily attempt ceiling reached: {spent} act attempts"
+                f" in the last 24h (ceiling {self.max_attempts});"
                 " awake loop skipping act(), perceive+reflect continue")

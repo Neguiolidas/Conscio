@@ -2581,11 +2581,11 @@ class ConsciousnessEngine:
         # RunReport.stopped in its heartbeat file (daemon.py), so the
         # 'daily_cost_ceiling' stop reason reaches operators with no new
         # channel.
-        from .awake.calibration import DailyCostCeiling
-        ceiling = getattr(self, "_daily_cost_ceiling", None)
+        from .awake.calibration import DailyAttemptCeiling
+        ceiling = getattr(self, "_daily_attempt_ceiling", None)
         if ceiling is None:
-            ceiling = self._daily_cost_ceiling = DailyCostCeiling(
-                max_costed_per_day=self.DAILY_LLM_CEILING,
+            ceiling = self._daily_attempt_ceiling = DailyAttemptCeiling(
+                max_attempts_per_day=self.DAILY_LLM_CEILING,
                 ledger=self._act_pipeline.ledger)
         if not ceiling.allows_more():
             self.reflect(world_state=world_state)
