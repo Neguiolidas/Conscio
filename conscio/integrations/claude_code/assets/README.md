@@ -18,15 +18,16 @@ sees always match the assets this plugin shipped.
 
 ## Modes
 
-The tool surface is sized on purpose: a small model drowns in 35 tools, and a
+The tool surface is sized on purpose: a small model drowns in 37 tools, and a
 large one is wasted on 10. Switch at any time with `/conscio:mode`, or ask for
 `conscio_mode` directly.
 
 | Mode | Tools | For |
 |------|-------|-----|
 | `lite` | 10 | small or local models — memory, recall, state, and the way back out |
-| `balanced` | 18 | the default: memory, reflection, structure, governance |
-| `ultra` | 35 | everything, including the society, relay and act surfaces |
+| `balanced` | 19 | the default: memory, reflection, structure, governance |
+| `high` | 27 | deeper instrumentation and deterministic squad voices |
+| `ultra` | 37 | everything, including full diagnostic and lifecycle tools |
 
 The plugin installs in `balanced`. A mode change persists to the space, so the
 next session starts where you left it, and Claude is told the tool list changed

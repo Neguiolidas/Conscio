@@ -1,4 +1,4 @@
-# Relay — agent-to-agent messaging (v4.5.4)
+# Relay — agent-to-agent messaging
 
 Two agents on the same machine should see each other **because both were
 installed**, not because a human edited JSON on both sides. That is the whole

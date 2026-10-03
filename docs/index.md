@@ -84,6 +84,18 @@ one more, `conscio_hall`, carrying 7, on top of whatever surface the mode
 serves. See the
 [relay guide](RELAY.md).
 
+**v4.7** ("Calibration you can trust") adds empirical confidence calibration:
+four-tier ConfidenceValue provenance (`none`, `asserted`, `derived`, `measured`),
+ECE and Brier tracking, vote-entropy agreement, a per-tool Beta posterior
+over the decision ledger that sizes up risk in milliseconds without LLM calls,
+native-only embeddings, vector signatures, and an outcome store.
+
+**v4.8** ("Host identity & Awake calibration") adds zero-inference runtime and
+model family detection across Claude Code, Antigravity, Hermes, OpenCode, and
+ZCode, automatic session transcript observation feeding, and Awake Mode
+calibration: capping autonomous LLM volume to at most hourly maintenance checks,
+a 120 acts/24h ceiling, fail-closed provider backoff, and zero HIGH Bandit issues.
+
 ## Install
 
 ```bash

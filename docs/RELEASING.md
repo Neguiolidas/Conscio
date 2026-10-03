@@ -35,6 +35,8 @@ After this, no secrets are needed — the `publish` job authenticates via OIDC.
    for f in tests/test_*.py; do python -m pytest "$f" -q; done
    ruff check conscio/ tests/
    pyright conscio/                # the gate runs pyright, not mypy
+   vulture conscio/ vulture_whitelist.py --min-confidence 60
+   bandit -r conscio/ -q -ll --exit-zero -c .bandit
    python -m build && twine check dist/*
    unzip -l dist/*.whl | grep -q __pycache__ && echo "BYTECODE IN WHEEL"
    mkdocs build --strict          # needs: pip install "conscio[docs]"

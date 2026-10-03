@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [4.8.1] - 2026-10-02 — Awake stops paying to confirm that nothing happened
+## [4.8.1] - 2026-10-03 — Awake stops paying to confirm that nothing happened
 
 A field run of Awake Mode drained its provider quota: the maintenance goal
 re-proposed `host_health` on every heartbeat (~300 LLM calls/day to re-confirm
@@ -533,7 +533,7 @@ below is measured against the live codebase.
 
 Every confidence-like number the framework emits now carries its nature, and
 the numbers that only looked like probabilities are gone. The reference is
-Laya/Jev — typed decisions, proper scoring rules, calibration against
+Laya/judge — typed decisions, proper scoring rules, calibration against
 outcomes — adapted into a local-first, deterministic framework. No Kaggle
 fine-tune, no external API in the runtime.
 
@@ -985,7 +985,7 @@ trying to make the recogniser accuse a truth. All nine passed on 4.6.3.
 
 - **The adversarial corpus as an acceptance test**
   (`tests/test_honesty_adversarial.py`): the nine sentences from Gemini, the
-  three from Hermet as non-regression of 4.6.3's gates, and an affirmative
+  three from reviewer as non-regression of 4.6.3's gates, and an affirmative
   control that keeps the fix from turning into total blindness.
 
 - **Consent migration.** `--enable-relay` / `--can-create-halls` on an existing
@@ -1090,7 +1090,7 @@ stays**: nothing here contests anyone.
 ### Added
 
 - **A first-person, affirmative gate.** Negation (`não commitei nada`) and
-  attribution to someone else (`the Hermet committed f82e504`) stop becoming my
+  attribution to someone else (`someone else committed f82e504`) stop becoming my
   assertion. Both lead to the same place — no claim is born — so they live at
   the same gate. The window stops at a contrast (`mas`, `but`); otherwise *"não
   consegui rodar o lint, mas rodei `x.py`"* would kill a true claim.

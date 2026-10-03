@@ -31,7 +31,7 @@ state, and structural knowledge of the project. Two faces:
 
 ## Tool surface
 The list above is the default (`balanced`) surface. `/conscio:mode lite` cuts it
-to nine tools when context is tight; `/conscio:mode ultra` exposes everything
+to 10 tools when context is tight; `/conscio:mode ultra` exposes everything
 this server was started with, including the council's deeper instruments. If a
 tool named here is not in your list, you are in `lite` — switch modes rather
 than assuming it doesn't exist.

@@ -40,6 +40,8 @@
 | v4.5.0–v4.6.x | Relay/Liaison evolution | reactive relay, hall, live-space resolver, consent that speaks, card that survives the blind writer | ✅ Done |
 | v4.6.8 | Deterministic council | LLM path removed from the critic; sentinel `publish_self` | ✅ Done |
 | v4.7.0 | Calibration you can trust | ConfidenceValue tiers (none/asserted/derived/measured), ECE/Brier, vote-entropy agreement, per-tool Beta fast-path, native-only embeddings, vector signatures, outcome store | ✅ Done (4,200 tests) |
+| v4.8.0 | Host identity & observation | Host identity zero-inference detection (Claude Code, Antigravity, Hermes, OpenCode, ZCode), session transcript observation feed, mode-aware tool profiles (lite 10, balanced 19, high 27, ultra 37), awake idle cost reduction | ✅ Done |
+| v4.8.1 | Awake calibration & hardening | Awake calibration stabilization, Bandit HIGH security hardening (zero high severity issues across codebase) | ✅ Done (~4,530 tests) |
 
 ## Candidate directions (from the idea banks + post-4.7.0 audits)
 
@@ -80,8 +82,8 @@ before entering a version.
   (D2); opt-in blocking delivery gate (D3, advisory until false-positive
   rates are measured).
 - **Decision-model support** — local typed-decision provider following the
-  embedding pattern (native-first, opt-in, no daemon hijack), so a Laya/Jev-
-  style model can plug in without any external dependency.
+  embedding pattern (native-first, opt-in, no daemon hijack), so a specialized
+  evaluator or decision model can plug in without any external dependency.
 
 **Explicitly not absorbing:** framework skill dumps the LLM already knows;
 second control panes; instincts without scope/confidence/evidence; blocking
@@ -89,8 +91,8 @@ gates before false positives are measured.
 
 > Full per-release detail lives in [`CHANGELOG.md`](../CHANGELOG.md). Test
 > counts in the table are the historical snapshot of that release, not the
-> current total — the suite is measured fresh on every release (v4.7.0:
-> 329 files, 4,200 tests, one file per process).
+> current total — the suite is measured fresh on every release (v4.8.1:
+> 370 files, ~4,530 tests, one file per process).
 
 ---
 
