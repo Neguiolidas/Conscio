@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.8.2] - 2026-10-03 — The Promptor refines, and zcode sees the update
+
+Three changes ship together: the Experts squad's Promptor stops grading
+prompts and starts rewriting them, the plugin's marketplace entry finally
+carries a version so the zcode auto-update can see new releases (it had
+been stuck on 4.7.3), and a relay message to a peer that cannot be reached
+is parked and reported as parked instead of as delivered.
+
 ### Changed — the Promptor is a prompt refiner (no longer a vote)
 
 The Experts squad's `promptor` voice no longer evaluates prompts and no
@@ -28,9 +36,49 @@ refiner never invents a fact and emits no verdict.
 - **LLM path (`use_llm=true`):** the attached adapter rewrites the
   prompt; on any LLM failure the deterministic refinement is returned
   unchanged. The refiner never raises into a squad convene.
+- **Minimal fragments, not whole sections:** when a constraint or a
+  format is named inside a larger clause, the refined prompt quotes only
+  the fragment that carries it (from the keyword, or the preposition
+  right before it, to the end of the clause) — it no longer repeats the
+  whole question or the whole context under every heading.
+- **Limits are constraints:** "max 300 words", "under $5 per month", "at
+  most 3 bullets", "limited to two pages", "máx. 200 palavras" land in
+  Constraints. Ambiguous words (`under`, `up to`, `most`, `limited`, …)
+  count only next to a number, so "explain it under the hood" is not a
+  limit; currency, abbreviations (`max.`, `min.`) and accented
+  Portuguese forms are recognised.
+- **Keywords match whole words:** "notable"/"stable" no longer light
+  `table`, "commonly" no longer lights `only`.
+- **English first:** detection is tuned for English input and the
+  section labels and gap markers are always English. Portuguese keywords
+  are additive and chosen never to collide with English words, so
+  English prompts cannot regress because of them.
 - Consumers updated: `conscio_squad_experts` schema description,
   `engine.squad_experts` docstring, the MCP guide's Experts table, the
   index page, and the tests pinning the old evaluate-and-vote behavior.
+
+### Fixed
+
+- **zcode never offered a plugin update after 4.7.3.** zcode decides
+  whether a plugin has an update by comparing the installed version with
+  the marketplace entry's own `"version"` field, and reports "no update"
+  when that field is missing — the `conscio` entry had none, so the
+  catalog refreshed on every scan while the installed plugin stayed on
+  4.7.3. The entry now carries the version, and
+  `tests/test_marketplace_version.py` keeps four copies in lockstep: the
+  marketplace entry, the shipped `plugin.json`, the `.mcp.json` uvx pin
+  and `conscio.__version__`. `docs/RELEASING.md` step 1 lists all four.
+- **A message to an unreachable peer was reported as sent.** A remote
+  peer's bridge that refused the connection or timed out gave the same
+  answer as one that rejected the message, and `conscio_relay send`
+  returned `ok` for a message that only sat in this host's spool.
+  The transport now tells ACCEPTED, REJECTED and UNREACHABLE apart. A
+  bridge that answers "no" still fails the send; a peer that does not
+  answer gets the message parked in this host's spool for it to pull,
+  and `send` returns a `warning` naming the peer and the URL that did not
+  answer. `broadcast` carries the same warning on that peer's `sent`
+  entry — before, the fan-out listed only an id, which reads as "it
+  arrived".
 
 ## [4.8.1] - 2026-10-03 — Awake stops paying to confirm that nothing happened
 

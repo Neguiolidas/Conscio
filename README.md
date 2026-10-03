@@ -23,7 +23,7 @@ memory, self-judgment and procedural skill — and proves every claim by
 measurement, not assertion. Local-first and zero-dep at the core
 (`numpy` + stdlib `sqlite3`, nothing else).
 
-**Latest release — `v4.8.1` "Awake stops paying to confirm that nothing happened":** Awake Mode caps its LLM volume — the maintenance check runs at most hourly and a rolling 24h ceiling of 120 autonomous act attempts degrades the daemon to perceive + reflect when it trips — the gateway stops on HTTP 429 and provider outages instead of cascading the same failure through every tier, failed acts record their reason in the ledger, and an idle daemon reports IDLE instead of tripping its own failure brake.
+**Latest release — `v4.8.2` "The Promptor refines, and zcode sees the update":** the Experts squad's Promptor no longer grades prompts — it rewrites them into Objective / Context / Constraints / Output format sections, quoting the caller's own words and marking every gap as `[UNSPECIFIED — …]` instead of inventing it, and it no longer votes. The plugin's marketplace entry now carries its version, so the zcode auto-update sees new releases again (it had been stuck on 4.7.3), and a relay message to a peer that does not answer is parked and reported as parked instead of as delivered.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 

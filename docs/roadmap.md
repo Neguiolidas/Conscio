@@ -42,6 +42,7 @@
 | v4.7.0 | Calibration you can trust | ConfidenceValue tiers (none/asserted/derived/measured), ECE/Brier, vote-entropy agreement, per-tool Beta fast-path, native-only embeddings, vector signatures, outcome store | ✅ Done (4,200 tests) |
 | v4.8.0 | The space survives | durable host-bound spaces (`~/.conscio/instances/<slug>`) + `conscio space migrate`; machine-level ambient task board (`conscio_board`, off by default); council calibration harness with an opt-in typed judge | ✅ Done |
 | v4.8.1 | Awake stops paying | Awake call-volume calibration (60-min maintenance cooldown, one maintenance cycle per heartbeat, rolling 24h ceiling of 120 act attempts, no active goals is IDLE); gateway fast-fail on rate limit and outage; recall session scope; Bandit HIGH 3 → 0 | ✅ Done (4,761 tests) |
+| v4.8.2 | The Promptor refines | Promptor becomes a non-voting prompt refiner (verbatim fragments, `[UNSPECIFIED — …]` gap markers, English-first detection); marketplace entry carries the version so zcode auto-update sees releases (four-copy lockstep test); relay parks mail for an unreachable peer and says so | ✅ Done |
 
 ## Candidate directions (from the idea banks + post-4.7.0 audits)
 

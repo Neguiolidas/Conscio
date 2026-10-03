@@ -57,7 +57,7 @@ prompt — a small model drowns in 37 base tools (opt-in capabilities add more),
 
 **v4.4** ("Multi-Squad") adds two orthogonal advisory squads beside the Council:
 **Experts** (Optimizer, Auditor, QA, Promptor — quality/performance/security/
-prompt-refinement specialisation, all deterministic; since v4.8.1 the
+prompt-refinement specialisation, all deterministic; since v4.8.2 the
 Promptor returns a refined prompt instead of a vote) and **Opositors** (Caustic, Devil's
 Advocate, Skeptic Engineer, Douche Reviewer — hostile pressure to validate
 premises, deterministic fallback + optional LLM). Each squad is a closed
@@ -99,7 +99,10 @@ four-voice council. **4.8.1** stops Awake Mode from paying to confirm that
 nothing happened: a 60-minute maintenance cooldown, one maintenance cycle per
 heartbeat, a rolling 24h ceiling of 120 act attempts, and a gateway that stops
 on rate limits and provider outages instead of repeating the call down the
-fallback tiers.
+fallback tiers. **4.8.2** turns the Experts squad's Promptor into a prompt
+refiner (it rewrites the prompt and no longer votes), ships the plugin's
+version on its marketplace entry so the zcode auto-update sees new releases,
+and reports a relay message to an unreachable peer as parked, not delivered.
 
 ## Install
 

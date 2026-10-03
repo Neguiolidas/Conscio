@@ -1,4 +1,4 @@
-"""Tests for Experts.QA + Experts.Promptor (Ato 2; Promptor refiner since v4.8.1)."""
+"""Tests for Experts.QA + Experts.Promptor (Ato 2; Promptor refiner since v4.8.2)."""
 from __future__ import annotations
 
 from conscio.squads._base import VoiceResult
@@ -63,7 +63,7 @@ class TestQAVoice:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# Promptor voice (v4.8.1: prompt refiner — rewrites, never evaluates)
+# Promptor voice (v4.8.2: prompt refiner — rewrites, never evaluates)
 # ═══════════════════════════════════════════════════════════════════════
 
 

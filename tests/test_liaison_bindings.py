@@ -1255,6 +1255,30 @@ def test_relay_send_to_silent_remote_parks_it_for_pull(tmp_path, monkeypatch):
         eng.close()
 
 
+def test_relay_broadcast_to_silent_remote_says_it_parked(tmp_path, monkeypatch):
+    """The broadcast twin of the test above: a fan-out entry with only an id
+    reads as "it arrived" while the message sits in this host's spool."""
+    from conscio.liaison import directory, relay_transport
+    db = tmp_path / "liaison.db"
+    b, eng, seen = _bind(tmp_path, instance_id="A", hermes_review=False,
+                         relay=True, relay_peers=("B", "J"), liaison_db=db)
+    _publish("B")
+    directory.publish({"instance_id": "J", "spool": "",
+                       "url": "http://10.0.0.9:8788"})
+    _remote_answers(monkeypatch, relay_transport.UNREACHABLE)
+    try:
+        r = b._relay_broadcast({"type": "note", "payload": {"x": 1}})
+        by_peer = {s["to"]: s for s in r["sent"]}
+        assert set(by_peer) == {"B", "J"}
+        assert "parked" in by_peer["J"]["warning"]
+        assert "http://10.0.0.9:8788" in by_peer["J"]["warning"]
+        assert "warning" not in by_peer["B"]
+        assert len(list(directory.spool_dir("J").glob("*.json"))) == 1
+    finally:
+        seen.close()
+        eng.close()
+
+
 def test_relay_send_to_rejecting_remote_fails_and_parks_nothing(tmp_path,
                                                                  monkeypatch):
     """A bridge that ANSWERS no (bad token) is alive and misconfigured — that

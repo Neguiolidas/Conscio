@@ -725,7 +725,10 @@ class Bindings:
                 errors.append({"to": peer,
                                "reason": f"send failed: {type(exc).__name__}"})
                 continue
-            sent.append({"to": peer, "id": mid})
+            entry = {"to": peer, "id": mid}
+            if reason:                    # e.g. parked for an unreachable peer
+                entry["warning"] = reason
+            sent.append(entry)
         if sent:                                  # best-effort retention, once
             self._retention_tick()
         return {"ok": True, "sent": sent, "errors": errors, "skipped": skipped}

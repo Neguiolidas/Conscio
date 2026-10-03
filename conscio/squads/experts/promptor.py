@@ -1,5 +1,5 @@
 # conscio/squads/experts/promptor.py
-"""Promptor voice — prompt REFINER (v4.8.1).
+"""Promptor voice — prompt REFINER (v4.8.2).
 
 The Promptor does not evaluate or vote. It receives a prompt and returns
 the refined prompt: the input restructured into Objective / Context /

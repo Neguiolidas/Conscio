@@ -1,4 +1,4 @@
-"""The plugin's shipped version fields must never drift apart (v4.8.1).
+"""The plugin's shipped version fields must never drift apart (v4.8.2).
 
 The zcode CLI decides whether a plugin has an update by comparing the
 INSTALLED version against the marketplace entry's own ``version`` field

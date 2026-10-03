@@ -59,7 +59,7 @@ class TestEngineSquadExperts:
         events = engine.event_bus.query(type="squad:experts:convened", limit=5)
         assert len(events) >= 1
 
-    # ── v4.8.1: the promptor is a refiner, not a vote ───────────────
+    # ── v4.8.2: the promptor is a refiner, not a vote ───────────────
 
     def test_promptor_entry_carries_refined_prompt(self, engine):
         r = engine.squad_experts(
