@@ -348,6 +348,50 @@ class TestPromptorVoice:
         assert self._sections(r.refined_prompt)["Constraints"] == \
             "- até R$ 50 por mês"
 
+    # ── T3d: scope limits return, accented abbreviations, boundaries ──
+
+    def test_t3d_limited_to_is_unambiguous_again(self):
+        # Regression: dropping limit(ed) to from the always-tier lost
+        # scope restrictions that carry no number.
+        v = PromptorVoice()
+        for ask, fragment in (
+            ("Write the FAQ, access limited to admins",
+             "- limited to admins"),
+            ("Draft the policy, limited to internal staff",
+             "- limited to internal staff"),
+            ("Summarize the plot, keep it limited to two pages",
+             "- limited to two pages"),
+            ("Summarize the report, limit the answer to 3 bullets",
+             "- limit the answer to 3 bullets"),
+        ):
+            r = v.analyze({"question": ask, "context": ""})
+            assert self._sections(r.refined_prompt)["Constraints"] == fragment, ask
+
+    def test_t3d_accented_abbreviations_are_keywords(self):
+        # The number tier spelled max|min without accents; the splitter
+        # no longer breaks after "máx."/"mín.", so they must count.
+        v = PromptorVoice()
+        for ask, fragment in (
+            ("Resuma o texto, máx. 200 palavras", "- máx. 200 palavras"),
+            ("Resuma o texto, mín. 3 exemplos", "- mín. 3 exemplos"),
+        ):
+            r = v.analyze({"question": ask, "context": ""})
+            assert self._sections(r.refined_prompt)["Constraints"] == fragment, ask
+
+    def test_t3d_word_boundary_in_split_lookbehind(self):
+        # Without \b the lookbehind matched "climax."/"admin."; without
+        # IGNORECASE it missed "MÁX.". Both must hold.
+        from conscio.squads.experts.promptor import _UNIT_SPLIT
+        assert len(_UNIT_SPLIT.split("Describe the climax. Then list up "
+                                     "to 5 themes.")) == 2
+        assert len(_UNIT_SPLIT.split("Log in as admin. Then explain the "
+                                     "dashboard.")) == 2
+        v = PromptorVoice()
+        r = v.analyze({"question": "Resuma o texto, MÁX. 200 palavras",
+                       "context": ""})
+        assert self._sections(r.refined_prompt)["Constraints"] == \
+            "- MÁX. 200 palavras"
+
     def test_t3b_real_limits_still_count(self):
         v = PromptorVoice()
         for ask, fragment in (
