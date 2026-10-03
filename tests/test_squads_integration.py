@@ -59,6 +59,36 @@ class TestEngineSquadExperts:
         events = engine.event_bus.query(type="squad:experts:convened", limit=5)
         assert len(events) >= 1
 
+    # ── v4.8.1: the promptor is a refiner, not a vote ───────────────
+
+    def test_promptor_entry_carries_refined_prompt(self, engine):
+        r = engine.squad_experts(
+            question="Write a marketing email",
+            context="audience: CTOs",
+            voices=["promptor"],
+        )
+        entry = r["voices"][0]
+        assert entry["role"] == "promptor"
+        assert entry["refined_prompt"].startswith("Objective: Write a marketing email")
+        assert isinstance(entry["changes"], list) and entry["changes"]
+        assert entry["vote"] == ""  # no verdict in the payload
+        assert entry["analysis"] == ""  # no note either
+
+    def test_promptor_never_counts_in_recommendation(self, engine):
+        # Old behavior: a vague prompt made the promptor veto, sinking
+        # the squad. New behavior: it carries no weight at all.
+        r = engine.squad_experts(question="help", voices=["promptor"])
+        assert r["recommendation"] == "hold"  # no voting voices → no consensus
+        assert r["votes_summary"] == {"proceed": 0, "hold": 0, "veto": 0}
+
+    def test_voting_voices_still_count(self, engine):
+        r = engine.squad_experts(question="Test")
+        assert sum(r["votes_summary"].values()) == 3  # optimizer, auditor, qa
+
+    def test_opositors_all_vote(self, engine):
+        r = engine.squad_opositors(question="Test")
+        assert sum(r["votes_summary"].values()) == 4  # voting defaults to True
+
 
 class TestEngineSquadOpositors:
     def test_squad_opositors_returns_dict(self, engine):

@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the Promptor is a prompt refiner (no longer a vote)
+
+The Experts squad's `promptor` voice no longer evaluates prompts and no
+longer votes. It rewrites: it receives a prompt and returns a
+`refined_prompt` (the input restructured into Objective / Context /
+Constraints / Output format sections) plus a short `changes` list. Every
+substantive line is verbatim from the input; anything missing becomes an
+explicit `[UNSPECIFIED — …]` marker inside the refined prompt — the
+refiner never invents a fact and emits no verdict.
+
+- **Mechanism:** voices carry a `voting` flag (default `true`). The
+  Promptor sets `voting = false`, so `convene_squad` excludes it from
+  `recommendation` and `votes_summary` while its payload still rides in
+  `voices` with an empty `vote` — choosing a per-voice flag over a
+  hardcoded name keeps the aggregation generic for future non-voting
+  voices.
+- **LLM path (`use_llm=true`):** the attached adapter rewrites the
+  prompt; on any LLM failure the deterministic refinement is returned
+  unchanged. The refiner never raises into a squad convene.
+- Consumers updated: `conscio_squad_experts` schema description,
+  `engine.squad_experts` docstring, the MCP guide's Experts table, the
+  index page, and the tests pinning the old evaluate-and-vote behavior.
+
 ## [4.8.1] - 2026-10-03 — Awake stops paying to confirm that nothing happened
 
 A field run of Awake Mode drained its provider quota: the maintenance goal

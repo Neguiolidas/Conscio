@@ -56,6 +56,15 @@ class VoiceResult:
                 f"{[v.value for v in VoiceVote]}"
             )
 
+    def extras(self) -> dict[str, Any]:
+        """Optional payload fields beyond the standard shape.
+
+        Subclasses that carry an artefact (e.g. a refined prompt)
+        override this to expose their extra fields; ``convene_squad``
+        merges them into the voice's result entry.
+        """
+        return {}
+
 
 def _vote_from_concerns(concerns: list[str]) -> str:
     """Derive a vote from a concern list (conservative, mirrors council).
@@ -77,11 +86,18 @@ class Voice:
     Subclasses set ``name``, ``role`` and ``description``, and must
     implement ``analyze()``. ``analyze_llm()`` defaults to raising
     NotImplementedError — override only when the voice has an LLM path.
+
+    ``voting`` (default ``True``) declares whether the voice's vote enters
+    the squad recommendation and ``votes_summary``. A voice that produces
+    an artefact instead of a judgement (e.g. the Promptor's refined
+    prompt) sets ``voting = False``: its result still rides in the
+    ``voices`` payload, but it never counts toward the verdict.
     """
 
     name: str = ""
     role: str = ""
     description: str = ""
+    voting: bool = True
 
     def analyze(self, ctx: dict[str, Any]) -> VoiceResult:
         """Deterministic analysis (stdlib-only). Must be overridden."""

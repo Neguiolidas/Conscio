@@ -549,7 +549,7 @@ Convene the **Experts** squad — constructive, technical specialisation.
 | `optimizer` | Performance: hot paths, latencies, query plans, algorithmic complexity | ✅ | ✅ |
 | `auditor` | Security: static analysis, secrets, permissions, threat modelling | ✅ | ✅ |
 | `qa` | Quality: tests, fuzzing, edge cases, regression, coverage gaps | ✅ | ✅ |
-| `promptor` | Prompt optimisation: intent extraction, clarity, completeness, mode selection | ✅ (always) | — |
+| `promptor` | Prompt refiner: returns `refined_prompt` (Objective / Context / Constraints / Output format) plus `changes`; gaps become explicit markers — it never invents facts and never votes | ✅ (always) | ✅ |
 
 Parameters:
 - `voices` — array of voice names (default: all available in current mode).
@@ -561,6 +561,9 @@ Parameters:
 - `context` — additional context string.
 
 Returns `{question, squad: "experts", voices: [...], recommendation, votes_summary}`.
+The `promptor` entry carries `refined_prompt` and `changes` with an empty
+`vote` — the refiner produces an artefact, not a judgement, and is excluded
+from `recommendation` and `votes_summary`.
 
 Event emitted: `squad:experts:convened`.
 
