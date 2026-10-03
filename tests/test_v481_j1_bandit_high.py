@@ -1,6 +1,10 @@
 import hashlib
+import shutil
 import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
 
 from conscio.integrations.neurata import NeurataBridge
 from conscio.outcomes import capture_council_outcome
@@ -43,10 +47,15 @@ def test_outcomes_digest_known_input():
 
 
 def test_bandit_reports_zero_high_severity():
-    import shutil
-    bandit_bin = shutil.which("bandit") or "/home/ubuntu/.local/bin/bandit"
+    bandit_bin = shutil.which("bandit")
+    if bandit_bin is None:
+        pytest.skip("bandit is not on PATH (install the dev extra)")
+    package_dir = Path(__file__).resolve().parents[1] / "conscio"
+    # bandit exits 0 on a path that does not exist, so a wrong path would
+    # pass vacuously: prove the scan target is real before trusting exit 0.
+    assert package_dir.is_dir(), f"scan target missing: {package_dir}"
     res = subprocess.run(
-        [bandit_bin, "-r", "conscio/", "-lll", "-q"],
+        [bandit_bin, "-r", str(package_dir), "-lll", "-q"],
         capture_output=True,
         text=True,
     )

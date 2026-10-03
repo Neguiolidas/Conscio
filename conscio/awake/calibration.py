@@ -1,6 +1,6 @@
 """Batch H (v4.8.1) — calibration helpers for Awake Mode LLM volume.
 
-Retworked after the hostile review (Claude fbb0ceed, 2026-10-02): the first
+Reworked after the hostile review (2026-10-02): the first
 cut read a hand-copied ledger key that never matched what act.py records,
 counted maintenance cycles by watching goal status that act() does not
 change, and froze its rolling window at cache time. This module now has
@@ -8,7 +8,7 @@ one source of truth for the ledger key — ``maintenance_goal_fingerprint``
 derives it from the same constant the engine regenerates — and the window
 is recomputed on every check.
 
-The three levers (measured burn: 267 costed actions/day on the muse
+The three levers (measured burn: 267 costed actions/day on a field
 ledger, 2026-10-01):
 
 1. ``MaintenanceCooldown`` — reflect() does not regenerate the
@@ -25,7 +25,7 @@ ledger, 2026-10-01):
    ATTEMPTS (every non-host ledger row, whatever its outcome or token
    count; see the class docstring). The window moves: every check recomputes
    ``now - 24h``, so a cached ceiling ages old rows out instead of
-   freezing (the daemon restarts every 6h on the muse, but a long-lived
+   freezing (the field daemon restarted every 6h, but a long-lived
    daemon must not degrade permanently). When the ceiling trips, run()
    degrades to perceive+reflect and REPORTS the trip.
 """
