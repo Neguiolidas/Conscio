@@ -262,6 +262,18 @@ def _light_in_segment(segment: str, lit: dict[str, bool]) -> None:
     words = [m.group(0) for m in _WORD_RE.finditer(segment)]
     spans = [m.span() for m in _WORD_RE.finditer(segment)]
     breaks = _sentence_breaks(segment)
+
+    # Pre-scan: identify post-trigger absence predicates attached to mitigator triggers.
+    # An absence word consumed as a post-trigger predicate for an earlier mitigator
+    # (e.g. 'Backups are missing...') cannot also act as a pre-trigger negator for a
+    # subsequent trigger in the same sentence ('...and the rollback flag works').
+    consumed_absence: set[int] = set()
+    for name in _MITIGATOR_TRAITS:
+        for pattern, _where in _COMPILED[name]:
+            for match in pattern.finditer(segment):
+                _, last_w = _trigger_word_span(match.start(), match.end(), spans)
+                _collect_post_absence(words, spans, breaks, last_w, consumed_absence)
+
     for name, patterns in _COMPILED.items():
         if lit[name]:
             continue
@@ -270,12 +282,48 @@ def _light_in_segment(segment: str, lit: dict[str, bool]) -> None:
             for match in pattern.finditer(segment):
                 first_w, last_w = _trigger_word_span(match.start(), match.end(), spans)
                 if not _trigger_negated(
-                    segment, words, spans, breaks, first_w, last_w, is_mitigator
+                    segment, words, spans, breaks, first_w, last_w, is_mitigator, consumed_absence
                 ):
                     lit[name] = True
                     break
             if lit[name]:
                 break
+
+
+def _collect_post_absence(
+    words: list[str],
+    spans: list[tuple[int, int]],
+    breaks: list[int],
+    last_w: int,
+    consumed: set[int],
+) -> None:
+    """Find and record any post-trigger absence predicate for a mitigator trigger."""
+    for k in range(last_w + 1, len(words)):
+        lo, hi = spans[k - 1][1], spans[k][0]
+        if any(lo <= p <= hi for p in breaks):
+            break
+        norm = words[k].lower()
+        if norm == "none":
+            is_partitive = False
+            if k + 1 < len(words):
+                lo_n, hi_n = spans[k][1], spans[k + 1][0]
+                if not any(lo_n <= p <= hi_n for p in breaks):
+                    if words[k + 1].lower() == "of":
+                        is_partitive = True
+            if not is_partitive:
+                consumed.add(k)
+                break
+        elif norm in _POST_ABSENCE_WORDS:
+            consumed.add(k)
+            break
+        elif norm == "not":
+            if k + 1 < len(words):
+                lo_n, hi_n = spans[k][1], spans[k + 1][0]
+                if not any(lo_n <= p <= hi_n for p in breaks):
+                    if words[k + 1].lower() == "available":
+                        consumed.add(k)
+                        consumed.add(k + 1)
+                        break
 
 
 def _trigger_word_span(
@@ -299,6 +347,7 @@ def _trigger_negated(
     first_w: int,
     last_w: int,
     is_mitigator: bool,
+    consumed_absence: set[int] | None = None,
 ) -> bool:
     """True when the trigger occurrence spanning [first_w, last_w] is cancelled.
 
@@ -306,6 +355,7 @@ def _trigger_negated(
     cancels at any distance in the same sentence; a local negator cancels within
     NEGATION_WINDOW words, or at _COMMA_RULE distance when a comma lies between.
     Stops at sentence ends. Applies to all nine traits.
+    Consumed absence predicates from earlier triggers do not cancel pre-trigger.
 
     Post-trigger (spec 5.1 item 7, H53 emenda): applies ONLY to the three
     mitigator traits (reversible, verified, low_stakes). Scans forward from
@@ -316,11 +366,14 @@ def _trigger_negated(
     Partitive 'none of' does not cancel. General negators do not cancel
     post-trigger.
     """
+    consumed = consumed_absence or set()
     # 1. Pre-trigger negation (all nine traits)
     for j in range(first_w - 1, -1, -1):
         lo, hi = spans[j][1], spans[j + 1][0]
         if any(lo <= p <= hi for p in breaks):
             break
+        if j in consumed:
+            continue
         norm = words[j].lower()
         gap = first_w - j
         if norm in CLAUSE_NEGATORS:

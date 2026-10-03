@@ -303,14 +303,6 @@ def test_post_trigger_scan_runs_to_sentence_end():
     assert extract_traits("Backups are missing. The rollback flag works").reversible is True
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="F3 finding: 'missing' is ALSO a pre-trigger local negator (spec 5.1 "
-           "it. 4), so in the single-sentence probe it sits 3 words before the "
-           "second trigger 'rollback' and cancels that occurrence pre-trigger. "
-           "Making it pass would require consuming the negator or narrowing the "
-           "pre-trigger rule — both are out of F3 scope (pre-trigger must not "
-           "change). Conservative side: a mitigator stays unlit.")
 def test_single_sentence_second_mitigator_after_absence_lights():
     """§5.1 it. 7 (H53 probe, single sentence): 'Backups are missing and the
     rollback flag works' should light reversible via the second trigger."""
