@@ -89,3 +89,31 @@ def test_quarantined_goals_still_fail_and_brake(tmp_path):
     assert rep.reports[0].status is ActStatus.FAILED, (
         "quarantine path must stay FAILED, not IDLE")
     eng.close()
+
+
+def test_idle_heartbeat_still_dreams(tmp_path):
+    """Round 4: the IDLE break must run AFTER the dream housekeeping —
+    idle is the normal state 3 of 4 heartbeats; skipping the dream there
+    would leave the ledgers unpruned except hourly (the v3.9.4 orphaned
+    invariant, reintroduced in round 3 and caught by the round-4 review)."""
+    from conscio.engine import DreamRecommendation
+    eng, _counter = _engine_with_counter(tmp_path)
+    dreams = {"n": 0}
+    eng.dream = lambda *a, **k: dreams.__setitem__("n", dreams["n"] + 1)
+    eng.run(AwakeBudget(), world_state="hb1")          # burns the proposal
+    # force dream recommended on every reflect (reflect resets the flag)
+    _orig_reflect = eng.reflect
+
+    def _reflect(*a, **kw):
+        out = _orig_reflect(*a, **kw)
+        eng.dream_recommended = DreamRecommendation(True, "test", 0.1)
+        return out
+
+    eng.reflect = _reflect
+    _age_ledger(eng, 15 * 60)                          # inside the window
+    rep = eng.run(AwakeBudget(), world_state="hb2")
+    assert rep.stopped == "idle"
+    assert dreams["n"] >= 1, (
+        "dream housekeeping must run on idle heartbeats — the v3.9.4 "
+        "invariant; the IDLE break must sit AFTER it")
+    eng.close()

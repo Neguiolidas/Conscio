@@ -162,18 +162,27 @@ class AutonomyLoop:
                 report.cycles += 1
                 if act_report.status in _FAILURE_STATUSES:
                     report.failures += 1
+                # v3.9.4: housekeeping, not autonomy — DreamCycle makes no model
+                # call. This ran *after* the lockdown check, so the break jumped
+                # over it and a locked-down mind never pruned its ledgers again.
+                # v4.8.1 (lote H, round 4): the IDLE break below must stay
+                # AFTER this too — idle is now the normal state 3 of 4
+                # heartbeats; skipping the dream here would leave the ledgers
+                # unpruned except on the hourly maintenance cycle (the same
+                # orphaned-invariant bug, reintroduced by moving the break
+                # above the housekeeping in round 3).
+                if self.engine.dream_recommended.recommended:
+                    self.engine.dream()
                 # v4.8.1 (lote H, round 3): IDLE (no active goals) is the
                 # healthy state inside the maintenance cooldown — stop the
                 # run immediately instead of burning the remaining cycles
                 # on idle acts. Not a failure: no brake event, failures=0.
+                # (Round 4: moved below the dream housekeeping; the stop is
+                # still immediate — dream() is the only thing that may run
+                # between the idle act and the break.)
                 if act_report.status is ActStatus.IDLE:
                     report.stopped = "idle"
                     break
-                # v3.9.4: housekeeping, not autonomy — DreamCycle makes no model
-                # call. This ran *after* the lockdown check, so the break jumped
-                # over it and a locked-down mind never pruned its ledgers again.
-                if self.engine.dream_recommended.recommended:
-                    self.engine.dream()
                 if (act_report.lockdown or state.action_lockdown
                         or act_report.status is ActStatus.LOCKED):
                     report.stopped = "lockdown"
