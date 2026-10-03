@@ -116,7 +116,7 @@ class AutonomyLoop:
         calls0, tokens0 = self.meter.calls, self.meter.tokens
         max_cycles = budget.max_cycles
         cap0 = self.pipeline.autonomy_cap
-        # v4.8.1 (lote H): one maintenance cycle per run. A maintenance-only
+        # v4.8.1 (batch H): one maintenance cycle per run. A maintenance-only
         # heartbeat (daemon_check) re-confirms "all normal"; letting it eat
         # the whole max_cycles budget triples the LLM spend with zero new
         # information. Counted from the LEDGER: rows of the maintenance
@@ -165,7 +165,7 @@ class AutonomyLoop:
                 # v3.9.4: housekeeping, not autonomy — DreamCycle makes no model
                 # call. This ran *after* the lockdown check, so the break jumped
                 # over it and a locked-down mind never pruned its ledgers again.
-                # v4.8.1 (lote H, round 4): the IDLE break below must stay
+                # v4.8.1 (batch H, round 4): the IDLE break below must stay
                 # AFTER this too — idle is now the normal state 3 of 4
                 # heartbeats; skipping the dream here would leave the ledgers
                 # unpruned except on the hourly maintenance cycle (the same
@@ -173,7 +173,7 @@ class AutonomyLoop:
                 # above the housekeeping in round 3).
                 if self.engine.dream_recommended.recommended:
                     self.engine.dream()
-                # v4.8.1 (lote H, round 3): IDLE (no active goals) is the
+                # v4.8.1 (batch H, round 3): IDLE (no active goals) is the
                 # healthy state inside the maintenance cooldown — stop the
                 # run immediately instead of burning the remaining cycles
                 # on idle acts. Not a failure: no brake event, failures=0.
@@ -195,7 +195,7 @@ class AutonomyLoop:
         return report
 
     def _has_non_maintenance_goal(self) -> bool:
-        """v4.8.1 (lote H): whether an actable, non-maintenance goal exists.
+        """v4.8.1 (batch H): whether an actable, non-maintenance goal exists.
         The one-maintenance-cycle cap only stops a run whose remaining work
         is all daemon_check; a real goal must never be starved by it."""
         goals = getattr(self.engine, "goals", None)

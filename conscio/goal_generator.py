@@ -74,7 +74,7 @@ def origin_of(source: str) -> GoalOrigin:
 class Goal:
     """A single goal with drive source, priority, and status."""
 
-    # v4.8.1 (lote H): the maintenance description the engine regenerates.
+    # v4.8.1 (batch H): the maintenance description the engine regenerates.
     # Single source of truth: generate_from_maintenance builds its Goal with
     # this exact text, and the ledger key of that goal is
     # goal_fingerprint(MAINTENANCE_DAEMON_CHECK_DESCRIPTION). Calibration
@@ -275,7 +275,7 @@ class GoalGenerator:
 
         Examples: "check system health", "verify data consistency", "prune stale entries"
 
-        v4.8.1 (lote H): the goal description is the SINGLE SOURCE the act
+        v4.8.1 (batch H): the goal description is the SINGLE SOURCE the act
         ledger fingerprints (goal_fingerprint(description)). Calibration
         code that needs the ledger key of a maintenance goal derives it
         from the same construction below via

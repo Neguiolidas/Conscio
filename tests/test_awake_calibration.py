@@ -1,4 +1,4 @@
-"""Lote H (v4.8.1) — calibration of awake-mode LLM volume (hostile rework).
+"""Batch H (v4.8.1) — calibration of awake-mode LLM volume (hostile rework).
 
 Reworked after the hostile review: every test now exercises the REAL
 construction path — goals come from GoalGenerator.generate_from_maintenance,

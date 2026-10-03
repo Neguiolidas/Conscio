@@ -1,4 +1,4 @@
-"""Lote H round 2 (v4.8.1) — end-to-end cooldown over the real engine.
+"""Batch H round 2 (v4.8.1) — end-to-end cooldown over the real engine.
 
 The hostile review's required test: N heartbeats (reflect + act) inside
 one cooldown window counting real adapter.generate() calls -> exactly 1;

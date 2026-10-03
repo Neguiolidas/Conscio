@@ -74,7 +74,7 @@ class ActStatus(str, Enum):
     REJECTED = "rejected"
     FAILED = "failed"
     LOCKED = "locked"
-    # v4.8.1 (lote H, round 3): no active goals is HEALTHY IDLE, not
+    # v4.8.1 (batch H, round 3): no active goals is HEALTHY IDLE, not
     # failure. Before the cooldown expired the maintenance goal, "no
     # active goals" was rare (the goal regenerated every heartbeat);
     # now it is the normal state 3 of 4 heartbeats inside the window —
@@ -138,7 +138,7 @@ class ActPipeline:
             return ActReport(status=ActStatus.LOCKED,
                              reason="action_lockdown active")
         if not state.active_goals:
-            # v4.8.1 (lote H, round 3): healthy idle, not failure — see the
+            # v4.8.1 (batch H, round 3): healthy idle, not failure — see the
             # IDLE enum. The loop stops immediately with stopped='idle'.
             return ActReport(status=ActStatus.IDLE,
                              reason="no active goals")
@@ -406,7 +406,7 @@ class ActPipeline:
               report_status: ActStatus = ActStatus.FAILED,
               proposal: ActionProposal | None = None,
               infra: bool = False) -> ActReport:
-        # v4.8.1 (lote H round 5, #866): a failed attempt PAID for its LLM
+        # v4.8.1 (batch H round 5, #866): a failed attempt PAID for its LLM
         # requests (every _fail call site is downstream of
         # gateway.request_action). Record the gateway's accumulated usage
         # so the row tells the truth about what it cost — and so any

@@ -251,7 +251,7 @@ class ActionLedger:
                 break
         return streak
 
-    # ── v4.8.1 (lote H): calibration queries ─────────────────────────────
+    # ── v4.8.1 (batch H): calibration queries ─────────────────────────────
     # Public API so calibration code never touches the private _conn.
     # Every attempt counts (executed/failed/rejected): a failed attempt
     # burned provider quota exactly like a successful one.
@@ -281,7 +281,7 @@ class ActionLedger:
     def count_attempts_since(self, ts: float, *, now: float | None = None) -> int:
         """AUTONOMOUS-LOOP attempt rows in the window (ts, now].
 
-        v4.8.1 (lote H round 6, #866): counts actions rows of the AWAKE
+        v4.8.1 (batch H round 6, #866): counts actions rows of the AWAKE
         pipeline only — tier != 'host'. Every such row is one attempt
         downstream of gateway.request_action, which paid for at least
         one LLM request whatever the outcome (executed, failed,

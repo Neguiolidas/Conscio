@@ -110,7 +110,7 @@ class TestProposeFlow:
         assert "unknown tool" in report.reason
 
     def test_no_goals_is_idle(self, tmp_path):
-        """v4.8.1 (lote H round 3): no active goals is HEALTHY IDLE, not
+        """v4.8.1 (batch H round 3): no active goals is HEALTHY IDLE, not
         failure — the cooldown makes it the normal state most heartbeats.
         IDLE writes NO ledger row (nothing was attempted)."""
         pipeline, _, _ = _pipeline(tmp_path, MockAdapter(script=[]))

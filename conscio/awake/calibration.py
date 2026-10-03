@@ -1,4 +1,4 @@
-"""Lote H (v4.8.1) — calibration helpers for Awake Mode LLM volume.
+"""Batch H (v4.8.1) — calibration helpers for Awake Mode LLM volume.
 
 Retworked after the hostile review (Claude fbb0ceed, 2026-10-02): the first
 cut read a hand-copied ledger key that never matched what act.py records,
@@ -78,7 +78,7 @@ class MaintenanceCooldown:
 class DailyAttemptCeiling:
     """Rolling 24h budget of ACT ATTEMPTS for the awake loop.
 
-    v4.8.1 (lote H round 5, #866): counts ATTEMPTS (every actions row in
+    v4.8.1 (batch H round 5, #866): counts ATTEMPTS (every actions row in
     the window), not cost-carrying rows — a failed attempt paid for its
     LLM requests exactly like a successful one, and a 429 storm burns
     RPM while writing tokens=0 rows. The first cut (DailyCostCeiling,

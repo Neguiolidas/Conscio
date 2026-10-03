@@ -259,13 +259,13 @@ class ConsciousnessEngine:
 
     DEFAULT_STORAGE = Path.home() / ".conscio" / "consciousness"
 
-    # v4.8.1 (lote H): maintenance-goal cooldown, in minutes. Derived from
+    # v4.8.1 (batch H): maintenance-goal cooldown, in minutes. Derived from
     # H1 — host_health runs every heartbeat burn ~300 LLM calls/day to
     # re-confirm "all normal"; 60 min halves the burn with no observable
     # loss of coverage (the reflect cycle still runs every heartbeat).
     MAINTENANCE_COOLDOWN_MIN = 60
 
-    # v4.8.1 (lote H): rolling 24h ceiling of awake-loop ACT ATTEMPTS
+    # v4.8.1 (batch H): rolling 24h ceiling of awake-loop ACT ATTEMPTS
     # (every actions row with tier != 'host', whatever its outcome or
     # token count — a failed attempt in a 429 storm still burned quota).
     # 120 covers the legitimate ceiling (96 heartbeats/day × 1
@@ -680,7 +680,7 @@ class ConsciousnessEngine:
         # produce artifacts (skills via distill, noosphere publications).
         # Without this, the daemon wakes, finds only diagnostic goals,
         # fails every cycle, and trips the failure-rate brake.
-        # v4.8.1 (lote H): the maintenance goal now respects a cooldown —
+        # v4.8.1 (batch H): the maintenance goal now respects a cooldown —
         # regenerating "everything is normal" every heartbeat burned
         # ~300 LLM proposals/day against the shared provider quota. The
         # world state rarely changes between heartbeats; the cooldown
@@ -720,7 +720,7 @@ class ConsciousnessEngine:
                         MaintenanceCooldown(minutes=self.MAINTENANCE_COOLDOWN_MIN)
                 if cooldown.should_generate(
                         last_attempt_ts=self._last_daemon_check_ts()):
-                    # v4.8.1 (lote H): description from the Goal constant —
+                    # v4.8.1 (batch H): description from the Goal constant —
                     # the same text the calibration fingerprints, so the
                     # ledger key always matches (hostile review, lever 1).
                     from .goal_generator import Goal as _Goal
@@ -2166,7 +2166,7 @@ class ConsciousnessEngine:
         # reconcile here too, before the pipeline short-circutes on the latch.
         self._reconcile_lockdown(state)
         report = self._act_pipeline.act(state)
-        # v4.8.1 (lote H, round 2): expire the daemon_check goal AFTER the
+        # v4.8.1 (batch H, round 2): expire the daemon_check goal AFTER the
         # act() attempt on it, whatever the status. Nothing else retires it
         # (complete_goal is a tool the model must call; act never changes
         # goal status), so it stayed active forever and the arbiter
@@ -2544,7 +2544,7 @@ class ConsciousnessEngine:
         return profile
 
     def _last_daemon_check_ts(self) -> float | None:
-        """v4.8.1 (lote H): when the last daemon_check ATTEMPT hit the
+        """v4.8.1 (batch H): when the last daemon_check ATTEMPT hit the
         ledger — any status (executed/failed/rejected all burned quota).
         None when it never did. Uses the PUBLIC ledger API and the
         fingerprint DERIVED from the same description constant the engine
@@ -2582,7 +2582,7 @@ class ConsciousnessEngine:
             if self.dream_recommended.recommended:
                 self.dream()
             return RunReport(stopped="no adapter attached")
-        # v4.8.1 (lote H): rolling 24h cost ceiling for the awake loop,
+        # v4.8.1 (batch H): rolling 24h cost ceiling for the awake loop,
         # counted from the action ledger (survives restarts). Checked
         # BEFORE probe(): the ProbeSuite runs real model calls when no
         # cached profile exists, so an over-budget loop must not pay for

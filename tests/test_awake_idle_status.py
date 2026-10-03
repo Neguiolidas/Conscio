@@ -1,4 +1,4 @@
-"""Lote H round 3 (v4.8.1) — IDLE is healthy, quarantine still fails.
+"""Batch H round 3 (v4.8.1) — IDLE is healthy, quarantine still fails.
 
 The hostile review's required pair: (1) a heartbeat inside the cooldown
 via engine.run(AwakeBudget()) stops with stopped='idle', failures=0, no
