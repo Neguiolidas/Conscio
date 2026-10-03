@@ -110,7 +110,7 @@ class NeurataBridge:
         if not self.available:
             return None
         key = context_hash or hashlib.sha1(
-            " ".join(args).encode()).hexdigest()[:12]
+            " ".join(args).encode(), usedforsecurity=False).hexdigest()[:12]
         now = time.time()
         if key in self._cache:
             ts, result = self._cache[key]

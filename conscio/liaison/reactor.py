@@ -99,7 +99,7 @@ def run_notify_hook(cmd: str, message: dict, *, timeout: float = 15.0) -> bool:
     try:
         data = json.dumps(message, ensure_ascii=False)
         proc = subprocess.run(
-            cmd, shell=True, input=data, text=True, capture_output=True,
+            cmd, shell=True, input=data, text=True, capture_output=True,  # nosec B602  # operator pipeline; payload via stdin, never interpolated
             timeout=timeout)
         return proc.returncode == 0
     except (OSError, subprocess.TimeoutExpired, ValueError):

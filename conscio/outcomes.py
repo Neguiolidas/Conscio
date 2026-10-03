@@ -158,7 +158,7 @@ def capture_council_outcome(store: OutcomeStore, result: dict) -> int:
     # same ns never repeats.
     import hashlib
     q = result.get("question", "")
-    digest = hashlib.sha1(q.encode("utf-8", "replace")).hexdigest()[:10]
+    digest = hashlib.sha1(q.encode("utf-8", "replace"), usedforsecurity=False).hexdigest()[:10]
     ref = f"council:{time.time_ns()}:{digest}"
     record = OutcomeRecord(source="council", decision_ref=ref,
                            snapshot=snapshot)
