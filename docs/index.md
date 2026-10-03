@@ -57,7 +57,8 @@ prompt — a small model drowns in 37 base tools (opt-in capabilities add more),
 
 **v4.4** ("Multi-Squad") adds two orthogonal advisory squads beside the Council:
 **Experts** (Optimizer, Auditor, QA, Promptor — quality/performance/security/
-prompt specialisation, all deterministic) and **Opositors** (Caustic, Devil's
+prompt-refinement specialisation, all deterministic; since v4.8.1 the
+Promptor returns a refined prompt instead of a vote) and **Opositors** (Caustic, Devil's
 Advocate, Skeptic Engineer, Douche Reviewer — hostile pressure to validate
 premises, deterministic fallback + optional LLM). Each squad is a closed
 namespace with its own EventBus event types; the Council (`engine.council()`)
