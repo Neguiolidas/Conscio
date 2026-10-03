@@ -200,6 +200,99 @@ class TestPromptorVoice:
         assert "understand" not in constraints
         assert "admin" not in constraints
 
+    # ── D3: a format/limit named inside the whole question is still
+    #    quoted — as the minimal fragment, never the whole question ────
+
+    def test_d3_format_only_in_whole_question_still_quoted(self):
+        v = PromptorVoice()
+        ask = "Summarize the report in markdown"
+        r = v.analyze({"question": ask, "context": ""})
+        sections = self._sections(r.refined_prompt)
+        assert "markdown" in sections["Output format"]
+        assert "[UNSPECIFIED" not in sections["Output format"]
+        for name, body in sections.items():
+            if name == "Objective":
+                continue  # Objective IS the ask, by design
+            assert body != ask, f"{name} repeats the whole question"
+
+    def test_d3_limit_only_in_whole_question_goes_to_constraints(self):
+        v = PromptorVoice()
+        r = v.analyze({"question": "Summarize the report in under 200 words",
+                       "context": ""})
+        sections = self._sections(r.refined_prompt)
+        assert "under 200 words" in sections["Constraints"]
+        assert "[UNSPECIFIED" not in sections["Constraints"]
+        assert "under 200 words" not in sections["Output format"]
+
+    def test_d3_format_keyword_mid_question(self):
+        v = PromptorVoice()
+        r = v.analyze({"question": "Give me a JSON list of the users",
+                       "context": ""})
+        fmt = self._sections(r.refined_prompt)["Output format"]
+        assert "JSON" in fmt
+        assert "[UNSPECIFIED" not in fmt
+
+    # ── D4: every keyword matches on word boundaries, plurals included ─
+
+    def test_d4_no_false_format_from_substrings(self):
+        v = PromptorVoice()
+        for ask in ("Make the deploy stable, the release is notable",
+                    ("Fix the login bug, listen to the websocket, "
+                     "rotate passwords"),
+                    "Explain the milestone plan, keep the stone analogy"):
+            r = v.analyze({"question": ask, "context": ""})
+            sections = self._sections(r.refined_prompt)
+            assert "[UNSPECIFIED" in sections["Output format"], ask
+            assert "[UNSPECIFIED" in sections["Constraints"], ask
+
+    def test_d4_commonly_is_not_only(self):
+        v = PromptorVoice()
+        r = v.analyze({"question": "List commonly used commands",
+                       "context": ""})
+        constraints = self._sections(r.refined_prompt)["Constraints"]
+        assert "[UNSPECIFIED" in constraints
+        assert "commonly" not in constraints
+
+    # ── D5: Portuguese extras — additive only, English never regresses ─
+
+    def test_d5_portuguese_limits_and_format(self):
+        v = PromptorVoice()
+        r = v.analyze({
+            "question": "Escreva um resumo do relatório trimestral em "
+                        "markdown, no máximo 300 palavras",
+            "context": "A diretoria se reúne segunda",
+        })
+        sections = self._sections(r.refined_prompt)
+        assert "no máximo 300 palavras" in sections["Constraints"]
+        assert "[UNSPECIFIED" not in sections["Constraints"]
+        assert "markdown" in sections["Output format"]
+        assert "Escreva um resumo" not in sections["Output format"]
+
+    def test_d5_sem_only_opens_the_clause(self):
+        v = PromptorVoice()
+        r = v.analyze({"question": "Sem rodeios, liste os riscos",
+                       "context": ""})
+        constraints = self._sections(r.refined_prompt)["Constraints"]
+        assert "Sem rodeios" in constraints
+
+    def test_d5_accented_boundaries(self):
+        # \b is Unicode-aware in Python str regex: "até"/"não" work.
+        v = PromptorVoice()
+        r = v.analyze({"question": "Atualize o readme, não altere o "
+                                   "schema, até sexta",
+                       "context": ""})
+        constraints = self._sections(r.refined_prompt)["Constraints"]
+        assert "não altere o schema" in constraints
+        assert "até sexta" in constraints
+
+    def test_d5_english_never_regresses_from_portuguese(self):
+        v = PromptorVoice()
+        r = v.analyze({"question": "Ask Tom about the SEM budget",
+                       "context": ""})
+        sections = self._sections(r.refined_prompt)
+        assert "[UNSPECIFIED" in sections["Constraints"]
+        assert "[UNSPECIFIED" in sections["Output format"]
+
     def test_refinement_is_deterministic_exact_shape(self):
         # Exact expected output for the empty-context vague case: only
         # section labels, verbatim ask, and markers — nothing else.
@@ -222,12 +315,15 @@ class TestPromptorVoice:
         assert r.refined_prompt == expected
 
     def test_constraints_quoted_verbatim_from_input(self):
+        # D3: the section quotes the MINIMAL fragment that carries the
+        # limit/keyword — the caller's own words, not the whole clause.
         v = PromptorVoice()
         ask = "Write release notes. Keep it under 200 words. Must be technical."
         r = v.analyze({"question": ask, "context": ""})
-        assert "- Keep it under 200 words." in r.refined_prompt
-        assert "- Must be technical." in r.refined_prompt
-        assert "Constraints: [UNSPECIFIED" not in r.refined_prompt
+        constraints = self._sections(r.refined_prompt)["Constraints"]
+        assert "under 200 words." in constraints
+        assert "- Must be technical." in constraints
+        assert "[UNSPECIFIED" not in constraints
 
     def test_no_fabricated_content(self):
         # Nothing in the refined prompt may go beyond the caller's own

@@ -8,13 +8,23 @@ Constraints / Output format sections, plus a short list of what changed.
 Two rules anchor the refinement:
 
 - **Never invent a fact.** Every substantive line of the refined prompt
-  is verbatim text from the question or the context. Anything the
-  refiner adds itself is an explicit gap marker (a bracketed
-  ``[UNSPECIFIED — …]`` note or a question inside the refined prompt)
-  telling the caller what to supply — never fabricated content.
+  is verbatim text from the question or the context. When a constraint
+  or a format is named inside a larger clause, the section quotes the
+  MINIMAL fragment that carries it (from the keyword — or the
+  preposition right before it — to the end of the clause), never the
+  whole question and never a paraphrase. Anything the refiner adds
+  itself is an explicit gap marker (a bracketed ``[UNSPECIFIED — …]``
+  note or a question inside the refined prompt) telling the caller what
+  to supply — never fabricated content.
 - **No verdict.** The voice is registered with ``voting = False``, so
   ``convene_squad`` excludes it from the recommendation and from
   ``votes_summary``; its payload carries the refinement, not a review.
+
+The detection focus is ENGLISH; the section labels and the gap markers
+always stay in English. The Portuguese keyword extras exist for
+Portuguese input and were chosen to never collide with English words
+(the ambiguous ``tom`` is not detected at all, and ``sem`` only opens a
+clause), so English input can never regress because of them.
 
 LLM path (``use_llm=True``): the adapter rewrites the prompt. On any
 LLM failure the deterministic refinement below is returned unchanged —
@@ -37,27 +47,52 @@ _TARGET_AI = re.compile(
 
 # Keywords whose clauses are quoted verbatim into the Constraints
 # section (the caller's own words, never paraphrased into new rules).
-# Substring-safe words only; the short limit words are matched with
-# word boundaries by _LIMIT_RE below ("admin" must not match "min").
-_CONSTRAINT_KEYWORDS = (
-    "requirement", "constraint", "must", "should", "cannot", "can't",
-    "don't", "do not", "avoid", "only", "without",
+# Every keyword is matched with word boundaries (D4): "stable"/"notable"
+# must not light "table", "commonly" must not light "only". Portuguese
+# extras (D5) are additive and chosen to never collide with English
+# words; the risky "tom" is dropped entirely ("Tom" the name) and "sem"
+# only matches at the START of a clause ("Sem rodeios, ..." — English
+# "SEM budget" mid-clause stays untouched).
+_CONSTRAINT_RE = re.compile(
+    r"\b(?:requirements?|constraints?|must|should|cannot|can't|don't|"
+    r"do\s+not|avoid|only|without|"
+    r"deve|n[ãa]o|evite|apenas|somente)\b",
+    re.IGNORECASE,
 )
 
+# "Sem ..." only counts when it opens the clause (see the collision note
+# above); _SEM_CLAUSE_START is checked separately from _CONSTRAINT_RE.
+_SEM_CLAUSE_START = re.compile(r"^\s*sem\b", re.IGNORECASE)
+
 # Verbal and numeric limits are constraints too: "max 300 words",
-# "at least two options", "under 5 seconds". Word boundaries keep
-# "understand"/"admin" from matching "under"/"min".
+# "at least two options", "under 5 seconds"; PT: "no máximo 300 palavras".
+# Word boundaries keep "understand"/"admin" from matching "under"/"min".
+# \b is Unicode-aware in Python str regex, so "até"/"não" work accented.
 _LIMIT_RE = re.compile(
     r"\b(?:max|maximum|minimum|min|at most|at least|no more than|"
-    r"no less than|up to|under|over|limit(?:ed)?(?:\s+to)?)\b",
+    r"no less than|up to|under|over|limit(?:ed)?(?:\s+to)?|"
+    r"no\s+m[áa]ximo|m[áa]ximo|no\s+m[íi]nimo|m[íi]nimo|at[ée]|"
+    r"menos\s+de|mais\s+de|limite\s+de)\b",
     re.IGNORECASE,
 )
 
 # Keywords whose clauses are quoted verbatim into the Output-format
-# section.
-_FORMAT_KEYWORDS = (
-    "format", "json", "yaml", "markdown", "table", "bullet", "list",
-    "length", "words", "paragraph", "tone", "audience", "style",
+# section — word boundaries with the plurals that make sense (D4);
+# PT extras (D5) carry their own accents, "tom" is NOT here.
+_FORMAT_RE = re.compile(
+    r"\b(?:formats?|json|yaml|markdown|tables?|bullets?|lists?|length|"
+    r"words?|paragraphs?|tone|audience|style|"
+    r"formato|listas?|tabelas?|t[óo]picos?|palavras?|par[áa]grafos?|"
+    r"p[úu]blico|estilo)\b",
+    re.IGNORECASE,
+)
+
+# When quoting a fragment (D3), it may start one token earlier if that
+# token is a preposition: "in markdown", "em markdown" — the user's own
+# connector, still verbatim.
+_PREP_BEFORE = re.compile(
+    r"\b(in|as|with|using|via|on|at|to|of|em|como|no|na|de|por|com)\s+$",
+    re.IGNORECASE,
 )
 
 # A clause carrier ends at a newline, a sentence end, or a comma: the
@@ -96,15 +131,38 @@ class PromptRefinement(VoiceResult):
         return {"refined_prompt": self.refined_prompt, "changes": list(self.changes)}
 
 
+def _fragment(clause: str, kw_start: int) -> str:
+    """The user's own words from the keyword to the end of the clause
+    (D3: minimal verbatim cut), optionally opened by the preposition
+    immediately before the keyword ("in markdown", "em markdown")."""
+    pre = _PREP_BEFORE.search(clause, 0, kw_start)
+    start = pre.start() if pre else kw_start
+    return clause[start:].strip()
+
+
+def _dedupe(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out = []
+    for item in items:
+        key = item.lower()
+        if key not in seen:
+            seen.add(key)
+            out.append(item)
+    return out
+
+
 def _pick_clauses(question: str, context: str) -> tuple[list[str], list[str]]:
     """Split the input into verbatim constraint and format fragments.
 
     Units end at newlines and sentence ends; units are then split into
-    comma clauses. A clause equal to the ENTIRE question or the ENTIRE
-    context is never quoted — repeating Objective or Context inside
-    another section would make the refined prompt larger, not clearer.
-    Clauses with a limit or a constraint keyword go to Constraints;
-    remaining clauses with a format keyword go to Output format.
+    comma clauses. A clause carrying a limit or a constraint keyword
+    contributes a MINIMAL fragment to Constraints (from the keyword, or
+    the preposition before it, to the end of the clause — D3) and never
+    also to Output format; remaining clauses with a format keyword
+    contribute to Output format the same way. The fragment is never the
+    ENTIRE question or context (that would repeat Objective/Context):
+    when the only match sits at the very start of a whole-section
+    clause, the clause is skipped rather than quoted whole.
     """
     whole = {s.lower() for s in (question, context) if s}
     constraints: list[str] = []
@@ -112,20 +170,24 @@ def _pick_clauses(question: str, context: str) -> tuple[list[str], list[str]]:
     for unit in _UNIT_SPLIT.split(f"{question}\n{context}"):
         for clause in _CLAUSE_SPLIT.split(unit):
             c = clause.strip()
-            if not c or c.lower() in whole:
+            if not c:
                 continue
             low = c.lower()
-            if any(k in low for k in _CONSTRAINT_KEYWORDS) or _LIMIT_RE.search(c):
-                constraints.append(c)
-            elif any(k in low for k in _FORMAT_KEYWORDS):
-                formats.append(c)
-    seen_c: set[str] = set()
-    constraints = [c for c in constraints
-                   if not (c.lower() in seen_c or seen_c.add(c.lower()))]
-    seen_f: set[str] = set()
-    formats = [c for c in formats
-               if not (c.lower() in seen_f or seen_f.add(c.lower()))]
-    return constraints, formats
+            c_match = _CONSTRAINT_RE.search(c) or _SEM_CLAUSE_START.match(c)
+            l_match = _LIMIT_RE.search(c)
+            first = min((m.start() for m in (c_match, l_match) if m),
+                        default=None)
+            if first is not None:
+                frag = _fragment(c, first)
+                if not (frag.lower() == low and low in whole):
+                    constraints.append(frag)
+                continue
+            f_match = _FORMAT_RE.search(c)
+            if f_match:
+                frag = _fragment(c, f_match.start())
+                if not (frag.lower() == low and low in whole):
+                    formats.append(frag)
+    return _dedupe(constraints), _dedupe(formats)
 
 
 class PromptorVoice(Voice):
