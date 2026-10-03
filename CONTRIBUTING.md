@@ -47,7 +47,7 @@ pip install -e ".[dev]"
 
 ## Testing
 
-- **~4,530 tests across 370 files** — all must pass before merge. Re-measured on every release; trust `for f in tests/test_*.py; do pytest "$f" -q; done` over any static number.
+- **4,761 tests across 370 files** (v4.8.1) — all must pass before merge. Re-measured on every release; trust `for f in tests/test_*.py; do pytest "$f" -q; done` over any static number.
 - **Run tests one file per process** (see above).
 - **Do not skip tests** — if a test is genuinely flaky, mark it `@pytest.mark.xfail(strict=True)` with the explicit reason in the marker and open an issue; never use bare `skip`.
 - **Architectural & Guard tests**: tests covering invariants, guards, schema contracts, and lack of bare calls (`guard`, `contract`, `invariant`, `no_`) must always remain green.
