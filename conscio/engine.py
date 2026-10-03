@@ -265,12 +265,14 @@ class ConsciousnessEngine:
     # loss of coverage (the reflect cycle still runs every heartbeat).
     MAINTENANCE_COOLDOWN_MIN = 60
 
-    # v4.8.1 (lote H): rolling 24h ceiling of COST-CARRYING ledger actions
-    # (tokens > 0) for the awake loop. 120 covers the legitimate ceiling
-    # (96 heartbeats/day × 1 maintenance cycle) with headroom for real
-    # goals; when it trips, awake degrades to perceive+reflect and
-    # reports the trip. Counts ACTIONS with cost, not raw LLM requests
-    # (one action may bundle proposal+fallback+skeptic calls).
+    # v4.8.1 (lote H): rolling 24h ceiling of awake-loop ACT ATTEMPTS
+    # (every actions row with tier != 'host', whatever its outcome or
+    # token count — a failed attempt in a 429 storm still burned quota).
+    # 120 covers the legitimate ceiling (96 heartbeats/day × 1
+    # maintenance cycle) with headroom for real goals; when it trips,
+    # awake degrades to perceive+reflect and reports the trip. Counts
+    # ATTEMPTS, not raw LLM requests (one attempt may bundle
+    # proposal+fallback+skeptic calls).
     DAILY_LLM_CEILING = 120
 
     def __init__(

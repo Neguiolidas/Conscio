@@ -278,7 +278,7 @@ class ActionLedger:
             (goal_fp, after_id)).fetchone()
         return int(row[0])
 
-    def count_costed_since(self, ts: float, *, now: float | None = None) -> int:
+    def count_attempts_since(self, ts: float, *, now: float | None = None) -> int:
         """AUTONOMOUS-LOOP attempt rows in the window (ts, now].
 
         v4.8.1 (lote H round 6, #866): counts actions rows of the AWAKE

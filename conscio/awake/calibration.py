@@ -21,8 +21,9 @@ ledger, 2026-10-01):
    fingerprint with id greater than the run's baseline. Failures count;
    a failing maintenance loop never earns a second proposal in one run.
 
-3. ``DailyCostCeiling`` — a rolling 24h budget of COST-CARRYING ledger
-   rows (tokens > 0). The window moves: every check recomputes
+3. ``DailyAttemptCeiling`` — a rolling 24h budget of awake-loop ACT
+   ATTEMPTS (every non-host ledger row, whatever its outcome or token
+   count; see the class docstring). The window moves: every check recomputes
    ``now - 24h``, so a cached ceiling ages old rows out instead of
    freezing (the daemon restarts every 6h on the muse, but a long-lived
    daemon must not degrade permanently). When the ceiling trips, run()
@@ -84,7 +85,7 @@ class DailyAttemptCeiling:
     filtering on tokens>0) was blind to the failure storm it existed to
     cap.
 
-    The count is a ledger query (``count_costed_since``), so the budget
+    The count is a ledger query (``count_attempts_since``), so the budget
     survives any process restart: the ledger IS the state. The window is
     recomputed on every ``allows_more``/``report`` call — ``now`` is
     evaluated per check (injectable only for tests), never captured at
@@ -103,7 +104,7 @@ class DailyAttemptCeiling:
 
     def _spent(self) -> int:
         now = float(self._now_fn())
-        return self._ledger.count_costed_since(now - self.window_s, now=now)
+        return self._ledger.count_attempts_since(now - self.window_s, now=now)
 
     def allows_more(self) -> bool:
         return self._spent() < self.max_attempts
