@@ -162,6 +162,13 @@ class AutonomyLoop:
                 report.cycles += 1
                 if act_report.status in _FAILURE_STATUSES:
                     report.failures += 1
+                # v4.8.1 (lote H, round 3): IDLE (no active goals) is the
+                # healthy state inside the maintenance cooldown — stop the
+                # run immediately instead of burning the remaining cycles
+                # on idle acts. Not a failure: no brake event, failures=0.
+                if act_report.status is ActStatus.IDLE:
+                    report.stopped = "idle"
+                    break
                 # v3.9.4: housekeeping, not autonomy — DreamCycle makes no model
                 # call. This ran *after* the lockdown check, so the break jumped
                 # over it and a locked-down mind never pruned its ledgers again.

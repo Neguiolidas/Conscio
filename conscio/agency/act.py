@@ -74,6 +74,14 @@ class ActStatus(str, Enum):
     REJECTED = "rejected"
     FAILED = "failed"
     LOCKED = "locked"
+    # v4.8.1 (lote H, round 3): no active goals is HEALTHY IDLE, not
+    # failure. Before the cooldown expired the maintenance goal, "no
+    # active goals" was rare (the goal regenerated every heartbeat);
+    # now it is the normal state 3 of 4 heartbeats inside the window —
+    # and counting it in the failure-rate brake made a healthy daemon
+    # look broken (stopped='failure_rate', failures=2, event emitted
+    # every 15 min). IDLE is outside _FAILURE_STATUSES.
+    IDLE = "idle"
 
 
 @dataclass
@@ -130,7 +138,9 @@ class ActPipeline:
             return ActReport(status=ActStatus.LOCKED,
                              reason="action_lockdown active")
         if not state.active_goals:
-            return ActReport(status=ActStatus.FAILED,
+            # v4.8.1 (lote H, round 3): healthy idle, not failure — see the
+            # IDLE enum. The loop stops immediately with stopped='idle'.
+            return ActReport(status=ActStatus.IDLE,
                              reason="no active goals")
 
         goal_text = self.arbiter.choose(state)
