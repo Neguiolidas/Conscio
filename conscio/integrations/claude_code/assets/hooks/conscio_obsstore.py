@@ -639,3 +639,34 @@ def session_summary(conn: sqlite3.Connection, session_id: str) -> dict:
         "first_ts": first_ts or "",
         "last_ts": last_ts or "",
     }
+
+
+def latest_session_for_project(conn: sqlite3.Connection, project: str) -> str:
+    """Most recently written non-empty session id in the given project, or "".
+
+    Ordered by row id rather than ts, using ix_obs_project.
+    """
+    row = conn.execute(
+        "SELECT session_id FROM observations "
+        "WHERE project = ? AND session_id != '' "
+        "ORDER BY id DESC LIMIT 1",
+        (project,),
+    ).fetchone()
+    return str(row[0]) if row else ""
+
+
+def project_root(cwd: str | Path | None = None) -> str:
+    """Repo root enclosing cwd, or cwd itself when it is not in a repo."""
+    target = cwd if cwd is not None else os.getcwd()
+    try:
+        here = Path(target).resolve()
+    except (OSError, ValueError):
+        return str(target)
+    for d in (here, *here.parents):
+        try:
+            if (d / ".git").exists():
+                return str(d)
+        except OSError:
+            break
+    return str(here)
+

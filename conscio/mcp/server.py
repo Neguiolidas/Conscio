@@ -630,7 +630,11 @@ class Bindings:
 
         resolved_sid = ""
         session_source = ""
-        project = raw_project
+        if raw_project:
+            expanded = os.path.expanduser(raw_project)
+            project = project_root(expanded) if os.path.exists(expanded) else raw_project
+        else:
+            project = ""
 
         if scope == "session":
             if raw_sid:
@@ -640,7 +644,7 @@ class Bindings:
                 resolved_sid = getattr(self.engine, "_obs_session", "")
                 session_source = "explicit"
             else:
-                target_project = raw_project or project_root(os.getcwd())
+                target_project = project or project_root(os.getcwd())
                 resolved_sid = self.engine.latest_session_for_project(target_project)
                 if not resolved_sid and not raw_project:
                     resolved_sid = self.engine.latest_session_for_project("")
@@ -650,8 +654,6 @@ class Bindings:
                         f"observation in project {target_project!r}"
                     )
                 session_source = "latest_in_project"
-                if not project and raw_project:
-                    project = target_project
 
         try:
             found = self.engine.recall_observations(
