@@ -259,6 +259,19 @@ class ConsciousnessEngine:
 
     DEFAULT_STORAGE = Path.home() / ".conscio" / "consciousness"
 
+    # v4.8.1 (lote H): maintenance-goal cooldown, in minutes. Derived from
+    # H1 — host_health runs every heartbeat burn ~300 LLM calls/day to
+    # re-confirm "all normal"; 60 min halves the burn with no observable
+    # loss of coverage (the reflect cycle still runs every heartbeat).
+    MAINTENANCE_COOLDOWN_MIN = 60
+
+    # v4.8.1 (lote H): daily ceiling of LLM calls for the awake loop,
+    # counted from the action ledger over the last 24h. 120 covers the
+    # legitimate ceiling (96 heartbeats/day × 1 maintenance cycle) with
+    # headroom for real goals; when it trips, awake degrades to
+    # perceive+reflect and reports the trip.
+    DAILY_LLM_CEILING = 120
+
     def __init__(
         self,
         model_name: str,
@@ -664,6 +677,11 @@ class ConsciousnessEngine:
         # produce artifacts (skills via distill, noosphere publications).
         # Without this, the daemon wakes, finds only diagnostic goals,
         # fails every cycle, and trips the failure-rate brake.
+        # v4.8.1 (lote H): the maintenance goal now respects a cooldown —
+        # regenerating "everything is normal" every heartbeat burned
+        # ~300 LLM proposals/day against the shared provider quota. The
+        # world state rarely changes between heartbeats; the cooldown
+        # gates regeneration on the last daemon_check execution.
         if self._state.awake:
             # v3.9.8: also check the breaker — a goal may be executable by
             # origin but quarantined by the circuit breaker, leaving the
@@ -692,11 +710,18 @@ class ConsciousnessEngine:
                                 and _breaker.is_quarantined(
                                     goal_fingerprint(g.description))):
                             g.status = "expired"
-                self.goals.generate_from_maintenance(
-                    "daemon_check",
-                    "host health check — run diagnostics and record state",
-                    source="daemon",
-                )
+                from .awake.calibration import MaintenanceCooldown
+                cooldown = getattr(self, "_maintenance_cooldown", None)
+                if cooldown is None:
+                    cooldown = self._maintenance_cooldown = \
+                        MaintenanceCooldown(minutes=self.MAINTENANCE_COOLDOWN_MIN)
+                if cooldown.should_generate(
+                        last_run_ts=self._last_daemon_check_ts()):
+                    self.goals.generate_from_maintenance(
+                        "daemon_check",
+                        "host health check — run diagnostics and record state",
+                        source="daemon",
+                    )
 
         # 4. PREDICT — forward if-then persistence predictions for recently
         # changed entities (v0.9 wiring: the docstring promised this stage but
@@ -2469,6 +2494,18 @@ class ConsciousnessEngine:
                 self._act_pipeline.skeptic.mode = skeptic_mode(profile)
         return profile
 
+    def _last_daemon_check_ts(self) -> float | None:
+        """v4.8.1 (lote H): when the last daemon_check cycle ran, from the
+        action ledger — None when it never did. Ledger-backed on purpose:
+        the cooldown must survive engine restarts, and memory does not."""
+        ledger = getattr(getattr(self, "_act_pipeline", None), "ledger", None)
+        if ledger is None:
+            return None
+        row = ledger._conn.execute(
+            "SELECT ts FROM actions WHERE goal_fp='maintenance:daemon_check'"
+            " AND status='executed' ORDER BY id DESC LIMIT 1").fetchone()
+        return float(row[0]) if row else None
+
     def run(self, budget=None, *, world_state=""):
         """L3 heartbeat: reflect -> arbiter/act -> (dream), repeated
         under a binding ActBudget (P3). Probes the cortex once, lazily.
@@ -2497,6 +2534,28 @@ class ConsciousnessEngine:
                 self.dream()
             return RunReport(stopped="no adapter attached")
         self.probe()
+        # v4.8.1 (lote H): daily LLM-call ceiling for the awake loop,
+        # counted from the action ledger (survives restarts). When the
+        # ceiling trips: perceive + reflect continue, act() is skipped,
+        # and the trip is REPORTED — never silent.
+        from .awake.calibration import DailyCallCeiling
+        ceiling = getattr(self, "_daily_call_ceiling", None)
+        if ceiling is None:
+            ceiling = self._daily_call_ceiling = DailyCallCeiling(
+                max_calls_per_day=self.DAILY_LLM_CEILING,
+                ledger=self._act_pipeline.ledger)
+        if not ceiling.allows_more():
+            self.reflect(world_state=world_state)
+            report_line = ceiling.report()
+            bus = getattr(self, "event_bus", None)
+            if bus is not None:
+                try:
+                    bus.emit(type="system", category="system",
+                             data={"message": report_line},
+                             priority=7)
+                except Exception:          # a strict bus must not crash run()
+                    pass
+            return RunReport(stopped="daily_llm_ceiling")
         loop = AutonomyLoop(self, self._act_pipeline, self._act_meter)
         if budget is None and self.awake:
             from .awake.budget import AwakeBudget
