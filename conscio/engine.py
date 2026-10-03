@@ -2152,9 +2152,40 @@ class ConsciousnessEngine:
                              reason="no adapter attached")
         state = state or self._state          # current state held by engine
         # A long-lived daemon never re-attaches, so cooldowns lapse mid-process:
-        # reconcile here too, before the pipeline short-circuits on the latch.
+        # reconcile here too, before the pipeline short-circutes on the latch.
         self._reconcile_lockdown(state)
         report = self._act_pipeline.act(state)
+        # v4.8.1 (lote H, round 2): expire the daemon_check goal AFTER the
+        # act() attempt on it, whatever the status. Nothing else retires it
+        # (complete_goal is a tool the model must call; act never changes
+        # goal status), so it stayed active forever and the arbiter
+        # re-selected it every heartbeat — the cooldown gate on CREATION
+        # never fired because the goal was never re-created. Expiring AFTER
+        # the act is what makes the ledger's last_attempt_ts (the attempt
+        # that just burned quota) the cooldown's clock: the same call that
+        # spent the proposal retires the goal, so the next reflect()
+        # regenerates only when the cooldown window allows it.
+        from .awake.calibration import MaintenanceCooldown, maintenance_goal_fingerprint
+        _ledger = getattr(getattr(self, "_act_pipeline", None), "ledger", None)
+        if _ledger is not None:
+            _maint_fp = maintenance_goal_fingerprint()
+            _last = _ledger.last_attempt_ts(_maint_fp)
+            cooldown = getattr(self, "_maintenance_cooldown", None)
+            if cooldown is None:
+                cooldown = self._maintenance_cooldown = \
+                    MaintenanceCooldown(minutes=self.MAINTENANCE_COOLDOWN_MIN)
+            if _last is not None:
+                for g in list(getattr(self.goals, "_goals", [])):
+                    if (g.status == "active"
+                            and g.drive is not None
+                            and g.drive.value == "maintenance"
+                            and g.metadata.get("check_type") == "daemon_check"):
+                        if not cooldown.should_generate(
+                                last_attempt_ts=_last):
+                            # Inside the cooldown window: the just-attempted
+                            # goal must not be re-selected next heartbeat.
+                            g.status = "expired"
+                        break
         skills = getattr(self, "_skills", None)
         if skills is not None:                # v1.1: outcome -> skill score
             skills.settle(report)
