@@ -309,6 +309,12 @@ def test_single_sentence_second_mitigator_after_absence_lights():
     assert extract_traits("Backups are missing and the rollback flag works").reversible is True
 
 
+def test_post_trigger_absence_cancels_all_prior_mitigators_in_sentence():
+    """Invariant: post-trigger absence at sentence end cancels all preceding
+    mitigator triggers ('Backups and the rollback flag are missing')."""
+    assert extract_traits("Backups and the rollback flag are missing").reversible is False
+
+
 def test_post_trigger_unavailable_cancels_mitigators():
     """§5.1 it. 7 (S3): 'unavailable' belongs to the closed absence list.
     Cancels reversible and verified."""

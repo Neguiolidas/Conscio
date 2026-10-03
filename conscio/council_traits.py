@@ -272,7 +272,7 @@ def _light_in_segment(segment: str, lit: dict[str, bool]) -> None:
         for pattern, _where in _COMPILED[name]:
             for match in pattern.finditer(segment):
                 _, last_w = _trigger_word_span(match.start(), match.end(), spans)
-                _collect_post_absence(words, spans, breaks, last_w, consumed_absence)
+                consumed_absence.update(_post_absence_indices(words, spans, breaks, last_w))
 
     for name, patterns in _COMPILED.items():
         if lit[name]:
@@ -290,20 +290,30 @@ def _light_in_segment(segment: str, lit: dict[str, bool]) -> None:
                 break
 
 
-def _collect_post_absence(
+def _post_absence_indices(
     words: list[str],
     spans: list[tuple[int, int]],
     breaks: list[int],
     last_w: int,
-    consumed: set[int],
-) -> None:
-    """Find and record any post-trigger absence predicate for a mitigator trigger."""
+) -> tuple[int, ...]:
+    """Return indices of any post-trigger absence predicate for a mitigator trigger, or () if none.
+
+    Post-trigger (spec 5.1 item 7, H53 emenda): applies ONLY to the three
+    mitigator traits (reversible, verified, low_stakes). Scans forward from
+    last_w to the END OF THE SENTENCE — every word after the trigger until a
+    sentence break or the end of the segment, with NO word limit. A closed
+    list of absence predicates (none, missing, nonexistent, absent,
+    unavailable, 'not available') cancels the occurrence at any distance.
+    Partitive 'none of' does not cancel. General negators do not cancel
+    post-trigger.
+    """
     for k in range(last_w + 1, len(words)):
         lo, hi = spans[k - 1][1], spans[k][0]
         if any(lo <= p <= hi for p in breaks):
             break
         norm = words[k].lower()
         if norm == "none":
+            # Partitive exception: "none" followed by "of" is not an absence predicate
             is_partitive = False
             if k + 1 < len(words):
                 lo_n, hi_n = spans[k][1], spans[k + 1][0]
@@ -311,19 +321,17 @@ def _collect_post_absence(
                     if words[k + 1].lower() == "of":
                         is_partitive = True
             if not is_partitive:
-                consumed.add(k)
-                break
+                return (k,)
         elif norm in _POST_ABSENCE_WORDS:
-            consumed.add(k)
-            break
+            return (k,)
         elif norm == "not":
+            # Check for two-word phrase "not available"
             if k + 1 < len(words):
                 lo_n, hi_n = spans[k][1], spans[k + 1][0]
                 if not any(lo_n <= p <= hi_n for p in breaks):
                     if words[k + 1].lower() == "available":
-                        consumed.add(k)
-                        consumed.add(k + 1)
-                        break
+                        return (k, k + 1)
+    return ()
 
 
 def _trigger_word_span(
@@ -347,7 +355,7 @@ def _trigger_negated(
     first_w: int,
     last_w: int,
     is_mitigator: bool,
-    consumed_absence: set[int] | None = None,
+    consumed_absence: set[int],
 ) -> bool:
     """True when the trigger occurrence spanning [first_w, last_w] is cancelled.
 
@@ -358,21 +366,15 @@ def _trigger_negated(
     Consumed absence predicates from earlier triggers do not cancel pre-trigger.
 
     Post-trigger (spec 5.1 item 7, H53 emenda): applies ONLY to the three
-    mitigator traits (reversible, verified, low_stakes). Scans forward from
-    last_w to the END OF THE SENTENCE — every word after the trigger until a
-    sentence break or the end of the segment, with NO word limit. A closed
-    list of absence predicates (none, missing, nonexistent, absent,
-    unavailable, 'not available') cancels the occurrence at any distance.
-    Partitive 'none of' does not cancel. General negators do not cancel
-    post-trigger.
+    mitigator traits (reversible, verified, low_stakes). Handled by
+    _post_absence_indices.
     """
-    consumed = consumed_absence or set()
     # 1. Pre-trigger negation (all nine traits)
     for j in range(first_w - 1, -1, -1):
         lo, hi = spans[j][1], spans[j + 1][0]
         if any(lo <= p <= hi for p in breaks):
             break
-        if j in consumed:
+        if j in consumed_absence:
             continue
         norm = words[j].lower()
         gap = first_w - j
@@ -388,33 +390,7 @@ def _trigger_negated(
 
     # 2. Post-trigger absence predicate negation (mitigators only; the scan
     # runs to the end of the sentence — no word limit, H53 emenda)
-    if is_mitigator:
-        for k in range(last_w + 1, len(words)):
-            lo, hi = spans[k - 1][1], spans[k][0]
-            if any(lo <= p <= hi for p in breaks):
-                break
-            norm = words[k].lower()
-            if norm == "none":
-                # Partitive exception: "none" followed by "of" is not an absence predicate
-                is_partitive = False
-                if k + 1 < len(words):
-                    lo_n, hi_n = spans[k][1], spans[k + 1][0]
-                    if not any(lo_n <= p <= hi_n for p in breaks):
-                        if words[k + 1].lower() == "of":
-                            is_partitive = True
-                if not is_partitive:
-                    return True
-            elif norm in _POST_ABSENCE_WORDS:
-                return True
-            elif norm == "not":
-                # Check for two-word phrase "not available"
-                if k + 1 < len(words):
-                    lo_n, hi_n = spans[k][1], spans[k + 1][0]
-                    if not any(lo_n <= p <= hi_n for p in breaks):
-                        if words[k + 1].lower() == "available":
-                            return True
-
-    return False
+    return bool(is_mitigator and _post_absence_indices(words, spans, breaks, last_w))
 
 
 def _sentence_breaks(segment: str) -> list[int]:
