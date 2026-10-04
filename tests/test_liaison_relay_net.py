@@ -112,10 +112,10 @@ class TestServerClient:
         _known("agent-b")
         srv, url = self._serve()
         try:
-            ok = relay_net.transport_send(
+            outcome = relay_net.transport_post(
                 url, {"from": "peer-x", "to": "agent-b", "type": "chat",
                       "payload": {"text": "via rede"}}, token="sekret")
-            assert ok is True
+            assert outcome == relay_net.ACCEPTED
             assert len(list(directory.spool_dir("agent-b").glob("*.json"))) == 1
         finally:
             srv.shutdown(); srv.server_close()
@@ -124,19 +124,19 @@ class TestServerClient:
         _known("agent-b")
         srv, url = self._serve()
         try:
-            ok = relay_net.transport_send(
+            outcome = relay_net.transport_post(
                 url, {"from": "peer-x", "to": "agent-b", "type": "chat",
                       "payload": {"text": "oi"}}, token="errado")
-            assert ok is False
+            assert outcome == relay_net.REJECTED
             assert list(directory.spool_dir("agent-b").glob("*.json")) == []
         finally:
             srv.shutdown(); srv.server_close()
 
-    def test_transport_unreachable_returns_false(self):
-        ok = relay_net.transport_send(
+    def test_transport_unreachable_is_unreachable(self):
+        outcome = relay_net.transport_post(
             "http://127.0.0.1:1/none",
             {"from": "a", "to": "b", "type": "chat", "payload": {}}, token="x")
-        assert ok is False
+        assert outcome == relay_net.UNREACHABLE
 
     def test_post_tells_a_refusal_from_a_silence(self):
         """401 means a live bridge said no; a closed port means nobody is

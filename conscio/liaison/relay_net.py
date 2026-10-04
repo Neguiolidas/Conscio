@@ -9,7 +9,8 @@ across:
                                     `POST /relay/msg` from remote machines
                                     and deposits each message into the
                                     RECIPIENT's spool.
-  transport_send(url, msg)       -> POSTs a message dict to a peer bridge.
+  transport_post(url, msg)       -> POSTs a message dict to a peer bridge;
+                                    ACCEPTED, REJECTED or UNREACHABLE.
 
 Until v4.5.3 the bridge wrote every inbound message into the mailbox of the
 agent that happened to own the bridge (finding A11): a second local agent
@@ -212,15 +213,8 @@ def transport_post(base_url: str, msg: dict, *, token: str,
                     base_url, exc.code)
         return REJECTED
     except (urlerror.URLError, OSError, ValueError):
-        log.warning("relay_net: transport_send failed to %s", base_url)
+        log.warning("relay_net: transport_post failed to %s", base_url)
         return UNREACHABLE
-
-
-def transport_send(base_url: str, msg: dict, *, token: str,
-                   timeout: float = 5.0) -> bool:
-    """POST a relay message dict to a peer's bridge. True on 200."""
-    return transport_post(base_url, msg, token=token,
-                          timeout=timeout) == ACCEPTED
 
 
 # ── CLI ────────────────────────────────────────────────────────────────
