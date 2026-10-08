@@ -40,6 +40,7 @@ from .fingerprint import goal_fingerprint
 from .gateway import GatewayError, OutputGateway
 from .ledger import ActionLedger
 from .skeptic import Skeptic
+from .tool_name import sanitize_tool_name
 from .tools import Risk, ToolRegistry, tool_doc
 from .trust import TrustMatrix
 
@@ -184,6 +185,10 @@ class ActPipeline:
                               goal_text=goal_text, infra=exc.infra)
 
         # deterministic checks (skeptic checks 1-2 + sandbox — no LLM)
+        # v4.9 (Jade catalog item 2): the raw model output goes through
+        # sanitize_tool_name before lookup — "host_health()" and friends
+        # used to die as "unknown tool" goal breakers for a formatting slip.
+        proposal.tool = sanitize_tool_name(proposal.tool)
         spec = self.registry.get(proposal.tool)
         if spec is None:
             return self._fail(goal_fp, tool=proposal.tool,
