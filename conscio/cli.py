@@ -271,9 +271,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p_out_res.add_argument("decision_ref",
                            help="the decision_ref shown by `outcomes list`")
     p_out_res.add_argument("outcome",
-                           help="success | failure | reverted | false_positive")
+                           help="success | failure | reverted | false_positive | unknown")
     p_out_res.add_argument("--evidence", default="",
                            help="free-form evidence reference (run id, PR, ticket)")
+    p_out_mark = p_outcomes_sub.add_parser(
+        "mark-test",
+        help="flag a capture as test data (hidden from the default list)")
+    p_out_mark.add_argument("--storage", default="",
+                            help="space dir (default: live space)")
+    p_out_mark.add_argument("decision_ref",
+                            help="the decision_ref shown by `outcomes list`")
+    p_out_mark.add_argument("--unmark", action="store_true",
+                            help="restore the capture to the default list")
     p_honesty_recent.add_argument(
         "--outcome", default="",
         help="show only this outcome (VERIFIED/CONTRADICTED/UNSUPPORTED)")
@@ -1132,8 +1141,8 @@ def _cmd_outcomes(args) -> int:
 
     storage = Path(_storage(getattr(args, "storage", "")))
     cmd = getattr(args, "outcomes_command", "")
-    if cmd not in ("list", "resolve"):
-        print("usage: conscio outcomes <list|resolve> [...]")
+    if cmd not in ("list", "resolve", "mark-test"):
+        print("usage: conscio outcomes <list|resolve|mark-test> [...]")
         return 0
 
     db_path = storage / "outcomes.db"
@@ -1146,7 +1155,8 @@ def _cmd_outcomes(args) -> int:
             conn = store._conn
             rows = conn.execute(
                 "SELECT decision_ref, source, outcome, evidence_ref"
-                " FROM decision_outcomes ORDER BY event_id DESC LIMIT ?",
+                " FROM decision_outcomes WHERE is_test=0"
+                " ORDER BY event_id DESC LIMIT ?",
                 (args.limit,)).fetchall()
             if not rows:
                 print("no decisions recorded yet")
@@ -1170,8 +1180,25 @@ def _cmd_outcomes(args) -> int:
             return 1
         print(f"resolved {args.decision_ref!r} -> {outcome}")
         return 0
+
+        # mark-test (v4.9, Jade catalog item 3)
     finally:
         store.close()
+    # reach mark-test via the same store (re-open: the block above closes)
+    if cmd == "mark-test":
+        store = OutcomeStore(db_path)
+        try:
+            changed = store.mark_test(args.decision_ref,
+                                      unmark=args.unmark)
+        finally:
+            store.close()
+        if changed:
+            verb = "restored" if args.unmark else "marked as test"
+            print(f"{args.decision_ref!r} {verb}")
+            return 0
+        print(f"decision {args.decision_ref!r} not found")
+        return 1
+    return 0
 
 
 def _cmd_honesty(args) -> int:

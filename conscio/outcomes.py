@@ -23,9 +23,10 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SOURCES = frozenset({"council", "evaluate", "squad", "coherence"})
+SOURCES = frozenset({"council", "evaluate", "squad", "coherence", "registrar"})
 OUTCOMES = frozenset({
     "pending", "success", "failure", "reverted", "false_positive",
+    "unknown",
 })
 
 _SCHEMA = """
@@ -37,11 +38,16 @@ CREATE TABLE IF NOT EXISTS decision_outcomes (
     outcome       TEXT NOT NULL DEFAULT 'pending',
     outcome_ts    REAL,
     evidence_ref  TEXT,
-    created_ts    REAL NOT NULL
+    created_ts    REAL NOT NULL,
+    is_test       INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_outcome_source
     ON decision_outcomes(source, outcome);
 """
+
+_MIGRATE_IS_TEST = [
+    "ALTER TABLE decision_outcomes ADD COLUMN is_test INTEGER NOT NULL DEFAULT 0",
+]
 
 
 @dataclass(frozen=True)
@@ -59,6 +65,13 @@ class OutcomeStore:
         self._conn = sqlite3.connect(str(db_path))
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        # v4.9 (Jade catalog items 3+6): automatic migration for older
+        # databases — is_test (item 3) and the 'unknown' outcome (item 6)
+        # arrive together, but only the column needs DDL.
+        cols = {r["name"] for r in
+                self._conn.execute("PRAGMA table_info(decision_outcomes)")}
+        if "is_test" not in cols:
+            self._conn.execute(_MIGRATE_IS_TEST[0])
         self._conn.commit()
 
     def append(self, record: OutcomeRecord) -> int:
@@ -133,6 +146,25 @@ class OutcomeStore:
         if row is None:
             raise KeyError(f"no decision_outcomes row for {decision_ref!r}")
         return row
+
+    def mark_test(self, decision_ref: str, *, unmark: bool = False) -> bool:
+        """Flag/unflag a capture as test data (Jade catalog item 3).
+
+        Test rows stay in the store (provenance is never deleted) but the
+        default listing hides them. Returns True when a row changed.
+        """
+        cur = self._conn.execute(
+            "UPDATE decision_outcomes SET is_test=? WHERE decision_ref=?",
+            (0 if unmark else 1, decision_ref))
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def list(self, include_tests: bool = False) -> list[sqlite3.Row]:
+        """Pending+resolved decisions, test data hidden by default (item 3)."""
+        sql = ("SELECT * FROM decision_outcomes"
+               + ("" if include_tests else " WHERE is_test=0")
+               + " ORDER BY created_ts")
+        return list(self._conn.execute(sql))
 
     def close(self) -> None:
         self._conn.close()
