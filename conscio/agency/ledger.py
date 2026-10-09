@@ -128,6 +128,15 @@ class ActionLedger:
             (tool,)).fetchone()
         return int(row[0]), int(row[1])
 
+    def contradiction_count(self, tool: str) -> int:
+        """Count how many CONTRADICTED outcomes exist for this tool."""
+        from .outcome import CONTRADICTED
+        cur = self._conn.execute(
+            "SELECT COUNT(*) FROM actions WHERE tool=? AND outcome=?",
+            (tool, CONTRADICTED))
+        row = cur.fetchone()
+        return int(row[0]) if row else 0
+
     def update_execution(self, row_id: int, *, ok: bool, output: str,
                          error: str, duration_ms: int, status: str) -> None:
         self._conn.execute(

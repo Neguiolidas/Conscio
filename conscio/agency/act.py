@@ -296,40 +296,74 @@ class ActPipeline:
 
     def _audit(self, spec, proposal: ActionProposal,
                goal_text: str) -> AuditVerdict:
-        # v3.1: skip skeptic for inherently safe tools (no side effects)
-        if proposal.tool in self._SKEPTIC_SKIP_TOOLS:
-            return AuditVerdict(
-                verdict="PASS", audited=False, reasons=[],
-                confidence=0.85,
-                risk_flags=["skip:safe_tool"])
-        if (spec.risk is Risk.LOW and self.trust is not None
-                and self.trust.fast_path_ok()):
-            # v4.7: the fast-path needs the TOOL's own posterior, never the
-            # global calibration score. Zero history -> no confident PASS;
-            # fall through flagged. A derived posterior above the gate
-            # passes with its own evidence attached.
-            cv = self.tool_success_confidence(proposal.tool)
-            if cv.category == "derived":
-                gate_val = cv.as_gate_input()
-                if gate_val >= 0.85:
-                    return AuditVerdict(
-                        verdict="PASS", audited=False, reasons=[],
-                        confidence=gate_val,
-                        risk_flags=[f"fast_path:derived_beta:{cv.samples}"])
-            return AuditVerdict(verdict="PASS", audited=False,
-                                reasons=["no_tool_history"],
-                                confidence=None,
-                                risk_flags=["fast_path:insufficient_evidence"])
+        contradictions = 0
+        if self.ledger is not None:
+            if hasattr(self.ledger, "contradiction_count"):
+                contradictions = self.ledger.contradiction_count(proposal.tool)
+            else:
+                from . import outcome as o
+                cur = self.ledger._conn.execute(
+                    "SELECT COUNT(*) FROM actions WHERE tool=? AND outcome=?",
+                    (proposal.tool, o.CONTRADICTED))
+                row = cur.fetchone()
+                contradictions = int(row[0]) if row else 0
+
+        if contradictions == 0:
+            # v3.1: skip skeptic for inherently safe tools (no side effects)
+            if proposal.tool in self._SKEPTIC_SKIP_TOOLS:
+                return AuditVerdict(
+                    verdict="PASS", audited=False, reasons=[],
+                    confidence=0.85,
+                    risk_flags=["skip:safe_tool"])
+            if (spec.risk is Risk.LOW and self.trust is not None
+                    and self.trust.fast_path_ok()):
+                # v4.7: the fast-path needs the TOOL's own posterior, never the
+                # global calibration score. Zero history -> no confident PASS;
+                # fall through flagged. A derived posterior above the gate
+                # passes with its own evidence attached.
+                cv = self.tool_success_confidence(proposal.tool)
+                if cv.category == "derived":
+                    gate_val = cv.as_gate_input()
+                    if gate_val >= 0.85:
+                        return AuditVerdict(
+                            verdict="PASS", audited=False, reasons=[],
+                            confidence=gate_val,
+                            risk_flags=[f"fast_path:derived_beta:{cv.samples}"])
+                return AuditVerdict(verdict="PASS", audited=False,
+                                    reasons=["no_tool_history"],
+                                    confidence=None,
+                                    risk_flags=["fast_path:insufficient_evidence"])
+
+        # N > 0: shortcuts defeated. Inject warning + risk_flags
+        audit_goal = goal_text
+        risk_flags: list[str] = []
+        if contradictions > 0:
+            warning = f"[HONESTY WARNING: tool '{proposal.tool}' has {contradictions} recorded contradiction(s)]"
+            audit_goal = f"{goal_text}\n{warning}" if goal_text else warning
+            risk_flags.append(f"honesty:contradictions:{contradictions}")
+
         if self.skeptic is None:               # F1 wiring: no audit available
-            return AuditVerdict(verdict="PASS", audited=False)
-        return self.skeptic.audit(
-            proposal, goal_text=goal_text,
+            return AuditVerdict(verdict="PASS", audited=False, risk_flags=risk_flags)
+        verdict = self.skeptic.audit(
+            proposal, goal_text=audit_goal,
             tool_doc=tool_doc(spec.name, spec.description))
+        if risk_flags:
+            for rf in risk_flags:
+                if rf not in verdict.risk_flags:
+                    verdict.risk_flags.append(rf)
+        return verdict
 
     def _effective_autonomy(self, task_type: str) -> int:
         earned = (self.trust.autonomy_level(task_type)
                   if self.trust is not None else 1)
         return min(self.autonomy_cap, earned)
+
+    def _settle_outcome(self, row_id: int, tool: str, ok: bool,
+                        evidence: str = "") -> None:
+        from . import outcome as o
+        outcome = o.VERIFIED if ok else o.CONTRADICTED
+        self.ledger.set_outcome(row_id, outcome, evidence=evidence)
+        apply_outcome_to_trust(self.trust, self.meta, tool, outcome)
 
     def _execute(self, row_id: int, proposal: ActionProposal,
                  verdict: AuditVerdict, goal_fp: str,
@@ -346,11 +380,10 @@ class ActPipeline:
             self.meta.record_confidence(
                 proposal.tool, verdict.confidence,
                 "success" if result.ok else "failure")
+        self._settle_outcome(row_id, proposal.tool, result.ok,
+                             evidence=result.output if result.ok else result.error)
         lockdown = False
-        if result.ok:
-            if self.trust is not None:
-                self.trust.on_success(proposal.tool)
-        else:
+        if not result.ok:
             if self.meta is not None:
                 self.meta.record_error(f"act:{proposal.tool}:exec_fail")
             if self.breaker.should_trip(goal_fp, task_type=proposal.tool):
@@ -398,8 +431,8 @@ class ActPipeline:
             self.meta.record_confidence(
                 row["tool"], 0.5,                  # human-gated: neutral conf
                 "success" if result.ok else "failure")
-        if result.ok and self.trust is not None:
-            self.trust.on_success(row["tool"])
+        self._settle_outcome(ledger_id, row["tool"], result.ok,
+                             evidence=result.output if result.ok else result.error)
         return ActReport(
             status=ActStatus.EXECUTED if result.ok else ActStatus.FAILED,
             result=result, ledger_id=ledger_id,

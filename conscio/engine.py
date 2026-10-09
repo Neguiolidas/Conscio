@@ -765,6 +765,26 @@ class ConsciousnessEngine:
         recent_events = list(recent_events or [])
         recent_events.extend(f"[recall] {s}" for s in past_context)
 
+        # Inject latest dream crystal if available (respecting sensitivity != 'secret')
+        crystal_label = ""
+        try:
+            if hasattr(self, "content_store") and self.content_store is not None:
+                cur = self.content_store.db.execute(
+                    "SELECT * FROM sources WHERE label LIKE 'dream_crystal_%' "
+                    "ORDER BY id DESC LIMIT 1"
+                )
+                crystal_row = cur.fetchone()
+                if crystal_row:
+                    if dict(crystal_row).get("sensitivity") != "secret":
+                        chunks = self.content_store.get_by_source(crystal_row["id"])
+                        if chunks:
+                            crystal_content = " ".join(c.content for c in chunks).strip()
+                            if crystal_content:
+                                recent_events.append(f"[crystal] {crystal_content}")
+                                crystal_label = crystal_row["label"]
+        except Exception:
+            pass
+
         # Run the inner monologue reflection
         result = self.monologue.reflect(
             world_state=world_state,
@@ -773,6 +793,8 @@ class ConsciousnessEngine:
             anomalies=anomalies,
             goals_update=[g.description for g in self.goals.active_goals()],
         )
+        if crystal_label:
+            result["crystal"] = crystal_label
 
         # --- v0.4: Meta-reflect — advisory quality signal on this reflection ---
         error_rate = self.world.recent_prediction_error_rate(window_hours=24)

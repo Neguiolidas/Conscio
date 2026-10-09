@@ -115,7 +115,7 @@ class Skeptic:
     def audit(self, proposal: ActionProposal, *,
               goal_text: str = "", tool_doc: str = "") -> AuditVerdict:
         facts = (self.facts_fn(goal_text)
-                 if (self.facts_fn and goal_text) else "")
+                 if self.facts_fn else goal_text)
         prompt = build_skeptic_prompt(proposal, facts=facts, mode=self.mode,
                                       tool_doc=tool_doc)
         try:
