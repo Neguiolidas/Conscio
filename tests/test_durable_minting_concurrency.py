@@ -150,15 +150,16 @@ def test_minting_lock_timeout_raises_spec_message(tmp_path):
 def test_minting_lock_enolck_logs_warning(monkeypatch, caplog):
     """Item 2: ENOLCK on flock logs warning that minting lock is unavailable."""
     import errno
-    import fcntl
     import logging
+
+    from conscio import filelock
 
     slug = "enolck-slug"
 
-    def fake_flock(fd, op):
+    def fake_lock(fd, **_kw):
         raise OSError(errno.ENOLCK, "No record locks available")
 
-    monkeypatch.setattr(fcntl, "flock", fake_flock)
+    monkeypatch.setattr(filelock, "lock", fake_lock)
 
     with caplog.at_level(logging.WARNING), minting_lock(slug):
         pass
