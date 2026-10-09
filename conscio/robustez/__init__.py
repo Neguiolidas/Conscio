@@ -1,12 +1,53 @@
 """Robustez: the ported patterns library (v4.9, Jade catalog item 13).
 
-Openjev + hindsight half (this package): decision, logitjev,
-retractions, deltaops, consolidation. The CopilotKit/foreman half
-(secrets, history, retry, ingest, untrusted, normalize, singleflight,
-approval, ssrf, outcomes_ext, toolwrap, crash, verifier, arbiter,
-stateledger, llmretry) lives in the same package when the other
-executor lands it. Stdlib only, docstrings cite the origin.
+21 módulos Python portados dos padrões CopilotKit, openjev, hindsight e foreman.
+Stdlib apenas, docstrings citando a origem.
 """
-from . import consolidation, decision, deltaops, logitjev, retractions
 
-__all__ = ["consolidation", "decision", "deltaops", "logitjev", "retractions"]
+from . import (
+    approval,
+    arbiter,
+    consolidation,
+    crash,
+    decision,
+    deltaops,
+    history,
+    ingest,
+    llmretry,
+    logitjev,
+    normalize,
+    outcomes_ext,
+    retractions,
+    retry,
+    secrets,
+    singleflight,
+    ssrf,
+    stateledger,
+    toolwrap,
+    untrusted,
+    verifier,
+)
+
+__all__ = [
+    "approval",
+    "arbiter",
+    "consolidation",
+    "crash",
+    "decision",
+    "deltaops",
+    "history",
+    "ingest",
+    "llmretry",
+    "logitjev",
+    "normalize",
+    "outcomes_ext",
+    "retractions",
+    "retry",
+    "secrets",
+    "singleflight",
+    "ssrf",
+    "stateledger",
+    "toolwrap",
+    "untrusted",
+    "verifier",
+]
