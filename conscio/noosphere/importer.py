@@ -5,6 +5,7 @@ conscio import is the goal_fingerprint leaf."""
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -12,7 +13,10 @@ from dataclasses import dataclass
 from conscio.agency.fingerprint import goal_fingerprint
 
 from . import artifact, catalog, quarantine
+
+log = logging.getLogger(__name__)
 from .identity import load_or_create
+from . import keys as _keys
 from .paths import quarantine_db_path, resolve_noosphere, resolve_storage
 
 
@@ -91,6 +95,45 @@ def run(storage: str | os.PathLike[str] | None = None,
     for cr in foreign:
         outcome = revalidate(cr)
         status = "quarantined" if outcome.ok else "rejected"
+        # v4.9 (Jade catalog item 9): Ed25519 + TOFU. Order: revalidate
+        # first (content_sha256 catches 'tampered'); the signature check
+        # only gates rows that revalidated clean, and the legacy unsigned
+        # row imports with a warning (pre-v4.9 compat, item 9).
+        if outcome.ok and (not cr.signature or not cr.signer_pubkey):
+            log.warning(
+                "noosphere: legacy unsigned artifact from %s imported"
+                " (pre-v4.9 publish)", cr.origin_instance_id[:8])
+        elif outcome.ok:
+            if not _keys.verify_signature(
+                    cr.signer_pubkey, cr.signature, cr.artifact_json):
+                rejected += 1
+                quarantine.insert(qdb, quarantine.QuarantineRow(
+                    content_sha256=cr.content_sha256,
+                    origin_instance_id=cr.origin_instance_id,
+                    origin_label=cr.origin_label, published_ts=cr.published_ts,
+                    importer_instance_id=ident.instance_id, imported_ts=now,
+                    goal_fp=cr.goal_fp, goal_text=cr.goal_text,
+                    tool_seq=cr.tool_seq, plan_template=cr.plan_template,
+                    artifact_json=cr.artifact_json, import_status="rejected",
+                    revalidation_result="signature_invalid",
+                    revalidation_error="ed25519 signature mismatch",
+                    schema_version=cr.schema_version))
+                continue
+            if not _keys.tofu_check_or_remember(
+                    noo, cr.origin_instance_id, cr.signer_pubkey):
+                rejected += 1
+                quarantine.insert(qdb, quarantine.QuarantineRow(
+                    content_sha256=cr.content_sha256,
+                    origin_instance_id=cr.origin_instance_id,
+                    origin_label=cr.origin_label, published_ts=cr.published_ts,
+                    importer_instance_id=ident.instance_id, imported_ts=now,
+                    goal_fp=cr.goal_fp, goal_text=cr.goal_text,
+                    tool_seq=cr.tool_seq, plan_template=cr.plan_template,
+                    artifact_json=cr.artifact_json, import_status="rejected",
+                    revalidation_result="key_changed",
+                    revalidation_error="TOFU: origin key changed",
+                    schema_version=cr.schema_version))
+                continue
         # Authoritative display columns come from the PARSED artifact body when
         # the BLOB decoded; otherwise (tampered/corrupt) fall back to the
         # catalog's denormalized columns. The artifact_json BLOB is always the
