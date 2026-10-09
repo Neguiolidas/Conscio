@@ -8,15 +8,14 @@ from __future__ import annotations
 
 import sqlite3
 import sys
-import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from conscio.content_store import ContentStore  # noqa: E402
-from conscio.sensitivity import LEVELS, classify_label, validate  # noqa: E402
+from conscio.content_store import ContentStore
+from conscio.sensitivity import classify_label, validate
 
 
 def _fresh(tmp: Path) -> ContentStore:

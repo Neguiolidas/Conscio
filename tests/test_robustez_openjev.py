@@ -7,7 +7,6 @@ import pytest
 
 from conscio.robustez import consolidation, decision, deltaops, logitjev, retractions
 
-
 # --- decision (openjev types) -------------------------------------------
 
 

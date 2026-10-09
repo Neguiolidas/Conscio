@@ -15,8 +15,8 @@ from conscio.agency.fingerprint import goal_fingerprint
 from . import artifact, catalog, quarantine
 
 log = logging.getLogger(__name__)
-from .identity import load_or_create
 from . import keys as _keys
+from .identity import load_or_create
 from .paths import quarantine_db_path, resolve_noosphere, resolve_storage
 
 

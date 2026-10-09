@@ -10,7 +10,6 @@ first.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 PROCESSING_RULES = (
     "Prefer update over create: change an existing fact instead of adding a new one",

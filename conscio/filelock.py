@@ -11,7 +11,6 @@ stdlib only; msvcrt imports lazily on the platform that needs it.
 """
 from __future__ import annotations
 
-import os
 import sys
 
 _IS_WINDOWS = sys.platform == "win32"

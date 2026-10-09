@@ -2,12 +2,8 @@
 from __future__ import annotations
 
 import json
-import os
 import stat
-import tempfile
 from pathlib import Path
-
-import pytest
 
 from conscio.noosphere import catalog, keys
 from conscio.noosphere.artifact import ARTIFACT_SCHEMA, build_body, canonical_bytes, content_hash
@@ -36,9 +32,9 @@ def test_key_load_is_stable(tmp_path: Path) -> None:
 
 def test_tightens_leaky_key_mode(tmp_path: Path) -> None:
     storage = _storage(tmp_path)
-    raw = keys.load_or_create_key(storage)
+    keys.load_or_create_key(storage)
     keys.key_path(storage).chmod(0o644)  # simulate a leak
-    again = keys.load_or_create_key(storage)
+    keys.load_or_create_key(storage)
     mode = stat.S_IMODE(keys.key_path(storage).stat().st_mode)
     assert mode == 0o600
 
@@ -98,7 +94,7 @@ def test_tofu_first_sight_trusts_and_key_change_rejects(tmp_path: Path) -> None:
 
 def test_legacy_unsigned_row_imports_with_warning(tmp_path: Path) -> None:
     """Rows without signature (pre-v4.9) still import — compat, not refusal."""
-    storage = _storage(tmp_path)
+    _storage(tmp_path)
     noo = tmp_path / "noo.db"
     body = build_body(goal_fp="fp2", goal_text="legacy",
                       tool_seq=["t"], plan_template=["s"])

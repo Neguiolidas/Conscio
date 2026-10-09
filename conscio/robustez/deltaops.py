@@ -13,7 +13,6 @@ index; new ids are minted here; the doc itself is never mutated.
 from __future__ import annotations
 
 import hashlib
-import re
 from typing import Any
 
 _OPS = frozenset({

@@ -28,7 +28,6 @@ to its stdin. `CONSCIO_NOTIFY_CMD` may be a full command string or a path.
 from __future__ import annotations
 
 import argparse
-from .. import filelock
 import json
 import logging
 import os
@@ -39,6 +38,7 @@ import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
+from .. import filelock
 from . import directory, mailbox, spool
 from .watcher import ExitCode
 

@@ -17,8 +17,8 @@ from pathlib import Path
 from conscio.agency.fingerprint import goal_fingerprint
 
 from . import artifact, catalog
-from .identity import load_or_create
 from . import keys as _keys
+from .identity import load_or_create
 from .paths import conscio_db_path, resolve_noosphere, resolve_storage
 
 MIN_SERVE_RATE = 0.5     # MUST equal conscio.agency.skills.MIN_SERVE_RATE

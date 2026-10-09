@@ -7,7 +7,6 @@ Item 6: 'unknown' accepted as a resolve outcome.
 from __future__ import annotations
 
 import sqlite3
-import tempfile
 from pathlib import Path
 
 from conscio.outcomes import (

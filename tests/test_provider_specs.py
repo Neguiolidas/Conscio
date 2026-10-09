@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
 from conscio import provider_specs
 from conscio.hub.config import known_types
-from conscio.model_providers_json_check import JSON_PATH  # noqa: F401
+from conscio.model_providers_json_check import JSON_PATH
 
 
 def test_json_file_exists_and_is_object() -> None:

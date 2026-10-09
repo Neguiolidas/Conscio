@@ -8,7 +8,6 @@ sweep, never the message delivery the reactor exists for.
 
 from __future__ import annotations
 
-from .. import filelock
 import json
 import logging
 import os
@@ -18,6 +17,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
+from .. import filelock
 from ..liaison import directory, mailbox
 from . import board, paths
 from .connectors import CONNECTORS, Connector, SpawnFailed

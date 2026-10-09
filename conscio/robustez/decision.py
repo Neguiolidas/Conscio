@@ -24,7 +24,7 @@ class Choice:
         if len(set(self.options)) != len(self.options):
             raise ValueError("choice options must be distinct")
 
-    def validate(self) -> "Choice":
+    def validate(self) -> Choice:
         return self
 
 
@@ -37,7 +37,7 @@ class Score:
             raise ValueError(
                 f"score needs 2..{MAX_SCORE_LEVELS} levels, got {self.levels}")
 
-    def validate(self) -> "Score":
+    def validate(self) -> Score:
         return self
 
 
@@ -46,7 +46,7 @@ class Noul:
     """Binary yes/no question (no confidence: the answer IS the probability)."""
     question_hint: str = ""
 
-    def validate(self) -> "Noul":
+    def validate(self) -> Noul:
         return self
 
 

@@ -12,8 +12,6 @@ the search SQL stays a single NOT IN subquery.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 LEVELS = frozenset({"secret", "internal"})
 DEFAULT = "internal"
 

@@ -16,7 +16,6 @@ without the extra never pays for it unless the noosphere is used.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import stat
@@ -122,6 +121,7 @@ CREATE TABLE IF NOT EXISTS key_trust (
 
 def _trust_conn(noosphere_path: Path):
     import sqlite3
+
     from ..sqlite_tuning import tune
     conn = sqlite3.connect(str(noosphere_path))
     tune(conn, foreign_keys=True)

@@ -3,7 +3,6 @@ its own instance.json (identity), conscio.db, sandbox, and keys/ vault."""
 from __future__ import annotations
 
 import errno
-from .. import filelock
 import logging
 import os
 import re
@@ -11,6 +10,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from .. import filelock
 from ..noosphere.identity import Identity, load_or_create
 
 logger = logging.getLogger(__name__)
