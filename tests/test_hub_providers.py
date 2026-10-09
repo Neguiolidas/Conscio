@@ -186,3 +186,31 @@ def test_probe_gemini_url_encodes_key(monkeypatch):
         refresh=True)
     assert "a/b+c" not in seen["url"]           # raw special chars never in the URL
     assert "a%2Fb%2Bc" in seen["url"]           # url-encoded instead
+
+
+def test_probe_cache_distinguishes_keys(monkeypatch):
+    providers._CACHE.clear()
+    calls = {"n": 0}
+
+    def once(url, **k):
+        calls["n"] += 1
+        return {"data": [{"id": f"m-{calls['n']}"}]}
+
+    monkeypatch.setattr(providers, "_get_json", once)
+    monkeypatch.setenv("K1", "key-one")
+    monkeypatch.setenv("K2", "key-two")
+
+    pc1 = {"type": "openai", "base_url": "https://h/v1", "api_key_env": "K1"}
+    pc2 = {"type": "openai", "base_url": "https://h/v1", "api_key_env": "K2"}
+
+    res1 = providers.probe_models(pc1)
+    res1_cached = providers.probe_models(pc1)
+    assert calls["n"] == 1
+    assert res1["models"] == ["m-1"]
+    assert res1_cached["models"] == ["m-1"]
+
+    # Different key -> cache miss -> new call
+    res2 = providers.probe_models(pc2)
+    assert calls["n"] == 2
+    assert res2["models"] == ["m-2"]
+

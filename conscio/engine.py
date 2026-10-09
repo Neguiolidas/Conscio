@@ -369,6 +369,7 @@ class ConsciousnessEngine:
         # #147: Mitosis advisory — True at FATIGUE/CRITICAL context pressure.
         self.handoff_recommended = False
         self.last_self_prompts: list = []
+        self._seen_entities: set[str] = set()
 
         # Voice preset (v0.6) — static marker. Precedence: param > env > default.
         effective_voice = (
@@ -506,6 +507,7 @@ class ConsciousnessEngine:
         recent_events: list[str] | None = None,
         confidence: float = 0.5,
         anomalies: list[str] | None = None,
+        target_ontology: bool = False,
     ) -> dict:
         """
         Run a complete reflection cycle.
@@ -513,6 +515,7 @@ class ConsciousnessEngine:
         If adaptive_reflection is enabled, runs 1-N cycles based on the
         ReflectionGate. Otherwise, runs exactly 1 cycle (legacy behavior).
         """
+        self._target_ontology = target_ontology
         if not self.adaptive_reflection or self.reflection_gate is None:
             return self._reflect_once(
                 world_state, recent_events, confidence, anomalies,
@@ -551,7 +554,13 @@ class ConsciousnessEngine:
         coherence = self.last_coherence.score if self.last_coherence else 0.5
         entities = self.world.list_entities(limit=MAX_ENTITIES_FOR_CONTRADICTION)
         contradiction_count = self._count_contradictions(entities)
-        novelty_count = len(entities)
+        # v4.9 (Jade catalog item 12): real novelty_count (new entities since last cycle)
+        # instead of total entity count placeholder.
+        current_names = {e.get("name", "") for e in entities if e.get("name")}
+        if not hasattr(self, "_seen_entities"):
+            self._seen_entities = set()
+        novelty_count = len(current_names - self._seen_entities)
+        self._seen_entities.update(current_names)
         metabolic = getattr(self._state, "metabolic", "")
         return GateContext(
             confidence=confidence,
@@ -756,6 +765,26 @@ class ConsciousnessEngine:
         recent_events = list(recent_events or [])
         recent_events.extend(f"[recall] {s}" for s in past_context)
 
+        # Inject latest dream crystal if available (respecting sensitivity != 'secret')
+        crystal_label = ""
+        try:
+            if hasattr(self, "content_store") and self.content_store is not None:
+                cur = self.content_store.db.execute(
+                    "SELECT * FROM sources WHERE label LIKE 'dream_crystal_%' "
+                    "ORDER BY id DESC LIMIT 1"
+                )
+                crystal_row = cur.fetchone()
+                if crystal_row:
+                    if dict(crystal_row).get("sensitivity") != "secret":
+                        chunks = self.content_store.get_by_source(crystal_row["id"])
+                        if chunks:
+                            crystal_content = " ".join(c.content for c in chunks).strip()
+                            if crystal_content:
+                                recent_events.append(f"[crystal] {crystal_content}")
+                                crystal_label = crystal_row["label"]
+        except Exception:
+            pass
+
         # Run the inner monologue reflection
         result = self.monologue.reflect(
             world_state=world_state,
@@ -764,6 +793,8 @@ class ConsciousnessEngine:
             anomalies=anomalies,
             goals_update=[g.description for g in self.goals.active_goals()],
         )
+        if crystal_label:
+            result["crystal"] = crystal_label
 
         # --- v0.4: Meta-reflect — advisory quality signal on this reflection ---
         error_rate = self.world.recent_prediction_error_rate(window_hours=24)

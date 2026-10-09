@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS published_skills (
     content_sha256     TEXT NOT NULL,
     artifact_json      BLOB NOT NULL,
     schema_version     INTEGER NOT NULL DEFAULT 1,
+    signature          BLOB NOT NULL DEFAULT x'',
+    signer_pubkey      BLOB NOT NULL DEFAULT x'',
     PRIMARY KEY (origin_instance_id, content_sha256)
 );
 CREATE INDEX IF NOT EXISTS idx_pub_goal ON published_skills(goal_fp);
@@ -46,6 +48,8 @@ class CatalogRow:
     content_sha256: str
     artifact_json: bytes
     schema_version: int
+    signature: bytes = b""       # v4.9: Ed25519 over canonical bytes
+    signer_pubkey: bytes = b""   # v4.9: raw 32-byte public key
 
 
 def _connect(db: Path) -> sqlite3.Connection:
@@ -54,6 +58,12 @@ def _connect(db: Path) -> sqlite3.Connection:
     conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     tune(conn, durable=True)
     conn.executescript(_SCHEMA)
+    # v4.9: old noosphere DBs gain the signature columns
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(published_skills)")}
+    if "signature" not in cols:
+        conn.execute("ALTER TABLE published_skills ADD COLUMN signature BLOB NOT NULL DEFAULT x''")
+    if "signer_pubkey" not in cols:
+        conn.execute("ALTER TABLE published_skills ADD COLUMN signer_pubkey BLOB NOT NULL DEFAULT x''")
     return conn
 
 
@@ -76,7 +86,9 @@ def _row(r: sqlite3.Row) -> CatalogRow:
         goal_fp=r["goal_fp"], goal_text=r["goal_text"], tool_seq=r["tool_seq"],
         plan_template=r["plan_template"], published_ts=r["published_ts"],
         content_sha256=r["content_sha256"],
-        artifact_json=_as_bytes(r["artifact_json"]), schema_version=r["schema_version"])
+        artifact_json=_as_bytes(r["artifact_json"]), schema_version=r["schema_version"],
+        signature=_as_bytes(r["signature"]) if r.keys() and "signature" in r.keys() else b"",
+        signer_pubkey=_as_bytes(r["signer_pubkey"]) if r.keys() and "signer_pubkey" in r.keys() else b"")
 
 
 def publish_rows(db: Path, rows: list[CatalogRow]) -> int:
@@ -89,12 +101,14 @@ def publish_rows(db: Path, rows: list[CatalogRow]) -> int:
             cur = conn.execute(
                 "INSERT INTO published_skills (origin_instance_id, origin_label,"
                 " goal_fp, goal_text, tool_seq, plan_template, published_ts,"
-                " content_sha256, artifact_json, schema_version)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?)"
+                " content_sha256, artifact_json, schema_version, signature,"
+                " signer_pubkey)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
                 " ON CONFLICT(origin_instance_id, content_sha256) DO NOTHING",
                 (r.origin_instance_id, r.origin_label, r.goal_fp, r.goal_text,
                  r.tool_seq, r.plan_template, r.published_ts, r.content_sha256,
-                 sqlite3.Binary(r.artifact_json), r.schema_version))
+                 sqlite3.Binary(r.artifact_json), r.schema_version,
+                 sqlite3.Binary(r.signature), sqlite3.Binary(r.signer_pubkey)))
             inserted += cur.rowcount
         conn.commit()
     finally:

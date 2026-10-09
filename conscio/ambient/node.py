@@ -8,7 +8,7 @@ sweep, never the message delivery the reactor exists for.
 
 from __future__ import annotations
 
-import fcntl
+from .. import filelock
 import json
 import logging
 import os
@@ -201,7 +201,7 @@ def _try_flock(path: Path) -> int | None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        filelock.lock(fd, nonblocking=True)
     except OSError:
         os.close(fd)
         return None

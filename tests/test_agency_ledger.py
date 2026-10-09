@@ -210,3 +210,24 @@ class TestNthRecentTs:
     def test_zero_when_fewer_rows(self, tmp_path):
         ledger = ActionLedger(tmp_path / "c.db")
         assert ledger.nth_recent_ts(50) == 0.0
+
+
+class TestConsecutiveFailuresInfra:
+    def test_infra_failure_does_not_count_in_consecutive_failures(self, tmp_path):
+        ledger = ActionLedger(tmp_path / "infra.db")
+        # 1 tool failure
+        ledger.record(goal_fp="g1", tool="t", args_json="{}", rationale="",
+                      tier="T2", status="failed", is_infra=False)
+        assert ledger.consecutive_failures("g1") == 1
+
+        # 1 infra failure (e.g. gateway 5xx / timeout)
+        ledger.record(goal_fp="g1", tool="t", args_json="{}", rationale="",
+                      tier="T2", status="failed", is_infra=True)
+        # streak of real tool failures should still be 1, ignoring infra
+        assert ledger.consecutive_failures("g1") == 1
+
+        # 1 more tool failure
+        ledger.record(goal_fp="g1", tool="t", args_json="{}", rationale="",
+                      tier="T2", status="failed", is_infra=False)
+        assert ledger.consecutive_failures("g1") == 2
+

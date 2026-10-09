@@ -18,6 +18,7 @@ from conscio.agency.fingerprint import goal_fingerprint
 
 from . import artifact, catalog
 from .identity import load_or_create
+from . import keys as _keys
 from .paths import conscio_db_path, resolve_noosphere, resolve_storage
 
 MIN_SERVE_RATE = 0.5     # MUST equal conscio.agency.skills.MIN_SERVE_RATE
@@ -67,6 +68,9 @@ def run(storage: str | os.PathLike[str] | None = None,
     rows: list[catalog.CatalogRow] = []
     malformed = 0
     now = time.time()
+    # v4.9: one key per instance; sign each artifact
+    priv = _keys.load_or_create_key(storage)
+    pub = _keys.public_key_bytes(priv)
     for s in skills:
         if _rate(s["successes"], s["failures"]) < MIN_SERVE_RATE:
             continue
@@ -89,12 +93,14 @@ def run(storage: str | os.PathLike[str] | None = None,
             goal_fp=s["goal_fp"], goal_text=s["goal_text"],
             tool_seq=tool_seq, plan_template=plan_template)
         canon = artifact.canonical_bytes(body)
+        sig = _keys.sign_body(priv, canon)  # v4.9: sign the canonical bytes
         rows.append(catalog.CatalogRow(
             origin_instance_id=ident.instance_id, origin_label=ident.label,
             goal_fp=s["goal_fp"], goal_text=s["goal_text"],
             tool_seq=json.dumps(tool_seq), plan_template=json.dumps(plan_template),
             published_ts=now, content_sha256=artifact.content_hash(canon),
-            artifact_json=canon, schema_version=artifact.ARTIFACT_SCHEMA))
+            artifact_json=canon, schema_version=artifact.ARTIFACT_SCHEMA,
+            signature=sig, signer_pubkey=pub))
 
     inserted = catalog.publish_rows(noo, rows)
     return PublishResult(published=inserted, skipped=len(rows) - inserted,

@@ -9,6 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.9.0] - 2026-10-09 — The catalog ships: honesty in the loop, robustez in the box
+
+The Jade catalog port, complete: every audit fix, every closed loop, and
+the robustez library — 21 stdlib-only modules — land together.
+
+- **Agency**: model-emitted tool names are sanitized before the registry
+  lookup ("host_health()" no longer dies as "unknown tool"); the skeptic
+  consults contradictions before any shortcut (N>0 defeats safe-tool and
+  fast-path), the gateway aborts on a 180 s deadline instead of burning
+  seven calls, and trust now moves on settled outcomes only.
+- **Outcomes**: `is_test` column with automatic migration and a
+  `mark-test` CLI (test data hidden by default); `registrar` as a
+  capture source; `unknown` as a resolve verdict (indeterminable is
+  real); the act pipeline settles VERIFIED/CONTRADICTED into trust.
+- **Hub**: `model-providers.json` is the single source of truth (the
+  probe defaults derive from it); fallback consults the FailureGovernor
+  before retrying PERMANENT errors; probe results cached by key hash;
+  backoff jittered; `multi-fallback` validated; `known_types()`
+  derived, not hardcoded.
+- **Knowledge**: `compact(purge_tombstoned=True)` finally removes dead
+  sources (the age-only sweep left them forever); `sensitivity`
+  (secret|internal) with migration, backfill, and search excluding
+  secrets by default; B1-B6 audit fixes in the store and vector
+  backends.
+- **Noosphere**: Ed25519 per-instance keys (0600) sign every publish;
+  import verifies and TOFU-trusts (a changed key rejects to quarantine);
+  legacy unsigned rows import with a warning.
+- **Consent**: the wizard's flow fixed, consent reloads on mtime change
+  at runtime (no restart), `--yolo` help corrected; the noosphere
+  trial wraps foreign content in an untrusted envelope.
+- **Squads**: the vote is recalculated after the LLM speaks (was a
+  placebo), docstring synced, `_REASONABLE` implemented.
+- **Dream**: `conscio dream [--dry-run]` is the front door to the
+  distillation cycle (engine.dream existed; nothing called it).
+- **Robustez** (new, `conscio/robustez/`): 21 stdlib-only modules
+  ported from CopilotKit, openjev, hindsight and foreman — secret
+  hygiene, history repair, retry backoff, defensive ingest, untrusted
+  envelopes, connector normalization, single-flight, idempotent approval,
+  anti-SSRF, failed-vs-unknown, defensive tool wrap, honest crash
+  closing, typed decisions, logprob-driven judging, retractions,
+  addressed doc ops, the 9 consolidation rules, 2-layer verification,
+  fail-closed arbitration, a state ledger with leases, and 3-layer
+  LLM retry with budgets. 70 tests.
+- **Windows**: `conscio/filelock.py` replaces fcntl in the three
+  runtime imports — `pip install conscio` works on Windows again
+  (broken since 4.7.3).
+
 ## [4.8.2] - 2026-10-03 — The Promptor refines, and zcode sees the update
 
 Three changes ship together: the Experts squad's Promptor stops grading

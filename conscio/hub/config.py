@@ -15,8 +15,34 @@ from .. import adapter_config
 from ..guards import atomic_write_text
 
 KNOWN_TYPES = ("lmstudio", "ollama", "openai", "anthropic", "gemini",
-               "openai-compat")
+               "openai-compat", "multi-fallback")
 _ENV_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+
+
+def known_types() -> tuple[str, ...]:
+    """Provider types supported by the Hub.
+
+    Derives from conscio/model-providers.json when available (single source of
+    truth), always including 'multi-fallback'. Falls back to KNOWN_TYPES.
+    """
+    json_path = Path(__file__).resolve().parent.parent / "model-providers.json"
+    if json_path.is_file():
+        try:
+            data = json.loads(json_path.read_text("utf-8"))
+            if isinstance(data, dict):
+                types = list(data.keys())
+                if "multi-fallback" not in types:
+                    types.append("multi-fallback")
+                return tuple(types)
+            if isinstance(data, list):
+                types = [p["type"] for p in data if isinstance(p, dict) and "type" in p]
+                if "multi-fallback" not in types:
+                    types.append("multi-fallback")
+                return tuple(types)
+        except Exception:
+            pass
+    return KNOWN_TYPES
+
 
 # ── Key vault: stores raw API keys in the per-host vault dir ──────
 # (env-name safety uses _valid_env_name, defined below alongside _check_adapter)
@@ -138,14 +164,41 @@ def _check_base_url(bu: str, where: str) -> list[str]:
 def _check_adapter(block: dict, where: str) -> list[str]:
     errs: list[str] = []
     atype = block.get("type")
-    if atype not in KNOWN_TYPES:
-        errs.append(f"{where}.type must be one of {KNOWN_TYPES}, got {atype!r}")
-    bu = block.get("base_url")
-    if bu is not None:
-        if not isinstance(bu, str):
-            errs.append(f"{where}.base_url must be a string")
+    valid_types = known_types()
+    if atype not in valid_types:
+        errs.append(f"{where}.type must be one of {valid_types}, got {atype!r}")
+    if atype == "multi-fallback":
+        providers = block.get("providers")
+        if not isinstance(providers, list) or not providers:
+            errs.append(f"{where}.providers must be a non-empty list")
         else:
-            errs += _check_base_url(bu, where)
+            for idx, p in enumerate(providers):
+                p_where = f"{where}.providers[{idx}]"
+                if not isinstance(p, dict):
+                    errs.append(f"{p_where} must be an object")
+                    continue
+                p_model = p.get("model")
+                if not isinstance(p_model, str) or not p_model.strip():
+                    errs.append(f"{p_where}.model must be a non-empty string")
+                p_bu = p.get("base_url")
+                if not isinstance(p_bu, str) or not p_bu.strip():
+                    errs.append(f"{p_where}.base_url must be a string")
+                else:
+                    errs += _check_base_url(p_bu, p_where)
+                p_env = p.get("api_key_env")
+                if p_env is not None and not _valid_env_name(p_env):
+                    errs.append(f"{p_where}.api_key_env must be an ENV VAR NAME "
+                                f"(^[A-Z_][A-Z0-9_]*$, <=128), not a key")
+                if "api_key" in p:
+                    errs.append(f"{p_where}.api_key is not allowed in config; "
+                                f"use api_key_env")
+    else:
+        bu = block.get("base_url")
+        if bu is not None:
+            if not isinstance(bu, str):
+                errs.append(f"{where}.base_url must be a string")
+            else:
+                errs += _check_base_url(bu, where)
     env = block.get("api_key_env")
     if env is not None and not _valid_env_name(env):
         errs.append(f"{where}.api_key_env must be an ENV VAR NAME "

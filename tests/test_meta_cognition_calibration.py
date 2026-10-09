@@ -136,11 +136,6 @@ class TestMetaCognitionMeasuredCalibration:
         assert score is not None
         assert score == pytest.approx(1.0, abs=1e-6)
 
-    def test_brier_score_exposed(self, meta):
-        for _ in range(5):
-            meta.record_confidence("task", 1.0, "success")
-        assert meta.brier_score() == pytest.approx(0.0, abs=1e-6)
-
 
 class TestAdversarialMutantWithTeeth:
     def test_macro_distance_mutant_fails(self, meta):

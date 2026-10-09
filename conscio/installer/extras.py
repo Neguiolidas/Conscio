@@ -18,7 +18,7 @@ class Extra:
 
 def graphify_enable(space_dir: Path) -> list[str]:
     return ["graphify . --update",
-            f"conscio consent --scope structure --storage {space_dir}"]
+            f"conscio consent structure --storage {space_dir}"]
 
 
 REGISTRY: dict[str, Extra] = {

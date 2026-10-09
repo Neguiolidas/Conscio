@@ -177,4 +177,5 @@ class DoucheReviewerVoice(Voice):
                 result.concerns = [result.analysis] + result.concerns
         except Exception:
             pass
+        result.vote = _vote_from_concerns(result.concerns)
         return result

@@ -86,6 +86,19 @@ def _build_parser() -> argparse.ArgumentParser:
     p_reflect.add_argument("--mode", default="compact",
                            choices=["minimal", "compact", "full"],
                            help="output verbosity (default: compact)")
+    p_reflect.add_argument("--target-ontology", action="store_true",
+                           help="force ontological targeting in reflection cycle")
+
+    # v4.9 (Jade catalog item 5): dream — the distillation cycle that
+    # engine.dream() already ran but nothing invoked. Runs release ->
+    # prune -> reconcile -> crystallize -> distill over the store.
+    p_dream = sub.add_parser(
+        "dream", help="run one consolidation+distillation cycle (offline)")
+    p_dream.add_argument("--model", default=DEFAULT_MODEL)
+    p_dream.add_argument("--storage", default="",
+                         help="storage dir (default: live space)")
+    p_dream.add_argument("--dry-run", action="store_true",
+                          help="report what would change, change nothing")
 
     # v3.7: council subcommand — convene 4-voice council from CLI
     p_council = sub.add_parser("council", help="convene a 4-voice council")
@@ -271,9 +284,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p_out_res.add_argument("decision_ref",
                            help="the decision_ref shown by `outcomes list`")
     p_out_res.add_argument("outcome",
-                           help="success | failure | reverted | false_positive")
+                           help="success | failure | reverted | false_positive | unknown")
     p_out_res.add_argument("--evidence", default="",
                            help="free-form evidence reference (run id, PR, ticket)")
+    p_out_mark = p_outcomes_sub.add_parser(
+        "mark-test",
+        help="flag a capture as test data (hidden from the default list)")
+    p_out_mark.add_argument("--storage", default="",
+                            help="space dir (default: live space)")
+    p_out_mark.add_argument("decision_ref",
+                            help="the decision_ref shown by `outcomes list`")
+    p_out_mark.add_argument("--unmark", action="store_true",
+                            help="restore the capture to the default list")
     p_honesty_recent.add_argument(
         "--outcome", default="",
         help="show only this outcome (VERIFIED/CONTRADICTED/UNSUPPORTED)")
@@ -607,13 +629,15 @@ def _cmd_info(model: str, storage: str,
 
 def _cmd_reflect(world_state: str, model: str, confidence: float,
                  storage: str, mode: str = "compact",
-                 base_url: str | None = None, autodetect: bool = True) -> int:
+                 base_url: str | None = None, autodetect: bool = True,
+                 target_ontology: bool = False) -> int:
     from .engine import ConsciousnessEngine
     eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage),
                                base_url=base_url, autodetect=autodetect)
     try:
         _note_if_unknown(model, eng.model_info)
-        result = eng.reflect(world_state=world_state, confidence=confidence)
+        result = eng.reflect(world_state=world_state, confidence=confidence,
+                             target_ontology=target_ontology)
 
         if mode == "minimal":
             print(result.get("summary", ""))
@@ -629,6 +653,35 @@ def _cmd_reflect(world_state: str, model: str, confidence: float,
     finally:
         eng.close()
     return 0
+
+
+def _cmd_dream(model: str, storage: str, dry_run: bool = False) -> int:
+    """Run one consolidation+distillation cycle (v4.9, Jade catalog item 5).
+
+    The engine's dream() existed but nothing called it outside the bench;
+    this is the front door. Fallback to the shared conscio.db when the
+    engine has no skills table of its own (the Jade's design: a worker
+    without an attached volition still distills from the shared ledger).
+    """
+    from .dreaming import DreamCycle
+    from .engine import ConsciousnessEngine
+
+    eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage))
+    try:
+        cycle = DreamCycle()
+        report = cycle.run(eng, dry_run=dry_run)
+        verb = "would distill" if dry_run else "distilled"
+        print(f"dream {'(dry-run) ' if dry_run else ''}complete:")
+        print(f"  entities pruned:      {report.entities_pruned}")
+        print(f"  contradictions pruned:{report.contradictions_pruned}")
+        print(f"  reflections merged:    {report.reflections_consolidated}")
+        print(f"  reflections deferred:  {report.reflections_deferred}")
+        print(f"  skills {verb}:    {report.skills_distilled}")
+        print(f"  coherence: {report.coherence_before:.2f}"
+              f" -> {report.coherence_after:.2f}")
+        return 0
+    finally:
+        eng.close()
 
 
 def _cmd_council(question: str, context: str, options: str, model: str,
@@ -1132,8 +1185,8 @@ def _cmd_outcomes(args) -> int:
 
     storage = Path(_storage(getattr(args, "storage", "")))
     cmd = getattr(args, "outcomes_command", "")
-    if cmd not in ("list", "resolve"):
-        print("usage: conscio outcomes <list|resolve> [...]")
+    if cmd not in ("list", "resolve", "mark-test"):
+        print("usage: conscio outcomes <list|resolve|mark-test> [...]")
         return 0
 
     db_path = storage / "outcomes.db"
@@ -1146,7 +1199,8 @@ def _cmd_outcomes(args) -> int:
             conn = store._conn
             rows = conn.execute(
                 "SELECT decision_ref, source, outcome, evidence_ref"
-                " FROM decision_outcomes ORDER BY event_id DESC LIMIT ?",
+                " FROM decision_outcomes WHERE is_test=0"
+                " ORDER BY event_id DESC LIMIT ?",
                 (args.limit,)).fetchall()
             if not rows:
                 print("no decisions recorded yet")
@@ -1170,8 +1224,25 @@ def _cmd_outcomes(args) -> int:
             return 1
         print(f"resolved {args.decision_ref!r} -> {outcome}")
         return 0
+
+        # mark-test (v4.9, Jade catalog item 3)
     finally:
         store.close()
+    # reach mark-test via the same store (re-open: the block above closes)
+    if cmd == "mark-test":
+        store = OutcomeStore(db_path)
+        try:
+            changed = store.mark_test(args.decision_ref,
+                                      unmark=args.unmark)
+        finally:
+            store.close()
+        if changed:
+            verb = "restored" if args.unmark else "marked as test"
+            print(f"{args.decision_ref!r} {verb}")
+            return 0
+        print(f"decision {args.decision_ref!r} not found")
+        return 1
+    return 0
 
 
 def _cmd_honesty(args) -> int:
@@ -1297,10 +1368,14 @@ def _main(argv: list[str] | None = None) -> int:
     if args.command == "reflect":
         return _cmd_reflect(args.world_state, args.model, args.confidence,
                             args.storage, args.mode,
-                            base_url=args.base_url, autodetect=args.autodetect)
+                            base_url=args.base_url, autodetect=args.autodetect,
+                            target_ontology=getattr(args, "target_ontology", False))
     if args.command == "council":
         return _cmd_council(args.question, args.context, args.options,
                            args.model, args.storage, args.mode)
+    if args.command == "dream":
+        return _cmd_dream(args.model, args.storage,
+                          dry_run=getattr(args, "dry_run", False))
     if args.command == "govern":
         return _cmd_govern(args.action, args.window, args.storage,
                            args.all_sessions)

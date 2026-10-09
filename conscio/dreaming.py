@@ -143,7 +143,8 @@ class DreamCycle:
         # even if not entropy-stale. ──
         last = getattr(engine, "last_coherence", None)
         dominant = last.dominant.dimension if (last and last.dominant) else None
-        if dominant == "ontological":
+        target_ont = getattr(engine, "_target_ontology", False) or (dominant == "ontological")
+        if target_ont:
             report.contradictions_pruned = list(reconciled)
             if not dry_run:
                 for name in reconciled:

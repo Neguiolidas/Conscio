@@ -70,6 +70,7 @@ class IndexResult:
       "new"            — new source, chunks written
       "category_added" — content already known, chunks written for a new category
       "duplicate"      — nothing written (same content, same category)
+      "empty"          — empty content, nothing written
     """
     source_id: int
     status: str
@@ -77,7 +78,7 @@ class IndexResult:
 
     @property
     def is_new_content(self) -> bool:
-        return self.status != "duplicate"
+        return self.status not in ("duplicate", "empty")
 
 
 @dataclass
@@ -127,6 +128,7 @@ class ContentStore:
         self.db.row_factory = sqlite3.Row
 
         self._init_schema()
+        self._migrate_sensitivity()
 
         # Optional vector-search side channel. Both default to None, which
         # preserves exact FTS5-only behavior for every existing caller.
@@ -141,13 +143,38 @@ class ContentStore:
         self._search_cache: dict[tuple, tuple[float, list]] = {}
         self._search_cache_ttl_s = 30.0
 
+    def _migrate_sensitivity(self) -> None:
+        """v4.9 (Jade catalog item 9): add sources.sensitivity to old DBs.
+
+        CREATE TABLE IF NOT EXISTS only applies to fresh files; a store
+        opened on a pre-v4.9 database needs the column and the backfill
+        (everything existing is 'internal', except labels that name
+        credential artifacts — the same backfill the Jade ran).
+        """
+        cols = {r[1] for r in
+                self.db.execute("PRAGMA table_info(sources)").fetchall()}
+        if "sensitivity" in cols:
+            return
+        self.db.execute(
+            "ALTER TABLE sources ADD COLUMN sensitivity TEXT NOT NULL DEFAULT 'internal'")
+        from .sensitivity import classify_label
+        rows = self.db.execute("SELECT id, label FROM sources").fetchall()
+        for row in rows:
+            level = classify_label(row["label"])
+            if level != "internal":
+                self.db.execute(
+                    "UPDATE sources SET sensitivity=? WHERE id=?",
+                    (level, row["id"]))
+        self.db.commit()
+
     # ─── Query cache helpers ──────────────────────────────────────
 
     def _cache_key(self, query: str, limit: int, category: str | None,
                    content_type: str | None, since: str | None,
-                   include_stale: bool, use_trigram: bool) -> tuple:
+                   include_stale: bool, use_trigram: bool,
+                   include_secrets: bool = False) -> tuple:
         return (query.strip().lower(), limit, category, content_type,
-                since, include_stale, use_trigram)
+                since, include_stale, use_trigram, include_secrets)
 
     def _cache_get(self, key: tuple):
         hit = self._search_cache.get(key)
@@ -157,13 +184,13 @@ class ContentStore:
         if time.time() - ts > self._search_cache_ttl_s:
             self._search_cache.pop(key, None)
             return None
-        return value
+        return list(value)
 
     def _cache_put(self, key: tuple, value: list) -> None:
         # Bound the cache; simple cap avoids unbounded growth over a long run.
         if len(self._search_cache) >= 256:
             self._search_cache.clear()
-        self._search_cache[key] = (time.time(), value)
+        self._search_cache[key] = (time.time(), list(value))
 
     def _cache_invalidate(self) -> None:
         """Drop cached results after index/delete/clear so reads reflect writes."""
@@ -180,7 +207,8 @@ class ContentStore:
                 chunk_count INTEGER NOT NULL DEFAULT 0,
                 indexed_at TEXT NOT NULL DEFAULT (datetime('now')),
                 source_category TEXT,
-                content_hash TEXT
+                content_hash TEXT,
+                sensitivity TEXT NOT NULL DEFAULT 'internal'
             );
 
             CREATE VIRTUAL TABLE IF NOT EXISTS chunks USING fts5(
@@ -274,6 +302,9 @@ class ContentStore:
         if content_type not in VALID_CONTENT_TYPES:
             raise ValueError(f"Invalid content_type '{content_type}'. Must be one of: {VALID_CONTENT_TYPES}")
 
+        if not content:
+            return IndexResult(0, "empty", 0)
+
         content_hash = hashlib.sha256(content.encode()).hexdigest()
         timestamp = naive_utcnow().isoformat()
 
@@ -322,6 +353,10 @@ class ContentStore:
                 self._insert_trigram(title, chunk, chunk_rowid, source_id, content_type, category, session_id, timestamp)
                 if chunk_rowid is not None:
                     pending.append((f"chunk:{chunk_rowid}", chunk))
+            self.db.execute(
+                "UPDATE sources SET chunk_count = chunk_count + ? WHERE id = ?",
+                (len(chunks), source_id),
+            )
             self.db.commit()
             self._cache_invalidate()            # new content must surface
             self._maybe_embed_batch(pending, category)
@@ -705,6 +740,7 @@ class ContentStore:
         since: str | None = None,
         include_stale: bool = False,
         use_trigram: bool = False,
+        include_secrets: bool = False,
     ) -> list[SearchResult]:
         """
         Search content using BM25 with dual-index RRF merge.
@@ -740,7 +776,7 @@ class ContentStore:
         # dozens of times per minute; a hit skips both FTS scans entirely.
         cache_key = self._cache_key(
             query, limit, category, content_type, since, include_stale,
-            use_trigram)
+            use_trigram, include_secrets)
         cached = self._cache_get(cache_key)
         if cached is not None:
             return cached
@@ -751,6 +787,10 @@ class ContentStore:
 
         if not include_stale:
             filter_clause += " AND source_id NOT IN (SELECT source_id FROM source_tombstones)"
+        if not include_secrets:
+            # v4.9 (Jade catalog item 9): secret sources never surface in
+            # the default search; the exclusion is source-level.
+            filter_clause += " AND source_id NOT IN (SELECT id FROM sources WHERE sensitivity='secret')"
         if category:
             filter_clause += " AND source_category = ?"
             filter_params.append(category)
@@ -888,7 +928,7 @@ class ContentStore:
                         return []
                     rows = conn.execute(
                         f"""
-                        SELECT rowid, bm25(chunks_trigram) as score
+                        SELECT rowid, source_id, bm25(chunks_trigram) as score
                         FROM chunks_trigram
                         WHERE chunks_trigram MATCH ?{safe_clause}
                         ORDER BY score
@@ -896,12 +936,12 @@ class ContentStore:
                         """,
                         [escaped] + filter_params + [limit],
                     ).fetchall()
-                    results = [(row["rowid"], row["score"]) for row in rows]
                     # Post-filter tombstones against main DB
                     if tombstone_filter:
                         tombed_ids = self._get_tombstoned_source_ids()
                         if tombed_ids:
-                            results = [r for r in results if r[0] not in tombed_ids]
+                            rows = [row for row in rows if int(row["source_id"]) not in tombed_ids]
+                    results = [(row["rowid"], row["score"]) for row in rows]
                     return results
                 finally:
                     conn.close()
@@ -1247,7 +1287,18 @@ class ContentStore:
             return False
 
         for table in ("chunks", "chunks_trigram"):
-            self.db.execute(f"DELETE FROM {table} WHERE source_id = ?", (source_id,))
+            try:
+                self.db.execute(f"DELETE FROM {table} WHERE source_id = ?", (source_id,))
+            except sqlite3.OperationalError:
+                pass
+        trigram_db_path = self.db_path.parent / "conscio_trigram.db"
+        if trigram_db_path.exists():
+            try:
+                with sqlite3.connect(str(trigram_db_path)) as tri_conn:
+                    tri_conn.execute("DELETE FROM chunks_trigram WHERE source_id = ?", (source_id,))
+                    tri_conn.commit()
+            except sqlite3.OperationalError:
+                pass
 
         # v3.9.4: the tombstone goes FIRST. It carries a FOREIGN KEY onto
         # sources(id), so deleting the source while one exists raised
@@ -1260,19 +1311,34 @@ class ContentStore:
         self._cache_invalidate()                # deleted content must go away
         return True
 
-    def compact(self, before_days: int = 90) -> int:
+    def compact(self, before_days: int = 90,
+                *, purge_tombstoned: bool = False) -> int:
         """
         Compact old content: remove sources older than before_days.
+
+        v4.9 (Jade catalog item 9): ``purge_tombstoned=True`` also removes
+        every tombstoned source regardless of age — a tombstone means the
+        content died at runtime (changed, retracted, or deleted), and the
+        old age-only sweep left those rows in the live database forever:
+        the age cutoff protects *old but alive* content, not dead rows.
 
         Returns the number of sources removed.
         """
         from datetime import timedelta
         cutoff = (naive_utcnow() - timedelta(days=before_days)).isoformat()
 
-        old_sources = self.db.execute(
-            "SELECT id FROM sources WHERE indexed_at < ?",
-            (cutoff,),
-        ).fetchall()
+        if purge_tombstoned:
+            old_sources = self.db.execute(
+                "SELECT s.id FROM sources s"
+                " WHERE s.indexed_at < ?"
+                "    OR s.id IN (SELECT source_id FROM source_tombstones)",
+                (cutoff,),
+            ).fetchall()
+        else:
+            old_sources = self.db.execute(
+                "SELECT id FROM sources WHERE indexed_at < ?",
+                (cutoff,),
+            ).fetchall()
 
         if not old_sources:
             return 0
@@ -1284,7 +1350,19 @@ class ContentStore:
         # go before sources — they hold a FOREIGN KEY onto sources(id), and one
         # tombstoned source used to abort the entire compaction (v3.9.4).
         for table in ("chunks", "chunks_trigram"):
-            self.db.execute(f"DELETE FROM {table} WHERE source_id IN ({placeholders})", source_ids)
+            try:
+                self.db.execute(f"DELETE FROM {table} WHERE source_id IN ({placeholders})", source_ids)
+            except sqlite3.OperationalError:
+                pass
+        trigram_db_path = self.db_path.parent / "conscio_trigram.db"
+        if trigram_db_path.exists():
+            try:
+                with sqlite3.connect(str(trigram_db_path)) as tri_conn:
+                    tri_conn.execute(f"DELETE FROM chunks_trigram WHERE source_id IN ({placeholders})", source_ids)
+                    tri_conn.execute("INSERT INTO chunks_trigram(chunks_trigram) VALUES('rebuild')")
+                    tri_conn.commit()
+            except sqlite3.OperationalError:
+                pass
 
         self.db.execute(
             f"DELETE FROM source_tombstones WHERE source_id IN ({placeholders})",
@@ -1294,7 +1372,10 @@ class ContentStore:
 
         # Rebuild FTS5 to reclaim space
         self.db.execute("INSERT INTO chunks(chunks) VALUES('rebuild')")
-        self.db.execute("INSERT INTO chunks_trigram(chunks_trigram) VALUES('rebuild')")
+        try:
+            self.db.execute("INSERT INTO chunks_trigram(chunks_trigram) VALUES('rebuild')")
+        except sqlite3.OperationalError:
+            pass
         self.db.commit()
 
         return len(source_ids)
@@ -1365,7 +1446,21 @@ class ContentStore:
         """Return store statistics."""
         source_count = self.db.execute("SELECT COUNT(*) as c FROM sources").fetchone()["c"]
         chunk_count = self.db.execute("SELECT COUNT(*) as c FROM chunks").fetchone()["c"]
-        trigram_count = self.db.execute("SELECT COUNT(*) as c FROM chunks_trigram").fetchone()["c"]
+        trigram_count = 0
+        trigram_db_path = self.db_path.parent / "conscio_trigram.db"
+        if trigram_db_path.exists():
+            try:
+                with sqlite3.connect(str(trigram_db_path)) as tri_conn:
+                    row = tri_conn.execute("SELECT COUNT(*) as c FROM chunks_trigram").fetchone()
+                    trigram_count = row[0] if row else 0
+            except sqlite3.OperationalError:
+                pass
+        else:
+            try:
+                row = self.db.execute("SELECT COUNT(*) as c FROM chunks_trigram").fetchone()
+                trigram_count = row["c"] if row else 0
+            except sqlite3.OperationalError:
+                pass
 
         categories = self.db.execute(
             "SELECT source_category, COUNT(*) as c FROM sources GROUP BY source_category"

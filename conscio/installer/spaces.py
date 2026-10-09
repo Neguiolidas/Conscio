@@ -3,7 +3,7 @@ its own instance.json (identity), conscio.db, sandbox, and keys/ vault."""
 from __future__ import annotations
 
 import errno
-import fcntl
+from .. import filelock
 import logging
 import os
 import re
@@ -71,7 +71,7 @@ def minting_lock(slug: str, timeout: float = 5.0):
     try:
         while True:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                filelock.lock(fd, nonblocking=True)
                 has_flock = True
                 break
             except OSError as exc:
@@ -103,7 +103,7 @@ def minting_lock(slug: str, timeout: float = 5.0):
     finally:
         if has_flock:
             try:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+                filelock.unlock(fd)
             except OSError:
                 pass
         try:

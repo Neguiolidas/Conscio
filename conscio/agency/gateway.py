@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import TYPE_CHECKING, Any
 
 from .adapter import AdapterConnectionError, AdapterError, InferenceAdapter
@@ -91,11 +92,19 @@ def parse_kv(text: str) -> dict[str, Any]:
 
 def coerce(value: str, type_name: str) -> Any:
     """Coerce a KV string value using a tool's params schema type."""
-    if type_name == "int":
-        return int(value)
-    if type_name == "float":
-        return float(value)
-    if type_name == "bool":
+    if not isinstance(value, str):
+        return value
+    if type_name in ("int", "integer"):
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return value
+    if type_name in ("float", "number"):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return value
+    if type_name in ("bool", "boolean"):
         return value.strip().lower() in ("true", "1", "yes")
     return value
 
@@ -143,12 +152,14 @@ class OutputGateway:
     def __init__(self, adapter: InferenceAdapter, *, max_retries: int = 2,
                  tier: str | None = None,
                  intercepter: Intercepter | None = None,
-                 max_intercept_iterations: int = 3):
+                 max_intercept_iterations: int = 3,
+                 deadline_s: float = 180.0):
         self.adapter = adapter
         self.max_retries = max_retries
         self.tier = tier         # explicit "T1"/"T2"/"T3"; None = caps auto
         self.last_tier = ""      # tier that produced (or last tried) decode
         self.last_adapter_error: AdapterError | None = None
+        self.deadline_s = deadline_s
         # What the model last said, and why it was rejected. Kept so that a
         # decode failure names its cause instead of only its outcome.
         self.last_raw = ""
@@ -204,9 +215,15 @@ class OutputGateway:
             )
         return result
 
+    def _check_deadline(self, deadline: float | None, limit_s: float | None) -> None:
+        if deadline is not None and time.monotonic() >= deadline:
+            raise GatewayError(
+                f"deadline exceeded ({limit_s}s)" + self._decode_detail())
+
     def request_action(self, base_prompt, schema: dict,
                        *, goal_id: str = "",
-                       tool_names: list[str] | None = None) -> ActionProposal:
+                       tool_names: list[str] | None = None,
+                       deadline_s: float | None = None) -> ActionProposal:
         # v3.1: accept PromptZones — convert to string for downstream tiers.
         # Cache breakpoint sits at the stable/volatile boundary (full_prompt).
         if hasattr(base_prompt, "full_prompt"):
@@ -216,32 +233,43 @@ class OutputGateway:
         self.last_decode_errors = []
         self.last_tokens_in = 0
         self.last_tokens_out = 0
+        limit_s = self.deadline_s if deadline_s is None else deadline_s
+        deadline = (time.monotonic() + limit_s) if limit_s else None
         caps = self.adapter.capabilities()
         tier = self.effective_tier()
         if tier == "T1":
             self.last_tier = "T1"
-            data = self._try_grammar(base_prompt, schema, tool_names)
+            data = self._try_grammar(base_prompt, schema, tool_names,
+                                      deadline=deadline, limit_s=limit_s)
             if data is None and not self._no_lower_tier_can_help():  # one/cycle
+                self._check_deadline(deadline, limit_s)
                 if caps.json_mode:
                     self.last_tier = "T2"
-                    data = self._try_json(base_prompt, schema, tool_names=tool_names)
+                    data = self._try_json(base_prompt, schema, tool_names=tool_names,
+                                          deadline=deadline, limit_s=limit_s)
                 else:
                     self.last_tier = "T3"
                     data = self._try_kv(base_prompt, schema, attempts=1,
-                                        tool_names=tool_names)
+                                        tool_names=tool_names,
+                                        deadline=deadline, limit_s=limit_s)
         elif tier == "T2":
             self.last_tier = "T2"
-            data = self._try_json(base_prompt, schema, tool_names=tool_names)
+            data = self._try_json(base_prompt, schema, tool_names=tool_names,
+                                  deadline=deadline, limit_s=limit_s)
             if data is None and not self._no_lower_tier_can_help():  # T2 -> T3
+                self._check_deadline(deadline, limit_s)
                 self.last_tier = "T3"
                 data = self._try_kv(base_prompt, schema, attempts=1,
-                                    tool_names=tool_names)
+                                    tool_names=tool_names,
+                                    deadline=deadline, limit_s=limit_s)
         else:
             self.last_tier = "T3"
             data = self._try_kv(base_prompt, schema,
                                 attempts=1 + self.max_retries,
-                                tool_names=tool_names)
+                                tool_names=tool_names,
+                                deadline=deadline, limit_s=limit_s)
         if data is None:
+            self._check_deadline(deadline, limit_s)
             # v3.1: check if failure was PERMANENT — if so, don't try more tiers
             if self.last_adapter_error is not None:
                 from conscio.failure import FailureGovernor as _FG
@@ -304,22 +332,27 @@ class OutputGateway:
     # ── tiers ──
 
     def _try_grammar(self, base_prompt: str, schema: dict,
-                     tool_names: list[str] | None) -> dict | None:
+                     tool_names: list[str] | None,
+                     deadline: float | None = None,
+                     limit_s: float | None = None) -> dict | None:
         from .grammar import compile_schema_grammar
         enums = {"tool": sorted(tool_names)} if tool_names else {}
         grammar = compile_schema_grammar(schema, enums=enums)
         prompt = base_prompt + json_instructions(tool_names)
         feedback = ""
         for _ in range(1 + self.max_retries):
+            self._check_deadline(deadline, limit_s)
             try:
                 raw = self._generate(prompt + feedback, schema=schema,
-                                            grammar=grammar).text
+                                      grammar=grammar).text
             except AdapterError as exc:
                 # Both arms of the old classification returned None, so the
                 # class was computed and discarded. request_action owns that
                 # decision now: it can see every tier, this block sees one.
                 self.last_adapter_error = exc
+                self._check_deadline(deadline, limit_s)
                 return None
+            self._check_deadline(deadline, limit_s)
             self.last_raw = raw
             try:
                 data = json.loads(repair_json(raw))
@@ -336,19 +369,24 @@ class OutputGateway:
         return None
 
     def _try_json(self, base_prompt: str, schema: dict,
-                  tool_names: list[str] | None = None) -> dict | None:
+                  tool_names: list[str] | None = None,
+                  deadline: float | None = None,
+                  limit_s: float | None = None) -> dict | None:
         prompt = base_prompt + json_instructions(tool_names)
         feedback = ""
         for _ in range(1 + self.max_retries):
+            self._check_deadline(deadline, limit_s)
             try:
                 raw = self._generate(prompt + feedback,
-                                            schema=schema).text
+                                      schema=schema).text
             except AdapterError as exc:
                 # Both arms of the old classification returned None, so the
                 # class was computed and discarded. request_action owns that
                 # decision now: it can see every tier, this block sees one.
                 self.last_adapter_error = exc
+                self._check_deadline(deadline, limit_s)
                 return None
+            self._check_deadline(deadline, limit_s)
             self.last_raw = raw
             try:
                 data = json.loads(repair_json(raw))
@@ -366,10 +404,13 @@ class OutputGateway:
 
     def _try_kv(self, base_prompt: str, schema: dict,
                 *, attempts: int,
-                tool_names: list[str] | None = None) -> dict | None:
+                tool_names: list[str] | None = None,
+                deadline: float | None = None,
+                limit_s: float | None = None) -> dict | None:
         prompt = base_prompt + kv_instructions(tool_names)
         feedback = ""
         for _ in range(attempts):
+            self._check_deadline(deadline, limit_s)
             try:
                 raw = self._generate(prompt + feedback).text
             except AdapterError as exc:
@@ -377,7 +418,9 @@ class OutputGateway:
                 # class was computed and discarded. request_action owns that
                 # decision now: it can see every tier, this block sees one.
                 self.last_adapter_error = exc
+                self._check_deadline(deadline, limit_s)
                 return None
+            self._check_deadline(deadline, limit_s)
             self.last_raw = raw
             data = parse_kv(raw)
             errors = validate(data, schema)

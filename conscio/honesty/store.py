@@ -46,11 +46,5 @@ class ClaimStore:
         self._conn.commit()
         return int(cur.lastrowid or 0)
 
-    def recent(self, limit: int = 50) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT * FROM claims ORDER BY id DESC LIMIT ?",
-            (limit,)).fetchall()
-        return [dict(r) for r in rows]
-
     def close(self) -> None:
         self._conn.close()

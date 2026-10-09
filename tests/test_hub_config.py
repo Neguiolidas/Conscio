@@ -175,3 +175,44 @@ def test_vault_has_no_env_mutation(tmp_path, monkeypatch):
     (tmp_path / "keys" / "CONSCIO_KEY_Y").write_text("v")
     assert config.vault_has("CONSCIO_KEY_Y") is True
     assert "CONSCIO_KEY_Y" not in os.environ   # presence check must not cache
+
+
+def test_known_types_includes_multi_fallback():
+    kt = config.known_types()
+    assert "multi-fallback" in kt
+    assert "openai" in kt
+
+
+def test_validate_multi_fallback_valid():
+    cfg = {
+        "model": "fallback-test",
+        "adapter": {
+            "type": "multi-fallback",
+            "providers": [
+                {"model": "m1", "base_url": "http://localhost:11434"},
+                {"model": "m2", "base_url": "https://api.openai.com/v1", "api_key_env": "CONSCIO_KEY_OPENAI"},
+            ],
+        },
+    }
+    errs = config.validate(cfg)
+    assert errs == []
+
+
+def test_validate_multi_fallback_invalid():
+    # Empty providers list
+    cfg1 = {"model": "m", "adapter": {"type": "multi-fallback", "providers": []}}
+    errs1 = config.validate(cfg1)
+    assert any("providers must be a non-empty list" in e for e in errs1)
+
+    # Missing model or bad url
+    cfg2 = {
+        "model": "m",
+        "adapter": {
+            "type": "multi-fallback",
+            "providers": [{"model": "", "base_url": "ftp://bad"}],
+        },
+    }
+    errs2 = config.validate(cfg2)
+    assert any("model must be a non-empty string" in e for e in errs2)
+    assert any("must use http or https" in e for e in errs2)
+

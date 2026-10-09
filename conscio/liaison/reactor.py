@@ -28,7 +28,7 @@ to its stdin. `CONSCIO_NOTIFY_CMD` may be a full command string or a path.
 from __future__ import annotations
 
 import argparse
-import fcntl
+from .. import filelock
 import json
 import logging
 import os
@@ -65,7 +65,7 @@ def acquire_lock(db: Path, self_id: str) -> int | None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        filelock.lock(fd, nonblocking=True)
         return fd
     except OSError:                  # held elsewhere, or the path is unusable
         if fd is not None:
@@ -78,7 +78,7 @@ def release_lock(fd: int | None) -> None:
     if fd is None:
         return
     try:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        filelock.unlock(fd)
     except OSError:
         pass
     finally:

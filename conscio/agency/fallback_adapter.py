@@ -37,6 +37,7 @@ class FallbackAdapter(InferenceAdapter):
         self.base_url = base_url.rstrip("/")
         self.models = models
         self.current_index = 0
+        self._consecutive_successes = 0
         self.timeout = timeout
         # Create one adapter per model (lightweight — just stores config)
         self._adapters: list[OpenAICompatAdapter] = []
@@ -54,6 +55,7 @@ class FallbackAdapter(InferenceAdapter):
 
     def _advance(self) -> bool:
         """Switch to next model. Returns True if there's a next model."""
+        self._consecutive_successes = 0
         if self.current_index < len(self.models) - 1:
             self.current_index += 1
             return True
@@ -69,10 +71,16 @@ class FallbackAdapter(InferenceAdapter):
             attempts += 1
             adapter = self._current()
             try:
-                return adapter.generate(
+                res = adapter.generate(
                     prompt, schema=schema, grammar=grammar,
                     max_tokens=max_tokens, temperature=temperature, stop=stop,
                 )
+                if self.current_index > 0:
+                    self._consecutive_successes += 1
+                    if self._consecutive_successes >= 3:
+                        self.current_index = 0
+                        self._consecutive_successes = 0
+                return res
             except (AdapterBadResponse, AdapterError) as exc:
                 last_exc = exc
                 # Try switching to next model

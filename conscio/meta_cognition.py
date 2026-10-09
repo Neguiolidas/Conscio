@@ -17,7 +17,6 @@ from pathlib import Path
 from .calibration import (
     MIN_CALIBRATION_SAMPLES,
     ConfidenceValue,
-    brier,
     ece,
 )
 from .guards import atomic_write_text, read_json_dict
@@ -154,15 +153,6 @@ class MetaCognition:
         if cv.category != "measured" or cv.value is None:
             return None
         return 1.0 - cv.value
-
-    def brier_score(self, task_type: str = "") -> float | None:
-        """Brier score over binary resolved outcomes, or None if insufficient data."""
-        entries = self._binary_resolved_entries(task_type)
-        if len(entries) < MIN_CALIBRATION_SAMPLES:
-            return None
-        confidences = [e["confidence"] for e in entries]
-        outcomes = [e["outcome"] == "success" for e in entries]
-        return brier(confidences, outcomes)
 
     def has_calibration_evidence(self, task_type: str = "") -> bool:
         """True when calibration is measured rather than unmeasured/none."""

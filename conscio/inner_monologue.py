@@ -184,22 +184,7 @@ class InnerMonologue:
         else:
             path.write_text(full, encoding="utf-8")
 
-        # Also save the summary as the current state
-        summary_path = self.ctx.storage_path / "state_summary.txt"
-        summary_path.write_text(summary, encoding="utf-8")
-
         return path
-
-    def last_reflection(self, n: int = 1) -> str | None:
-        """Retrieve the last N reflections from disk."""
-        files = sorted(self.reflections_dir.glob("*.md"), reverse=True)
-        if not files:
-            return None
-
-        # Read the most recent file and extract reflections
-        content = files[0].read_text()
-        reflections = content.split("\n---\n")
-        return reflections[-n] if n <= len(reflections) else content
 
     def status(self) -> dict:
         """Return status for monitoring."""

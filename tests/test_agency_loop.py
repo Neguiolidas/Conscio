@@ -167,3 +167,18 @@ class TestLockdownStillMaintains:
         report = _run(engine, ActBudget(max_cycles=5))
         assert report.stopped == "lockdown"
         assert engine.dreams == 0
+
+
+class TestActCrashRecovery:
+    def test_unexpected_exception_in_act_becomes_failed_cycle(self):
+        engine = _FakeEngine()
+        def crashing_act():
+            raise RuntimeError("unexpected explosion")
+        engine.act = crashing_act
+
+        report = _run(engine, ActBudget(max_cycles=2, max_failure_rate=1.0))
+        assert report.cycles == 2
+        assert report.failures == 2
+        assert report.reports[0].status == ActStatus.FAILED
+        assert "unexpected explosion" in report.reports[0].reason
+

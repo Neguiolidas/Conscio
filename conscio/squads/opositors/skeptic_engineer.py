@@ -85,6 +85,7 @@ class SkepticEngineerVoice(Voice):
             for w in ("hello world", "simple crud", "todo app", "simple app", "basic")
         )
         is_complex_stack = any(t in blob for t in _OVERENGINEER_TOKENS)
+        is_reasonable = any(r in blob for r in _REASONABLE)
         if is_simple_task and is_complex_stack:
             analysis_parts.append("simple task, complex stack")
             concerns.append(
@@ -92,12 +93,14 @@ class SkepticEngineerVoice(Voice):
                 "a hello world. Is the complexity justified, or is this "
                 "resume-driven development?"
             )
-        elif is_complex_stack:
+        elif is_complex_stack and not is_reasonable:
             analysis_parts.append("complex stack detected")
             concerns.append(
                 "Complex stack detected — justify each component or this "
                 "looks like engineering for engineering's sake."
             )
+        elif is_reasonable:
+            analysis_parts.append("reasonable stack detected")
 
         # IPC / unnecessary indirection
         ipc_hits = [t for t in _IPC_TOKENS if t in blob]
@@ -153,4 +156,5 @@ class SkepticEngineerVoice(Voice):
                 result.concerns = [result.analysis] + result.concerns
         except Exception:
             pass
+        result.vote = _vote_from_concerns(result.concerns)
         return result
