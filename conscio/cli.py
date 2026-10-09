@@ -89,6 +89,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p_reflect.add_argument("--target-ontology", action="store_true",
                            help="force ontological targeting in reflection cycle")
 
+    # v4.9 (Jade catalog item 5): dream — the distillation cycle that
+    # engine.dream() already ran but nothing invoked. Runs release ->
+    # prune -> reconcile -> crystallize -> distill over the store.
+    p_dream = sub.add_parser(
+        "dream", help="run one consolidation+distillation cycle (offline)")
+    p_dream.add_argument("--model", default=DEFAULT_MODEL)
+    p_dream.add_argument("--storage", default="",
+                         help="storage dir (default: live space)")
+    p_dream.add_argument("--dry-run", action="store_true",
+                          help="report what would change, change nothing")
+
     # v3.7: council subcommand — convene 4-voice council from CLI
     p_council = sub.add_parser("council", help="convene a 4-voice council")
     p_council.add_argument("question", help="the decision question")
@@ -642,6 +653,35 @@ def _cmd_reflect(world_state: str, model: str, confidence: float,
     finally:
         eng.close()
     return 0
+
+
+def _cmd_dream(model: str, storage: str, dry_run: bool = False) -> int:
+    """Run one consolidation+distillation cycle (v4.9, Jade catalog item 5).
+
+    The engine's dream() existed but nothing called it outside the bench;
+    this is the front door. Fallback to the shared conscio.db when the
+    engine has no skills table of its own (the Jade's design: a worker
+    without an attached volition still distills from the shared ledger).
+    """
+    from .dreaming import DreamCycle
+    from .engine import ConsciousnessEngine
+
+    eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage))
+    try:
+        cycle = DreamCycle()
+        report = cycle.run(eng, dry_run=dry_run)
+        verb = "would distill" if dry_run else "distilled"
+        print(f"dream {'(dry-run) ' if dry_run else ''}complete:")
+        print(f"  entities pruned:      {report.entities_pruned}")
+        print(f"  contradictions pruned:{report.contradictions_pruned}")
+        print(f"  reflections merged:    {report.reflections_consolidated}")
+        print(f"  reflections deferred:  {report.reflections_deferred}")
+        print(f"  skills {verb}:    {report.skills_distilled}")
+        print(f"  coherence: {report.coherence_before:.2f}"
+              f" -> {report.coherence_after:.2f}")
+        return 0
+    finally:
+        eng.close()
 
 
 def _cmd_council(question: str, context: str, options: str, model: str,
@@ -1333,6 +1373,9 @@ def _main(argv: list[str] | None = None) -> int:
     if args.command == "council":
         return _cmd_council(args.question, args.context, args.options,
                            args.model, args.storage, args.mode)
+    if args.command == "dream":
+        return _cmd_dream(args.model, args.storage,
+                          dry_run=getattr(args, "dry_run", False))
     if args.command == "govern":
         return _cmd_govern(args.action, args.window, args.storage,
                            args.all_sessions)
