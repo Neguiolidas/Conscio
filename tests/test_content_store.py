@@ -144,11 +144,10 @@ class TestIndexing:
         assert rows[0]["session_id"] == "sess_123"
 
     def test_empty_content(self, store):
-        """Empty content is still indexed (single empty chunk)."""
-        sid = store.index("empty", "", "reflection")
-        assert sid > 0
-        source = store.get_source(sid)
-        assert source.chunk_count >= 1
+        """Empty content is refused loudly, nothing written (v4.9 B6)."""
+        result = store.index_ex("empty", "", "reflection")
+        assert result.status == "empty" and result.source_id == 0
+        assert store.get_source(0) is None
 
 
 # ─── Chunking Tests ─────────────────────────────────────────────────────
