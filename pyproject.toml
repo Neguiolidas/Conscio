@@ -40,11 +40,12 @@ dev = [
   "pytest>=7.0",
   "pytest-cov>=4.0",
   "ruff>=0.8",
-  "pyright>=1.1.350",
+  "pyright>=1.350",
   "bandit>=1.7",
   "vulture>=2.1",
   "pyyaml>=6.0",
   "build>=1.0",  # tests/test_packaging_assets.py builds a real wheel
+  "cryptography>=42",  # v4.9: noosphere Ed25519 keys (test suite signs/verifies)
 ]
 docs = [
  "mkdocs-material>=9.5",
