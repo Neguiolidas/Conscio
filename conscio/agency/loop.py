@@ -160,7 +160,7 @@ class AutonomyLoop:
                 try:
                     act_report = self.engine.act()
                 except Exception as exc:
-                    # v4.9 (Jade catalog item 9): unhandled exception becomes a failed
+                    # v4.9 (the v4.9 audit): unhandled exception becomes a failed
                     # cycle in the report rather than crashing the autonomous loop.
                     act_report = ActReport(
                         status=ActStatus.FAILED,

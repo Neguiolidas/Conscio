@@ -1,4 +1,4 @@
-"""Robustez: the ported patterns library (v4.9, Jade catalog item 13).
+"""Robustez: the ported patterns library (v4.9).
 
 21 módulos Python portados dos padrões CopilotKit, openjev, hindsight e foreman.
 Stdlib apenas, docstrings citando a origem.

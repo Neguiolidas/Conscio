@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.9.0] - 2026-10-09 — The catalog ships: honesty in the loop, robustez in the box
 
-The Jade catalog port, complete: every audit fix, every closed loop, and
+the complete audit series, ported: every fix, every closed loop, and
 the robustez library — 21 stdlib-only modules — land together.
 
 - **Agency**: model-emitted tool names are sanitized before the registry

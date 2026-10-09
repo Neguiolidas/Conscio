@@ -1,4 +1,4 @@
-"""Tests for the v4.9 outcomes upgrades (Jade catalog items 3, 4, 6).
+"""Tests for the v4.9 outcomes upgrades (the v4.9 audit, 4, 6).
 
 Item 3: is_test column + auto migration + mark_test() + list filter.
 Item 4: 'registrar' accepted as a capture source.
@@ -83,7 +83,7 @@ def test_mark_test_unknown_ref_returns_false(tmp_path: Path) -> None:
 
 
 def test_registrar_is_a_valid_source(tmp_path: Path) -> None:
-    """Jade catalog item 4: the registrar bridge captures as a source."""
+    """the v4.9 audit: the registrar bridge captures as a source."""
     assert "registrar" in SOURCES
     store = _store(tmp_path)
     eid = _capture(store, "registrar:abc123", source="registrar")
@@ -104,7 +104,7 @@ def test_registrar_rejected_before_v49(tmp_path: Path) -> None:
 
 
 def test_unknown_is_a_valid_outcome(tmp_path: Path) -> None:
-    """Jade catalog item 6: indeterminable is a real verdict."""
+    """the v4.9 audit: indeterminable is a real verdict."""
     assert "unknown" in OUTCOMES
     store = _store(tmp_path)
     _capture(store, "later:1")

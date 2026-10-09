@@ -1,4 +1,4 @@
-"""Tests for v4.9 knowledge upgrades (Jade catalog item 9).
+"""Tests for v4.9 knowledge upgrades (the v4.9 audit).
 
 - compact(purge_tombstoned=True): dead sources go regardless of age
 - sensitivity column: auto-migration on old stores, label backfill,

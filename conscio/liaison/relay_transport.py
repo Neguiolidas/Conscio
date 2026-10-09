@@ -6,7 +6,7 @@ filled ``url`` means a remote peer. No host heuristics: the card decides.
 
 A remote peer that does not answer at its URL is not a dead end: its mail is
 parked in this host's spool under its id, the directory a pull bridge serves
-to peers that only work as clients (measured 2026-10-03: Jade's card points
+to peers that only work as clients (measured 2026-10-03: a client-only peer's card points
 at an HTTP port nobody listens on; she long-polls this host's spool instead,
 and every send to her failed as "unreachable" while the mailbox she reads
 sat one directory away)."""

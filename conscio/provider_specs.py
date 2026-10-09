@@ -1,4 +1,4 @@
-"""Single source of truth for provider specs (v4.9, Jade catalog item 7).
+"""Single source of truth for provider specs (v4.9).
 
 Every surface that needs a provider's default base URL, key env or probe
 reads conscio/model-providers.json through this cached loader. The hub's

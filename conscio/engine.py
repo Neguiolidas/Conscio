@@ -554,7 +554,7 @@ class ConsciousnessEngine:
         coherence = self.last_coherence.score if self.last_coherence else 0.5
         entities = self.world.list_entities(limit=MAX_ENTITIES_FOR_CONTRADICTION)
         contradiction_count = self._count_contradictions(entities)
-        # v4.9 (Jade catalog item 12): real novelty_count (new entities since last cycle)
+        # v4.9 (the v4.9 audit): real novelty_count (new entities since last cycle)
         # instead of total entity count placeholder.
         current_names = {e.get("name", "") for e in entities if e.get("name")}
         if not hasattr(self, "_seen_entities"):

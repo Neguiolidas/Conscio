@@ -402,3 +402,128 @@ from conscio.judge import question_sha256
 
 question_sha256
 
+
+
+# v4.9 robustez public API — symbols consumed by external callers,
+# not by the internal conscio/ graph; vulture's scan of conscio/ cannot
+# see them. Whitelisted as public surface (item 13 of the catalog).
+
+# ── robustez.approval ──
+ApprovalGate  # noqa: F821
+
+# ── robustez.arbiter ──
+Arbiter  # noqa: F821
+arbitrate  # noqa: F821
+overturned  # noqa: F821
+upheld  # noqa: F821
+
+# ── robustez.consolidation ──
+consolidation_prompt  # noqa: F821
+render_directives  # noqa: F821
+
+# ── robustez.crash ──
+close_open_events  # noqa: F821
+tracked_run  # noqa: F821
+
+# ── robustez.decision ──
+weighted_score  # noqa: F821
+SystemOneRequest  # noqa: F821
+
+# ── robustez.deltaops ──
+apply_ops  # noqa: F821
+
+# ── robustez.history ──
+sanitize_history  # noqa: F821
+
+# ── robustez.ingest ──
+fetch_text  # noqa: F821
+validate_items  # noqa: F821
+apply_char_budget  # noqa: F821
+
+# ── robustez.llmretry ──
+call_with_fallback  # noqa: F821
+
+# ── robustez.logitjev ──
+OpenAICompatJev  # noqa: F821
+
+# ── robustez.normalize ──
+normalize_records  # noqa: F821
+
+# ── robustez.outcomes_ext ──
+safe_to_retry  # noqa: F821
+describe_outcome  # noqa: F821
+
+# ── robustez.retractions ──
+partition_retracted  # noqa: F821
+prune_based_on  # noqa: F821
+
+# ── robustez.retry ──
+new_state  # noqa: F821
+record_failure  # noqa: F821
+record_success  # noqa: F821
+
+# ── robustez.secrets ──
+background_failure  # noqa: F821
+provider_failure  # noqa: F821
+redact_secrets  # noqa: F821
+sanitize_reason  # noqa: F821
+user_facing_error  # noqa: F821
+
+# ── robustez.singleflight ──
+SingleFlight  # noqa: F821
+
+# ── robustez.ssrf ──
+is_safe_url  # noqa: F821
+
+# ── robustez.stateledger ──
+StateLedger  # noqa: F821
+
+# ── robustez.toolwrap ──
+call_json  # noqa: F821
+public_url  # noqa: F821
+as_dict  # noqa: F821
+
+# ── robustez.untrusted ──
+with_untrusted_notice  # noqa: F821
+
+# ── robustez.verifier ──
+verify  # noqa: F821
+is_gate_invalid  # noqa: F821
+
+# v4.9 provider_specs / calibration / model_providers_json_check public API
+provider_types  # noqa: F821
+default_base_url  # noqa: F821
+brier  # noqa: F821
+JSON_PATH  # noqa: F821
+
+# v4.9 robustez methods (whitelist needs Class.method form for methods)
+from conscio.robustez.arbiter import Arbiter
+Arbiter.reset_appeals
+
+from conscio.robustez.crash import OpenEvents, OpenEventsTracker
+OpenEvents.last_closing
+OpenEvents.track
+OpenEventsTracker.last_closing
+
+from conscio.robustez.decision import SystemOneRequest
+SystemOneRequest.entropy_nats
+
+from conscio.robustez.singleflight import SingleFlight
+SingleFlight.arun
+
+from conscio.robustez.stateledger import StateLedger
+StateLedger.add_item
+StateLedger.claim_next
+StateLedger.transition
+StateLedger.reclaim_expired
+StateLedger.revive_blocked
+StateLedger.release
+
+from conscio.robustez.toolwrap import ToolFailure
+ToolFailure.as_dict
+
+# v4.9 robustez dataclass fields / handler signatures (public API shape)
+updated_ts
+newurl
+redirect_request
+gate_invalid

@@ -95,7 +95,7 @@ def run(storage: str | os.PathLike[str] | None = None,
     for cr in foreign:
         outcome = revalidate(cr)
         status = "quarantined" if outcome.ok else "rejected"
-        # v4.9 (Jade catalog item 9): Ed25519 + TOFU. Order: revalidate
+        # v4.9 (the v4.9 audit): Ed25519 + TOFU. Order: revalidate
         # first (content_sha256 catches 'tampered'); the signature check
         # only gates rows that revalidated clean, and the legacy unsigned
         # row imports with a warning (pre-v4.9 compat, item 9).

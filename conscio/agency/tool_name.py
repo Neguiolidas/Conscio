@@ -1,4 +1,4 @@
-"""Sanitizer de nome de ferramenta (item 2 do catálogo da Jade).
+"""Sanitizer for model-emitted tool names (v4.9).
 
 O modelo às vezes emite o nome com formato impróprio (``host_health()``,
 `` host_health``, ``Host_Health``) e o registry.get() cru devolvia None,

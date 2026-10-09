@@ -52,7 +52,7 @@ def test_remote_card_uses_http(monkeypatch):
 
 def test_silent_remote_is_parked_in_its_spool_here(monkeypatch):
     """A remote that never answers may be a client-only peer that pulls this
-    host's spool (Jade, 2026-10-03): park its mail there instead of dropping."""
+    host's spool (measured 2026-10-03): park its mail there instead of dropping."""
     def boom(url, msg, token, **kw):
         raise OSError("connection refused")
     monkeypatch.setattr(relay_transport, "transport_post", boom)

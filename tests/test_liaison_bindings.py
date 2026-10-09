@@ -1231,7 +1231,7 @@ def _remote_answers(monkeypatch, outcome):
 
 
 def test_relay_send_to_silent_remote_parks_it_for_pull(tmp_path, monkeypatch):
-    """2026-10-03: Jade's card points at a port nobody listens on; she pulls
+    """2026-10-03: a client-only peer's card points at a port nobody listens on; she pulls
     this host's spool instead. Every send failed "unreachable" while her
     mailbox sat one directory away."""
     from conscio.liaison import directory, relay_transport

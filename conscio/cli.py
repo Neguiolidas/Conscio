@@ -89,7 +89,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_reflect.add_argument("--target-ontology", action="store_true",
                            help="force ontological targeting in reflection cycle")
 
-    # v4.9 (Jade catalog item 5): dream — the distillation cycle that
+    # v4.9 (the v4.9 audit): dream — the distillation cycle that
     # engine.dream() already ran but nothing invoked. Runs release ->
     # prune -> reconcile -> crystallize -> distill over the store.
     p_dream = sub.add_parser(
@@ -656,11 +656,11 @@ def _cmd_reflect(world_state: str, model: str, confidence: float,
 
 
 def _cmd_dream(model: str, storage: str, dry_run: bool = False) -> int:
-    """Run one consolidation+distillation cycle (v4.9, Jade catalog item 5).
+    """Run one consolidation+distillation cycle (v4.9).
 
     The engine's dream() existed but nothing called it outside the bench;
     this is the front door. Fallback to the shared conscio.db when the
-    engine has no skills table of its own (the Jade's design: a worker
+    engine has no skills table of its own (the original design: a worker
     without an attached volition still distills from the shared ledger).
     """
     from .dreaming import DreamCycle
@@ -1210,6 +1210,17 @@ def _cmd_outcomes(args) -> int:
                 print(f"{ref:<42} {source:<10} {outcome:<14} {evidence or ''}")
             return 0
 
+        if cmd == "mark-test":
+            # v4.9: flag/unflag a capture as test data
+            changed = store.mark_test(args.decision_ref,
+                                      unmark=args.unmark)
+            if changed:
+                verb = "restored" if args.unmark else "marked as test"
+                print(f"{args.decision_ref!r} {verb}")
+                return 0
+            print(f"decision {args.decision_ref!r} not found")
+            return 1
+
         # resolve
         outcome = args.outcome
         if outcome not in OUTCOMES:
@@ -1224,25 +1235,8 @@ def _cmd_outcomes(args) -> int:
             return 1
         print(f"resolved {args.decision_ref!r} -> {outcome}")
         return 0
-
-        # mark-test (v4.9, Jade catalog item 3)
     finally:
         store.close()
-    # reach mark-test via the same store (re-open: the block above closes)
-    if cmd == "mark-test":
-        store = OutcomeStore(db_path)
-        try:
-            changed = store.mark_test(args.decision_ref,
-                                      unmark=args.unmark)
-        finally:
-            store.close()
-        if changed:
-            verb = "restored" if args.unmark else "marked as test"
-            print(f"{args.decision_ref!r} {verb}")
-            return 0
-        print(f"decision {args.decision_ref!r} not found")
-        return 1
-    return 0
 
 
 def _cmd_honesty(args) -> int:

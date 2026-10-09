@@ -154,7 +154,7 @@ class ActPipeline:
                  if self.breaker.is_quarantined(fp)]
             )
         if goal_text is None:
-            # v4.9 (Jade catalog item 11): when every active goal is quarantined
+            # v4.9 (the v4.9 audit): when every active goal is quarantined
             # or non-executable, this is a healthy resting state (IDLE), not a failure.
             return ActReport(
                 status=ActStatus.IDLE,
@@ -185,7 +185,7 @@ class ActPipeline:
                               goal_text=goal_text, infra=exc.infra)
 
         # deterministic checks (skeptic checks 1-2 + sandbox — no LLM)
-        # v4.9 (Jade catalog item 2): the raw model output goes through
+        # v4.9 (the v4.9 audit): the raw model output goes through
         # sanitize_tool_name before lookup — "host_health()" and friends
         # used to die as "unknown tool" goal breakers for a formatting slip.
         proposal.tool = sanitize_tool_name(proposal.tool)
@@ -195,7 +195,7 @@ class ActPipeline:
                               args=proposal.args,
                               reason=f"unknown tool '{proposal.tool}'",
                               goal_text=goal_text)
-        # v4.9 (Jade catalog item 7): T3 produces flat string args; coerce typed args
+        # v4.9 (the v4.9 audit): T3 produces flat string args; coerce typed args
         if getattr(self.gateway, "last_tier", "") == "T3" and hasattr(spec, "params") and isinstance(spec.params, dict):
             from .gateway import coerce
             for arg_name, arg_val in list(proposal.args.items()):

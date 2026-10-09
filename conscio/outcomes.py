@@ -65,7 +65,7 @@ class OutcomeStore:
         self._conn = sqlite3.connect(str(db_path))
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
-        # v4.9 (Jade catalog items 3+6): automatic migration for older
+        # v4.9 (the v4.9 audit+6): automatic migration for older
         # databases — is_test (item 3) and the 'unknown' outcome (item 6)
         # arrive together, but only the column needs DDL.
         cols = {r["name"] for r in
@@ -148,7 +148,7 @@ class OutcomeStore:
         return row
 
     def mark_test(self, decision_ref: str, *, unmark: bool = False) -> bool:
-        """Flag/unflag a capture as test data (Jade catalog item 3).
+        """Flag/unflag a capture as test data (the v4.9 audit).
 
         Test rows stay in the store (provenance is never deleted) but the
         default listing hides them. Returns True when a row changed.

@@ -218,7 +218,7 @@ def test_all_goals_quarantined_fails_cleanly(tmp_path):
                    rationale="", tier="T2", status="failed")
     pipe.breaker.trip(fp, goal_text="only goal")
     report = pipe.act(_state(goals=["only goal"]))
-    # v4.9 (item 10, Jade catalog): quarentena TOTAL e saudavel (IDLE),
+    # v4.9: quarentena TOTAL e saudavel (IDLE),
     # nao failure — o mesmo fix do 'no active goals' da 4.8.1.
     assert report.status is ActStatus.IDLE
     assert "quarantined" in report.reason

@@ -1,4 +1,4 @@
-"""Ed25519 signing for the noosphere (v4.9, Jade catalog item 9).
+"""Ed25519 signing for the noosphere (v4.9).
 
 One key per instance, chmod 0600, stored next to the instance identity.
 Publish signs the artifact body; import verifies. Trust is TOFU (trust on

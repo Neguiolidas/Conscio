@@ -28,7 +28,7 @@ KNOWN_MODELS: dict[str, list[str]] = {
 }
 
 # Default base_url per type — the JSON is the single source of truth (v4.9,
-# Jade catalog item 7); the dict mirrors it only for the probe path, which
+# the v4.9 audit); the dict mirrors it only for the probe path, which
 # must work even if load fails at import time (probe has its own retry).
 try:
     from ..provider_specs import load_provider_specs as _load_specs

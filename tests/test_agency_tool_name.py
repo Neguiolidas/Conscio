@@ -1,4 +1,4 @@
-"""Tests for sanitize_tool_name (v4.9, Jade catalog item 2).
+"""Tests for sanitize_tool_name (v4.9).
 
 The sanitizer must rescue formatting slips (call parens, quotes, case,
 inner spaces) without ever inventing a tool: an unknown name stays

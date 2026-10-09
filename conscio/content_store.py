@@ -144,12 +144,12 @@ class ContentStore:
         self._search_cache_ttl_s = 30.0
 
     def _migrate_sensitivity(self) -> None:
-        """v4.9 (Jade catalog item 9): add sources.sensitivity to old DBs.
+        """v4.9 (the v4.9 audit): add sources.sensitivity to old DBs.
 
         CREATE TABLE IF NOT EXISTS only applies to fresh files; a store
         opened on a pre-v4.9 database needs the column and the backfill
         (everything existing is 'internal', except labels that name
-        credential artifacts — the same backfill the Jade ran).
+        credential artifacts — the same backfill the migration ran).
         """
         cols = {r[1] for r in
                 self.db.execute("PRAGMA table_info(sources)").fetchall()}
@@ -788,7 +788,7 @@ class ContentStore:
         if not include_stale:
             filter_clause += " AND source_id NOT IN (SELECT source_id FROM source_tombstones)"
         if not include_secrets:
-            # v4.9 (Jade catalog item 9): secret sources never surface in
+            # v4.9 (the v4.9 audit): secret sources never surface in
             # the default search; the exclusion is source-level.
             filter_clause += " AND source_id NOT IN (SELECT id FROM sources WHERE sensitivity='secret')"
         if category:
@@ -1316,7 +1316,7 @@ class ContentStore:
         """
         Compact old content: remove sources older than before_days.
 
-        v4.9 (Jade catalog item 9): ``purge_tombstoned=True`` also removes
+        v4.9 (the v4.9 audit): ``purge_tombstoned=True`` also removes
         every tombstoned source regardless of age — a tombstone means the
         content died at runtime (changed, retracted, or deleted), and the
         old age-only sweep left those rows in the live database forever:

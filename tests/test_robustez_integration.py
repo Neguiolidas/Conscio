@@ -1,6 +1,6 @@
 """Sanity test verifying that all 21 robustez modules are available and cleanly exportable.
 
-From Jade catalog Item 13:
+From the v4.9 audit:
 from robustez import approval, arbiter, consolidation, crash, decision,
 deltaops, history, ingest, llmretry, logitjev, normalize, outcomes_ext,
 retractions, retry, secrets, singleflight, ssrf, stateledger, toolwrap,
