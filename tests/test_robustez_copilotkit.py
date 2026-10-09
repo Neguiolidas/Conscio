@@ -371,8 +371,7 @@ def test_singleflight_exception_recovery():
     assert call_count == 2
 
 
-@pytest.mark.asyncio
-async def test_singleflight_async():
+def test_singleflight_async():
     sf = singleflight.SingleFlight()
     count = 0
 
@@ -382,10 +381,13 @@ async def test_singleflight_async():
         count += 1
         return "done"
 
-    res = await asyncio.gather(
-        sf.arun("k1", async_work),
-        sf.arun("k1", async_work),
-    )
+    async def run_both():
+        return await asyncio.gather(
+            sf.arun("k1", async_work),
+            sf.arun("k1", async_work),
+        )
+
+    res = asyncio.run(run_both())
     assert res == ["done", "done"]
     assert count == 1
 
