@@ -118,7 +118,10 @@ def test_skeptic_call_is_clean_no_actor_leak(tmp_path):
     pipe.act(_state(goals=("a very unique goal marker",)))
     audit_prompt = sk_adapter.calls[0]["prompt"]
     assert "volition of a persistent agent" not in audit_prompt
-    assert "unique goal marker" not in audit_prompt   # only proposal + facts
+    # v4.9 (item 11, honesty no skeptic): o goal entra no prompt
+    # (a assinatura do modelo e que ele ve o proprio goal); o que nao
+    # vaza e o volition de agente persistente.
+    assert "unique goal marker" in audit_prompt   # the goal IS the point
     ledger.close()
 
 
@@ -215,7 +218,9 @@ def test_all_goals_quarantined_fails_cleanly(tmp_path):
                    rationale="", tier="T2", status="failed")
     pipe.breaker.trip(fp, goal_text="only goal")
     report = pipe.act(_state(goals=["only goal"]))
-    assert report.status is ActStatus.FAILED
+    # v4.9 (item 10, Jade catalog): quarentena TOTAL e saudavel (IDLE),
+    # nao failure — o mesmo fix do 'no active goals' da 4.8.1.
+    assert report.status is ActStatus.IDLE
     assert "quarantined" in report.reason
     led.close()
 

@@ -34,7 +34,7 @@ class DeltaOperationsInvalidError(ValueError):
 
 def make_block_id(text: str, taken: set[str]) -> str:
     """sha1[:8] + disambiguation; the model's id is discarded."""
-    base = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()[:8]
+    base = hashlib.sha1(text.encode("utf-8", "replace"), usedforsecurity=False).hexdigest()[:8]
     block_id = base
     n = 1
     while block_id in taken:
