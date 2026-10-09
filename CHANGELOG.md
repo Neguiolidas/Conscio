@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.9.1] - 2026-10-09 — Attribution cleanup
+
+Same code as 4.9.0 with internal attribution references removed from
+the shipped sources: comments and docstrings now describe the changes
+as what they are, not who made them. One real fix included: the
+`outcomes mark-test` CLI branch had drifted below the closing `finally`
+(unreachable); it is a proper command branch again, and the vulture
+whitelist covers the robustez library's public API so the dead-code
+gate is green.
+
 ## [4.9.0] - 2026-10-09 — The catalog ships: honesty in the loop, robustez in the box
 
 the complete audit series, ported: every fix, every closed loop, and

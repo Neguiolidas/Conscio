@@ -23,7 +23,7 @@ memory, self-judgment and procedural skill — and proves every claim by
 measurement, not assertion. Local-first and zero-dep at the core
 (`numpy` + stdlib `sqlite3`, nothing else).
 
-**Latest release — `v4.9.0` "The catalog ships: honesty in the loop, robustez in the box":** the complete v4.9 audit series lands with the new `conscio/robustez/` library (21 stdlib-only modules), Ed25519 TOFU signing in the Noosphere, `compact(purge_tombstoned=True)`, `sensitivity` labels on the knowledge store, a 180 s gateway deadline, and Windows `filelock` replacing fcntl. Full suite: 4917 passed, zero failures.
+**Latest release — `v4.9.1` "The catalog ships: honesty in the loop, robustez in the box":** the complete v4.9 audit series lands with the new `conscio/robustez/` library (21 stdlib-only modules), Ed25519 TOFU signing in the Noosphere, `compact(purge_tombstoned=True)`, `sensitivity` labels on the knowledge store, a 180 s gateway deadline, and Windows `filelock` replacing fcntl. Full suite: 4917 passed, zero failures.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 
