@@ -7,8 +7,9 @@ Each squad convene:
 2. Runs ``analyze()`` on each voice (deterministic).
 3. Optionally runs ``analyze_llm()`` if ``use_llm=True`` and adapter
    is available.
-4. Produces a recommendation using the same conservative logic as
-   council (veto >= 1 → veto, hold >= 2 → hold, proceed >= 3 → proceed).
+4. Produces a recommendation using conservative consensus logic:
+   any veto -> veto, any hold -> hold, unanimous proceed -> proceed.
+   Opositors apply strict checking (every concern pressure-tested).
 5. Emits a ``squad:<name>:convened`` event on the EventBus.
 """
 from __future__ import annotations

@@ -387,12 +387,13 @@ class VectorBackend:
         category: str | None = None,
     ) -> int:
         """Insert or replace many vectors in ONE transaction."""
+        deduped = {id_: vec for id_, vec in items}
+        if not deduped:
+            return 0
         with self._lock:
             conn = self._conn_get()
             self._validate_or_persist_signature(conn, check_only=False)
-            rows = [self._row_for(id_, vec, category) for id_, vec in items]
-            if not rows:
-                return 0
+            rows = [self._row_for(id_, vec, category) for id_, vec in deduped.items()]
             with conn:
                 conn.executemany(
                     "INSERT OR REPLACE INTO vectors (id, embedding, dimension, category)"
@@ -789,14 +790,14 @@ class SqliteVecBackend:
         category: str | None = None,
     ) -> int:
         # Validate everything first (fail before any write)
-        validated: list[tuple[str, bytes]] = []
+        validated: dict[str, bytes] = {}
         for id_, vec in items:
             _check_no_nan(vec)
             if len(vec) != self.dimension:
                 raise ValueError(
                     f"Dimension mismatch: expected {self.dimension}, got {len(vec)}"
                 )
-            validated.append((id_, self._serialize_for_vec0(vec)))
+            validated[id_] = self._serialize_for_vec0(vec)
         if not validated:
             return 0
         with self._lock:
@@ -804,7 +805,8 @@ class SqliteVecBackend:
             self._validate_or_persist_signature(conn, check_only=False)
             count = 0
             with conn:
-                for id_, vec_blob in validated:
+                for id_, vec_blob in validated.items():
+                    conn.execute("DELETE FROM vec_chunks WHERE id = ?", (id_,))
                     conn.execute(
                         "INSERT INTO vec_chunks (embedding, id, category) VALUES (?, ?, ?)",
                         (vec_blob, id_, category or ""),
@@ -1084,9 +1086,13 @@ class HNSWBackend:
     ) -> int:
         # Collect all items, then do ONE add_items call (O(n log n) build)
         # instead of per-item calls (O(n² log n) — 100x slower on 37k vectors).
+        deduped: dict[str, Sequence[float]] = {}
+        for id_, vec in items:
+            deduped[id_] = vec
+
         ids_list: list[int] = []
         vecs_list: list[list[float]] = []
-        for id_, vec in items:
+        for id_, vec in deduped.items():
             _check_no_nan(vec)
             if len(vec) != self.dimension:
                 raise ValueError(

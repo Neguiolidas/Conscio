@@ -123,6 +123,9 @@ class Daemon:
         self._idle_cycles = 0
         if self.workspace is not None:
             try:
+                if self.consent is not None and hasattr(self.consent, "reload_if_changed"):
+                    if self.consent.reload_if_changed():
+                        self._synced_ws_id = None
                 ws = self.workspace.poll()
                 # v1.7.2: re-sync structure only when the workspace id changes
                 # (STABLE syncs once; SWITCHING syncs on each switch — cheap).
@@ -479,9 +482,8 @@ def _arg_parser() -> argparse.ArgumentParser:
                              "(the Hub awake toggle); OFF default. Awake makes "
                              "an act-capable daemon autonomous.")
     parser.add_argument("--yolo", action="store_true",
-                        help="auto-approve structural consent for any workspace "
-                             "without asking. Equivalent to bypass mode — all "
-                             "workspaces with graph.json are auto-allowed.")
+                        help="auto-approve structural consent for current workspace "
+                             "without asking (grants project scope at startup).")
     return parser
 
 

@@ -150,4 +150,5 @@ class OptimizerVoice(Voice):
         except Exception:
             # LLM path is advisory — fall back to deterministic on failure.
             pass
+        result.vote = _vote_from_concerns(result.concerns)
         return result

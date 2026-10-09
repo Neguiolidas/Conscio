@@ -47,15 +47,23 @@ class TrialRefusal:
     reason: str
 
 
+def untrusted_envelope(text: str) -> str:
+    """Anti-prompt-injection boundary for untrusted foreign data."""
+    clean = str(text or "")
+    return f"[UNTRUSTED FOREIGN DATA]\n{clean}\n[/UNTRUSTED FOREIGN DATA]"
+
+
 def run_trial(steps: list[dict], *, goal_text: str, skeptic: Any,
               registry: Any) -> TrialOutcome:
     done: list[StepResult] = []
+    audit_goal = untrusted_envelope(goal_text) if goal_text else ""
     for step in steps:
         tool = str(step.get("tool", ""))
         args = step.get("args", {})
         rationale = str(step.get("rationale", ""))
         # Foreign steps carry no expected_outcome; the Skeptic tolerates "".
-        proposal = ActionProposal(tool=tool, args=args, rationale=rationale,
+        enveloped_rationale = untrusted_envelope(rationale) if rationale else ""
+        proposal = ActionProposal(tool=tool, args=args, rationale=enveloped_rationale,
                                   expected_outcome="")
         spec = registry.get(tool)
         if spec is None:
@@ -78,7 +86,7 @@ def run_trial(steps: list[dict], *, goal_text: str, skeptic: Any,
                                    "HIGH-risk tool blocked in trial"))
             break
         verdict = skeptic.audit(                                 # forced audit
-            proposal, goal_text=goal_text,
+            proposal, goal_text=audit_goal,
             tool_doc=tool_doc(spec.name, spec.description))
         if not verdict.passed:
             done.append(StepResult(tool, False, "skeptic",

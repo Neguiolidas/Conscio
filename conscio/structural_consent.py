@@ -58,6 +58,22 @@ class StructuralConsent:
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
         self._map: dict[str, ConsentScope] = self._load()
+        self._last_mtime: float = self._current_mtime()
+
+    def _current_mtime(self) -> float:
+        try:
+            return self._path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    def reload_if_changed(self) -> bool:
+        """Reload consent from disk if file was modified. Returns True if reloaded."""
+        curr = self._current_mtime()
+        if curr != self._last_mtime:
+            self._map = self._load()
+            self._last_mtime = curr
+            return True
+        return False
 
     def _load(self) -> dict[str, ConsentScope]:
         try:
@@ -74,6 +90,7 @@ class StructuralConsent:
             self._path.write_text(json.dumps(
                 {k: s.value for k, s in self._map.items()}, indent=1),
                 encoding="utf-8")
+            self._last_mtime = self._current_mtime()
         except OSError as exc:
             log.warning("structural consent save failed: %s", exc)
 
