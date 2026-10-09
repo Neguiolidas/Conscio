@@ -87,8 +87,8 @@ def _row(r: sqlite3.Row) -> CatalogRow:
         plan_template=r["plan_template"], published_ts=r["published_ts"],
         content_sha256=r["content_sha256"],
         artifact_json=_as_bytes(r["artifact_json"]), schema_version=r["schema_version"],
-        signature=_as_bytes(r["signature"]) if "signature" in r else b"",
-        signer_pubkey=_as_bytes(r["signer_pubkey"]) if "signer_pubkey" in r else b"")
+        signature=_as_bytes(r["signature"]) if r.keys() and "signature" in r.keys() else b"",  # noqa: SIM118
+        signer_pubkey=_as_bytes(r["signer_pubkey"]) if r.keys() and "signer_pubkey" in r.keys() else b"")  # noqa: SIM118
 
 
 def publish_rows(db: Path, rows: list[CatalogRow]) -> int:
