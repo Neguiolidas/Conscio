@@ -27,15 +27,24 @@ KNOWN_MODELS: dict[str, list[str]] = {
     "lmstudio": [],
 }
 
-# Default base_url per type — MUST mirror adapter_config.build_adapter_from_config.
-_DEFAULT_BASE_URL = {
-    "lmstudio": "http://localhost:1234/v1",
-    "ollama": "http://localhost:11434",
-    "openai": "https://api.openai.com/v1",
-    "anthropic": "https://api.anthropic.com",
-    "gemini": "https://generativelanguage.googleapis.com",
-    "openai-compat": "http://localhost:8000/v1",
-}
+# Default base_url per type — the JSON is the single source of truth (v4.9,
+# Jade catalog item 7); the dict mirrors it only for the probe path, which
+# must work even if load fails at import time (probe has its own retry).
+try:
+    from ..provider_specs import load_provider_specs as _load_specs
+    _DEFAULT_BASE_URL = {k: str(v["base_url"]) for k, v in _load_specs().items()}
+except ValueError:
+    # Packaging bug: fail-fast is provider_specs' job; the hub keeps a
+    # mirror so a broken file logs loudly at the spec loader and probes
+    # still run against the shipped defaults below.
+    _DEFAULT_BASE_URL = {
+        "lmstudio": "http://localhost:1234/v1",
+        "ollama": "http://localhost:11434",
+        "openai": "https://api.openai.com/v1",
+        "anthropic": "https://api.anthropic.com",
+        "gemini": "https://generativelanguage.googleapis.com",
+        "openai-compat": "http://localhost:8000/v1",
+    }
 
 _CACHE: dict[tuple[str, str, str], tuple[float, dict]] = {}
 _CACHE_TTL = 60.0
