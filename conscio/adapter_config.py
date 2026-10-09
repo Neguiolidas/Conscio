@@ -146,12 +146,18 @@ def build_adapter_from_config(cfg: dict, *,
         if not providers_raw or not isinstance(providers_raw, list):
             log.warning("multi-fallback requires 'providers' list in config")
             return None, None
-        # Fill api_key from parent if provider doesn't have one
+        # Copy provider dicts so we don't mutate caller's config
+        copied_providers = []
         for p in providers_raw:
-            if isinstance(p, dict) and not p.get("api_key") and api_key:
-                p["api_key"] = api_key
+            if isinstance(p, dict):
+                p_copy = dict(p)
+                if not p_copy.get("api_key") and api_key:
+                    p_copy["api_key"] = api_key
+                copied_providers.append(p_copy)
+            else:
+                copied_providers.append(p)
         return MultiProviderFallbackAdapter(
-            providers=providers_raw,
+            providers=copied_providers,
             retry_per_provider=adapter_cfg.get("retry_per_provider", 2),
             backoff_base=adapter_cfg.get("backoff_base", 1.0),
             backoff_max=adapter_cfg.get("backoff_max", 10.0),

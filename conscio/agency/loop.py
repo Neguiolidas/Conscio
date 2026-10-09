@@ -157,7 +157,15 @@ class AutonomyLoop:
                                      max(1, budget.max_cycles // 2))
                 self.pipeline.autonomy_cap = (
                     1 if tier is MetabolicState.CRITICAL else cap0)
-                act_report = self.engine.act()
+                try:
+                    act_report = self.engine.act()
+                except Exception as exc:
+                    # v4.9 (Jade catalog item 9): unhandled exception becomes a failed
+                    # cycle in the report rather than crashing the autonomous loop.
+                    act_report = ActReport(
+                        status=ActStatus.FAILED,
+                        reason=f"unhandled exception in act: {exc}",
+                    )
                 report.reports.append(act_report)
                 report.cycles += 1
                 if act_report.status in _FAILURE_STATUSES:

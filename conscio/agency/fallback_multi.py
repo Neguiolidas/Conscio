@@ -39,6 +39,7 @@ connection error), retries with backoff, then falls to the next provider.
 from __future__ import annotations
 
 import logging
+import random
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -201,13 +202,24 @@ class MultiProviderFallbackAdapter(InferenceAdapter):
                     OSError,
                 ) as exc:
                     last_exc = exc
+                    safe_msg = _sanitize_exc(exc)
+                    from ..failure import FailureClass, FailureGovernor
+                    if FailureGovernor.classify(exc) == FailureClass.PERMANENT:
+                        log.warning(
+                            "provider %d (%s @ %s) failed with PERMANENT error: "
+                            "%s — skipping retries",
+                            idx, cfg.model, cfg.base_url, safe_msg,
+                        )
+                        break
+
                     wait = min(
                         self._backoff_base * (2 ** attempt),
                         self._backoff_max,
                     )
+                    # Add jitter (0.8x - 1.2x) to avoid thundering herd
+                    wait *= (0.8 + 0.4 * random.random())
                     # Sanitize error message: strip any Authorization header
                     # or api_key that an API might echo in error responses
-                    safe_msg = _sanitize_exc(exc)
                     log.warning(
                         "provider %d (%s @ %s) failed on attempt %d/%d: "
                         "%s — retrying in %.1fs",

@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS actions (
     approval_policy TEXT NOT NULL DEFAULT '',  -- v2.0.1: host-act gate
     outcome TEXT NOT NULL DEFAULT '',          -- v4.6: '' = fora de escopo
     outcome_ts REAL,
-    outcome_evidence TEXT NOT NULL DEFAULT ''  -- ponteiro, nunca texto livre
+    outcome_evidence TEXT NOT NULL DEFAULT '', -- ponteiro, nunca texto livre
+    is_infra INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_actions_goal ON actions(goal_fp, id);
 CREATE INDEX IF NOT EXISTS idx_actions_tool ON actions(tool);
@@ -74,8 +75,9 @@ class ActionLedger:
             pass                               # already present
         for column, decl in (("outcome", "TEXT NOT NULL DEFAULT ''"),
                              ("outcome_ts", "REAL"),
-                             ("outcome_evidence", "TEXT NOT NULL DEFAULT ''")):
-            try:                               # v4.6: bancos anteriores nao tem
+                             ("outcome_evidence", "TEXT NOT NULL DEFAULT ''"),
+                             ("is_infra", "INTEGER NOT NULL DEFAULT 0")):
+            try:                               # v4.6 / v4.9: bancos anteriores nao tem
                 self._conn.execute(
                     f"ALTER TABLE actions ADD COLUMN {column} {decl}")
                 self._conn.commit()
@@ -94,7 +96,7 @@ class ActionLedger:
                tokens_in: int = 0, tokens_out: int = 0,
                adapter: str = "", model: str = "",
                goal_text: str = "", approval_policy: str = "",
-               error: str = "") -> int:
+               error: str = "", is_infra: bool = False) -> int:
         # BUG-48: executed_since filters ok=1, but record(status='executed')
         # without an explicit ok= argument left ok=NULL. Distill reads
         # executed_since, so skills were never generated. Default ok=True
@@ -105,11 +107,12 @@ class ActionLedger:
         cur = self._conn.execute(
             "INSERT INTO actions (ts, goal_fp, goal_text, tool, args_json,"
             " rationale, tier, status, ok, tokens_in, tokens_out, adapter,"
-            " model, approval_policy, outcome, error)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " model, approval_policy, outcome, error, is_infra)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (time.time(), goal_fp, goal_text, tool, args_json, rationale,
              tier, status, None if ok is None else int(ok), tokens_in,
-             tokens_out, adapter, model, approval_policy, PENDING, error))
+             tokens_out, adapter, model, approval_policy, PENDING, error,
+             int(is_infra)))
         self._conn.commit()
         return int(cur.lastrowid or 0)
 
@@ -239,13 +242,15 @@ class ActionLedger:
         return float(row["ts"]) if row else 0.0
 
     def consecutive_failures(self, goal_fp: str) -> int:
-        """Trailing run of status='failed' rows for this goal."""
+        """Trailing run of status='failed' rows for this goal, ignoring infra errors."""
         rows = self._conn.execute(
-            "SELECT status FROM actions WHERE goal_fp=? ORDER BY id DESC"
+            "SELECT status, is_infra FROM actions WHERE goal_fp=? ORDER BY id DESC"
             " LIMIT 50", (goal_fp,)).fetchall()
         streak = 0
         for row in rows:
             if row["status"] == "failed":
+                if row["is_infra"]:
+                    continue
                 streak += 1
             else:
                 break

@@ -86,6 +86,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_reflect.add_argument("--mode", default="compact",
                            choices=["minimal", "compact", "full"],
                            help="output verbosity (default: compact)")
+    p_reflect.add_argument("--target-ontology", action="store_true",
+                           help="force ontological targeting in reflection cycle")
 
     # v3.7: council subcommand — convene 4-voice council from CLI
     p_council = sub.add_parser("council", help="convene a 4-voice council")
@@ -616,13 +618,15 @@ def _cmd_info(model: str, storage: str,
 
 def _cmd_reflect(world_state: str, model: str, confidence: float,
                  storage: str, mode: str = "compact",
-                 base_url: str | None = None, autodetect: bool = True) -> int:
+                 base_url: str | None = None, autodetect: bool = True,
+                 target_ontology: bool = False) -> int:
     from .engine import ConsciousnessEngine
     eng = ConsciousnessEngine(model_name=model, storage_path=_storage(storage),
                                base_url=base_url, autodetect=autodetect)
     try:
         _note_if_unknown(model, eng.model_info)
-        result = eng.reflect(world_state=world_state, confidence=confidence)
+        result = eng.reflect(world_state=world_state, confidence=confidence,
+                             target_ontology=target_ontology)
 
         if mode == "minimal":
             print(result.get("summary", ""))
@@ -1324,7 +1328,8 @@ def _main(argv: list[str] | None = None) -> int:
     if args.command == "reflect":
         return _cmd_reflect(args.world_state, args.model, args.confidence,
                             args.storage, args.mode,
-                            base_url=args.base_url, autodetect=args.autodetect)
+                            base_url=args.base_url, autodetect=args.autodetect,
+                            target_ontology=getattr(args, "target_ontology", False))
     if args.command == "council":
         return _cmd_council(args.question, args.context, args.options,
                            args.model, args.storage, args.mode)

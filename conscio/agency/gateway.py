@@ -91,11 +91,19 @@ def parse_kv(text: str) -> dict[str, Any]:
 
 def coerce(value: str, type_name: str) -> Any:
     """Coerce a KV string value using a tool's params schema type."""
-    if type_name == "int":
-        return int(value)
-    if type_name == "float":
-        return float(value)
-    if type_name == "bool":
+    if not isinstance(value, str):
+        return value
+    if type_name in ("int", "integer"):
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return value
+    if type_name in ("float", "number"):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return value
+    if type_name in ("bool", "boolean"):
         return value.strip().lower() in ("true", "1", "yes")
     return value
 

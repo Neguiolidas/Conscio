@@ -19,3 +19,21 @@ def test_unknown_type_returns_none():
     a, t = build_adapter_from_config({"adapter": {"type": "bogus"}},
                                      fallback_model="m")
     assert a is None and t is None
+
+
+def test_build_multi_fallback_does_not_mutate_caller_dict():
+    cfg = {
+        "adapter": {
+            "type": "multi-fallback",
+            "api_key": "top-secret",
+            "providers": [
+                {"model": "p1", "base_url": "http://p1/v1"},
+            ],
+        }
+    }
+    adapter, atype = build_adapter_from_config(cfg, fallback_model="m")
+    assert atype == "multi-fallback"
+    assert adapter is not None
+    # Crucial assertion: provider dict in caller's cfg must NOT have been mutated
+    assert "api_key" not in cfg["adapter"]["providers"][0]
+

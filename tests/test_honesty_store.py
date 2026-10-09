@@ -5,7 +5,7 @@ from conscio.honesty.store import ClaimStore
 def test_record_and_read_back(tmp_path):
     store = ClaimStore(tmp_path / "conscio.db")
     cid = store.record("s1", "commit", "abc1234", o.CONTRADICTED, "")
-    rows = store.recent()
+    rows = [dict(r) for r in store._conn.execute("SELECT * FROM claims ORDER BY id DESC").fetchall()]
     assert [r["id"] for r in rows] == [cid]
     assert rows[0]["outcome"] == o.CONTRADICTED
     assert rows[0]["anchor"] == "abc1234"

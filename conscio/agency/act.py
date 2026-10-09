@@ -154,10 +154,10 @@ class ActPipeline:
                  if self.breaker.is_quarantined(fp)]
             )
         if goal_text is None:
-            # No goal the actor may run: every active goal is either quarantined
-            # (breaker) or diagnostic-only (v1.6 #7 provenance gate).
+            # v4.9 (Jade catalog item 11): when every active goal is quarantined
+            # or non-executable, this is a healthy resting state (IDLE), not a failure.
             return ActReport(
-                status=ActStatus.FAILED,
+                status=ActStatus.IDLE,
                 reason="no executable goal (all quarantined or diagnostic-only)")
         goal_fp = goal_fingerprint(goal_text)
 
@@ -195,6 +195,15 @@ class ActPipeline:
                               args=proposal.args,
                               reason=f"unknown tool '{proposal.tool}'",
                               goal_text=goal_text)
+        # v4.9 (Jade catalog item 7): T3 produces flat string args; coerce typed args
+        if getattr(self.gateway, "last_tier", "") == "T3" and hasattr(spec, "params") and isinstance(spec.params, dict):
+            from .gateway import coerce
+            for arg_name, arg_val in list(proposal.args.items()):
+                if isinstance(arg_val, str) and arg_name in spec.params:
+                    type_info = spec.params[arg_name]
+                    tname = type_info.get("type", "") if isinstance(type_info, dict) else str(type_info)
+                    if tname:
+                        proposal.args[arg_name] = coerce(arg_val, tname)
         arg_errors = validate(proposal.args, spec.params)
         if arg_errors:
             return self._fail(goal_fp, tool=proposal.tool,
@@ -424,7 +433,8 @@ class ActPipeline:
                                     tier=self.gateway.last_tier or "T2",
                                     status="failed",
                                     error=reason,
-                                    tokens_in=tokens_in, tokens_out=tokens_out)
+                                    tokens_in=tokens_in, tokens_out=tokens_out,
+                                    is_infra=infra)
         # v4.8.1 (#866): a new attempt starts a new usage window — without
         # this reset, one adapter call's tokens would be re-counted into
         # every subsequent failure row in the same cycle.

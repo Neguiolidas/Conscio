@@ -14,7 +14,7 @@ from typing import Any
 
 from . import config as _config
 
-BUILTIN = list(_config.KNOWN_TYPES)
+BUILTIN = [t for t in _config.KNOWN_TYPES if t != "multi-fallback"]
 
 # Seed for the free-text datalist when a provider has no listing endpoint
 # (anthropic) or a probe fails. Not exhaustive — the field stays free-text.
@@ -37,7 +37,7 @@ _DEFAULT_BASE_URL = {
     "openai-compat": "http://localhost:8000/v1",
 }
 
-_CACHE: dict[tuple[str, str], tuple[float, dict]] = {}
+_CACHE: dict[tuple[str, str, str], tuple[float, dict]] = {}
 _CACHE_TTL = 60.0
 
 
@@ -114,11 +114,6 @@ def probe_models(provider_cfg: dict, *, refresh: bool = False) -> dict:
     base = (provider_cfg.get("base_url") or _DEFAULT_BASE_URL.get(atype, "")).rstrip("/")
     if atype == "anthropic" or not base:
         return _fallback(atype)
-    cache_key = (atype, base)
-    if not refresh:
-        hit = _CACHE.get(cache_key)
-        if hit and (time.monotonic() - hit[0]) < _CACHE_TTL:
-            return dict(hit[1])
     env = provider_cfg.get("api_key_env")
     key = ""
     if env:
@@ -126,6 +121,13 @@ def probe_models(provider_cfg: dict, *, refresh: bool = False) -> dict:
         if not key:
             from . import config as _cfg
             key = _cfg.vault_load(env) or ""
+    import hashlib
+    key_hash = hashlib.sha256(key.encode()).hexdigest()[:16] if key else ""
+    cache_key = (atype, base, key_hash)
+    if not refresh:
+        hit = _CACHE.get(cache_key)
+        if hit and (time.monotonic() - hit[0]) < _CACHE_TTL:
+            return dict(hit[1])
     headers: dict = {}
     try:
         if atype == "ollama":
