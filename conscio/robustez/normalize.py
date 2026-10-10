@@ -13,6 +13,7 @@ from typing import Any
 
 MAX_INGESTION_BYTES = 256 * 1024  # 256 KiB
 MAX_RECORDS_CAP = 50
+_WRAPPER_KEYS = ("items", "files", "results", "data")
 
 
 def normalize_records(
@@ -22,20 +23,22 @@ def normalize_records(
 ) -> list[dict[str, str]]:
     """Normaliza entrada de conectores em registros estruturados com sha256 digest.
 
-    Rejeita cargas > 256 KiB.
-    Desembrulha chaves conhecidas ('items', 'files', 'results').
+    Rejeita cargas > 256 KiB. Texto vazio ou só espaços: nenhum registro.
+    Desembrulha chaves conhecidas ('items', 'files', 'results', 'data'): a
+    primeira que contém uma lista é a carga, e lista vazia dá zero registros.
+    Dict sem chave conhecida vira um registro; texto que não é lista nem dict
+    (texto plano ou escalar JSON como "42") vira um registro com o texto.
     Aplica cap máximo de 50 registros; se houver truncamento e ``stats`` for
     fornecido, ele recebe {'total': N, 'returned': M, 'truncated': bool} —
     truncamento silencioso vira truncamento visível.
     Não deduplica: itens com o mesmo conteúdo viram registros separados, com o
     mesmo ``digest``. Deduplicar é decisão do consumidor, que usa o ``digest``.
     """
-    if not text:
-        return []
-
     raw_bytes = text.encode("utf-8")
     if len(raw_bytes) > MAX_INGESTION_BYTES:
         raise ValueError(f"Payload size ({len(raw_bytes)} bytes) exceeds 256 KiB limit")
+    if not text.strip():
+        return []
 
     parsed_json: Any = None
     try:
@@ -43,20 +46,15 @@ def normalize_records(
     except Exception:
         parsed_json = None
 
-    raw_list: list[Any] = []
-    if parsed_json is not None:
-        if isinstance(parsed_json, list):
-            raw_list = parsed_json
-        elif isinstance(parsed_json, dict):
-            # Tenta desembrulhar
-            for key in ("items", "files", "results", "data"):
-                if key in parsed_json and isinstance(parsed_json[key], list):
-                    raw_list = parsed_json[key]
-                    break
-            if not raw_list:
-                raw_list = [parsed_json]
+    raw_list: list[Any]
+    if isinstance(parsed_json, list):
+        raw_list = parsed_json
+    elif isinstance(parsed_json, dict):
+        unwrapped = next((parsed_json[k] for k in _WRAPPER_KEYS
+                          if isinstance(parsed_json.get(k), list)), None)
+        raw_list = [parsed_json] if unwrapped is None else unwrapped
     else:
-        # Texto plano
+        # Texto plano, ou escalar JSON ("42", "true", "null"): o texto é o registro
         raw_list = [{"content": text.strip()}]
 
     records: list[dict[str, str]] = []

@@ -107,10 +107,15 @@ def _apply_one(document: dict, kind: str, op: dict) -> str:
 
     if kind == "insert_block":
         anchor = str(op.get("after_block_id") or "")
-        idx = next((i for i, b in enumerate(blocks)
-                    if b.get("block_id") == anchor), len(blocks))
+        if not anchor:
+            position = len(blocks)  # no anchor: append at the end
+        elif anchor in block_ids:
+            position = next(i for i, b in enumerate(blocks)
+                            if b.get("block_id") == anchor) + 1
+        else:
+            raise LookupError(f"anchor block {anchor!r} not found")
         block_id = make_block_id(text, block_ids)
-        blocks.insert(idx + 1, {"block_id": block_id, "text": text})
+        blocks.insert(position, {"block_id": block_id, "text": text})
         return f"block {block_id} inserted"
 
     if kind == "replace_block":

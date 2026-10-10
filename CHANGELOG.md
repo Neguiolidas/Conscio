@@ -25,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the endpoint is called.
 - **logitjev**: score labels are single digits, 0 to N-1. With `max_tokens=1`,
   a digit-splitting tokenizer read a top "10" vote as level 1.
+- **untrusted**: only an envelope `mark_untrusted` itself produced is returned
+  as-is. Text that merely looked like one (right prefix and suffix, even with
+  the guidance line) came back with a raw closing tag inside, so its payload
+  escaped the envelope.
+- **deltaops**: `insert_block` with an unknown `after_block_id` is skipped
+  with a reason, like any unknown reference; it used to append at the end.
+- **normalize**: a known wrapper key holding an empty list gives zero records
+  (it gave one phantom record of the whole wrapper); a JSON scalar such as
+  `42` or `true` is kept as plain text (it was dropped); whitespace-only input
+  gives no records.
 
 ### Added
 
