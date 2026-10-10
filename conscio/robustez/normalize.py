@@ -1,4 +1,4 @@
-"""Normalização defensiva de conectores para registros estruturados com deduplicação.
+"""Normalização defensiva de conectores para registros estruturados.
 
 Origem:
 - OpenBot: server/src/memory/ingestion.ts:13-100
@@ -27,6 +27,8 @@ def normalize_records(
     Aplica cap máximo de 50 registros; se houver truncamento e ``stats`` for
     fornecido, ele recebe {'total': N, 'returned': M, 'truncated': bool} —
     truncamento silencioso vira truncamento visível.
+    Não deduplica: itens com o mesmo conteúdo viram registros separados, com o
+    mesmo ``digest``. Deduplicar é decisão do consumidor, que usa o ``digest``.
     """
     if not text:
         return []

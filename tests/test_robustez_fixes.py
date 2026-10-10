@@ -148,6 +148,15 @@ class TestNormalizeFix(unittest.TestCase):
         recs = normalize.normalize_records('[{"content":"x"}]')
         self.assertEqual(len(recs), 1)
 
+    def test_same_content_different_ids_stay_separate(self):
+        # Owner decision (2026-10-10): dedup belongs to the consumer, via digest.
+        payload = '[{"id":"a","content":"same"},{"id":"b","content":"same"}]'
+        stats: dict = {}
+        recs = normalize.normalize_records(payload, stats=stats)
+        self.assertEqual([r["external_id"] for r in recs], ["a", "b"])
+        self.assertEqual(recs[0]["digest"], recs[1]["digest"])
+        self.assertEqual(stats, {"total": 2, "returned": 2, "truncated": False})
+
 
 class TestVerifierFix(unittest.TestCase):
     def test_bare_import_error_is_invalid_gate(self):
