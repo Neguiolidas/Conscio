@@ -54,7 +54,7 @@ class TestOpenAICompatibleEmbedder:
             resp.__exit__ = MagicMock(return_value=False)
             return resp
 
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with patch("conscio.session_rag.open_no_redirect", side_effect=fake_urlopen):
             result = e.embed("hello world")
 
         assert result == [0.1, 0.2, 0.3]
@@ -77,15 +77,22 @@ class TestOpenAICompatibleEmbedder:
             return resp
 
         long_text = "x" * 5000
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with patch("conscio.session_rag.open_no_redirect", side_effect=fake_urlopen):
             e.embed(long_text)
 
         assert len(captured["payload"]["input"]) <= 4000
 
     def test_embed_returns_empty_on_error(self):
         e = OpenAICompatibleEmbedder(url="http://fake:9999/v1/embeddings")
-        with patch("urllib.request.urlopen", side_effect=OSError("connection refused")):
+        # Seam rule (slice 1): the mock must be asserted CALLED, or the test
+        # passes without the seam ever being hit (the unmocked path with
+        # DNS blocked also returns []).
+        with patch("conscio.session_rag.open_no_redirect",
+                   side_effect=OSError("connection refused")) as mock_open:
             result = e.embed("test")
+        assert mock_open.called, (
+            "the seam (open_no_redirect) was never hit — this test passes "
+            "without exercising the moved seam")
         assert result == []
 
     def test_embed_batch(self):
@@ -103,7 +110,7 @@ class TestOpenAICompatibleEmbedder:
             resp.__exit__ = MagicMock(return_value=False)
             return resp
 
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with patch("conscio.session_rag.open_no_redirect", side_effect=fake_urlopen):
             results = e.embed_batch(["a", "b", "c"])
 
         assert len(results) == 3
@@ -126,7 +133,7 @@ class TestOpenAICompatibleEmbedder:
             resp.__exit__ = MagicMock(return_value=False)
             return resp
 
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with patch("conscio.session_rag.open_no_redirect", side_effect=fake_urlopen):
             e.embed("test")
 
         assert captured["auth"] == "Bearer sk-test-key"
@@ -148,7 +155,7 @@ class TestOpenAICompatibleEmbedder:
             resp.__exit__ = MagicMock(return_value=False)
             return resp
 
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with patch("conscio.session_rag.open_no_redirect", side_effect=fake_urlopen):
             e.embed("test")
 
         # No auth header when no key
@@ -174,7 +181,7 @@ class TestOllamaEmbedderCompat:
             resp.__exit__ = MagicMock(return_value=False)
             return resp
 
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with patch("conscio.session_rag.open_no_redirect", side_effect=fake_urlopen):
             result = e.embed("test")
 
         assert result == [0.1, 0.2]
@@ -194,7 +201,7 @@ class TestOllamaEmbedderCompat:
             resp.__exit__ = MagicMock(return_value=False)
             return resp
 
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with patch("conscio.session_rag.open_no_redirect", side_effect=fake_urlopen):
             e.embed("test")
 
         assert "prompt" in captured["payload"]

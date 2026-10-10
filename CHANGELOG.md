@@ -61,6 +61,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than tool output: `bearer <word>` (any case) and `api_key = <value>` are
   hidden even when they are prose. The shared `SecretMask` used on tool
   output is unchanged.
+- **credentialed sites**: the other four modules that send a credential
+  (`hub/providers`, `decision_adapter`, `liaison/relay_net`, `session_rag`)
+  no longer follow redirects either, so `Authorization: Bearer` and API keys
+  are never forwarded to a redirect target. A test now fails the build if any
+  module that names a credential header reaches a redirect-following urllib
+  opener or imports `requests`, `httpx`, `aiohttp` or `urllib3`.
+  **Behaviour change:** a provider whose model listing redirects now gets the
+  static fallback list (`probe_models` returns `source="fallback"`); point
+  `base_url` at the final address.
 
 ### Added
 

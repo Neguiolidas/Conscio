@@ -12,6 +12,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from ..http_safety import open_no_redirect
 from . import config as _config
 
 BUILTIN = [t for t in _config.KNOWN_TYPES if t != "multi-fallback"]
@@ -97,7 +98,7 @@ def _get_json(url: str, *, headers: dict | None = None, timeout: float = 10) -> 
     """GET + parse JSON. Raises on non-2xx / bad JSON. NEVER log `url` (it may
     carry a ?key= secret for gemini)."""
     req = urllib.request.Request(url, headers=headers or {}, method="GET")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with open_no_redirect(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
