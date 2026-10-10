@@ -84,6 +84,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retryable; an exhausted chain's such failure used to arrive as `PERMANENT`
   and was marked permanent.
 
+- **verifier unavailable**: when the observation store cannot be opened or a
+  pointer lookup raises `sqlite3.Error`, `pipelines.verify` reports those
+  criteria in a new `unverified` list with `verifier_unavailable: True`
+  (fail-closed, `pass: False`) and records the error class in a top-level
+  `reason` string. Only pointer-shaped evidence (`obs:<digits>` or a 64-hex
+  blob hash) can be `unverified`; prose evidence fails with "evidence is not a
+  resolvable pointer" whether the store is up or down. Lookup queries and store
+  opening run under `engine._obs_lock`. A failure midway through verification
+  preserves any criteria that already verified. `gate:vetoed` payloads now
+  carry `unverified_criteria` and `verifier_unavailable`.
+  **Behaviour change:** `verify` results now include `"unverified"` and
+  `"verifier_unavailable"` keys on all paths; an unavailable or locked
+  observation database is no longer reported as a forged pointer, prose
+  evidence keeps failing as a non-pointer, and cached connection or database
+  lookup errors no longer escape unhandled.
+
 ### Security
 
 - **agency adapters**: model calls no longer follow redirects. `urllib`

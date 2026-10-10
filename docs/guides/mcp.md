@@ -359,6 +359,7 @@ Generate intent-driven acceptance criteria. Auto-detects risk domains
 
 Verify acceptance criteria against `verify:evidence` events in EventBus.
 Use `criteria_source="acceptance"` to load from the last acceptance event.
+Results carry `unverified` and `verifier_unavailable` for criteria whose evidence pointer could not be checked because the observation store failed; `pass` stays `False`.
 
 ### `conscio_continuous_loop(task?, pattern?, frequency?, …)`
 

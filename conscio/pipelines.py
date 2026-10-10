@@ -14,6 +14,7 @@ Tools:
 from __future__ import annotations
 
 import secrets
+import sqlite3
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -215,28 +216,36 @@ def _domain_templates(domain: str, goal: str) -> list[tuple[str, str]]:
 # ── 2. verify ─────────────────────────────────────────────────────────
 
 
+def _is_pointer(detail: str) -> bool:
+    """True iff `detail` is a well-formed evidence pointer: ``obs:<digits>``
+    or a 64-char lowercase hex blob hash. The grammar lives here only — both
+    `_resolves` and `verify` route on it, so prose is never treated as a
+    pointer that could be looked up (spec §2.1)."""
+    detail = (detail or "").strip()
+    if detail.startswith("obs:") and detail[4:].isdigit():
+        return True
+    return len(detail) == 64 and all(c in "0123456789abcdef" for c in detail)
+
+
 def _resolves(detail: str, conn) -> bool:
-    """A evidencia aponta para artefato que EXISTE?
+    """True iff `detail` is a well-formed pointer AND the artifact it names
+    exists in the observation store.
 
-    Duas condicoes, e a segunda e a que importa: forma de ponteiro
-    (``obs:<id>`` ou hash de blob) E a linha correspondente presente no
-    obsstore. So a forma seria trocar "o criterio se aprova citando o proprio
-    nome" por "se aprova citando obs: e um numero inventado".
-
-    Sem conexao o criterio FALHA, nunca passa: verificar sem conseguir olhar e
-    o UNSUPPORTED do N3, e UNSUPPORTED nao aprova.
+    Shape alone would trade "the criterion approves itself by citing its own
+    name" for "it approves itself by citing an invented obs: number": the
+    row must be there. A criterion cannot be approved without looking, so a
+    caller with no usable connection must route it to `unverified` instead of
+    asking this function — the caller in verify() does exactly that.
     """
     detail = (detail or "").strip()
-    if conn is None:
+    if not _is_pointer(detail):
         return False
-    if detail.startswith("obs:") and detail[4:].isdigit():
+    if detail.startswith("obs:"):
         row = conn.execute("SELECT 1 FROM observations WHERE id=?",
                            (int(detail[4:]),)).fetchone()
         return row is not None
-    if len(detail) == 64 and all(c in "0123456789abcdef" for c in detail):
-        row = conn.execute("SELECT 1 FROM blobs WHERE h=?", (detail,)).fetchone()
-        return row is not None
-    return False
+    row = conn.execute("SELECT 1 FROM blobs WHERE h=?", (detail,)).fetchone()
+    return row is not None
 
 
 def verify(
@@ -256,7 +265,7 @@ def verify(
         criteria_source: "acceptance" = load from last pipeline:acceptance event.
 
     Returns:
-        Dict with pass, verified, failed, total, verified_count.
+        Dict with pass, verified, failed, unverified, verifier_unavailable, total, verified_count.
     """
     _check_closed(engine)
 
@@ -267,11 +276,17 @@ def verify(
             criteria = acceptance_events[0].data.get("criteria", [])
 
     if not criteria:
-        # v4.6: aprovar a ausencia de criterio e o defeito que este
-        # endurecimento existe para acabar. Sem criterio nao ha o que
-        # verificar, logo nao passa.
-        return {"pass": False, "reason": "no criteria", "verified": [],
-                "failed": [], "total": 0, "verified_count": 0}
+        # Zero criteria cannot pass: without criteria there is nothing to verify.
+        return {
+            "pass": False,
+            "reason": "no criteria",
+            "verified": [],
+            "failed": [],
+            "unverified": [],
+            "verifier_unavailable": False,
+            "total": 0,
+            "verified_count": 0,
+        }
 
     # Check for evidence events
     evidence_events = engine.event_bus.query(type="host:event", limit=100)
@@ -282,47 +297,87 @@ def verify(
         if eid:
             evidence_map[eid] = detail
 
-    # A conexao do obsstore e a do proprio engine (lazy, cacheada, fechada no
-    # close): nenhuma conexao nova por chamada, nenhum fd a vazar.
-    try:
-        obs_conn = engine._obs_conn()
-    except Exception:                      # sem captura disponivel
-        obs_conn = None
-
     verified_list: list[dict] = []
     failed_list: list[dict] = []
+    unverified_list: list[dict] = []
+    store_error: Exception | None = None
+    store_unavailable = False
 
-    for c in criteria:
-        # Accept strings as shorthand: "ID" → {"id": "ID", "description": "ID"}
-        if isinstance(c, str):
-            c = {"id": c, "description": c}
-        cid = c.get("id", "")
-        desc = c.get("description", "")
-        detail = evidence_map.get(cid, "")
-        if cid not in evidence_map:
-            failed_list.append({
-                "id": cid, "description": desc,
-                "reason": "no evidence found",
-            })
-        elif _resolves(detail, obs_conn):
-            verified_list.append({
-                "id": cid, "description": desc,
-                "verified": True, "evidence": detail,
-            })
-        else:
-            failed_list.append({
-                "id": cid, "description": desc,
-                "reason": "evidence is not a resolvable pointer",
-            })
+    # Observation store operations run under engine._obs_lock per the _obs_conn contract.
+    with engine._obs_lock:
+        try:
+            obs_conn = engine._obs_conn()
+        except Exception as exc:
+            obs_conn = None
+            store_error = exc
+            store_unavailable = True
 
-    all_pass = len(failed_list) == 0
+        for c in criteria:
+            # Accept strings as shorthand: "ID" → {"id": "ID", "description": "ID"}
+            if isinstance(c, str):
+                c = {"id": c, "description": c}
+            cid = c.get("id", "")
+            desc = c.get("description", "")
+            detail = evidence_map.get(cid, "")
+            if cid not in evidence_map:
+                failed_list.append({
+                    "id": cid, "description": desc,
+                    "reason": "no evidence found",
+                })
+            elif not _is_pointer(detail):
+                # Prose has no pointer to look up, so it fails on its own
+                # merits whether the store is up or down (spec §2.1):
+                # `unverified` is reserved for pointers the verifier could
+                # not check.
+                failed_list.append({
+                    "id": cid, "description": desc,
+                    "reason": "evidence is not a resolvable pointer",
+                })
+            elif store_unavailable:
+                unverified_list.append({
+                    "id": cid, "description": desc,
+                    "evidence": detail,
+                    "reason": "verifier unavailable",
+                })
+            else:
+                try:
+                    resolves = _resolves(detail, obs_conn)
+                except sqlite3.Error as exc:
+                    store_unavailable = True
+                    store_error = exc
+                    unverified_list.append({
+                        "id": cid, "description": desc,
+                        "evidence": detail,
+                        "reason": "verifier unavailable",
+                    })
+                    continue
+
+                if resolves:
+                    verified_list.append({
+                        "id": cid, "description": desc,
+                        "verified": True, "evidence": detail,
+                    })
+                else:
+                    failed_list.append({
+                        "id": cid, "description": desc,
+                        "reason": "evidence is not a resolvable pointer",
+                    })
+
+    verifier_unavailable = bool(unverified_list)
+    all_pass = len(failed_list) == 0 and len(unverified_list) == 0
+
     result = {
         "pass": all_pass,
         "verified": verified_list,
         "failed": failed_list,
+        "unverified": unverified_list,
+        "verifier_unavailable": verifier_unavailable,
         "total": len(criteria),
         "verified_count": len(verified_list),
     }
+    if verifier_unavailable:
+        err_name = store_error.__class__.__name__ if store_error is not None else "Error"
+        result["reason"] = f"verifier unavailable ({err_name})"
 
     if all_pass:
         engine.event_bus.emit("pipeline:verified", "consciousness", result)
@@ -330,6 +385,8 @@ def verify(
         engine.event_bus.emit("gate:vetoed", "consciousness", {
             "gate": "verify",
             "failed_criteria": [f["id"] for f in failed_list],
+            "unverified_criteria": [u["id"] for u in unverified_list],
+            "verifier_unavailable": verifier_unavailable,
             "total": len(criteria),
         })
 
