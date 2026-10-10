@@ -3,6 +3,7 @@
 from conscio.agency.adapter import (
     AdapterBadResponse,
     AdapterConnectionError,
+    AdapterHTTPError,
     AdapterTimeout,
 )
 from conscio.failure import FailureClass, FailureGovernor
@@ -31,6 +32,12 @@ def test_classify_permanent():
 
 def test_classify_stall():
     assert FailureGovernor.classify(Exception("empty response no content")) is FailureClass.STALL
+
+
+def test_classify_http_redirect():
+    assert FailureGovernor.classify(AdapterHTTPError("redirect refused", status=302)) is FailureClass.PERMANENT
+    assert FailureGovernor.classify(AdapterHTTPError("server error", status=500)) is FailureClass.PROVIDER_OUTAGE
+    assert FailureGovernor.classify(AdapterHTTPError("rate limit", status=429)) is FailureClass.RATE_LIMIT
 
 
 # ── should_retry ──────────────────────────────────────────────────────

@@ -51,6 +51,8 @@ class FailureGovernor:
                 return FailureClass.PERMANENT
             if exc.status >= 500:
                 return FailureClass.PROVIDER_OUTAGE
+            if 300 <= exc.status < 400:
+                return FailureClass.PERMANENT  # retrying hits the same redirect
             return FailureClass.MALFORMED_STREAM
         if isinstance(exc, AdapterBadResponse):
             return FailureClass.MALFORMED_STREAM

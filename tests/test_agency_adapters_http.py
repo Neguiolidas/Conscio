@@ -368,13 +368,16 @@ class TestErrors:
 
         from conscio.agency import adapters
 
-        def fake_urlopen(*args, **kwargs):
+        def fake_open(*args, **kwargs):
+            fake_open.called = True
             raise urllib.error.HTTPError(
                 "http://x", 500, "Server Error", {}, io.BytesIO(b"boom"))
 
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        fake_open.called = False
+        monkeypatch.setattr(adapters, "open_no_redirect", fake_open)
         with pytest.raises(AdapterBadResponse):
             adapters._post_json("http://x", {}, 1.0)
+        assert fake_open.called
 
     def test_the_error_names_the_endpoint_it_could_not_reach(self):
         """'No address associated with hostname' never says which hostname,
@@ -388,17 +391,31 @@ class TestErrors:
     def test_a_key_in_the_query_string_is_not_named(self, monkeypatch):
         """These messages reach the ledger and the event bus."""
         import urllib.error
-        import urllib.request
 
-        def fake_urlopen(*args, **kwargs):
+        def fake_open(*args, **kwargs):
+            fake_open.called = True
             raise urllib.error.URLError("nope")
 
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        fake_open.called = False
+        monkeypatch.setattr(adapters, "open_no_redirect", fake_open)
         with pytest.raises(AdapterConnectionError) as exc:
             adapters._post_json("http://host/v1/chat?key=sk-SEKRET-LEAK-7f3a",
                                 {}, 1.0)
+        assert fake_open.called
         assert "sk-SEKRET-LEAK-7f3a" not in str(exc.value)
         assert "http://host/v1/chat" in str(exc.value)
+
+    def test_endpoint_drops_query_fragment_and_userinfo(self):
+        assert (
+            adapters._endpoint("https://u:p@h:8080/v1/chat?key=K#frag")
+            == "https://h:8080/v1/chat"
+        )
+
+    def test_endpoint_clean_url_unchanged(self):
+        assert (
+            adapters._endpoint("http://127.0.0.1:8080/v1/chat")
+            == "http://127.0.0.1:8080/v1/chat"
+        )
 
 
 class TestAdapterTaxonomyHardening:
@@ -407,16 +424,17 @@ class TestAdapterTaxonomyHardening:
     """
 
     def test_try_break_timeout_maps_to_adapter_timeout(self, monkeypatch):
-        import urllib.request
-
         from conscio.agency.adapter import AdapterTimeout
 
-        def fake_urlopen(*args, **kwargs):
+        def fake_open(*args, **kwargs):
+            fake_open.called = True
             raise TimeoutError("slow")
 
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        fake_open.called = False
+        monkeypatch.setattr(adapters, "open_no_redirect", fake_open)
         with pytest.raises(AdapterTimeout):
             adapters._post_json("http://x", {}, 1.0)
+        assert fake_open.called
 
     def test_try_break_empty_payload_is_badresponse_not_keyerror(self, monkeypatch):
         # The strict extractors (choices/content/candidates) must wrap a missing
@@ -433,13 +451,14 @@ class TestAdapterTaxonomyHardening:
     def test_try_break_api_key_never_in_exception(self, monkeypatch):
         import io
         import urllib.error
-        import urllib.request
 
-        def fake_urlopen(*args, **kwargs):
+        def fake_open(*args, **kwargs):
+            fake_open.called = True
             raise urllib.error.HTTPError(
                 "http://x", 401, "Unauthorized", {}, io.BytesIO(b""))
 
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        fake_open.called = False
+        monkeypatch.setattr(adapters, "open_no_redirect", fake_open)
         leaky = "sk-SEKRET-LEAK-7f3a"
         try:
             OpenAIAdapter(model="gpt-4o", api_key=leaky).generate("hi")
@@ -448,3 +467,4 @@ class TestAdapterTaxonomyHardening:
             assert leaky not in repr(exc)
         else:
             raise AssertionError("expected an adapter error")
+        assert fake_open.called

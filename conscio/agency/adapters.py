@@ -11,7 +11,9 @@ import os
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urljoin, urlsplit
 
+from ..http_safety import open_no_redirect
 from .adapter import (
     AdapterBadResponse,
     AdapterCaps,
@@ -22,16 +24,41 @@ from .adapter import (
     InferenceResult,
 )
 
+MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+
 
 def _endpoint(url: str) -> str:
-    """The address to name in an error, without anything secret in it.
+    """The address to name in an error, without credentials, query, or fragment.
 
     A DNS failure reads '[Errno -5] No address associated with hostname' and
-    never says which hostname, which is the one thing the operator needs. The
-    query string is dropped because some providers accept a key there, and
-    these messages reach the ledger and the event bus.
+    never says which hostname, which is the one thing the operator needs.
+    The query string, fragment (#...), and userinfo (user:pw@) are dropped
+    because providers may accept keys or tokens there, and these error messages
+    reach the ledger and the event bus. Preserves scheme, host, port, and path.
     """
-    return url.split("?", 1)[0]
+    parsed = urlsplit(url)
+    host = parsed.netloc.rpartition("@")[2]
+    scheme = f"{parsed.scheme}://" if parsed.scheme else ""
+    return f"{scheme}{host}{parsed.path}"
+
+
+def _origin(location: str, request_url: str | None = None) -> str:
+    """The origin (scheme://host[:port]) of a redirect target.
+
+    A third party controls the Location header; its path can carry an OAuth token
+    or secret key, and the operator only needs the host/origin to understand where
+    the request was being redirected. Drops path, fragment, userinfo, and query.
+    Resolves relative Location headers against the request URL. Returns '?' when
+    no scheme and host are present.
+    """
+    if not location or location == "?":
+        return "?"
+    resolved = urljoin(request_url, location) if request_url else location
+    parsed = urlsplit(resolved)
+    host = parsed.netloc.rpartition("@")[2]
+    if parsed.scheme and host:
+        return f"{parsed.scheme}://{host}"
+    return "?"
 
 
 def _post_json(url: str, payload: dict, timeout: float,
@@ -42,11 +69,21 @@ def _post_json(url: str, payload: dict, timeout: float,
         headers={"Content-Type": "application/json", **(headers or {})})
     where = _endpoint(url)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+        with open_no_redirect(request, timeout=timeout) as response:
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_RESPONSE_BYTES:
+                raise AdapterBadResponse(f"{where}: response exceeds {MAX_RESPONSE_BYTES} bytes")
+            return json.loads(raw.decode("utf-8"))
     except TimeoutError as exc:
         raise AdapterTimeout(f"{where}: {exc}") from exc
-    except urllib.error.HTTPError as exc:        # server responded 4xx/5xx
+    except urllib.error.HTTPError as exc:        # server responded 4xx/5xx or 3xx
+        if 300 <= exc.code < 400:
+            location = exc.headers.get("Location", "?") if exc.headers else "?"
+            raise AdapterHTTPError(
+                f"{where}: HTTP {exc.code}: redirect to {_origin(location, request_url=url)} refused; "
+                "point base_url at the final address",
+                status=exc.code,
+            ) from exc
         raise AdapterHTTPError(
             f"{where}: HTTP {exc.code}: {exc.reason}",
             status=exc.code) from exc

@@ -38,6 +38,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ssrf**: a root dot (`localhost.`, `box.internal.`) no longer slips past the
   hostname blocklist; the name is matched without it.
 
+### Security
+
+- **agency adapters**: model calls no longer follow redirects. `urllib`
+  re-sent `Authorization`, `x-api-key` and `x-goog-api-key` to the redirect
+  target, including a different host. A 3xx now fails as a permanent error
+  (not retried) whose message names only the target's origin
+  (`scheme://host:port`), never its path, query, fragment or credentials.
+  **Behaviour change:** a provider configured at `http://` that redirects to
+  `https://` used to work and now fails; point `base_url` at the final address.
+- **agency adapters**: a response body larger than 32 MiB is refused instead
+  of being read into memory whole.
+- **agency adapters**: error messages name the endpoint without userinfo,
+  query string or fragment; any of them can carry a key or token, and these
+  messages reach the ledger and the event bus.
+
 ### Added
 
 - `conscio/robustez/pipeline.py` wires the 21 modules into five flows

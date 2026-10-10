@@ -72,11 +72,12 @@ def test_post_json_raises_adapter_http_error_on_urllib_http_error():
     )
 
     with (
-        patch("urllib.request.urlopen", side_effect=http_err),
+        patch("conscio.agency.adapters.open_no_redirect", side_effect=http_err) as mock_open,
         pytest.raises(AdapterHTTPError) as exc_info,
     ):
         _post_json(url, {"prompt": "hi"}, timeout=5.0)
 
+    assert mock_open.called
     err = exc_info.value
     assert isinstance(err, AdapterBadResponse)
     assert err.status == 429
