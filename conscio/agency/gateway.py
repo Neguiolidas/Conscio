@@ -272,11 +272,15 @@ class OutputGateway:
             self._check_deadline(deadline, limit_s)
             # v3.1: check if failure was PERMANENT — if so, don't try more tiers
             if self.last_adapter_error is not None:
+                from conscio.failure import FailureClass as _FC
                 from conscio.failure import FailureGovernor as _FG
                 cls = _FG.classify(self.last_adapter_error)
                 if not _FG.should_retry(cls):
+                    label = {_FC.PERMANENT: "permanent failure",
+                             _FC.INVALID_REQUEST: "invalid request failure",
+                             _FC.QUOTA: "quota failure"}.get(cls, "permanent failure")
                     raise GatewayError(
-                        "permanent failure: " + str(self.last_adapter_error),
+                        f"{label}: {self.last_adapter_error}",
                         infra=True)
                 if not self.last_raw:
                     # Nothing was ever decoded, so "decode failed" would send the
@@ -303,8 +307,10 @@ class OutputGateway:
         from conscio.failure import FailureClass as _FC
         from conscio.failure import FailureGovernor as _FG
         cls = _FG.classify(self.last_adapter_error)
-        if cls in (_FC.RATE_LIMIT, _FC.PROVIDER_OUTAGE):
+        if cls in (_FC.RATE_LIMIT, _FC.PROVIDER_OUTAGE, _FC.QUOTA):
             return True
+        if cls == _FC.INVALID_REQUEST:
+            return False
         # TIMEOUT stays as is: local grammar can be slow, T3 may still succeed
         return not _FG.should_retry(cls)
 

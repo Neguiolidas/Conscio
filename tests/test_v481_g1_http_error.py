@@ -50,13 +50,18 @@ def test_classify_adapter_http_error_statuses():
         is FailureClass.PROVIDER_OUTAGE
     )
 
-    # Other 4xx -> MALFORMED_STREAM (preserves fallback to T3 for 400)
+    # 400, 404 -> INVALID_REQUEST (slice 5)
     assert (
         FailureGovernor.classify(AdapterHTTPError("HTTP 400", status=400))
-        is FailureClass.MALFORMED_STREAM
+        is FailureClass.INVALID_REQUEST
     )
     assert (
         FailureGovernor.classify(AdapterHTTPError("HTTP 404", status=404))
+        is FailureClass.INVALID_REQUEST
+    )
+    # Other 4xx -> MALFORMED_STREAM
+    assert (
+        FailureGovernor.classify(AdapterHTTPError("HTTP 418", status=418))
         is FailureClass.MALFORMED_STREAM
     )
 

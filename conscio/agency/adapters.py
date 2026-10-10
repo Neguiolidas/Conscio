@@ -6,11 +6,14 @@ operator's choice, never a requirement.
 """
 from __future__ import annotations
 
+import contextlib
+import email.utils
 import json
 import os
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from urllib.parse import urljoin, urlsplit
 
 from ..http_safety import open_no_redirect
@@ -25,6 +28,8 @@ from .adapter import (
 )
 
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+ERROR_BODY_BYTES = 4096
+ERROR_BODY_DEADLINE_S = 2.0
 
 
 def _endpoint(url: str) -> str:
@@ -61,6 +66,97 @@ def _origin(location: str, request_url: str | None = None) -> str:
     return "?"
 
 
+def _parse_retry_after(raw: str | None) -> float | None:
+    """Parse Retry-After header: delta-seconds or HTTP-date, floored at 0."""
+    if not raw:
+        return None
+    cleaned = raw.strip()
+    try:
+        val = float(cleaned)
+        if val >= 0:
+            return val
+    except (TypeError, ValueError, OverflowError):
+        pass
+
+    try:
+        dt = email.utils.parsedate_to_datetime(cleaned)
+        if dt is not None:
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            return max(0.0, (dt - now).total_seconds())
+    except (TypeError, ValueError, OverflowError):
+        pass
+    return None
+
+
+def _error_code(raw: bytes) -> str | None:
+    """Extract machine-readable error code/type from JSON error body."""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if isinstance(data, dict):
+        err = data.get("error")
+        if isinstance(err, dict):
+            code = err.get("code")
+            if isinstance(code, str):
+                return code
+            err_type = err.get("type")
+            if isinstance(err_type, str):
+                return err_type
+    return None
+
+
+def _response_socket(exc: urllib.error.HTTPError):
+    """The socket under an HTTP error's body, or None when the file chain is not the usual one.
+
+    HTTPError.fp is the HTTPResponse, whose fp is a BufferedReader over a SocketIO
+    (raw) holding the socket. Each step is optional, so an unexpected file object
+    yields None instead of an exception.
+    """
+    sock = exc
+    for attr in ("fp", "fp", "raw", "_sock"):
+        sock = getattr(sock, attr, None)
+    return sock if hasattr(sock, "settimeout") else None
+
+
+def _read_error_body(exc: urllib.error.HTTPError) -> bytes:
+    """Best-effort read of the first ERROR_BODY_BYTES of an error body, for its error code.
+
+    Stops at the byte cap, at EOF, or when ERROR_BODY_DEADLINE_S has passed. Before
+    each read the response socket's timeout is set to the time left, so a silent or
+    dribbling server is cut off at the deadline, not one socket timeout per read. If
+    the socket cannot be reached, the deadline is checked only between reads, and a
+    read already in flight may wait one request timeout. Any failure ends the read
+    with the bytes gathered so far; the caller raises the HTTP error regardless.
+    """
+    body = b""
+    deadline = time.monotonic() + ERROR_BODY_DEADLINE_S
+    sock = _response_socket(exc)
+    try:
+        read = getattr(exc, "read1", None) or exc.read
+        while len(body) < ERROR_BODY_BYTES:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            if sock is not None:
+                with contextlib.suppress(OSError):
+                    sock.settimeout(remaining)
+            chunk = read(ERROR_BODY_BYTES - len(body))
+            if not chunk:
+                break
+            body += chunk
+    except Exception:  # best-effort diagnostic read; the HTTP error is raised either way
+        pass
+    finally:
+        with contextlib.suppress(Exception):
+            exc.close()
+    return body
+
+
 def _post_json(url: str, payload: dict, timeout: float,
                headers: dict | None = None) -> dict:
     body = json.dumps(payload).encode("utf-8")
@@ -84,9 +180,17 @@ def _post_json(url: str, payload: dict, timeout: float,
                 "point base_url at the final address",
                 status=exc.code,
             ) from exc
+        raw_ra = exc.headers.get("Retry-After") if exc.headers else None
+        retry_after = _parse_retry_after(raw_ra)
+        # Only 429 is split by its body (plain rate limit or quota). Other statuses
+        # are classified by status alone, so their body is never read.
+        raw_body = _read_error_body(exc) if exc.code == 429 else b""
         raise AdapterHTTPError(
             f"{where}: HTTP {exc.code}: {exc.reason}",
-            status=exc.code) from exc
+            status=exc.code,
+            retry_after=retry_after,
+            error_code=_error_code(raw_body),
+        ) from exc
     except urllib.error.URLError as exc:
         if isinstance(getattr(exc, "reason", None), TimeoutError):
             raise AdapterTimeout(f"{where}: {exc}") from exc

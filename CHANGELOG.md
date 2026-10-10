@@ -37,6 +37,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gives no records.
 - **ssrf**: a root dot (`localhost.`, `box.internal.`) no longer slips past the
   hostname blocklist; the name is matched without it.
+- **agency failure classes**: two new `FailureClass` values stop the provider
+  retry loop from repeating a request that cannot succeed. `400`, `404` and
+  `422` classify as `INVALID_REQUEST`; `402`, and a `429` whose JSON error code
+  is `insufficient_quota` or starts with `billing`, classify as `QUOTA`. A
+  plain `429` stays `RATE_LIMIT`. The error code is `error.code` when that is a
+  string, otherwise `error.type` when that is a string, otherwise none. Only a
+  `429` body is read: at most its first 4 KiB, and the read ends at a 2-second
+  deadline (`ERROR_BODY_DEADLINE_S`). Before each read the response socket's
+  timeout is set to the time left, so a silent body or a slow drip ends at the
+  deadline: measured at 2.00 s both for a body that never arrives and for one
+  byte every 0.9 s, where it previously returned at the headers (0.00 s). That
+  is a cost: each `429` attempt now waits up to 2 s for a body that never
+  comes. If the response socket cannot be reached, the deadline is checked only
+  between reads, and a read already in flight may still wait one request
+  timeout. A body that is not complete JSON within those limits yields no code.
+  The fallback adapter does not retry either class on the same provider:
+  `MultiProviderFallbackAdapter` moves to the next provider at once. The
+  gateway still sends one request at T3 after a `400`, as before, because an
+  unsupported `response_format` is what T3 fixes. The HTTP adapter
+  (`adapters.py`) parses `Retry-After` (seconds or HTTP-date) onto the error
+  and nothing more. `MultiProviderFallbackAdapter` acts on it, and only for
+  `RATE_LIMIT`: a value above `backoff_max` advances to the next provider at
+  once, and a value within the cap is the minimum wait before the next attempt
+  on the same provider. That wait is slept only between attempts, so it has no
+  effect when `retry_per_provider` is 1. The gateway does not read
+  `Retry-After`. A body read that fails, with any exception, still surfaces as
+  `AdapterHTTPError` carrying the status and `Retry-After`.
+  **Behaviour change:** an exhausted fallback chain now raises
+  `ProvidersExhausted` (an `AdapterError`, same message) and is classified by
+  its last provider's error instead of as `PERMANENT`. Through a multi-provider
+  chain, a schema `400` and a timeout now reach T3 in `OutputGateway`; both
+  stopped at T2 before. A single adapter already reached T3 for both. A single
+  adapter's `402` also changes: it stops at T2 after one request (`QUOTA`),
+  where previously it sent a second request and reached T3. `QUOTA`,
+  `RATE_LIMIT` and outages (`5xx`, connection refused) stop at T2 through a
+  chain, as they did before. `QUOTA` stops the lower tiers at once, because
+  every tier calls the same provider. A `GatewayError` now names the class it
+  stopped on for a permanent, quota or invalid-request stop: `permanent
+  failure:`, `quota failure:` or `invalid request failure:`. A chain that ends
+  on an outage or timeout reads `adapter call failed (provider_outage)` or
+  `(timeout)`, where previously it said `permanent failure:`. `FailureGovernor`
+  is instantiated nowhere in `conscio/`, and nothing there calls `record()` or
+  `is_open()`, so no runtime circuit breaker changes.
+  `FailureGovernor.record()` now counts a `QUOTA` or outage failure as
+  retryable; an exhausted chain's such failure used to arrive as `PERMANENT`
+  and was marked permanent.
 
 ### Security
 

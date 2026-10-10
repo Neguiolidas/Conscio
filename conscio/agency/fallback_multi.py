@@ -53,6 +53,7 @@ from .adapter import (
     AdapterTimeout,
     InferenceAdapter,
     InferenceResult,
+    ProvidersExhausted,
 )
 
 log = logging.getLogger("conscio.fallback")
@@ -206,20 +207,33 @@ class MultiProviderFallbackAdapter(InferenceAdapter):
                     last_exc = exc
                     safe_msg = _sanitize_exc(exc)
                     from ..failure import FailureClass, FailureGovernor
-                    if FailureGovernor.classify(exc) == FailureClass.PERMANENT:
+                    cls = FailureGovernor.classify(exc)
+                    if not FailureGovernor.should_retry(cls):
                         log.warning(
-                            "provider %d (%s @ %s) failed with PERMANENT error: "
+                            "provider %d (%s @ %s) failed with %s error: "
                             "%s — skipping retries",
-                            idx, cfg.model, cfg.base_url, safe_msg,
+                            idx, cfg.model, cfg.base_url, cls.value, safe_msg,
+                        )
+                        break
+
+                    retry_after = (
+                        getattr(exc, "retry_after", None)
+                        if cls is FailureClass.RATE_LIMIT
+                        else None
+                    )
+                    if retry_after is not None and retry_after > self._backoff_max:
+                        log.warning(
+                            "provider %d (%s @ %s) Retry-After %.1fs exceeds backoff_max %.1fs — advancing",
+                            idx, cfg.model, cfg.base_url, retry_after, self._backoff_max,
                         )
                         break
 
                     wait = min(
                         self._backoff_base * (2 ** attempt),
                         self._backoff_max,
-                    )
-                    # Add jitter (0.8x - 1.2x) to avoid thundering herd
-                    wait *= (0.8 + 0.4 * random.random())
+                    ) * (0.8 + 0.4 * random.random())
+                    if retry_after is not None:
+                        wait = max(wait, retry_after)
                     # Sanitize error message: strip any Authorization header
                     # or api_key that an API might echo in error responses
                     log.warning(
@@ -240,7 +254,7 @@ class MultiProviderFallbackAdapter(InferenceAdapter):
 
         # All providers exhausted
         if last_exc:
-            raise AdapterError(
+            raise ProvidersExhausted(
                 f"all {len(self._configs)} providers exhausted"
             ) from last_exc
         raise AdapterError("fallback chain exhausted with no error")
