@@ -28,8 +28,20 @@ class ApprovalGate:
         self._ttl_seconds = ttl_seconds
         self._active: dict[str, _ApprovalTokenRecord] = {}
 
+    def _prune_expired(self) -> None:
+        """Remove tokens expirados para não acumular memória em processos longos."""
+        now = time.time()
+        expired = [conv for conv, rec in self._active.items()
+                   if (now - rec.created_at) > self._ttl_seconds]
+        for conv in expired:
+            del self._active[conv]
+
+    def _is_expired(self, rec: _ApprovalTokenRecord) -> bool:
+        return (time.time() - rec.created_at) > self._ttl_seconds
+
     def register(self, conversation: str) -> str:
         """Gera e registra novo token de aprovação para a conversa, invalidando token prévio."""
+        self._prune_expired()
         token = secrets.token_urlsafe(32)
         rec = _ApprovalTokenRecord(token=token, created_at=time.time())
         self._active[conversation] = rec
@@ -37,24 +49,25 @@ class ApprovalGate:
 
     def claim(self, conversation: str, token: str) -> bool:
         """Reivindica a aprovação.
-        
+
         Retorna True somente se:
-        - O token confere com o token ativo da conversa;
+        - O token confere com o token ativo da conversa (comparação constant-time);
         - Não foi consumido anteriormente;
         - Encontra-se dentro da janela de validade (TTL).
         """
+        self._prune_expired()
         rec = self._active.get(conversation)
         if rec is None:
             return False
 
-        if rec.token != token:
+        if not secrets.compare_digest(rec.token, token):
             # Token superseded or mismatch
             return False
 
         if rec.consumed:
             return False
 
-        if (time.time() - rec.created_at) > self._ttl_seconds:
+        if self._is_expired(rec):
             # Expired
             return False
 

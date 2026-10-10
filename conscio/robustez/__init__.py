@@ -1,6 +1,7 @@
-"""Robustez: the ported patterns library (v4.9).
+"""Robustez: the ported patterns library (v4.9.1+fixes).
 
-21 módulos Python portados dos padrões CopilotKit, openjev, hindsight e foreman.
+22 módulos Python portados dos padrões CopilotKit, openjev, hindsight e foreman,
+mais pipeline.py (a cola que conecta os 21 em 5 fluxos padrão).
 Stdlib apenas, docstrings citando a origem.
 """
 
@@ -17,6 +18,7 @@ from . import (
     logitjev,
     normalize,
     outcomes_ext,
+    pipeline,
     retractions,
     retry,
     secrets,
@@ -41,6 +43,7 @@ __all__ = [
     "logitjev",
     "normalize",
     "outcomes_ext",
+    "pipeline",
     "retractions",
     "retry",
     "secrets",

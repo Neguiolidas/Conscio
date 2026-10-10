@@ -12,6 +12,7 @@ index; new ids are minted here; the doc itself is never mutated.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 from typing import Any
 
@@ -53,7 +54,6 @@ def apply_ops(doc: dict[str, Any], ops: list[dict[str, Any]]
     bad = [str(o.get("op")) for o in ops if o.get("op") not in _OPS]
     if bad:
         raise DeltaOperationsInvalidError(bad)
-    import copy
     document = copy.deepcopy(doc)
     applied: list[str] = []
     skipped: list[dict[str, Any]] = []

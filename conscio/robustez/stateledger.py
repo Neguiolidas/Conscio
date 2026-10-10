@@ -38,6 +38,12 @@ class StateLedger:
         blocked_state: str = "blocked",
     ) -> None:
         self.db_path = str(db_path)
+        if self.db_path == ":memory:":
+            raise ValueError(
+                "StateLedger não suporta ':memory:': cada conexão sqlite abre um DB "
+                "novo e vazio, então add_item/claim_next falhariam com 'no such table'. "
+                "Use um arquivo temporário (ex.: tempfile.mkstemp(suffix='.db'))."
+            )
         self.states = set(states)
         self.transitions = {k: set(v) for k, v in transitions.items()}
         self.initial = initial
@@ -101,6 +107,18 @@ class StateLedger:
 
     def claim_next(self, worker_id: str, lease_seconds: float) -> dict[str, Any] | None:
         """Tenta reivindicar atômica e exclusivamente o próximo item elegível no estado inicial."""
+        return self._claim(worker_id, lease_seconds, item_id=None)
+
+    def claim(self, item_id: str, worker_id: str, lease_seconds: float) -> dict[str, Any] | None:
+        """Reivindica atomicamente um item específico; None se ele não está elegível.
+
+        Nunca toca em outro item da fila: nem lease, nem tentativa queimada.
+        """
+        return self._claim(worker_id, lease_seconds, item_id=item_id)
+
+    def _claim(
+        self, worker_id: str, lease_seconds: float, item_id: str | None
+    ) -> dict[str, Any] | None:
         now = time.time()
         lease_until = now + lease_seconds
 
@@ -111,10 +129,11 @@ class StateLedger:
                 SELECT item_id, payload, attempts
                 FROM ledger_items
                 WHERE state = ? AND (owner IS NULL OR lease_until < ?)
+                  AND (? IS NULL OR item_id = ?)
                 ORDER BY updated_at ASC
                 LIMIT 1
                 """,
-                (self.initial, now),
+                (self.initial, now, item_id, item_id),
             )
             row = cur.fetchone()
             if not row:

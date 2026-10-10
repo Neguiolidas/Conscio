@@ -37,6 +37,7 @@ _INVALID_GATE_PATTERNS = [
     re.compile(r"exit (code )?(9009|127)", re.IGNORECASE),
     re.compile(r"SyntaxError.*<string>", re.IGNORECASE),
     re.compile(r"ModuleNotFoundError", re.IGNORECASE),
+    re.compile(r"ImportError", re.IGNORECASE),
     re.compile(r"No such file or directory", re.IGNORECASE),
 ]
 

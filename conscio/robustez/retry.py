@@ -39,6 +39,8 @@ def record_failure(state: dict[str, Any], task_id: str, detail: str = "") -> dic
 
 
 def record_success(state: dict[str, Any]) -> dict[str, Any]:
-    """Zera contador de failures transitórias mantendo o total de failure_streak."""
+    """Zera o streak de falhas: o alert_key volta a ser estável por posição do streak,
+    restaurando a deduplicação de alertas prometida no módulo."""
     state["failures"] = 0
+    state["failure_streak"] = 0
     return state

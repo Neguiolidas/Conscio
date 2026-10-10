@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 
 import pytest
 
@@ -56,7 +57,8 @@ def test_entropy_nats() -> None:
     r = decision.SystemOneRequest(state="aaaaaaaa")
     assert r.entropy_nats() == 0.0  # one symbol: no entropy
     r2 = decision.SystemOneRequest(state="ab")
-    assert abs(r2.entropy_nats() - 1.0) < 1e-9  # 2 symbols 50/50: 1 bit
+    # 2 symbols 50/50: 1 bit = ln 2 nats (the method name promises nats)
+    assert abs(r2.entropy_nats() - math.log(2)) < 1e-9
 
 
 # --- logitjev -----------------------------------------------------------
@@ -73,10 +75,11 @@ class _FakeJev(logitjev.OpenAICompatJev):
 
 
 def test_logitjev_first_token_is_the_answer() -> None:
+    # The prompt asks for the option LETTER, so the answer token is "A"/"B".
     q = decision.Choice(options=("proceed", "hold"))
     jev = _FakeJev([
-        {"token": "proceed", "logprob": -0.05},
-        {"token": "hold", "logprob": -3.0},
+        {"token": "A", "logprob": -0.05},
+        {"token": "B", "logprob": -3.0},
     ])
     answer = jev.ask(q, state="state text")
     assert answer["probabilities"][0] > answer["probabilities"][1]

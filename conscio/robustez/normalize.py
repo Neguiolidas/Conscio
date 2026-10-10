@@ -18,12 +18,15 @@ MAX_RECORDS_CAP = 50
 def normalize_records(
     text: str,
     default_source: str = "unknown",
+    stats: dict | None = None,
 ) -> list[dict[str, str]]:
     """Normaliza entrada de conectores em registros estruturados com sha256 digest.
-    
+
     Rejeita cargas > 256 KiB.
     Desembrulha chaves conhecidas ('items', 'files', 'results').
-    Aplica cap máximo de 50 registros.
+    Aplica cap máximo de 50 registros; se houver truncamento e ``stats`` for
+    fornecido, ele recebe {'total': N, 'returned': M, 'truncated': bool} —
+    truncamento silencioso vira truncamento visível.
     """
     if not text:
         return []
@@ -56,6 +59,7 @@ def normalize_records(
 
     records: list[dict[str, str]] = []
 
+    total = len(raw_list)
     for item in raw_list[:MAX_RECORDS_CAP]:
         if isinstance(item, dict):
             content = str(item.get("content") or item.get("text") or item.get("body") or json.dumps(item))
@@ -72,6 +76,13 @@ def normalize_records(
             "content": content,
             "provenance": prov,
             "digest": digest,
+        })
+
+    if stats is not None:
+        stats.update({
+            "total": total,
+            "returned": len(records),
+            "truncated": total > len(records),
         })
 
     return records

@@ -16,15 +16,44 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import threading
 import urllib.parse
 from collections.abc import Callable
 
 _FORBIDDEN_SUFFIXES = (".local", ".lan", ".internal", ".home", ".localhost")
 _FORBIDDEN_NAMES = {"localhost", "localhost.localdomain"}
 
+_DNS_TIMEOUT_S = 5.0
+
+
+def _resolve_with_timeout(hostname: str, port: int, timeout_s: float = _DNS_TIMEOUT_S) -> list:
+    """getaddrinfo com timeout real (a chamada bloqueante não aceita timeout direto)."""
+    result: dict = {}
+
+    def _target() -> None:
+        try:
+            result["addrs"] = socket.getaddrinfo(hostname, port)
+        except Exception as exc:
+            result["error"] = exc
+
+    worker = threading.Thread(target=_target, daemon=True)
+    worker.start()
+    worker.join(timeout_s)
+    if worker.is_alive():
+        raise ValueError(f"DNS resolution timed out for {hostname} after {timeout_s}s")
+    if "error" in result:
+        raise ValueError(f"DNS resolution failed for {hostname}: {result['error']}") from result["error"]
+    return result.get("addrs", [])
+
 
 def is_ip_public(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """Verifica se um endereço IP é estritamente público e seguro contra SSRF."""
+    # Desembrulha IPv4-mapped (::ffff:a.b.c.d) para julgar o IPv4 real;
+    # sem isso, um IPv4 público mapeado seria rejeitado (fail-closed excessivo).
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        ip = mapped
+
     if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_multicast or ip.is_unspecified or ip.is_reserved:
         return False
 
@@ -89,16 +118,13 @@ def assert_safe_url(
     if port is not None and port not in (80, 443):
         raise ValueError(f"Forbidden port: {port}. Only ports 80 and 443 are permitted.")
 
-    # Resolve IP addresses
+    # Resolve IP addresses (com timeout real; docstring promete, código cumpre)
     resolved_ips: list[str] = []
     if resolve is not None:
         resolved_ips = resolve(hostname)
     else:
-        try:
-            addr_info = socket.getaddrinfo(hostname, port or (443 if parsed.scheme == "https" else 80))
-            resolved_ips = [str(item[4][0]) for item in addr_info]
-        except socket.gaierror as e:
-            raise ValueError(f"DNS resolution failed for {hostname}: {e}") from e
+        addr_info = _resolve_with_timeout(hostname, port or (443 if parsed.scheme == "https" else 80))
+        resolved_ips = [str(item[4][0]) for item in addr_info]
 
     if not resolved_ips:
         raise ValueError(f"No IP addresses resolved for {hostname}")

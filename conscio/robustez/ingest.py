@@ -21,18 +21,47 @@ class IngestTooLarge(Exception):
     """Resposta excedeu o tamanho máximo configurado."""
 
 
+class IngestRedirectRefused(Exception):
+    """Um destino de redirect foi recusado pelo validador."""
+
+
+class _ValidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Segue redirect só depois de validar o destino absoluto de cada salto."""
+
+    def __init__(self, validate: Callable[[str], object]) -> None:
+        self._validate = validate
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        try:
+            self._validate(newurl)
+        except Exception as e:
+            raise IngestRedirectRefused(f"Redirect to {newurl} refused: {e}") from e
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def fetch_text(
     url: str,
     timeout_s: float = 45.0,
     max_bytes: int = 1024 * 1024,
+    validate_redirect: Callable[[str], object] | None = None,
 ) -> str:
-    """Download de texto via HTTP com streaming, timeout e limite estrito de bytes."""
+    """Download de texto via HTTP com streaming, timeout e limite estrito de bytes.
+
+    ``validate_redirect`` roda sobre cada destino de redirect antes de segui-lo;
+    se levantar, o download para com IngestRedirectRefused. Sem ele, o
+    comportamento padrão do urllib (seguir redirects) se mantém.
+    """
     req = urllib.request.Request(
         url,
         headers={"User-Agent": "Conscio-Ingest/4.9"},
     )
+    open_url: Callable[..., Any] = urllib.request.urlopen
+    if validate_redirect is not None:
+        open_url = urllib.request.build_opener(
+            _ValidatingRedirectHandler(validate_redirect)
+        ).open
     try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as response:
+        with open_url(req, timeout=timeout_s) as response:
             chunks: list[bytes] = []
             total_bytes = 0
             while True:
@@ -52,7 +81,7 @@ def fetch_text(
         if isinstance(e.reason, TimeoutError):
             raise IngestTimeout(f"Request to {url} timed out after {timeout_s}s") from e
         raise RuntimeError(f"Ingest failed for {url}: {str(e)[:150]}") from e
-    except IngestTooLarge:
+    except (IngestTooLarge, IngestRedirectRefused):
         raise
     except Exception as e:
         raise RuntimeError(f"Unexpected ingest error: {str(e)[:150]}") from e

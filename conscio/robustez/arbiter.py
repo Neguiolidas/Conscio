@@ -16,7 +16,7 @@ import dataclasses
 from collections.abc import Callable
 from typing import Any
 
-from conscio.robustez.verifier import Verdict
+from .verifier import Verdict
 
 
 @dataclasses.dataclass

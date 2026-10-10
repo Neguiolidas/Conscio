@@ -199,10 +199,11 @@ def test_retry_streak_and_backoff():
         rf = retry.record_failure(st, "taskA")
     assert rf["backoff_minutes"] == 60
 
-    # Success resets failures but preserves failure_streak
+    # Success resets both counters: a stale streak would keep alert_key
+    # changing and defeat alert deduplication on the next failure run.
     st_success = retry.record_success(st)
     assert st_success["failures"] == 0
-    assert st_success["failure_streak"] == 10
+    assert st_success["failure_streak"] == 0
 
 
 # ============================================================================

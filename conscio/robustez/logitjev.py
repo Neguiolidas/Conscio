@@ -9,6 +9,7 @@ urllib only, no torch, no SDK.
 from __future__ import annotations
 
 import json
+import math
 import time
 import urllib.request
 from typing import Any
@@ -53,14 +54,14 @@ class OpenAICompatJev:
     def ask(self, question: decision.Choice | decision.Score | decision.Noul,
             state: str) -> dict[str, Any]:
         """One forward pass; the first token IS the answer."""
-        labels = build_user_text(question, state)
+        prompt = build_user_text(question, state)
         system = ("You are a decision engine. Your FIRST generated token is the"
                   " answer: reply with exactly one of the listed labels and"
                   " nothing else.")
         payload = {
             "model": self.model,
             "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": labels}],
+                         {"role": "user", "content": prompt}],
             "max_tokens": 1,
             "temperature": 0.0,
             "logprobs": True,
@@ -70,53 +71,72 @@ class OpenAICompatJev:
         top = (data.get("choices") or [{}])[0].get("logprobs", {}).get("content")
         if not top:
             raise JevError("endpoint returned no logprobs")
+        labels = _answer_labels(question)
         probs = _probs_from_top(top[0].get("top_logprobs") or [], labels)
         if probs is None:
             raise JevError("the label never appeared in the top-k")
         if isinstance(question, decision.Noul):
+            # The 'question' field carries the real question, not the prompt.
+            question_text = question.question_hint or state[:120]
             return decision.render_answer(
-                labels, "noul", [probs.get("Yes", 0.0)])
+                question_text, "noul", [probs.get("Yes", 0.0)])
+        # Choice answers with the option LETTER, score with the level DIGIT:
+        # probs is keyed by those labels, in option/level order.
+        plist = [probs.get(label, 0.0) for label in labels]
         if isinstance(question, decision.Choice):
-            opts = list(question.options)
-            plist = [probs.get(o, 0.0) for o in opts]
-            return decision.render_answer(labels, "choice", plist, options=opts)
-        # score: levels mapped to digits
-        levels = question.levels
-        plist = [probs.get(str(i + 1), 0.0) for i in range(levels)]
-        return decision.render_answer(labels, "score", plist)
+            return decision.render_answer(
+                state[:120], "choice", plist, options=list(question.options))
+        return decision.render_answer(state[:120], "score", plist)
+
+
+_LETTERS = "ABCDEFGH"
+
+
+def _answer_labels(question: decision.Choice | decision.Score | decision.Noul) -> list[str]:
+    """The exact tokens the prompt asks for: Yes/No, option letters, level digits."""
+    if isinstance(question, decision.Noul):
+        return ["Yes", "No"]
+    if isinstance(question, decision.Choice):
+        return list(_LETTERS[:len(question.options)])
+    return [str(i + 1) for i in range(question.levels)]
 
 
 def build_user_text(question, state: str) -> str:
     """Labels mapped to letters (choice), digits (score), Yes/No (noul)."""
     if isinstance(question, decision.Noul):
         return f"{state}\n\nQuestion (answer Yes or No): {question.question_hint}"
+    labels = _answer_labels(question)
     if isinstance(question, decision.Choice):
-        letters = "ABCDEFGH"[:len(question.options)]
-        lines = "\n".join(f"{l}) {o}" for l, o in zip(letters, question.options))
+        lines = "\n".join(f"{l}) {o}" for l, o in zip(labels, question.options))
         return (f"{state}\n\nChoose one (reply with the letter only):\n{lines}")
-    levels = question.levels
-    digits = " ".join(str(i + 1) for i in range(levels))
-    return f"{state}\n\nRate 1-{levels} (reply with the digit only): {digits}"
+    return (f"{state}\n\nRate 1-{question.levels} (reply with the digit only):"
+            f" {' '.join(labels)}")
 
 
-def _probs_from_top(top_logprobs: list[dict], labels: str) -> dict[str, float] | None:
-    """Top-k logprobs -> probabilities keyed by the ORIGINAL label text.
+def _probs_from_top(top_logprobs: list[dict], labels: list[str]) -> dict[str, float] | None:
+    """Top-k logprobs -> probabilities keyed by the label the prompt asked for.
 
-    Returns None when no listed label appears (the honesty rule: never
-    invent). Falls back case-insensitive for Yes/No.
+    Only the listed labels count: a token that merely appears somewhere in
+    the prompt (state text, option text) is not an answer. Returns None when
+    no listed label appears (the honesty rule: never invent). Falls back
+    case-insensitive for Yes/No.
     """
     probs: dict[str, float] = {}
     for entry in top_logprobs:
         token = (entry.get("token") or "").strip()
         logprob = entry.get("logprob")
-        if token is None or logprob is None:
+        if logprob is None:
             continue
-        p = 2.718281828459045 ** logprob
-        for label in labels.replace("(", " ").replace(")", " ").split():
-            if label == token:
-                probs[label] = probs.get(label, 0.0) + p
-                break
-            if label.lower() == token.lower() and label in ("Yes", "No"):
-                probs[label] = probs.get(label, 0.0) + p
-                break
-    return probs if probs else None
+        label = _match_label(token, labels)
+        if label is not None:
+            probs[label] = probs.get(label, 0.0) + math.exp(logprob)
+    return probs or None
+
+
+def _match_label(token: str, labels: list[str]) -> str | None:
+    if token in labels:
+        return token
+    for label in labels:
+        if label in ("Yes", "No") and label.lower() == token.lower():
+            return label
+    return None

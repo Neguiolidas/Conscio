@@ -57,7 +57,8 @@ def test_robustez_all_21_modules_present():
         "untrusted",
         "verifier",
     }
-    assert set(robustez.__all__) == expected_modules
+    # The 21 ported modules plus the pipeline that wires them into flows.
+    assert set(robustez.__all__) == expected_modules | {"pipeline"}
     assert len(expected_modules) == 21
 
     # Verify each module object is present

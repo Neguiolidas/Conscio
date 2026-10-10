@@ -5,8 +5,8 @@ Origem:
 Budgets por item:
 1. Erro transitório (5xx, timeouts, connection resets): mesmo item com backoff 1/2/4s (até 3x).
 2. 429 com hint curto ('retry in Ns'): espera o tempo indicado até 6x.
-3. Quota / 403 / esgotamento de retries: fallback para o próximo item da cadeia com budgets zerados.
-4. Erros não-recuperáveis (400 Bad Request, validação de prompt): levanta imediatamente sem mascaramento.
+3. Quota / esgotamento de retries: fallback para o próximo item da cadeia com budgets zerados.
+4. Erros não-recuperáveis (400 Bad Request, 403 Forbidden, validação de prompt): levanta imediatamente sem mascaramento.
 Stdlib apenas (re, time).
 """
 
@@ -58,7 +58,9 @@ def _default_is_rate_limit(exc: Exception) -> tuple[bool, float | None]:
 
 def _default_is_quota(exc: Exception) -> bool:
     code = _get_status_code(exc)
-    if code in (402, 403):
+    # 403 = permissão negada (erro de configuração/cliente), não quota:
+    # trocar de provider não resolve credencial errada. Fail-closed.
+    if code in (402,):
         return True
     msg = str(exc).lower()
     return any(term in msg for term in ("insufficient_quota", "quota exceeded", "billing", "credit exhausted"))
@@ -97,8 +99,9 @@ def call_with_fallback(
                 return call(provider_item, **kwargs)
             except Exception as e:
                 code = _get_status_code(e)
-                # 400 Bad Request or unrecoverable client errors: raise immediately
-                if code == 400:
+                # 400 Bad Request / 403 Forbidden: erro de cliente/configuração,
+                # irrecuperável por retry ou fallback. Levanta imediatamente.
+                if code in (400, 403):
                     raise
 
                 # Check quota exhaustion -> immediate fallback

@@ -90,11 +90,11 @@ class SystemOneRequest:
     questions: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def entropy_nats(self) -> float:
-        """Shannon entropy of the state string (diagnostic only)."""
+        """Shannon entropy of the state string in nats (diagnostic only)."""
         if not self.state:
             return 0.0
         import math
         from collections import Counter
         counts = Counter(self.state)
         n = len(self.state)
-        return -sum((c / n) * math.log2(c / n) for c in counts.values())
+        return -sum((c / n) * math.log(c / n) for c in counts.values())
