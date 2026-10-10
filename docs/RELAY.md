@@ -91,9 +91,12 @@ python3 -m conscio.liaison.watcher --persistent \
 object per line: a delivery, or a heartbeat naming the current state. It only
 stops on a signal. Without it the watcher keeps its original contract — it
 returns after the first delivery and again at `--timeout`, so whoever started it
-has to arm it again after every exchange. A db that has not been created yet or
-a peer that has not published its card are reported each tick and waited out,
-because both resolve themselves once the other agent boots.
+has to arm it again after every exchange. On every tick, the watcher drains its
+own spool into the database before polling, so a message sent while nobody was
+awake reaches it, leaving read status untouched (`read_ts = NULL`). A db that
+has not been created yet or a peer that has not published its card are reported
+each tick and waited out, because both resolve themselves once the other agent
+boots.
 
 ---
 

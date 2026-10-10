@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **liaison (watcher)**: Drain recipient's own spool (`spool.ingest`) on every
+  tick before polling, leaving message read status untouched (`read_ts =
+  NULL`). Since v4.5.4 (`47fd1f8`), an agent running a supervised watcher
+  without a separate reactor or active MCP session could have incoming messages
+  sit uningested in its spool directory; `tick_once` now drains its own spool
+  whenever `liaison.db` exists, with failures logged non-fatally to stderr.
+
 - **agency failure classes**: two new `FailureClass` values stop the provider
   retry loop from repeating a request that cannot succeed. `400`, `404` and
   `422` classify as `INVALID_REQUEST`; `402`, and a `429` whose JSON error code
