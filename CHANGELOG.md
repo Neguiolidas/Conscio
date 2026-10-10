@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (it gave one phantom record of the whole wrapper); a JSON scalar such as
   `42` or `true` is kept as plain text (it was dropped); whitespace-only input
   gives no records.
+- **ssrf**: a root dot (`localhost.`, `box.internal.`) no longer slips past the
+  hostname blocklist; the name is matched without it.
 
 ### Added
 

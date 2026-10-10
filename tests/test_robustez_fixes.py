@@ -46,6 +46,18 @@ class TestSsrfFixes(unittest.TestCase):
     def test_ipv4_mapped_private_still_blocked(self):
         self.assertFalse(ssrf.is_ip_public(__import__("ipaddress").ip_address("::ffff:10.0.0.1")))
 
+    def test_root_dot_does_not_bypass_name_blocklist(self):
+        public = lambda h: ["93.184.216.34"]  # isolates the name layer
+        for url in ("http://localhost./x", "http://LOCALHOST./x",
+                    "http://foo.localhost./x", "http://box.internal./x"):
+            with self.subTest(url=url), self.assertRaises(ValueError) as ctx:
+                ssrf.assert_safe_url(url, resolve=public)
+            self.assertIn("Prohibited hostname", str(ctx.exception))
+
+    def test_root_dot_on_public_host_still_allowed(self):
+        public = lambda h: ["93.184.216.34"]
+        ssrf.assert_safe_url("http://example.com./x", resolve=public)
+
     def test_dns_timeout_exists(self):
         import inspect
         src = inspect.getsource(ssrf.assert_safe_url)

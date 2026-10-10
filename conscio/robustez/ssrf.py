@@ -109,7 +109,8 @@ def assert_safe_url(
     if not hostname:
         raise ValueError("Missing hostname in URL")
 
-    lower_host = hostname.lower()
+    # A root dot ("localhost.") names the same host; drop it before matching.
+    lower_host = hostname.lower().rstrip(".")
     if lower_host in _FORBIDDEN_NAMES or any(lower_host.endswith(sfx) for sfx in _FORBIDDEN_SUFFIXES):
         raise ValueError(f"Prohibited hostname: {hostname}")
 
