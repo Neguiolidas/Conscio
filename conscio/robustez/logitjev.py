@@ -89,7 +89,10 @@ class OpenAICompatJev:
         return decision.render_answer(state[:120], "score", plist)
 
 
-_LETTERS = "ABCDEFGH"
+# max_tokens=1 reads one token, so every label must be one character:
+# A-Z for options, 0-9 for score levels ("10" splits into "1" + "0" on
+# digit-splitting tokenizers and would be read as level 1).
+_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
 def _answer_labels(question: decision.Choice | decision.Score | decision.Noul) -> list[str]:
@@ -97,8 +100,12 @@ def _answer_labels(question: decision.Choice | decision.Score | decision.Noul) -
     if isinstance(question, decision.Noul):
         return ["Yes", "No"]
     if isinstance(question, decision.Choice):
+        if len(question.options) > len(_LETTERS):
+            raise ValueError(
+                f"logitjev labels options A-Z: {len(question.options)} options"
+                f" exceed {len(_LETTERS)}")
         return list(_LETTERS[:len(question.options)])
-    return [str(i + 1) for i in range(question.levels)]
+    return [str(i) for i in range(question.levels)]
 
 
 def build_user_text(question, state: str) -> str:
@@ -109,8 +116,8 @@ def build_user_text(question, state: str) -> str:
     if isinstance(question, decision.Choice):
         lines = "\n".join(f"{l}) {o}" for l, o in zip(labels, question.options))
         return (f"{state}\n\nChoose one (reply with the letter only):\n{lines}")
-    return (f"{state}\n\nRate 1-{question.levels} (reply with the digit only):"
-            f" {' '.join(labels)}")
+    return (f"{state}\n\nRate 0-{question.levels - 1}, 0 lowest"
+            f" (reply with the digit only): {' '.join(labels)}")
 
 
 def _probs_from_top(top_logprobs: list[dict], labels: list[str]) -> dict[str, float] | None:

@@ -512,15 +512,46 @@ class TestReviewFixes(unittest.TestCase):
 
 
 
-class TestKnownDefects(unittest.TestCase):
-    """Pre-existing defects found in review, not yet approved for a fix (AGENTS.md section 8)."""
 
-    @unittest.expectedFailure
-    def test_choice_beyond_eight_options_is_offered_to_the_model(self):
-        # decision.Choice accepts up to MAX_OPTIONS (255) but logitjev only has
-        # letters A-H, so the 9th option is silently dropped from the prompt.
+def _jev_answering(top: list[dict]) -> logitjev.OpenAICompatJev:
+    """A Jev whose endpoint returns `top` as the first token's top-k."""
+    class FakeJev(logitjev.OpenAICompatJev):
+        def _chat(self, payload):
+            return {"choices": [{"logprobs": {"content": [{"top_logprobs": top}]}}]}
+    return FakeJev(base_url="http://x", model="m")
+
+
+class TestLogitjevLabels(unittest.TestCase):
+    """Every answer label is one character, so max_tokens=1 can always emit it."""
+
+    def test_ninth_option_is_offered_to_the_model(self):
         q = decision.Choice(options=tuple(f"opt{i}" for i in range(9)))
-        self.assertIn("opt8", logitjev.build_user_text(q, "s"))
+        self.assertIn("I) opt8", logitjev.build_user_text(q, "s"))
+
+    def test_ninth_option_vote_is_counted(self):
+        q = decision.Choice(options=tuple(f"opt{i}" for i in range(9)))
+        ans = _jev_answering([{"token": "I", "logprob": 0.0}]).ask(q, state="s")
+        self.assertEqual(ans["probabilities"][8], 1.0)
+
+    def test_options_beyond_the_label_alphabet_are_refused_before_the_call(self):
+        class NoCallJev(logitjev.OpenAICompatJev):
+            def _chat(self, payload):
+                raise AssertionError("endpoint must not be called")
+        q = decision.Choice(options=tuple(f"opt{i}" for i in range(27)))
+        with self.assertRaises(ValueError):
+            NoCallJev(base_url="http://x", model="m").ask(q, state="s")
+
+    def test_every_score_label_is_a_single_character(self):
+        for levels in range(2, decision.MAX_SCORE_LEVELS + 1):
+            q = decision.Score(levels=levels)
+            self.assertTrue(all(len(lab) == 1 for lab in logitjev._answer_labels(q)), levels)
+
+    def test_top_score_vote_lands_on_the_top_level(self):
+        # A digit-splitting tokenizer emits "10" as "1" + "0"; with max_tokens=1
+        # the top vote must not be read as level 1.
+        q = decision.Score(levels=10)
+        ans = _jev_answering([{"token": "9", "logprob": 0.0}]).ask(q, state="s")
+        self.assertEqual(ans["probabilities"][-1], 1.0)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — robustez
+
+- **ingest**: every redirect hop is SSRF-checked (`IngestRedirectRefused`),
+  not only the first URL — a public page redirecting to cloud metadata was
+  fetched.
+- **stateledger**: `claim(item_id)` claims the requested item; `tracked_work`
+  used to claim the oldest eligible item in the queue instead.
+- **pipeline.judge**: an appeal needs a long-lived `Arbiter`; a fresh arbiter
+  per call made the one-appeal-per-task cap unreachable.
+- **logitjev**: only the labels the prompt asks for count as an answer; a
+  token that merely appears in an option's text is not a vote.
+- **logitjev**: options are labelled A–Z (were A–H: the 9th option onward was
+  silently dropped from the prompt); more than 26 options are refused before
+  the endpoint is called.
+- **logitjev**: score labels are single digits, 0 to N-1. With `max_tokens=1`,
+  a digit-splitting tokenizer read a top "10" vote as level 1.
+
+### Added
+
+- `conscio/robustez/pipeline.py` wires the 21 modules into five flows
+  (fetch, call, tracked work, judge, refresh) plus history/log sanitizing.
+
 ## [4.9.1] - 2026-10-09 — Attribution cleanup
 
 Same code as 4.9.0 with internal attribution references removed from

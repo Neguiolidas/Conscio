@@ -106,11 +106,12 @@ def test_logitjev_noul_case_insensitive() -> None:
 def test_logitjev_score_digits() -> None:
     q = decision.Score(levels=5)
     jev = _FakeJev([
-        {"token": "4", "logprob": -0.08},
-        {"token": "3", "logprob": -2.4},
+        {"token": "3", "logprob": -0.08},
+        {"token": "2", "logprob": -2.4},
     ])
     answer = jev.ask(q, state="s")
-    assert answer["probabilities"][3] > answer["probabilities"][2]
+    # labels are 0-based: "3" is the 4th level (index 3)
+    assert answer["probabilities"][3] > answer["probabilities"][2] > 0
 
 
 # --- retractions (hindsight) ---------------------------------------------
