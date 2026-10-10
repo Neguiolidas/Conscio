@@ -15,10 +15,6 @@ JSON-dumps a proposal's args unwrapped (agency/skeptic.py), and recall pastes
 stored exchanges into the cognize prompt cut at 300 characters
 (content_layer.py), which can drop a stored envelope's close marker and guidance.
 
-conscio/robustez/untrusted.py is a second envelope, used by
-conscio/robustez/pipeline.py; it stays until that module is removed in a later
-slice, and nothing new may call it.
-
 Three layers, applied in this order:
 
 * Unicode format controls (category Cf: zero-width space, soft hyphen, BOM,

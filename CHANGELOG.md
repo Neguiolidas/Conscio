@@ -9,34 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed — robustez
+### Fixed
 
-- **ingest**: every redirect hop is SSRF-checked (`IngestRedirectRefused`),
-  not only the first URL — a public page redirecting to cloud metadata was
-  fetched.
-- **stateledger**: `claim(item_id)` claims the requested item; `tracked_work`
-  used to claim the oldest eligible item in the queue instead.
-- **pipeline.judge**: an appeal needs a long-lived `Arbiter`; a fresh arbiter
-  per call made the one-appeal-per-task cap unreachable.
-- **logitjev**: only the labels the prompt asks for count as an answer; a
-  token that merely appears in an option's text is not a vote.
-- **logitjev**: options are labelled A–Z (were A–H: the 9th option onward was
-  silently dropped from the prompt); more than 26 options are refused before
-  the endpoint is called.
-- **logitjev**: score labels are single digits, 0 to N-1. With `max_tokens=1`,
-  a digit-splitting tokenizer read a top "10" vote as level 1.
-- **untrusted**: only an envelope `mark_untrusted` itself produced is returned
-  as-is. Text that merely looked like one (right prefix and suffix, even with
-  the guidance line) came back with a raw closing tag inside, so its payload
-  escaped the envelope.
-- **deltaops**: `insert_block` with an unknown `after_block_id` is skipped
-  with a reason, like any unknown reference; it used to append at the end.
-- **normalize**: a known wrapper key holding an empty list gives zero records
-  (it gave one phantom record of the whole wrapper); a JSON scalar such as
-  `42` or `true` is kept as plain text (it was dropped); whitespace-only input
-  gives no records.
-- **ssrf**: a root dot (`localhost.`, `box.internal.`) no longer slips past the
-  hostname blocklist; the name is matched without it.
 - **agency failure classes**: two new `FailureClass` values stop the provider
   retry loop from repeating a request that cannot succeed. `400`, `404` and
   `422` classify as `INVALID_REQUEST`; `402`, and a `429` whose JSON error code
@@ -161,10 +135,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   envelope. Relay transcripts state the rule once, in `TRANSCRIPT_GUIDANCE`,
   which names no id, and every peer line keeps its id-bearing open and close
   markers. Stored exchanges and the Noosphere trial keep the per-envelope
-  guidance line, which names that envelope's id. A second envelope remains in
-  `conscio/robustez/untrusted.py`, used in production only by
-  `conscio/robustez/pipeline.py` until that module is removed in a later slice;
-  nothing new may call it.
+  guidance line, which names that envelope's id.
   **Behaviour change:** relay prompts now carry envelopes, so they get longer.
   Which rows reach the prompt does not change: `max_prompt_chars` bounds the
   conversation text, measured before wrapping, and the envelope adds on top of
@@ -176,10 +147,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   even without brackets. Stored
   exchanges from before this change are not rewritten.
 
-### Added
+### Removed
 
-- `conscio/robustez/pipeline.py` wires the 21 modules into five flows
-  (fetch, call, tracked work, judge, refresh) plus history/log sanitizing.
+- **`conscio.robustez`** (shipped in 4.9.0 and 4.9.1) is removed with no
+  deprecation shim; importing it raises `ModuleNotFoundError`. Each kept
+  guarantee now lives in the product: redirect refusal and the
+  response-size cap in `agency/adapters.py`; credential redaction in
+  `agency/fallback_multi.py`; failure classes in `failure.py`; the
+  untrusted-data envelope in `conscio/untrusted.py`; verifier-unavailable
+  reporting in `pipelines.verify`. The other modules had no consumer in
+  the product or duplicated a rule it already had. For code still pinned
+  to 4.9.x: `robustez.ingest` checked only the first URL of a redirect
+  chain against its SSRF blocklist, and `robustez.ssrf` let a hostname
+  with a root dot through.
 
 ## [4.9.1] - 2026-10-09 — Attribution cleanup
 

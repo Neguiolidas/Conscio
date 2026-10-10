@@ -421,7 +421,7 @@ class TestAutoRespondDelta:
         assert "turn 2" in captured["p"]
 
 
-# ── slice 4 robustez: lone surrogate, one guidance per transcript, clamp ─────
+# ── envelope edge cases: lone surrogate, one guidance per transcript, clamp ─
 
 def _peer_lines(transcript: str) -> list[str]:
     return [line for line in transcript.split("\n") if line.startswith("peer: ")]

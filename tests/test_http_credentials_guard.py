@@ -1,12 +1,9 @@
-"""T4 — architectural guard: no credentialed module may reach a
-redirect-following HTTP client (slice 3 of the robustez-native PRD).
+"""Architectural guard: no credentialed module may reach a
+redirect-following HTTP client.
 
-Spec: docs/superpowers/specs/2026-10-10-robustez-slice3-credentialed-sites-spec.md
-(sha256 ee2e153c…17da), section 3 T4, amended 2026-10-10 (R1/R2 taken
-LITERALLY from the spec after the QA rejected the narrowed version: R1 is
-ANY attribute whose name is an opener, R2 is ANY bare name that is an
-opener — each narrowing opened a hole the mutations didn't cover, because
-they all used the canonical form the narrowing had in mind).
+R1 is ANY attribute whose name is an opener, R2 is ANY bare name that is
+an opener (each narrowing opens holes the canonical-form mutations do
+not cover).
 
 A module is **credentialed** when it carries a string constant whose
 content matches ``(?i)^(authorization|[a-z-]*api-key)$`` — i.e. it names
@@ -159,7 +156,7 @@ def _credentialed_and_flagged(source: str) -> tuple[bool, list[str]]:
 
 
 def _scan(root: Path) -> dict[str, list[str]]:
-    """Scan every .py under root (excluding robustez/) for guard violations.
+    """Scan every .py under root for guard violations.
 
     Returns {module-path: [violation labels]} for credentialed modules only.
     Raises AssertionError on an unparseable module: one we cannot read is
@@ -168,8 +165,6 @@ def _scan(root: Path) -> dict[str, list[str]]:
     found: dict[str, list[str]] = {}
     for p in sorted(root.rglob("*.py")):
         rel = p.relative_to(root).as_posix()
-        if rel.startswith("robustez/"):
-            continue
         try:
             ast.parse(p.read_text(encoding="utf-8"))
         except SyntaxError as exc:
@@ -186,8 +181,7 @@ def test_guard_scan_is_real_and_finds_known_credentialed_set() -> None:
     """The scan must see >100 modules AND the known credentialed set —
     a credential regex that matches nothing would pass while checking
     nothing."""
-    files = [p for p in CONSCIO_ROOT.rglob("*.py")
-             if not p.relative_to(CONSCIO_ROOT).as_posix().startswith("robustez/")]
+    files = list(CONSCIO_ROOT.rglob("*.py"))
     assert len(files) > 100, (
         f"guard scanned only {len(files)} modules — the scan is broken, "
         "not the code")

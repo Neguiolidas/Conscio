@@ -279,16 +279,13 @@ def test_transcript_guidance_is_exported_and_carries_no_marker_shape() -> None:
 
 
 def test_guard_one_implementation_of_the_envelope() -> None:
-    """Slice 4 T6 (AGENTS §7): two implementations of one guarantee is how one
-    diverges — exactly ONE module under conscio/ may DEFINE an
-    untrusted-envelope function (conscio/untrusted.py). The robustez subtree is
-    excluded until its removal slice."""
+    """Exactly ONE module under conscio/ may define an untrusted-envelope
+    function (conscio/untrusted.py). Two implementations of one guarantee
+    is how one diverges (AGENTS section 7)."""
     root = pathlib.Path(conscio.__file__).parent
     offenders = []
     for py in sorted(root.rglob("*.py")):
         rel = py.relative_to(root)
-        if "robustez" in rel.parts:
-            continue
         tree = ast.parse(py.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
