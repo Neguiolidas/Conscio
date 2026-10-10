@@ -15,6 +15,7 @@ is untouched. Loop-breaker, _fit cap, per-row mark_read all match relay_respond.
 from __future__ import annotations
 
 from ..liaison import mailbox, relay
+from ..untrusted import untrusted_envelope
 from .relay_respond import (
     _fit,
     _is_auto_reply,
@@ -85,11 +86,15 @@ def _remember_exchange(engine, peer_id: str, peer_text: str,
     """F4 boundary: write the exchange to EPISODIC memory ONLY
     (content_store.index, category 'external') — never perceive/reflect/run, so
     peer text becomes recall-able but never drives the world-model or goals.
-    Defensive: a failing store never breaks the reply that already went out."""
+    The peer side is stored ALREADY enveloped (untrusted_envelope) so a later
+    engine.recall hands the LM a marked envelope, not raw peer text; our own
+    `me:` reply stays plain. Defensive: a failing store never breaks the
+    reply that already went out."""
     try:
         engine.content_store.index(
             f"relay exchange with {peer_id[:12]}",
-            f"peer: {peer_text}\nme: {reply_text}",
+            untrusted_envelope(peer_text, source=f"relay:{peer_id[:12]}")
+            + f"\nme: {reply_text}",
             category="external")
     except Exception:
         pass

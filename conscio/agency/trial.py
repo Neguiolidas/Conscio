@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from ..untrusted import untrusted_envelope
 from .contracts import ActionProposal, validate
 from .tools import Risk, tool_doc
 
@@ -47,22 +48,17 @@ class TrialRefusal:
     reason: str
 
 
-def untrusted_envelope(text: str) -> str:
-    """Anti-prompt-injection boundary for untrusted foreign data."""
-    clean = str(text or "")
-    return f"[UNTRUSTED FOREIGN DATA]\n{clean}\n[/UNTRUSTED FOREIGN DATA]"
-
-
 def run_trial(steps: list[dict], *, goal_text: str, skeptic: Any,
               registry: Any) -> TrialOutcome:
     done: list[StepResult] = []
-    audit_goal = untrusted_envelope(goal_text) if goal_text else ""
+    audit_goal = untrusted_envelope(goal_text, source="noosphere-trial") if goal_text else ""
     for step in steps:
         tool = str(step.get("tool", ""))
         args = step.get("args", {})
         rationale = str(step.get("rationale", ""))
         # Foreign steps carry no expected_outcome; the Skeptic tolerates "".
-        enveloped_rationale = untrusted_envelope(rationale) if rationale else ""
+        enveloped_rationale = (untrusted_envelope(rationale, source="noosphere-trial")
+                               if rationale else "")
         proposal = ActionProposal(tool=tool, args=args, rationale=enveloped_rationale,
                                   expected_outcome="")
         spec = registry.get(tool)

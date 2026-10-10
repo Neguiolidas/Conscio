@@ -70,6 +70,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Behaviour change:** a provider whose model listing redirects now gets the
   static fallback list (`probe_models` returns `source="fallback"`); point
   `base_url` at the final address.
+- **untrusted-data envelope**: one envelope (`conscio/untrusted.py`) now wraps
+  the peer text on these paths: the Noosphere trial (goal and step rationales
+  reach the Skeptic enveloped, source `noosphere-trial`), the peer lines of the
+  relay transcripts (`auto_respond`, `cognize_respond`, `initiate`), and stored
+  relay exchanges. Two paths are not wrapped, a known limitation pinned by
+  strict xfail tests: the Skeptic prompt JSON-dumps a proposal's args unwrapped,
+  and recall cuts stored exchanges at 300 characters in the cognize prompt,
+  which can lose a stored envelope's close marker and guidance. Any case, and
+  any Unicode whitespace between the letters, of the words `UNTRUSTED FOREIGN
+  DATA` is rewritten to `UNTRUSTED_FOREIGN_DATA` in one linear pass, in the
+  body and in the source line. Brackets are left as they are in the body; the
+  source line loses its brackets. Unicode "format" controls (category Cf:
+  zero-width space, soft hyphen, BOM, bidi overrides) and lone surrogates
+  (category Cs) are dropped first, so the id hash and the enveloped peer text
+  are always UTF-8 encodable. Our own `me:` rows are not filtered, so a lone
+  surrogate in one reaches the prompt as it is. Every HTTP request in
+  `adapters.py` goes through `_post_json`, which calls `json.dumps` and so
+  escapes the surrogate; this does not crash today. A forged `me:` line inside
+  peer text stays between the id-bearing markers, so it is still data. The open and close markers carry a
+  16-hex content-derived id (sha256 of the final body, truncated; the output
+  stays deterministic): a close marker without this envelope's id does not end
+  the data. Documented limitation: look-alikes built from homoglyphs (e.g. a
+  Cyrillic Е), combining marks (e.g. U+0301), invisible Default_Ignorable
+  characters that are not Cf (variation selectors U+FE00-FE0F, U+034F, Hangul
+  fillers U+115F, U+1160, U+3164, U+FFA0) or the braille blank U+2800 survive the
+  rewrite and can read as a marker; the id still keeps them from closing the
+  envelope. Relay transcripts state the rule once, in `TRANSCRIPT_GUIDANCE`,
+  which names no id, and every peer line keeps its id-bearing open and close
+  markers. Stored exchanges and the Noosphere trial keep the per-envelope
+  guidance line, which names that envelope's id. A second envelope remains in
+  `conscio/robustez/untrusted.py`, used in production only by
+  `conscio/robustez/pipeline.py` until that module is removed in a later slice;
+  nothing new may call it.
+  **Behaviour change:** relay prompts now carry envelopes, so they get longer.
+  Which rows reach the prompt does not change: `max_prompt_chars` bounds the
+  conversation text, measured before wrapping, and the envelope adds on top of
+  it 118 characters per surviving peer line (for a 12-character peer id, whose
+  source line reads `relay:<id>`: the two markers and the source line), plus the
+  marker-word rewrite where it applies,
+  and one guidance line of 197 characters and a newline per transcript that has
+  a surviving peer line. Text that spells out the marker words is rewritten
+  even without brackets. Stored
+  exchanges from before this change are not rewritten.
 
 ### Added
 
