@@ -52,6 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **agency adapters**: error messages name the endpoint without userinfo,
   query string or fragment; any of them can carry a key or token, and these
   messages reach the ledger and the event bus.
+- **fallback adapter**: provider errors are redacted with the product's
+  `SecretMask` plus the exception-only patterns, before they are logged. The
+  old redactor stopped at the first match of each prefix, so a second key got
+  through. It also missed `ghp_`, `AKIA` and `xox` tokens, and a value after
+  `Authorization:` or `api-key:` (it cut at the space right after the colon,
+  so nothing was redacted). Exception messages are redacted more aggressively
+  than tool output: `bearer <word>` (any case) and `api_key = <value>` are
+  hidden even when they are prose. The shared `SecretMask` used on tool
+  output is unchanged.
 
 ### Added
 

@@ -44,6 +44,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from ..output_filter import SecretMask
 from .adapter import (
     AdapterBadResponse,
     AdapterCaps,
@@ -61,25 +62,26 @@ _DEFAULT_BACKOFF_BASE = 1.0
 _DEFAULT_BACKOFF_MAX = 10.0
 _DEFAULT_TIMEOUT = 120.0
 
-# Patterns to strip from error messages to prevent credential leakage
-_SENSITIVE_PATTERNS = (
-    "Bearer ", "Authorization:", "api_key=", "api-key:",
-    "nvapi-", "sk-", "ng-",
+# Extra patterns for exception sanitization beyond SecretMask defaults
+_EXCEPTION_EXTRA_PATTERNS = [
+    r"(?i)\bBearer\s+\S+",
+    r"(?i)\bAuthorization:\s*(?:(?:Bearer|Basic)\s+)?\S+",
+    r"(?i)\bapi[_-]?key\s*[:=]\s*\S+",
+    r"\bnvapi-[A-Za-z0-9_-]+\b",
+    r"\bsk-[A-Za-z0-9_-]+\b",
+    r"\bng-[A-Za-z0-9_-]+\b",
+    r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b",
+]
+
+_EXCEPTION_MASK = SecretMask(
+    replacement="[REDACTED]",
+    extra_patterns=_EXCEPTION_EXTRA_PATTERNS,
 )
 
 
 def _sanitize_exc(exc: Exception) -> str:
     """Strip credentials from exception messages before logging."""
-    msg = str(exc)
-    for pat in _SENSITIVE_PATTERNS:
-        idx = msg.find(pat)
-        if idx >= 0:
-            # Replace everything from the pattern to the next space or end
-            end = msg.find(" ", idx + len(pat))
-            if end < 0:
-                end = len(msg)
-            msg = msg[:idx] + pat + "[REDACTED]" + msg[end:]
-    return msg
+    return _EXCEPTION_MASK.apply(str(exc))
 
 
 @dataclass
