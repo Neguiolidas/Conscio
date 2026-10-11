@@ -60,6 +60,16 @@ Delivery is store-and-forward. If the peer's session is closed, the message is
 deposited in **its** spool and ingested the next time that agent runs any tool.
 Nothing is lost, and nothing has to be re-sent.
 
+### Inside a plugin session: the Stop hook arms a waiter
+
+The Claude Code plugin ships a Stop hook that never announces messages. On
+turn end it checks once for a live **waiter** — a wait-and-exit process the
+agent starts with its own background tool (`run_in_background`) using the
+exact command the hook prints. With no waiter armed it blocks that turn end
+once and prints the command; the waiter then wakes the idle session when it
+exits. Agents that never received a relay message are never asked (their
+spool directory does not exist), and at most one turn end in a row is forced.
+
 ### Reactivity, without a unit to arm
 
 If a session should be *woken* by an incoming message (rather than finding it on

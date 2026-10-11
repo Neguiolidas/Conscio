@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **wake**: the Stop hook no longer announces relay messages at turn end. It
+  asks once for the agent to arm a **waiter** — a wait-and-exit process
+  started with the agent's background tool — and the waiter polls the agent's
+  mailbox and spool, waking the idle session when it exits (Claude Code and
+  zcode). Agents that never received a relay message are never asked: the
+  guard checks the agent's spool directory before asking anything, and at
+  most one turn end in a row is forced (`arm_blocked` alternation).
+
+### Removed
+- **`wake-off`** and **`wake-cursor.json`**: the guard keeps no cursor and
+  honours no opt-out file; a live waiter stands down on its own.
+
 ### Fixed
 
 - **liaison (watcher)**: Drain recipient's own spool (`spool.ingest`) on every

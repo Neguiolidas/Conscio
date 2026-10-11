@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
-"""Wake a live Claude Code session when a relay message arrives.
+"""Wake plumbing for a live Claude Code session.
 
-The reactor delivers a message and marks it read.  A session that was already
-running never learns about it: by the time the agent looks at its inbox the row
-is no longer unread.  This hook closes that gap.
+Two subcommands, one file:
 
-It runs on ``Stop`` -- the moment the agent would end its turn.  If messages
-arrived for this instance since *this session* last looked, the hook prints them
-on stderr and exits 2, which Claude Code treats as "do not stop".  The agent
-reads the message and answers on its own, with no human in the loop.
+* ``stop`` -- the guard (spec §2.2). Runs on ``Stop``, the moment the agent
+  would end its turn. It NEVER announces: no mailbox query, no message text
+  (C9 by construction). It only guarantees a live, owned waiter exists: with
+  none, it blocks once (exit 2, stderr carries the exact arming command the
+  agent runs with its background tool); with the waiter armed it stands down
+  (exit 0) and the waiter -- never the hook -- announces traffic.
+* ``wait`` -- the waiter (spec §2.1). A long-lived, read-only process: it
+  polls the agent's own mailbox and spool, exits 0 with one line per message
+  when something arrives for this instance, 2 on the ceiling with the exact
+  re-arm command, and 3 on failure. Reserved and self-sent rows never wake
+  it. Spool files are counted, never opened or ingested.
 
-Two properties make it safe to leave armed:
+Two properties make the pair safe to leave armed:
 
-* The cursor is per session and advances before the hook blocks, so the same
-  message never blocks twice -- a turn cannot loop on it.
-* Every failure path exits 0.  A broken relay ends the turn normally instead of
-  trapping the session.
+* ``arm_blocked`` alternates: the guard blocks at most one turn end in a row,
+  so a session that never arms still ends its turn.
+* Every unexpected failure exits 0 from ``stop`` (a broken relay must never
+  trap a session) and 3 from ``wait`` (the armer decides what to do).
 """
 
 from __future__ import annotations
@@ -30,12 +35,11 @@ import sys
 import time
 from pathlib import Path
 
-CURSOR_NAME = "wake-cursor.json"
+PROC_ROOT = Path("/proc")  # one literal; tests point it at a missing dir (C8)
 BUSY_TIMEOUT_MS = 5000
-MAX_MESSAGES = 10  # a bigger burst is trimmed, never dumped whole
 MAX_TEXT = 400  # characters kept per message
-COLD_START_WINDOW_S = 1800  # a session with no cursor only sees recent traffic
-MAX_TRACKED_SESSIONS = 50  # keeps the cursor file bounded
+_WAIT_DEFAULT_TIMEOUT_S = 1800
+_WAIT_DEFAULT_INTERVAL_S = 2
 
 # ── waiter (`wait` subcommand) — spec §2.1/§2.3 ──────────────────────────────
 # A stdlib literal copy of conscio.liaison.relay.RESERVED_TYPES: this hook
@@ -65,69 +69,6 @@ def _self_id(storage: Path) -> str | None:
         return None
     iid = data.get("instance_id")
     return str(iid) if iid else None
-
-
-def _load_cursors(path: Path) -> dict:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _save_cursor(path: Path, session: str, last_id: int) -> None:
-    """Record how far this session has been woken, atomically and bounded."""
-    cursors = _load_cursors(path)
-    cursors[session] = {"last_id": int(last_id), "ts": time.time()}
-    if len(cursors) > MAX_TRACKED_SESSIONS:
-        ranked = sorted(
-            cursors.items(),
-            key=lambda kv: (kv[1] or {}).get("ts", 0) if isinstance(kv[1], dict) else 0,
-            reverse=True,
-        )
-        cursors = dict(ranked[:MAX_TRACKED_SESSIONS])
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(cursors), encoding="utf-8")
-    os.replace(tmp, path)
-
-
-def _pending(db: Path, self_id: str, after: int | None) -> list[dict]:
-    """Messages addressed to me that this session has not been woken for."""
-    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    try:
-        conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
-        if after is None:  # cold start: recent traffic only, never history
-            sql = (
-                "SELECT id, from_instance, type, payload FROM messages "
-                "WHERE to_instance=? AND ts >= ? ORDER BY id"
-            )
-            args: tuple = (self_id, time.time() - COLD_START_WINDOW_S)
-        else:
-            sql = (
-                "SELECT id, from_instance, type, payload FROM messages "
-                "WHERE to_instance=? AND id > ? ORDER BY id"
-            )
-            args = (self_id, int(after))
-        rows = list(conn.execute(sql, args))
-    finally:
-        conn.close()
-    return [
-        {"id": r[0], "from": r[1] or "peer", "type": r[2] or "relay", "payload": r[3]}
-        for r in rows
-    ]
-
-
-def _max_id(db: Path) -> int:
-    """Highest message id on record -- the baseline for a fresh session."""
-    try:
-        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        try:
-            row = conn.execute("SELECT MAX(id) FROM messages").fetchone()
-        finally:
-            conn.close()
-    except Exception:
-        return 0
-    return int(row[0]) if row and row[0] is not None else 0
 
 
 def _sender_label(db: Path, instance_id: str) -> str:
@@ -162,24 +103,6 @@ def _text_of(payload: str | None) -> str:
     return json.dumps(data)[:MAX_TEXT]
 
 
-def _render(rows: list[dict], db: Path) -> str:
-    shown, hidden = rows[:MAX_MESSAGES], max(0, len(rows) - MAX_MESSAGES)
-    plural = "s" if len(rows) != 1 else ""
-    lines = [
-        f"[conscio relay] {len(rows)} new message{plural} arrived while you were working.",
-        "Read them and decide whether to answer (conscio_relay_send) before stopping.",
-        "",
-    ]
-    for row in shown:
-        lines.append(
-            f"  #{row['id']} from {_sender_label(db, row['from'])}"
-            f" [{row['type']}]: {_text_of(row['payload'])}"
-        )
-    if hidden:
-        lines.append(f"  ... and {hidden} more, see conscio_relay_inbox.")
-    return "\n".join(lines)
-
-
 def _resolve_storage(storage: str | Path | None) -> Path | None:
     here = Path(__file__).resolve().parent
     obsstore_path = here / "conscio_obsstore.py"
@@ -196,48 +119,85 @@ def _resolve_storage(storage: str | Path | None) -> Path | None:
     return Path(storage).expanduser() if storage else None
 
 
+def _set_arm_blocked(storage: Path, session: str, record: dict | None,
+                     blocked: bool) -> None:
+    """Flip arm_blocked in the SAME record the waiter writes, atomically.
+
+    The waiter's pid is PRESERVED (so its `_drop_record` still removes the
+    record on exit); `pid: null` when there was no record -- never this
+    Stop hook's own pid, which must never look like a waiter."""
+    rec = dict(record) if isinstance(record, dict) else {
+        "session": session, "started": time.time()}
+    rec["pid"] = rec["pid"] if isinstance(rec.get("pid"), int) else None
+    rec["arm_blocked"] = blocked
+    path = _record_path(storage, session)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(rec), encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def main(argv: list[str]) -> int:
-    storage = _argv_opt(argv, "--storage")
-    if not storage:
-        return 0
-    resolved = _resolve_storage(storage)
+    """Stop guard (spec §2.2): never announces, never opens the db (C9).
+
+    Order: no /proc -> 0; storage, self id or session unresolved or stdin
+    not JSON -> 0; the own spool dir missing -> 0 (a plugin user who never
+    joined a relay is never asked to arm anything). A live owned waiter ->
+    clear arm_blocked, exit 0. Else arm_blocked set -> clear it, exit 0
+    (C5: at most one forced turn end in a row). Else set arm_blocked, exit 2
+    with the exact arming command on stderr."""
+    if not PROC_ROOT.exists():
+        return 0                                  # C8: cannot tell live from dead
+    storage_raw = _argv_opt(argv, "--storage")
+    resolved = _resolve_storage(storage_raw) if storage_raw else None
     if resolved is None:
         return 0
-    storage_path = resolved
-    db = Path(_argv_opt(argv, "--liaison-db") or storage_path / "liaison.db")
-    if not db.exists():
-        return 0
-    if (storage_path / "wake-off").exists():  # opt-out for this space
-        return 0
+    storage = resolved
+
+    self_id = _self_id(storage)
+    if not self_id or not _ID_RE.fullmatch(self_id):
+        return 0                                  # an id the waiter refuses
+    if not _spool_dir(self_id).is_dir():
+        return 0                                  # not on the relay (C6)
 
     try:
         payload = json.loads(sys.stdin.read() or "{}")
     except Exception:
-        payload = {}
-    session = str(payload.get("session_id") or "").strip() or "unknown-session"
-
-    self_id = _self_id(storage_path)
-    if not self_id:
+        return 0
+    session = str(payload.get("session_id") or "").strip()
+    if not session:
         return 0
 
-    cursor_path = storage_path / CURSOR_NAME
-    entry = _load_cursors(cursor_path).get(session)
-    after = entry.get("last_id") if isinstance(entry, dict) else None
+    record = None
+    try:
+        record = json.loads(
+            _record_path(storage, session).read_text(encoding="utf-8"))
+        if not isinstance(record, dict):
+            record = None
+    except Exception:
+        record = None
+    waiter_pid = record.get("pid") if record else None
+    arm_blocked = bool(record.get("arm_blocked")) if record else False
 
-    rows = _pending(db, self_id, after)
-    if not rows:
-        if after is None:  # cold start with an empty inbox still needs a baseline
-            _save_cursor(cursor_path, session, _max_id(db))
+    if isinstance(waiter_pid, int) and waiter_pid > 0 \
+            and _alive_owned(waiter_pid, session, os.getpid()):
+        if arm_blocked:                           # waiter owns it: stand down
+            _set_arm_blocked(storage, session, record, False)
+        return 0
+    if arm_blocked:                               # C5: one forced turn per block
+        _set_arm_blocked(storage, session, record, False)
         return 0
 
-    # Advance first: even if the wake below is ignored, this message never
-    # blocks the session a second time.
-    _save_cursor(cursor_path, session, rows[-1]["id"])
-    sys.stderr.write(_render(rows, db) + "\n")
+    _set_arm_blocked(storage, session, record, True)
+    cmd = _arm_command(hook=Path(__file__).resolve(), storage=storage,
+                       session=session, since=None,
+                       timeout=_WAIT_DEFAULT_TIMEOUT_S,
+                       interval=_WAIT_DEFAULT_INTERVAL_S, db=None)
+    sys.stderr.write(
+        "[conscio relay] no waiter for this session. Arm it now with your "
+        f"background tool (run_in_background): {cmd}\n")
     return 2
 
-
-# ── waiter (`wait` subcommand) — spec §2.1/§2.3 ──────────────────────────────
 
 def _spool_dir(self_id: str) -> Path:
     """Stdlib copy of conscio.liaison.directory.spool_dir (same env + default)."""
@@ -255,8 +215,8 @@ def _read_record_pid(storage: Path, session: str) -> int | None:
     try:
         data = json.loads(
             _record_path(storage, session).read_text(encoding="utf-8"))
-        pid = int(data.get("pid"))
-        return pid if pid > 0 else None
+        pid = data.get("pid")
+        return int(pid) if isinstance(pid, int) and pid > 0 else None
     except Exception:
         return None
 
@@ -291,7 +251,7 @@ def _chain(pid: int) -> list[int]:
         seen.add(cur)
         chain.append(cur)
         try:
-            status = (Path(f"/proc/{cur}") / "status").read_text(encoding="utf-8")
+            status = (PROC_ROOT / f"{cur}" / "status").read_text(encoding="utf-8")
             match = re.search(r"^PPid:\s+(\d+)", status, re.MULTILINE)
             cur = int(match.group(1)) if match else 0
         except Exception:
@@ -301,7 +261,7 @@ def _chain(pid: int) -> list[int]:
 
 def _comm(pid: int) -> str:
     try:
-        return (Path(f"/proc/{pid}") / "comm").read_text(encoding="utf-8").strip()
+        return (PROC_ROOT / f"{pid}" / "comm").read_text(encoding="utf-8").strip()
     except Exception:
         return ""
 
@@ -319,10 +279,10 @@ def _lca_ok(pid: int, me: int) -> bool:
 def _alive_owned(pid: int, session: str, me: int) -> bool:
     """A live waiter on MY chain: /proc exists, its cmdline names hook+wait+
     session, and the LCA rule holds."""
-    if pid <= 0 or not Path(f"/proc/{pid}").exists():
+    if pid <= 0 or not (PROC_ROOT / f"{pid}").exists():
         return False
     try:
-        cmdline = (Path(f"/proc/{pid}")
+        cmdline = (PROC_ROOT / f"{pid}"
                    / "cmdline").read_bytes().decode("utf-8", "replace")
     except Exception:
         return False
@@ -376,14 +336,21 @@ def _wait_text(payload: str | None) -> str:
     return " ".join(_text_of(payload).split())[:_WAIT_TEXT]
 
 
-def _arm_command(hook: Path, storage: Path, session: str, since: int,
-                 timeout: int, interval: int, db: Path | None) -> str:
-    """The exact re-arm command: hook's own resolved path, quoted values."""
+def _arm_command(hook: Path, storage: Path, session: str,
+                 since: int | None, timeout: int, interval: int,
+                 db: Path | None) -> str:
+    """The exact re-arm command: hook's own resolved path, quoted values.
+    `since=None` omits the flag (the waiter then starts at MAX(id) to self,
+    so the guard's command never replays a backlog); `db=None` omits
+    --liaison-db (the guard never opens the database, C9)."""
     parts = [
         "python3", shlex.quote(str(hook)), "wait",
         "--storage", shlex.quote(str(storage)),
         "--session", shlex.quote(session),
-        "--since", shlex.quote(str(since)),
+    ]
+    if since is not None:
+        parts += ["--since", shlex.quote(str(since))]
+    parts += [
         "--timeout", shlex.quote(str(timeout)),
         "--interval", shlex.quote(str(interval)),
     ]
