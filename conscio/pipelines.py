@@ -216,14 +216,43 @@ def _domain_templates(domain: str, goal: str) -> list[tuple[str, str]]:
 # ── 2. verify ─────────────────────────────────────────────────────────
 
 
+_SQLITE_INTEGER_MAX = 2**63 - 1
+
+
+def _obs_id(detail: str) -> int | None:
+    """The observation id named by a well-formed ``obs:`` pointer, else None.
+
+    One parser, one int() call for the whole module: the suffix must be ASCII
+    digits (``str.isdigit`` alone also accepts superscript and other-script
+    digits) whose significant part — after stripping leading zeros, which
+    stay valid — is at most 19 digits, because CPython caps int() conversion
+    at 4300 digits counting those zeros (CVE-2020-10735) and a value beyond
+    SQLite's INTEGER maximum (2**63 - 1) is not storable. Both `_is_pointer`
+    and `_resolves` route through this, so no raw ``int()`` on the suffix
+    survives anywhere else in the module.
+    """
+    suffix = detail[4:] if detail.startswith("obs:") else ""
+    if not (suffix.isascii() and suffix.isdigit()):
+        return None
+    significant = suffix.lstrip("0")
+    if len(significant) > 19:
+        return None
+    value = int(significant or "0")
+    if value > _SQLITE_INTEGER_MAX:
+        return None
+    return value
+
+
 def _is_pointer(detail: str) -> bool:
     """True iff `detail` is a well-formed evidence pointer: ``obs:<digits>``
-    or a 64-char lowercase hex blob hash. The grammar lives here only — both
-    `_resolves` and `verify` route on it, so prose is never treated as a
-    pointer that could be looked up (spec §2.1)."""
+    or a 64-char lowercase hex blob hash. The grammar lives in `_obs_id` —
+    both `_is_pointer` and `_resolves` route through it, so prose is never
+    treated as a pointer that could be looked up and no other ``int()`` on
+    the suffix exists (spec §2.1).
+    """
     detail = (detail or "").strip()
-    if detail.startswith("obs:") and detail[4:].isdigit():
-        return True
+    if detail.startswith("obs:"):
+        return _obs_id(detail) is not None
     return len(detail) == 64 and all(c in "0123456789abcdef" for c in detail)
 
 
@@ -242,7 +271,7 @@ def _resolves(detail: str, conn) -> bool:
         return False
     if detail.startswith("obs:"):
         row = conn.execute("SELECT 1 FROM observations WHERE id=?",
-                           (int(detail[4:]),)).fetchone()
+                           (_obs_id(detail),)).fetchone()
         return row is not None
     row = conn.execute("SELECT 1 FROM blobs WHERE h=?", (detail,)).fetchone()
     return row is not None

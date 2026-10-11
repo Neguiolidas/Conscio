@@ -71,7 +71,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (fail-closed, `pass: False`) and records the error class in a top-level
   `reason` string. Only pointer-shaped evidence (`obs:<digits>` or a 64-hex
   blob hash) can be `unverified`; prose evidence fails with "evidence is not a
-  resolvable pointer" whether the store is up or down. Lookup queries and store
+  resolvable pointer" whether the store is up or down. The `obs:` digits are
+  ASCII, at most 19 significant (leading zeros stay valid) and at most
+  2^63−1 (SQLite's INTEGER maximum): evidence `obs:` followed by non-ASCII
+  digits or a number SQLite cannot store used to make `verify` raise or, for
+  other-script digits, resolve as the ASCII number, and it now fails as not
+  a resolvable pointer. A suffix with more than 19 significant digits used
+  to crash `verify` with a ValueError (CPython caps int() conversion at 4300
+  digits, leading zeros counted) and now fails as not a resolvable pointer;
+  a zero-padded well-formed id resolves through `engine.verify` exactly like
+  its ASCII spelling (it used to crash at the lookup).
+  Pre-existing since v4.6.0. Lookup queries and store
   opening run under `engine._obs_lock`. A failure midway through verification
   preserves any criteria that already verified. `gate:vetoed` payloads now
   carry `unverified_criteria` and `verifier_unavailable`.

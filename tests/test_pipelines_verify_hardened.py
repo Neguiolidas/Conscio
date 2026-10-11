@@ -532,3 +532,183 @@ def test_closed_cached_connection_is_never_revalidated(engine):
     assert first["verifier_unavailable"] is True
     second = engine.verify(criteria=[{"id": "C1", "description": "d1"}])
     assert second["pass"] is True        # needs revalidation — fails today
+
+
+# ── slice 6b: the evidence pointer grammar is ASCII and SQLite-sized ────────
+
+@pytest.mark.parametrize(
+    ("evidence", "expected"),
+    [
+        ("obs:0", True),
+        ("obs:007", True),                      # leading zeros stay valid
+        ("obs:12", True),
+        ("obs:9223372036854775807", True),      # 2**63 - 1: SQLite INTEGER max
+        ("obs:", False),
+        ("obs:²", False),                       # superscript digit
+        ("obs:١٢", False),                      # Arabic-Indic digits
+        ("obs:\U0001d7cf\U0001d7d0", False),    # math bold digits
+        ("obs:-1", False),
+        ("obs:+1", False),
+        ("obs:1 2", False),
+        ("obs:12a", False),
+        ("obs:9223372036854775808", False),     # 2**63: above the max
+        ("obs:" + "1" * 4301, False),           # CPython int() digit cap
+        ("obs:" + "0" * 5000 + "7", True),      # leading zeros, value 7
+        ("obs:" + "0" * 5000, True),            # leading zeros, value 0
+        ("obs:" + "9" * 20, False),             # 20 significant digits: > max
+    ],
+)
+def test_pointer_grammar_table(evidence, expected):
+    from conscio.pipelines import _is_pointer
+    assert _is_pointer(evidence) is expected
+
+
+@pytest.mark.parametrize(
+    ("label", "evidence", "setup_rows", "expected_pass"),
+    [
+        # Fix-round 3: zero-padded WELL-FORMED ids go through engine.verify
+        # end to end — they resolve when the row exists and fail (never
+        # raise) when it does not. RED on round 2: _resolves called int() on
+        # the RAW suffix, so these crashed with ValueError (CPython's
+        # 4300-digit cap counts leading zeros).
+        ("padded id 7 resolves when row 7 exists",
+         "obs:" + "0" * 5000 + "7", 7, True),
+        ("padded id 7 fails when no row 7",
+         "obs:" + "0" * 5000 + "7", 1, False),
+        ("all-zeros id 0 fails, no row 0 exists",
+         "obs:" + "0" * 5000, 1, False),
+        # Shapes OUTSIDE the grammar stay non-pointers end to end.
+        ("4301 ones is not a pointer",
+         "obs:" + "1" * 4301, 1, False),
+        ("10000 ones is not a pointer",
+         "obs:" + "1" * 10000, 1, False),
+    ],
+)
+def test_obs_shapes_end_to_end(engine, label, evidence, setup_rows,
+                               expected_pass):
+    """One grammar, one id parser, verified through the whole verify() path.
+    Well-formed padded ids must behave exactly like their ASCII spelling;
+    every other shape must fail with the non-pointer reason, never raise."""
+    for _ in range(setup_rows):
+        _obs(engine)
+    engine.event_bus.emit(
+        "host:event", "external",
+        {"verify:evidence": "C1", "text": evidence},
+    )
+    res = engine.verify(criteria=[{"id": "C1", "description": "d1"}])
+    assert res["pass"] is expected_pass, (label, res)
+    if expected_pass:
+        assert res["verified"][0]["id"] == "C1"
+    else:
+        assert res["failed"] == [
+            {"id": "C1", "description": "d1",
+             "reason": "evidence is not a resolvable pointer"},
+        ]
+        assert res["unverified"] == []
+
+
+def test_g1_superscript_pointer_fails_not_raises(engine):
+    """G1: obs:² passes str.isdigit() but is not the grammar. verify must
+    report the criterion failed as a non-pointer, never raise ValueError."""
+    engine.event_bus.emit(
+        "host:event", "external",
+        {"verify:evidence": "C1", "text": "obs:²"},
+    )
+    res = engine.verify(criteria=[{"id": "C1", "description": "d1"}])
+    assert res["pass"] is False
+    assert res["failed"] == [
+        {"id": "C1", "description": "d1",
+         "reason": "evidence is not a resolvable pointer"},
+    ]
+    assert res["unverified"] == []
+
+
+def test_g2_oversized_pointer_fails_not_raises(engine):
+    """G2: a 25-digit number cannot be held by SQLite's INTEGER column, and
+    today the bind raises OverflowError out of verify."""
+    engine.event_bus.emit(
+        "host:event", "external",
+        {"verify:evidence": "C1", "text": "obs:" + "9" * 25},
+    )
+    res = engine.verify(criteria=[{"id": "C1", "description": "d1"}])
+    assert res["pass"] is False
+    assert res["failed"][0]["reason"] == "evidence is not a resolvable pointer"
+    assert res["unverified"] == []
+
+
+def test_g3_range_boundary_lookup_happens_only_below_max(engine, monkeypatch):
+    """G3: obs:9223372036854775807 IS a pointer — the lookup runs and, the
+    row being absent, it fails exactly like any well-formed pointer to
+    nothing. obs:9223372036854775808 is NOT a pointer and must never reach
+    the lookup. The no-lookup claim is proven by recording `_resolves` calls,
+    not inferred from the reason string."""
+    from conscio import pipelines
+
+    _obs(engine)                       # observations exist, just not those cited
+    engine.event_bus.emit(
+        "host:event", "external",
+        {"verify:evidence": "C1", "text": "obs:9223372036854775807"},
+    )
+    engine.event_bus.emit(
+        "host:event", "external",
+        {"verify:evidence": "C2", "text": "obs:9223372036854775808"},
+    )
+    looked_up: list[str] = []
+    real_resolves = pipelines._resolves
+
+    def recording_resolves(detail, conn):
+        looked_up.append(detail)
+        return real_resolves(detail, conn)
+
+    monkeypatch.setattr(pipelines, "_resolves", recording_resolves)
+    res = engine.verify(
+        criteria=[{"id": "C1", "description": "d1"},
+                  {"id": "C2", "description": "d2"}]
+    )
+    assert res["pass"] is False
+    by_id = {f["id"]: f["reason"] for f in res["failed"]}
+    assert by_id["C1"] == "evidence is not a resolvable pointer"  # looked up, absent
+    assert by_id["C2"] == "evidence is not a resolvable pointer"  # not a pointer
+    assert res["unverified"] == []
+    assert "obs:9223372036854775807" in looked_up                 # max WAS looked up
+    assert "obs:9223372036854775808" not in looked_up             # max+1 was NOT
+
+
+def test_g4_arabic_indic_spelling_does_not_resolve(engine):
+    """G4: the same row id written in Arabic-Indic digits is not the grammar:
+    it must fail as a non-pointer, never resolve as the ASCII number.
+    (RED today when the store resolves it: int('١٢') == 12.)"""
+    oid = _obs(engine)
+    arabic = "obs:" + "".join(chr(0x0660 + int(d)) for d in str(oid))
+    engine.event_bus.emit(
+        "host:event", "external",
+        {"verify:evidence": "C1", "text": arabic},
+    )
+    res = engine.verify(criteria=[{"id": "C1", "description": "d1"}])
+    assert res["pass"] is False
+    assert res["failed"][0]["reason"] == "evidence is not a resolvable pointer"
+    assert res["unverified"] == []
+
+
+def test_g5_store_down_nonascii_pointer_fails_not_unverified(engine, monkeypatch):
+    """G5: with the store down, a non-ASCII spelling is still not a pointer:
+    it fails with the non-pointer reason — never unverified, never raising."""
+    import sqlite3
+
+    engine.event_bus.emit(
+        "host:event", "external",
+        {"verify:evidence": "C1", "text": "obs:²"},
+    )
+
+    def _raise_conn():
+        raise sqlite3.OperationalError("locked")
+
+    monkeypatch.setattr(engine, "_obs_conn", _raise_conn)
+    res = engine.verify(criteria=[{"id": "C1", "description": "d1"}])
+    assert res["pass"] is False
+    assert res["failed"] == [
+        {"id": "C1", "description": "d1",
+         "reason": "evidence is not a resolvable pointer"},
+    ]
+    assert res["unverified"] == []
+    assert res["verifier_unavailable"] is False
