@@ -1,12 +1,12 @@
-"""A varredura de expiracao, em implementacao unica.
+"""The stale expiration sweep, single implementation.
 
-Mora aqui e nao no ledger porque o hook de Stop precisa dela e NAO pode
-importar ``conscio.agency``: o pacote nao esta instalado ao lado do plugin, so
-chega o que o materialize copia. ``ActionLedger.expire_stale`` delega nesta
-funcao, entao as duas bordas executam o mesmo SQL -- duas copias divergiriam na
-primeira correcao aplicada de um lado so.
+Lives here and not in the ledger because the Stop hook needs it and CANNOT
+import ``conscio.agency``: the package is not installed alongside the plugin,
+so only what is shipped inside the plugin assets tree is accessible.
+``ActionLedger.expire_stale`` delegates to this function, so both edges execute
+the exact same SQL -- two copies would drift on the first bugfix applied to only one side.
 
-Zero imports do resto do Conscio, por invariante de vendorizacao.
+Zero imports from the rest of Conscio by vendoring invariant.
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ import time
 
 from .verdicts import PENDING, RETENTION_DAYS, UNSUPPORTED
 
-#: Linhas por passe: custo por turno plano e previsivel. Um backlog grande
-#: escoa em varios turnos em vez de travar um.
+#: Rows per pass: flat and predictable per-turn cost. A large backlog
+#: drains over multiple turns instead of locking up one.
 EXPIRY_SWEEP_LIMIT = 200
 
 

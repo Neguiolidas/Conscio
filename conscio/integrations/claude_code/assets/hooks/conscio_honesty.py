@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Stop hook do laco de honestidade (v4.6 E2) -- MODO SOMBRA.
+"""Stop hook for the honesty loop (v4.6 E2) -- SHADOW MODE.
 
-Grava desfecho e NAO contesta ninguem: nenhum caminho aqui escreve em stdout.
-A contestacao so liga depois do portao de corpus (C5b).
+Records outcome and does NOT contest anyone: no code path here writes to stdout.
+Contestation is only enabled after the corpus gate (C5b).
 
-O pacote ``conscio`` NAO esta instalado ao lado do plugin -- ele vem do PyPI
-por uvx. Tudo que este hook usa e vendorizado pelo materialize.py e carregado
-por caminho. Toda falha sai com 0: hook que derruba turno e pior que hook que
-nao roda.
+The ``conscio`` package is NOT installed alongside the plugin -- it comes from
+PyPI via uvx. Everything this hook uses is shipped inside the plugin assets tree
+and loaded by path. Every failure exits with 0: a hook that breaks a turn is
+worse than a hook that does not run.
 """
 
 import argparse
@@ -19,12 +19,12 @@ from pathlib import Path
 
 
 def _load_module(path: Path, name: str):
-    """Carrega um modulo vendorizado por caminho.
+    """Load a vendored module by path.
 
-    ``spec`` e ``spec.loader`` sao None quando o arquivo nao existe ou nao e
-    carregavel -- exatamente o caso em que a vendorizacao falhou. Falhar aqui
-    com ImportError nomeando o caminho e melhor que um AttributeError sobre
-    None tres linhas adiante.
+    ``spec`` and ``spec.loader`` are None when the file does not exist or is not
+    loadable -- exactly the case when vendoring failed. Failing here with an
+    ImportError naming the path is better than an AttributeError on None three
+    lines later.
     """
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
@@ -39,14 +39,14 @@ def main(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("--storage", required=True)
     ap.add_argument("--honesty", required=True,
-                    help="diretorio do pacote honesty (vendorizado)")
+                    help="directory of the honesty package (vendored)")
     ap.add_argument("--obsstore", required=True,
-                    help="caminho do MODULO obsstore.py, nao do banco")
+                    help="path to the obsstore.py MODULE, not the database")
     args = ap.parse_args(argv)
 
     payload = json.loads(sys.stdin.read() or "{}")
     if payload.get("stop_hook_active"):
-        return 0                       # turno nascido de bloqueio: so observa
+        return 0                       # turn born from block: only observes
     text = payload.get("last_assistant_message") or ""
     session = payload.get("session_id") or ""
     if not text or not session:
@@ -78,22 +78,22 @@ def main(argv):
         finally:
             store.close()
 
-    # Emenda A1: a varredura de expiracao roda AQUI, no unico gatilho que ja
-    # acontece todo turno. Sem isto, pendencia vencida so seria derivada na
-    # leitura e nunca ficaria registrada -- e expire_stale nao teria chamador
-    # nenhum em producao. So abre o banco se ele ja existe: um espaco que nunca
-    # gravou acao nao ganha um conscio.db vazio por causa do hook.
+    # Amendment A1: stale expiration sweep runs HERE, on the only trigger that
+    # already happens every turn. Without this, overdue pending claims would only
+    # be derived on read and never recorded -- and expire_stale would have no
+    # production caller. Only open the database if it already exists: a space that
+    # never recorded an action should not get an empty conscio.db created by the hook.
     if db_path.exists():
         conn = sqlite3.connect(str(db_path))
         try:
             expire_stale(conn)
         finally:
             conn.close()
-    return 0                           # sombra: stdout permanece vazio
+    return 0                           # shadow: stdout remains empty
 
 
 if __name__ == "__main__":
     try:
         sys.exit(main(sys.argv[1:]))
     except Exception:
-        sys.exit(0)                    # falha aberta e silenciosa, por desenho
+        sys.exit(0)                    # fail-open and silent by design

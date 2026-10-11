@@ -178,6 +178,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chain against its SSRF blocklist, and `robustez.ssrf` let a hostname
   with a root dot through.
 
+### Removed
+
+- **`conscio.integrations.claude_code.materialize`** (shipped in 4.9.0 and
+  4.9.1) is removed with no deprecation shim; importing it raises
+  `ModuleNotFoundError`. The Claude Code plugin is the only install path:
+  `conscio init --host claude-code` (with or without `--repair`) writes
+  nothing — no space, no `~/.claude` file, no `settings.json`, no
+  `~/.claude.json` — prints the two `/plugin` commands and exits 0; Claude
+  Code assets (commands, skill, hooks) are distributed and updated
+  exclusively via the plugin. Each kept guarantee now lives in the product:
+  `govern status` finds the capture space through
+  `installer.durable.known_plugin_data_dirs`, and the honesty hooks are
+  vendored in the plugin assets tree, which the marketplace copies verbatim.
+
 ## [4.9.1] - 2026-10-09 — Attribution cleanup
 
 Same code as 4.9.0 with internal attribution references removed from

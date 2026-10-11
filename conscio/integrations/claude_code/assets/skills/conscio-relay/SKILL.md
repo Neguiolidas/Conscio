@@ -256,7 +256,7 @@ Before reporting a loss, check the known confusions:
 - **`conscio_recall` returns empty** → it is sensitive to formulation; the
   same content found by one query can be missed by another. An empty recall
   is "not matched", never "not stored".
-- **A file "missing" from a package** → a green materialize test proves the
+- **A file "missing" from a package** → a passing install test proves the
   local disk, not the artifact; assert `git ls-files --error-unmatch` for
   anything the deliverable must carry.
 

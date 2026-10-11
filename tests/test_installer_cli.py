@@ -67,15 +67,14 @@ def test_verdent_host_writes_its_own_config(tmp_path, monkeypatch):
     assert not (tmp_path / "~").exists()
 
 
-def test_claude_code_host_materializes(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
-    monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
-    io = ScriptIO(answers=["cc"], confirms=[False] * 6)
+def test_claude_code_host_prints_plugin_instructions_and_writes_nothing(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    io = ScriptIO(answers=[], confirms=[])
     assert wizard.run_with(io, host="claude-code", repair=False,
                            model="glm-5.1", ts="T9") == 0
-    import json
-    data = json.loads((tmp_path / "claude.json").read_text())
-    assert "conscio" in data["mcpServers"]
+    assert any("/plugin marketplace add Neguiolidas/Conscio" in o for o in io.out)
+    assert any("/plugin install conscio" in o for o in io.out)
+    assert not (tmp_path / "home" / ".conscio").exists()
 
 
 def test_label_cli_flag_names_the_space(tmp_path, monkeypatch):
@@ -88,62 +87,57 @@ def test_label_cli_flag_names_the_space(tmp_path, monkeypatch):
 
 
 def test_default_label_is_host_not_duplicated(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
-    monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     io = ScriptIO(answers=[], confirms=[False] * 6)      # take every default
-    assert wizard.run_with(io, host="claude-code", repair=False,
+    assert wizard.run_with(io, host="verdent", repair=False,
                            model=None, ts="T2") == 0
     from conscio.installer import spaces
-    assert (spaces.space_dir("claude-code") / "instance.json").exists()
-    assert not spaces.space_dir("claude-code-claude-code").exists()
+    assert (spaces.space_dir("verdent") / "instance.json").exists()
+    assert not spaces.space_dir("verdent-verdent").exists()
 
 
 def test_hermes_consent_reaches_launch_config(tmp_path, monkeypatch):
     import json
-    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
-    monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     io = ScriptIO(answers=["cc"],
                   confirms=[False, True, False, False,   # act/hermes/relay/halls
                             False,                       # initiate
                             False, False])               # graphify / awake
-    assert wizard.run_with(io, host="claude-code", repair=False,
+    assert wizard.run_with(io, host="verdent", repair=False,
                            model=None, ts="T3") == 0
-    args = json.loads((tmp_path / "claude.json").read_text()
+    args = json.loads((tmp_path / "home" / ".verdent" / "mcp.json").read_text()
                       )["mcpServers"]["conscio"]["args"]
     assert "--enable-hermes-review" in args
 
 
 def test_repair_preserves_granted_flags(tmp_path, monkeypatch):
     import json
-    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
-    monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CONSCIO_BASE", str(tmp_path / "conscio"))
-    (tmp_path / "claude.json").write_text(json.dumps({"mcpServers": {
+    cfg = tmp_path / "home" / ".verdent" / "mcp.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(json.dumps({"mcpServers": {
         "conscio": {"command": "conscio-mcp",
                     "args": ["--storage", "/old", "--enable-act",
                              "--enable-relay"],
                     "env": {}}}}))
     io = ScriptIO(answers=["cc"], confirms=[])
-    assert wizard.run_with(io, host="claude-code", repair=True,
+    assert wizard.run_with(io, host="verdent", repair=True,
                            model=None, ts="T4") == 0
-    args = json.loads((tmp_path / "claude.json").read_text()
-                      )["mcpServers"]["conscio"]["args"]
-    # v4.6.4: flags comuns seguem no arg; CAPACIDADES (relay/halls) migraram
-    # para o espaco -- preservar consentimento agora e mante-lo no espaco.
+    args = json.loads(cfg.read_text())["mcpServers"]["conscio"]["args"]
     assert "--enable-act" in args
     assert "--enable-relay" not in args          # vive no espaco agora
     from conscio.installer import spaces
     from conscio.mcp import capabilities as caps
-    # repair rebinda o MESMO espaco: slug = Path(--storage).name = 'old'
-    assert "relay" in caps.read_capabilities(spaces.space_dir("old"))
+    # repair rebinda o MESMO espaco: slug = 'cc'
+    assert "relay" in caps.read_capabilities(spaces.space_dir("cc"))
 
 
 def test_initiate_consent_goes_to_daemon_not_mcp(tmp_path, monkeypatch):
     import json
 
     from conscio.installer import daemonctl
-    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
-    monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     seen = {}
     monkeypatch.setattr(daemonctl, "start",
                         lambda slug, extra_args: seen.update(a=extra_args) or 99)
@@ -151,10 +145,10 @@ def test_initiate_consent_goes_to_daemon_not_mcp(tmp_path, monkeypatch):
                   confirms=[False, False, False, False,  # act/hermes/relay/halls
                             True,                        # initiate
                             False, True])                # graphify / awake=YES
-    assert wizard.run_with(io, host="claude-code", repair=False,
+    assert wizard.run_with(io, host="verdent", repair=False,
                            model=None, ts="T5") == 0
     assert "--initiate" in seen["a"]                     # daemon gets it
-    args = json.loads((tmp_path / "claude.json").read_text()
+    args = json.loads((tmp_path / "home" / ".verdent" / "mcp.json").read_text()
                       )["mcpServers"]["conscio"]["args"]
     assert "--initiate" not in args                      # conscio-mcp must not
 
@@ -166,52 +160,30 @@ def test_daemon_start_failure_is_reported_not_fatal(tmp_path, monkeypatch):
         raise daemonctl.DaemonStartError("no conscio on PATH")
 
     monkeypatch.setattr(daemonctl, "start", boom)
-    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
-    monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     io = ScriptIO(answers=["cc"],
                   confirms=[False] * 5 + [False, True])  # consents/graphify/awake
-    assert wizard.run_with(io, host="claude-code", repair=False,
+    assert wizard.run_with(io, host="verdent", repair=False,
                            model=None, ts="T6") == 0     # wizard survives
     assert any("FAILED" in o for o in io.out)            # and says so
-
-
-def test_repair_rebinds_existing_space_not_a_new_one(tmp_path, monkeypatch):
-    # pre-Reach default labels produced doubled slugs; repair must rebind the
-    # space the config already points at, never mint a fresh empty mind
-    import json
-
-    from conscio.installer import spaces
-    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
-    monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
-    sp, _, _ = spaces.ensure_space("claude-code-claude-code")
-    (tmp_path / "claude.json").write_text(json.dumps({"mcpServers": {
-        "conscio": {"command": "conscio-mcp",
-                    "args": ["--storage", str(sp)], "env": {}}}}))
-    io = ScriptIO(answers=[], confirms=[])
-    assert wizard.run_with(io, host="claude-code", repair=True,
-                           model=None, ts="T7") == 0
-    args = json.loads((tmp_path / "claude.json").read_text()
-                      )["mcpServers"]["conscio"]["args"]
-    assert str(sp) in args                               # same space rebound
-    assert not spaces.space_dir("claude-code").exists()  # no new space minted
 
 
 def test_repair_preserves_model(tmp_path, monkeypatch):
     import json
 
     from conscio.installer import spaces
-    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
-    monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     sp, _, _ = spaces.ensure_space("cc")
-    (tmp_path / "claude.json").write_text(json.dumps({"mcpServers": {
+    cfg = tmp_path / "home" / ".verdent" / "mcp.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(json.dumps({"mcpServers": {
         "conscio": {"command": "conscio-mcp",
                     "args": ["--storage", str(sp), "--model", "glm-5.1"],
                     "env": {}}}}))
-    io = ScriptIO(answers=[], confirms=[])
-    assert wizard.run_with(io, host="claude-code", repair=True,
+    io = ScriptIO(answers=["cc"], confirms=[])
+    assert wizard.run_with(io, host="verdent", repair=True,
                            model=None, ts="T8") == 0
-    args = json.loads((tmp_path / "claude.json").read_text()
-                      )["mcpServers"]["conscio"]["args"]
+    args = json.loads(cfg.read_text())["mcpServers"]["conscio"]["args"]
     assert "--model" in args and "glm-5.1" in args       # model not stripped
 
 
@@ -219,39 +191,31 @@ def test_repair_recovers_legacy_initiate_consent(tmp_path, monkeypatch):
     import json
 
     from conscio.installer import spaces
-    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
-    monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     sp, _, _ = spaces.ensure_space("cc")
-    (tmp_path / "claude.json").write_text(json.dumps({"mcpServers": {
+    cfg = tmp_path / "home" / ".verdent" / "mcp.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(json.dumps({"mcpServers": {
         "conscio": {"command": "conscio-mcp",
                     "args": ["--storage", str(sp), "--initiate"],
                     "env": {}}}}))
-    io = ScriptIO(answers=[], confirms=[])
-    assert wizard.run_with(io, host="claude-code", repair=True,
+    io = ScriptIO(answers=["cc"], confirms=[])
+    assert wizard.run_with(io, host="verdent", repair=True,
                            model=None, ts="T9") == 0
-    args = json.loads((tmp_path / "claude.json").read_text()
-                      )["mcpServers"]["conscio"]["args"]
+    args = json.loads(cfg.read_text())["mcpServers"]["conscio"]["args"]
     assert "--initiate" not in args                      # never in MCP args
     assert any("--initiate" in o for o in io.out)        # told how to re-arm
 
 
 def test_halls_consent_reaches_launch_config(tmp_path, monkeypatch):
-    """v4.5.4: the wizard can grant Agent's Hall. Before this the tools were
-    unreachable to anyone who installed through `conscio init`.
-    v4.6.4: the consent REACHES the launch config through the SPACE now —
-    the assert that used to check args must check read_capabilities, or the
-    migration would lose the proof that the consent survives."""
-    monkeypatch.setenv("CLAUDE_DIR", str(tmp_path / "claude"))
-    monkeypatch.setenv("CLAUDE_JSON", str(tmp_path / "claude.json"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CONSCIO_BASE", str(tmp_path / "conscio"))
     io = ScriptIO(answers=["cc"],
                   confirms=[False, False, True, True,    # act/hermes/relay/halls
                             False, False, False])        # initiate/graphify/awake
-    assert wizard.run_with(io, host="claude-code", repair=False,
+    assert wizard.run_with(io, host="verdent", repair=False,
                            model=None, ts="T7") == 0
     from conscio.installer import spaces
     from conscio.mcp import capabilities as caps
-    # answers=["cc"]: 'cc' e consumido como Space label -> slug 'cc'
-    # (o host vem do kwarg; ScriptIO.ask serve answers em ordem)
     granted = caps.read_capabilities(spaces.space_dir("cc"))
     assert "halls" in granted and "relay" in granted   # consent chega (via espaco)

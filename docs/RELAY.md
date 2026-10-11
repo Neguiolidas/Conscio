@@ -15,7 +15,7 @@ trusting another computer is a decision, not a default.
 Install each agent and answer **yes** to the relay consent:
 
 ```bash
-conscio init --host claude-code      # wizard: "enable relay?" → y
+conscio init --host verdent          # wizard: "enable relay?" → y
 conscio init --host antigravity      # same wizard, another agent, same machine
 ```
 

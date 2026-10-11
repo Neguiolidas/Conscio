@@ -29,7 +29,7 @@ def run_hook(event, payload, cfg_path=None, timeout=30, extra_argv=()):
 def wired(tmp_path):
     """A sidecar pointing at a real obsstore and a space dir that does not exist.
 
-    Deliberately not created. A freshly materialized instance has no storage
+    Deliberately not created. A freshly installed instance has no storage
     directory yet, and the hook fails open, so a store that cannot be created
     drops every observation in silence. Creating it here once hid exactly that:
     the whole capture slice was inert on a fresh install and 27 tests passed.

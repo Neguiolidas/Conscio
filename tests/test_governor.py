@@ -935,17 +935,10 @@ def test_compaction_floor_takes_the_worst_landing_not_the_best(tmp_path):
 # as "capture is dead" is the correct reading of the number, and it was wrong.
 
 
-def _bind_capture(tmp_path, storage, *, obsstore_exists=True):
-    """Write the sidecar a real install writes, under CLAUDE_DIR."""
-    hooks = tmp_path / "hooks"
-    hooks.mkdir(parents=True, exist_ok=True)
-    obsstore = hooks / "conscio_obsstore.py"
-    if obsstore_exists:
-        obsstore.write_text("# vendored\n", encoding="utf-8")
+def _bind_capture(tmp_path, storage, monkeypatch):
+    """Set up capture space via plugin data dir."""
     storage.mkdir(parents=True, exist_ok=True)
-    (hooks / "conscio_deepminer.json").write_text(json.dumps({
-        "obsstore": str(obsstore), "storage": str(storage),
-        "version": "3.9.4"}), encoding="utf-8")
+    monkeypatch.setenv("CLAUDE_PLUGIN_DATA", str(storage))
     return storage
 
 
@@ -959,33 +952,19 @@ def test_status_reads_obs_db_from_the_bound_capture_space(
     monkeypatch.setenv("HERMES_HOME", str(cli_space.parent / "hermes"))
     cli_space.mkdir(parents=True, exist_ok=True)
     _obs_of_size(cli_space, 0.0)                       # the wrong one, empty
-    capture = _bind_capture(tmp_path, tmp_path / "capture-space")
+    capture = _bind_capture(tmp_path, tmp_path / "capture-space", monkeypatch)
     _obs_of_size(capture, 2.0)                         # the one being written
 
     assert _cli()._cmd_govern("status", None, "", False) == 0
     out = capsys.readouterr().out
     assert "2.0 MB" in out
     assert "capture-space" in out
-    assert "BROKEN" not in out
-
-
-def test_status_names_the_repair_when_the_hook_cannot_record(
-        tmp_path, monkeypatch, capsys):
-    """The hook fails open, so a missing obsstore is indistinguishable from a
-    quiet session. status is the only place that can say it out loud."""
-    _wire(tmp_path, monkeypatch)
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
-    _bind_capture(tmp_path, tmp_path / "capture-space", obsstore_exists=False)
-
-    assert _cli()._cmd_govern("status", None, "", False) == 0
-    out = capsys.readouterr().out
-    assert "BROKEN" in out and "conscio init --repair" in out
 
 
 def test_an_explicit_storage_still_wins(tmp_path, monkeypatch, capsys):
     """Naming a path means that path — discovery is only for the default."""
     _wire(tmp_path, monkeypatch)
-    _bind_capture(tmp_path, tmp_path / "capture-space")
+    _bind_capture(tmp_path, tmp_path / "capture-space", monkeypatch)
     _obs_of_size(tmp_path / "capture-space", 2.0)
     chosen = tmp_path / "chosen"
     chosen.mkdir()
@@ -997,11 +976,14 @@ def test_an_explicit_storage_still_wins(tmp_path, monkeypatch, capsys):
 
 
 def test_status_works_with_no_bundle_installed(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     _wire(tmp_path, monkeypatch)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
+    monkeypatch.delenv("CLAUDE_PLUGIN_DATA", raising=False)
+    monkeypatch.delenv("ZCODE_PLUGIN_DATA", raising=False)
     assert _cli()._cmd_govern("status", None, "", False) == 0
     out = capsys.readouterr().out
-    assert "obs.db" in out and "BROKEN" not in out
+    assert "obs.db" in out and "no capture space" in out
 
 
 # ── calibração contra fatura real (2026-08-06) ──────────────────────────────

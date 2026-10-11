@@ -324,7 +324,7 @@ def test_connect_creates_the_directory_it_was_pointed_at(tmp_path):
     """"Open (creating if needed)" has to include the directory.
 
     sqlite3 will not create a file under a directory that is missing, and a
-    freshly materialized instance has none. The hook fails open, so the result
+    freshly installed instance has none. The hook fails open, so the result
     was silent: every tool call dropped its observation and nothing reported it.
     """
     target = tmp_path / "instances" / "brand-new" / "obs.db"

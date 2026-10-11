@@ -1,9 +1,8 @@
 """Every path a hook manifest names must exist in what the plugin SHIPS.
 
 The plugin distribution is the `assets/` tree and nothing else: the marketplace
-copies it verbatim, and `materialize.py` — which vendors extra files at install
-time — never runs on that path. A hook registered against a path that only
-`materialize` creates is registered against a path the user will not have.
+copies it verbatim. A hook registered against a path that is not shipped inside
+`assets/` is registered against a path the user will not have.
 
 That is not hypothetical. v4.6.0 shipped `conscio_honesty.py` with its
 `hooks.json` entry pointing at `${CLAUDE_PLUGIN_ROOT}/hooks/conscio_honesty_pkg`,
@@ -39,7 +38,7 @@ def test_every_referenced_path_ships_with_the_plugin():
     missing = [r for r in sorted(_referenced_paths()) if not (ASSETS / r).exists()]
     assert not missing, (
         "hooks.json points at paths the plugin does not ship: " + str(missing)
-        + " — materialize.py does not run on the marketplace path")
+        + " — marketplace copies assets/ verbatim")
 
 
 def test_the_vendored_honesty_package_matches_the_source():

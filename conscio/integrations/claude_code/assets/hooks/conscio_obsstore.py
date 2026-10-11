@@ -273,7 +273,7 @@ def connect(
     give up in milliseconds, while the MCP server can afford to wait.
     """
     # sqlite3 creates the file but never the directory holding it, and a freshly
-    # materialized instance has no storage directory yet. Since the capture hook
+    # installed instance has no storage directory yet. Since the capture hook
     # fails open, the store that could not be created dropped every observation
     # without a word.
     path = Path(path)

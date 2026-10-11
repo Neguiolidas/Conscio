@@ -10,7 +10,7 @@ The shortest path for Claude Code users — memory, capture hooks and 14
 /plugin install conscio
 ```
 
-The plugin pins its MCP server to an exact version (`conscio==4.1.0`) and starts
+The plugin pins its MCP server to an exact version (`conscio==4.9.1`) and starts
 it on the `balanced` tool surface. A version floor would let an old server serve
 a tool list the shipped commands never mention, which reads as a bug in Claude
 rather than as a stale install.
@@ -31,12 +31,14 @@ Requires Python ≥ 3.10.
 
 ## `conscio init` — bind a host (v2.11.0 "Reach")
 
-One global install serves many agentic hosts (Claude Code, Verdent, Antigravity,
+One global install serves many agentic hosts (Verdent, Antigravity,
 any MCP host) on one machine. Run the interactive wizard once **per host**:
 
 ```bash
-conscio init --host claude-code     # or: verdent | antigravity | other
+conscio init --host verdent     # or: antigravity | other
 ```
+
+(For Claude Code, install the plugin via `/plugin` as shown above; `conscio init --host claude-code` will print the two `/plugin` commands and exit without writing.)
 
 It:
 
@@ -50,11 +52,7 @@ It:
   silently. The launcher is written as an **absolute path** whenever one can be
   proven, because a host started from a desktop icon does not inherit the
   virtualenv on your `PATH`; `--repair` re-resolves it after the venv moves;
-- offers extras (**Graphify** structural cognition) and can start **Awake**;
-- for `--host claude-code`, materializes a native bundle into `~/.claude/`: the
-  `/conscio:*` slash commands, a `conscio` skill, and the capture and awareness
-  hooks. Installing the plugin instead is the maintained path — it carries the
-  same assets and keeps them versioned with the server.
+- offers extras (**Graphify** structural cognition) and can start **Awake**.
 
 `--host verdent` writes `~/.verdent/mcp.json` (press Enter to take it, or give a
 project-level `<project>/.verdent/mcp.json` instead). Verdent has no plugin

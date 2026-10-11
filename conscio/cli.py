@@ -723,28 +723,32 @@ def _cmd_council(question: str, context: str, options: str, model: str,
 def _capture_space(space: str, storage_arg: str) -> tuple[str, str, str]:
     """Where observations actually land, how to name it, and any hook warning.
 
-    The capture hook writes obs.db into the space it was bound to at install
-    time, which is not the CLI's default storage. Reading the CLI's own space
-    reports the size of a database nothing writes to — a near-empty file that
-    reads as "capture is dead" when capture is fine, and as "0.0 MB" either
-    way. An explicit --storage still wins: the operator naming a path means
-    that path.
+    The capture hook writes obs.db into the plugin's data space, which is not
+    the CLI's default storage. Reading the CLI's own space reports the size of
+    a database nothing writes to — a near-empty file that reads as "capture is
+    dead" when capture is fine, and as "0.0 MB" either way. An explicit
+    --storage still wins: the operator naming a path means that path.
     """
     if storage_arg:
         return space, "explicit --storage", ""
-    try:
-        from .integrations.claude_code.materialize import read_binding
-        binding = read_binding()
-    except Exception:            # never let a diagnostic break `govern status`
-        binding = None
-    if binding is None:
-        return space, "cli storage — no capture hook installed", ""
-    note = ""
-    if not binding["ok"]:
-        note = (f"BROKEN — obsstore missing at {binding['obsstore']}. "
-                f"It records nothing until you run `conscio init --repair`.")
-    return (str(binding["storage"]),
-            f"capture space {Path(binding['storage']).name}", note)
+    import json
+
+    from .installer.durable import known_plugin_data_dirs
+    dirs = known_plugin_data_dirs()
+    for p in dirs:
+        cand = p / "space" if (p / "space").is_dir() else p
+        if cand.is_dir():
+            pointer = cand / "space-pointer.json"
+            if pointer.is_file():
+                try:
+                    data = json.loads(pointer.read_text(encoding="utf-8"))
+                    target = Path(data.get("target", "")).expanduser()
+                    if target.is_dir():
+                        cand = target
+                except Exception:
+                    pass
+            return str(cand), f"capture space {cand.name}", ""
+    return space, "no capture space", ""
 
 
 def _cmd_govern(action: str, window: int | None, storage: str,

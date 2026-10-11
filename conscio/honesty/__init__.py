@@ -1,7 +1,8 @@
 """Honesty loop (v4.6).
 
-Sem dependencias do resto do Conscio, por invariante: este diretorio e copiado
-para junto do hook pelo materialize.py, e um import para fora quebraria ao ser
-vendorizado. O pacote nao esta instalado ao lado do plugin -- ele vem do PyPI
-por uvx, e so chega ao hook o que o materialize copia.
+Zero dependencies on the rest of Conscio by design: this directory is vendored
+directly into the plugin assets tree (assets/hooks/conscio_honesty_pkg) which the
+marketplace copies verbatim. An external import would break because the conscio
+package is not installed alongside the plugin (it comes from PyPI via uvx), so
+only what is shipped inside the plugin assets tree is accessible to hooks.
 """
