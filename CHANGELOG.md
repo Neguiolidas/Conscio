@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [4.9.2] - 2026-10-11 — One install path, and a waiter that wakes
 
 ### Changed
 - **wake**: the Stop hook no longer announces relay messages at turn end. It
@@ -21,8 +21,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - **`wake-off`** and **`wake-cursor.json`**: the guard keeps no cursor and
   honours no opt-out file; a live waiter stands down on its own.
+- **`conscio.robustez`** (shipped in 4.9.0 and 4.9.1) is removed with no
+  deprecation shim; importing it raises `ModuleNotFoundError`. Each kept
+  guarantee now lives in the product: redirect refusal and the
+  response-size cap in `agency/adapters.py`; credential redaction in
+  `agency/fallback_multi.py`; failure classes in `failure.py`; the
+  untrusted-data envelope in `conscio/untrusted.py`; verifier-unavailable
+  reporting in `pipelines.verify`. The other modules had no consumer in
+  the product or duplicated a rule it already had. For code still pinned
+  to 4.9.x: `robustez.ingest` checked only the first URL of a redirect
+  chain against its SSRF blocklist, and `robustez.ssrf` let a hostname
+  with a root dot through.
+- **`conscio.integrations.claude_code.materialize`** (shipped in 4.9.0 and
+  4.9.1) is removed with no deprecation shim; importing it raises
+  `ModuleNotFoundError`. The Claude Code plugin is the only install path:
+  `conscio init --host claude-code` (with or without `--repair`) writes
+  nothing — no space, no `~/.claude` file, no `settings.json`, no
+  `~/.claude.json` — prints the two `/plugin` commands and exits 0; Claude
+  Code assets (commands, skill, hooks) are distributed and updated
+  exclusively via the plugin. Each kept guarantee now lives in the product:
+  `govern status` finds the capture space through
+  `installer.durable.known_plugin_data_dirs`, and the honesty hooks are
+  vendored in the plugin assets tree, which the marketplace copies verbatim.
 
 ### Fixed
+
+- **noosphere signing**: `cryptography` is now a core runtime dependency.
+  4.9.0 added Ed25519 signing to the noosphere but declared `cryptography`
+  only in the `dev` extra, so on a plain `pip install conscio`
+  `conscio noosphere publish` failed with `ModuleNotFoundError` and import
+  rejected every signed artifact as `signature_invalid`. A missing
+  `cryptography` now raises `ImportError` from `verify_signature` instead
+  of being reported as a forged signature.
 
 - **liaison (watcher)**: Drain recipient's own spool (`spool.ingest`) on every
   tick before polling, leaving message read status untouched (`read_ts =
@@ -176,34 +206,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a surviving peer line. Text that spells out the marker words is rewritten
   even without brackets. Stored
   exchanges from before this change are not rewritten.
-
-### Removed
-
-- **`conscio.robustez`** (shipped in 4.9.0 and 4.9.1) is removed with no
-  deprecation shim; importing it raises `ModuleNotFoundError`. Each kept
-  guarantee now lives in the product: redirect refusal and the
-  response-size cap in `agency/adapters.py`; credential redaction in
-  `agency/fallback_multi.py`; failure classes in `failure.py`; the
-  untrusted-data envelope in `conscio/untrusted.py`; verifier-unavailable
-  reporting in `pipelines.verify`. The other modules had no consumer in
-  the product or duplicated a rule it already had. For code still pinned
-  to 4.9.x: `robustez.ingest` checked only the first URL of a redirect
-  chain against its SSRF blocklist, and `robustez.ssrf` let a hostname
-  with a root dot through.
-
-### Removed
-
-- **`conscio.integrations.claude_code.materialize`** (shipped in 4.9.0 and
-  4.9.1) is removed with no deprecation shim; importing it raises
-  `ModuleNotFoundError`. The Claude Code plugin is the only install path:
-  `conscio init --host claude-code` (with or without `--repair`) writes
-  nothing — no space, no `~/.claude` file, no `settings.json`, no
-  `~/.claude.json` — prints the two `/plugin` commands and exits 0; Claude
-  Code assets (commands, skill, hooks) are distributed and updated
-  exclusively via the plugin. Each kept guarantee now lives in the product:
-  `govern status` finds the capture space through
-  `installer.durable.known_plugin_data_dirs`, and the honesty hooks are
-  vendored in the plugin assets tree, which the marketplace copies verbatim.
 
 ## [4.9.1] - 2026-10-09 — Attribution cleanup
 

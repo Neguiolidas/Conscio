@@ -68,6 +68,21 @@ def test_malformed_local_row_is_skipped_not_crashed(tmp_path):
     assert len(catalog.read_all(noo)) == 1            # catalog not polluted
 
 
+@pytest.mark.xfail(strict=True, reason=(
+    "known gap (found 2026-10-11): publish checks only that plan_template is"
+    " a list, the importer requires each step to be {tool, args, rationale};"
+    " a hand-corrupted local row is published and every peer rejects it as"
+    " malformed. Agency-written skills always carry the full step shape."))
+def test_everything_published_passes_the_importers_revalidation(tmp_path):
+    from conscio.noosphere import importer
+    _seed_skills(tmp_path / "conscio.db", [
+        (_fp("deploy"), "deploy", '["a"]', '["a bare string step"]', 3, 0)])
+    noo = tmp_path / "noosphere.db"
+    publish.run(storage=tmp_path, noosphere=noo)
+    for row in catalog.read_all(noo):
+        assert importer.revalidate(row).ok, importer.revalidate(row)
+
+
 def test_conscio_db_opened_read_only(tmp_path):
     _seed_skills(tmp_path / "conscio.db", [])
     conn = publish._open_conscio_ro(tmp_path / "conscio.db")

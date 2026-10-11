@@ -1,7 +1,8 @@
 # Conscio — Usage Manual
 
 Self-awareness framework for AI agents. Local-first Python + SQLite FTS5.
-One runtime dependency (`numpy`); everything else is the standard library.
+Two runtime dependencies (`numpy`, and `cryptography` for noosphere signatures);
+everything else is the standard library.
 
 **Version:** see [CHANGELOG](CHANGELOG.md) · **License:** AGPL-3.0-or-later · **Python:** 3.10+
 

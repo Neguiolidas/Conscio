@@ -7,11 +7,11 @@ later publish under the same origin with a DIFFERENT key is rejected —
 that is a compromised or spoofed identity. Artifacts that predate
 signing import with a warning, never a hard failure (legacy compat).
 
-Zero new runtime dependencies: Python 3.10+ ships Ed25519 verification
-is NOT in stdlib, so the implementation uses ``cryptography`` — which the
-project already transitively requires via the optional keyring extra —
-and hard-imports it only when signing/verifying, so a headless install
-without the extra never pays for it unless the noosphere is used.
+Ed25519 is not in the standard library, so the implementation uses
+``cryptography``, a core runtime dependency since v4.9.2 (v4.9.0 shipped it
+in the ``dev`` extra only, so a plain ``pip install`` could neither sign nor
+verify). It is imported inside the functions that sign or verify, so
+importing this module stays cheap.
 """
 from __future__ import annotations
 
@@ -91,11 +91,15 @@ def sign_body(raw_private: bytes, body: bytes) -> bytes:
 
 
 def verify_signature(public_b: bytes, signature: bytes, body: bytes) -> bool:
-    """Verify a signature; False on any mismatch or malformed key."""
+    """Verify a signature; False on any mismatch or malformed key.
+
+    A missing ``cryptography`` raises ImportError instead of returning False:
+    a broken install is not evidence that the signer forged anything.
+    """
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PublicKey,
+    )
     try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-            Ed25519PublicKey,
-        )
         Ed25519PublicKey.from_public_bytes(public_b).verify(signature, body)
         return True
     except Exception:  # InvalidSignature, malformed key, bad length

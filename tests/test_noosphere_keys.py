@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import json
 import stat
+import sys
 from pathlib import Path
+
+import pytest
 
 from conscio.noosphere import catalog, keys
 from conscio.noosphere.artifact import ARTIFACT_SCHEMA, build_body, canonical_bytes, content_hash
@@ -48,6 +51,19 @@ def test_sign_verify_roundtrip(tmp_path: Path) -> None:
     assert keys.verify_signature(pub, sig, body)
     assert not keys.verify_signature(pub, sig, b"tampered body")
     assert not keys.verify_signature(pub, b"x" * 64, body)
+
+
+def test_missing_library_is_not_a_forged_signature(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A broken install raises; it must never be filed as signature_invalid."""
+    storage = _storage(tmp_path)
+    raw = keys.load_or_create_key(storage)
+    pub = keys.public_key_bytes(raw)
+    sig = keys.sign_body(raw, b"body")
+    monkeypatch.setitem(
+        sys.modules, "cryptography.hazmat.primitives.asymmetric.ed25519", None)
+    with pytest.raises(ImportError):
+        keys.verify_signature(pub, sig, b"body")
 
 
 def test_publish_signs_and_importer_verifies(tmp_path: Path) -> None:

@@ -10,7 +10,7 @@ The shortest path for Claude Code users — memory, capture hooks and 14
 /plugin install conscio
 ```
 
-The plugin pins its MCP server to an exact version (`conscio==4.9.1`) and starts
+The plugin pins its MCP server to an exact version (`conscio==4.9.2`) and starts
 it on the `balanced` tool surface. A version floor would let an old server serve
 a tool list the shipped commands never mention, which reads as a bug in Claude
 rather than as a stale install.
@@ -24,8 +24,8 @@ than Claude Code.
 pip install conscio
 ```
 
-That is the whole runtime. Conscio's core depends only on `numpy` and the Python
-standard library (`sqlite3`, `urllib`, `importlib.metadata`).
+That is the whole runtime. Conscio's core depends on `numpy`, `cryptography` (Ed25519 signing of
+noosphere artifacts) and the Python standard library (`sqlite3`, `urllib`, `importlib.metadata`).
 
 Requires Python ≥ 3.10.
 
