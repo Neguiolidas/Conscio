@@ -16,6 +16,18 @@ commands, with no Python toolchain to manage:
 /plugin install conscio
 ```
 
+**Upgrading from 4.9.1 or earlier** (the old install copied hooks/commands/
+skills into `~/.claude` and wrote a `conscio` MCP entry into
+`~/.claude.json`): start Claude Code once — the resolver adopts your legacy
+space, including a custom-label one (state B7). If two live copies of a space
+conflict, resolve with `conscio space migrate --keep plugin` or `--keep
+durable` (the copy not kept is renamed to a `.superseded-<UTC>` sibling,
+never deleted). Then retire the old copies with
+`conscio init --host claude-code --remove-legacy` — they move to
+`~/.conscio/legacy-backup/<UTC>/`, nothing is deleted, and the command is
+identity-guarded (it refuses when the plugin does not resolve to your legacy
+space; pass `--retire-previous-space` to proceed anyway).
+
 As a library or CLI:
 
 ```bash

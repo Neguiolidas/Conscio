@@ -215,6 +215,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--proc-root", default="/proc",
         help="path to /proc filesystem (default: /proc)"
     )
+    p_space_mig.add_argument(
+        "--keep", choices=["plugin", "durable"], default=None,
+        help="resolve a B3 conflict: rename (never delete) the copy not kept"
+    )
 
     p_ingest = sub.add_parser(
         "ingest",
@@ -1424,6 +1428,7 @@ def _main(argv: list[str] | None = None) -> int:
                 slug=args.slug,
                 quiet_minutes=args.quiet_minutes,
                 proc_root=Path(args.proc_root),
+                keep=args.keep,
             )
         parser.print_help()
         return 2

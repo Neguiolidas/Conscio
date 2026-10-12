@@ -3,10 +3,11 @@ hostcfg / extras / daemonctl. All console I/O goes through an injected
 PromptIO so the flow is unit-testable; the CLI provides a real terminal IO."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Protocol
 
-from . import daemonctl, extras, hostcfg, spaces
+from . import daemonctl, extras, hostcfg, legacy_claude, spaces
 
 _FLAG_HELP = {
     "act": "act: let the host EXECUTE proposed actions (not just propose). "
@@ -67,6 +68,22 @@ def run_with(io: PromptIO, *, host: str, repair: bool, model: str | None,
     if host == "claude-code":
         io.echo("/plugin marketplace add Neguiolidas/Conscio")
         io.echo("/plugin install conscio")
+        # v2.11 through v4.9.1 materialized this install: copied hooks,
+        # commands and skills into ~/.claude and wrote hook groups and an MCP
+        # entry. The plugin makes those copies run twice — list what is left
+        # and point at the cleanup command.
+        leftovers = legacy_claude.find_leftovers(dict(os.environ))
+        if leftovers["files"] or leftovers["dirs"] or leftovers["settings_groups"] \
+                or leftovers["mcp_entry"] is not None:
+            io.echo("leftovers from a pre-4.9.2 materialized install:")
+            for path in list(leftovers["files"]) + list(leftovers["dirs"]):
+                io.echo(f"  {path}")
+            for group in leftovers["settings_groups"]:
+                io.echo(f"  settings.json hook group: {group}")
+            if leftovers["mcp_entry"] is not None:
+                io.echo(f"  MCP entry: mcpServers.conscio "
+                         f"(storage: {leftovers['storage']})")
+            io.echo("retire them with: conscio init --host claude-code --remove-legacy")
         return 0
 
     label = label or io.ask("Space label", default=host)

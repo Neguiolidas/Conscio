@@ -23,7 +23,7 @@ memory, self-judgment and procedural skill — and proves every claim by
 measurement, not assertion. Local-first with a small core
 (`numpy`, plus `cryptography` for signed noosphere artifacts; storage is stdlib `sqlite3`).
 
-**Latest release — `v4.9.2` "One install path, and a waiter that wakes":** the Claude Code plugin is the only install path (`conscio init --host claude-code` writes nothing and prints the two `/plugin` commands); the relay Stop hook stops announcing messages and instead asks once for a background waiter that wakes the idle session; `conscio.robustez` is removed with no shim, and each guarantee it kept now lives in the product; model calls no longer follow redirects; and a quota or invalid-request failure is no longer retried on the same provider, so the fallback chain moves straight to the next one.
+**Latest release — `v4.9.2` "One install path, and a waiter that wakes":** the Claude Code plugin is the only install path (`conscio init --host claude-code` writes nothing and prints the two `/plugin` commands); upgrading from 4.9.1 or earlier, the plugin adopts your legacy space instead of minting a blank identity, and `conscio init --host claude-code --remove-legacy` retires the old copies into a timestamped backup; the relay Stop hook asks once for a background waiter that wakes the idle session; `conscio.robustez` is removed and its guarantees live in the product; model calls no longer follow redirects; and a quota or invalid-request failure moves the fallback chain straight to the next provider.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 

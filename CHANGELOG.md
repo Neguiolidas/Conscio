@@ -9,6 +9,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.9.2] - 2026-10-11 — One install path, and a waiter that wakes
 
+### Added
+- **Upgrade path from a materialized install (v2.11 through v4.9.1)**: the
+  old `conscio init --host claude-code` copied hooks, commands and skills
+  into `~/.claude`, registered hook groups in `settings.json` and wrote an
+  MCP entry into `~/.claude.json` (its `--storage` pointed at the legacy
+  space). 4.9.2 made the plugin the only install path; this release resolves
+  what the old install left behind:
+  - **B7 resolver state**: when a Claude Code plugin boots with neither a
+    plugin space nor a durable space, the resolver reads the old
+    `mcpServers.conscio` entry's `--storage` argument (from `~/.claude.json`,
+    or `$CLAUDE_JSON`). If that path is a live space (`instance.json`) and is
+    not the default-label slot, it is adopted instead of minting a fresh
+    identity — a custom-label legacy space (e.g. `instances/my-laptop`) is no
+    longer silently orphaned. Any missing entry or wrong-shape file is no
+    evidence and the resolver never raises (top-level null/list/string,
+    `mcpServers` that is not a dict, `args` that is not a list of strings, or
+    `--storage` without a value all fall through to B4/B6); a path without
+    `instance.json` is no evidence too. The pointer the MCP server writes on
+    the adoption makes the result survive the evidence being cleaned up
+    (B1 on the next boot).
+  - **`conscio space migrate --keep plugin|durable`** resolves a B3 conflict
+    (two live copies of a space): after the liveness gates a plain migrate
+    applies to the copy being archived (with `--keep plugin` the durable copy
+    too — an active process or a recent write on that path defers the rename,
+    exit 2), the copy not kept is **renamed** (never deleted) to a
+    `.superseded-<UTC>` sibling, with the undo printed. `--keep durable`
+    archives the plugin copy (the plugin then adopts the durable space, B2);
+    `--keep plugin` archives the durable copy and the normal flow moves the
+    plugin copy into the durable slot. Without `--keep` a B3 still refuses
+    (exit 2), and its reason now names this command; `--keep` on a non-B3
+    state exits 2 and touches nothing.
+  - **`conscio init --host claude-code --remove-legacy`** (new flag, valid
+    only with `--host claude-code`) moves every leftover into
+    `~/.conscio/legacy-backup/<UTC>/` keeping the relative layout, prunes
+    only the Conscio hook entries in `settings.json` (user entries in the
+    same group survive; a group or event is dropped only when it ends
+    empty) and the `mcpServers.conscio` entry — `~/.claude.json` is rewritten
+    only when it actually has that entry (each rewrite through the
+    backup+verify path) — and never deletes. It parses both JSON files before
+    moving anything: an unparseable one is exit 2, naming the file, touching
+    nothing. It is
+    identity-guarded: the "stranded space" it protects is only the one the
+    legacy Claude install was bound to (the MCP entry's `--storage`, else the
+    Stop hook's `--storage` that v4.5.4+ wrote, else the default claude-code
+    slot) — other runtimes' live spaces are never blocked; if that space is
+    live and the plugin resolves elsewhere it refuses (exit 2) and says to
+    start Claude Code once, and `--retire-previous-space` proceeds instead,
+    leaving the space on disk, untouched, no longer run. A second run prints
+    "nothing to remove".
+  - **SessionStart legacy notice**: the awareness hook prints one line (stat
+    only, OSError-safe: an unreadable dir is skipped, never raised — total
+    on Python 3.10-3.13) when legacy hook files are still under the claude
+    dir's `hooks/`, naming the `--remove-legacy` command; no hooks dir means
+    no line, and the hook keeps its always-exits-0 contract. The wizard lists
+    the same leftovers after the two `/plugin` lines.
+
 ### Changed
 - **wake**: the Stop hook no longer announces relay messages at turn end. It
   asks once for the agent to arm a **waiter** — a wait-and-exit process

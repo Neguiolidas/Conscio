@@ -232,11 +232,45 @@ def _plugin_dir_matches_slug(p: Path, slug: str, env: Mapping[str, str]) -> bool
     return bool(slug_norm == "zcode" and "zcode" in p_str)
 
 
+def _recently_modified(root_path: Path, cutoff: float) -> list[Path]:
+    """Files under root_path modified after cutoff (mtime-quieto evidence)."""
+    recent: list[Path] = []
+    for root_dir, _, files in os.walk(root_path):
+        for f in files:
+            fpath = Path(root_dir) / f
+            try:
+                if fpath.stat().st_mtime > cutoff:
+                    recent.append(fpath)
+            except OSError:
+                pass
+    return recent
+
+
+def _defer_on_active_procs(active: list[dict], slug: str,
+                           where: str = "the legacy path") -> int | None:
+    """Gate 1 as a standalone check (used by both the plain flow and --keep).
+
+    Returns 2 when the migration must be deferred, else None."""
+    if not active:
+        return None
+    unit = UNIT_MAP.get(slug, f"conscio-relay-reactor-{slug}")
+    print(
+        f"migration deferred: {len(active)} active process(es) on {where}:",
+        file=sys.stderr,
+    )
+    for proc in active:
+        cmdline = proc["cmdline"]
+        cmd_trunc = cmdline[:60] + "..." if len(cmdline) > 60 else cmdline
+        print(f"  PID {proc['pid']}: {cmd_trunc} (systemctl --user stop {unit})", file=sys.stderr)
+    return 2
+
+
 def migrate_space_cmd(
     slug: str | None = None,
     quiet_minutes: int = 10,
     proc_root: Path = Path("/proc"),
     env: Mapping[str, str] | None = None,
+    keep: str | None = None,
 ) -> int:
     """Execute conscio space migrate following Spec Section 3 strict 8 atomic steps."""
     if env is None:
@@ -365,7 +399,82 @@ def migrate_space_cmd(
     if legacy_path and legacy_path.exists():
         res = resolve_space(legacy_path, env=env)
         if res.kind == "B3":
-            print(f"migration refused: {res.reason}", file=sys.stderr)
+            if keep is None:
+                print(f"migration refused: {res.reason}", file=sys.stderr)
+                return 2
+            if keep not in ("plugin", "durable"):
+                print(
+                    f"conscio space migrate: --keep takes 'plugin' or 'durable', got {keep!r}.",
+                    file=sys.stderr,
+                )
+                return 2
+            # --keep resolves B3: archive the copy NOT kept — rename to a
+            # .superseded-<ts> sibling, never delete — but first apply the
+            # same liveness gates a plain migrate applies (Gate 1 on the
+            # legacy path, mtime-quieto), so a live session is never archived
+            # under it.
+            deferred = _defer_on_active_procs(
+                _find_active_legacy_procs(legacy_path, proc_root), slug)
+            if deferred is not None:
+                return deferred
+            if quiet_minutes > 0:
+                cutoff = time.time() - (quiet_minutes * 60)
+                if _recently_modified(legacy_path, cutoff):
+                    print(
+                        f"migration deferred: files in legacy path were modified in the last "
+                        f"{quiet_minutes} minute(s)",
+                        file=sys.stderr,
+                    )
+                    return 2
+            ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+            if keep == "durable":
+                archive = legacy_path.with_name(
+                    f"{legacy_path.name}.superseded-{ts}")
+                os.rename(str(legacy_path), str(archive))
+                print(
+                    f"resolved B3: renamed the plugin copy {legacy_path} to {archive} "
+                    "(rename only, nothing was deleted)")
+                print(f"undo: rename {archive} back to {legacy_path}")
+                print(
+                    f"the plugin now resolves B2 and adopts the durable space {durable_target}")
+                return 0
+            # keep == "plugin": archive the durable copy, then let the normal
+            # flow move the plugin copy into the durable slot. F1: gate the
+            # durable copy too — the live legacy server (the old ~/.claude.json
+            # entry, cmdline `--storage <durable>`) names that path; renaming
+            # it out from under a live process would leave the process
+            # writing by path into the new identity.
+            deferred = _defer_on_active_procs(
+                _find_active_legacy_procs(durable_target, proc_root), slug,
+                where="the durable copy")
+            if deferred is not None:
+                return deferred
+            if quiet_minutes > 0:
+                cutoff = time.time() - (quiet_minutes * 60)
+                recent = _recently_modified(durable_target, cutoff)
+                if recent:
+                    print(
+                        f"migration deferred: files in the durable copy "
+                        f"{durable_target} were modified in the last "
+                        f"{quiet_minutes} minute(s):",
+                        file=sys.stderr,
+                    )
+                    for p in recent[:5]:
+                        print(f"  {p}", file=sys.stderr)
+                    return 2
+            archive = durable_target.with_name(
+                f"{durable_target.name}.superseded-{ts}")
+            os.rename(str(durable_target), str(archive))
+            print(
+                f"resolved B3: renamed the durable copy {durable_target} to {archive} "
+                "(rename only, nothing was deleted)")
+            print(f"undo: rename {archive} back to {durable_target}")
+        elif keep is not None:
+            print(
+                f"conscio space migrate: --keep applies to a B3 conflict; this space "
+                f"resolved as {res.kind}, nothing was touched.",
+                file=sys.stderr,
+            )
             return 2
 
     durable_inst = durable_target / "instance.json"

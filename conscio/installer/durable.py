@@ -321,11 +321,57 @@ def _find_plugin_instance_json(storage: Path, root: Path | None = None) -> Path 
     return None
 
 
+def _legacy_claude_storage(
+    env: Mapping[str, str] | None,
+    durable_target: Path,
+) -> Path | None:
+    """The live legacy space behind the old ~/.claude.json MCP entry, or None.
+
+    Total by contract: ANY shape that is not a dict with mcpServers dict and
+    a conscio entry whose args are a list of strings with a value after
+    --storage is no evidence — unreadable file, top-level null/list/string,
+    mcpServers null/list/absent, entry not a dict, args not a list of
+    strings, or --storage with no value all return None, and the caller
+    falls through to B4/B6 unchanged. Never raises out of resolve_space.
+    A storage equal to the durable target is the default-label case, where
+    the unchanged B2 path already adopts it.
+    """
+    if env is None:
+        env = os.environ
+    from . import legacy_claude
+    raw = legacy_claude.claude_json_path(env)
+    try:
+        data = json.loads(raw.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    servers = data.get("mcpServers")
+    if not isinstance(servers, dict):
+        return None
+    entry = servers.get("conscio")
+    if not isinstance(entry, dict):
+        return None
+    args = entry.get("args")
+    if not isinstance(args, list) or "--storage" not in args:
+        return None
+    idx = args.index("--storage")
+    if idx + 1 >= len(args) or not isinstance(args[idx + 1], str):
+        return None
+    storage = Path(args[idx + 1]).expanduser()
+    if storage == durable_target:
+        return None
+    if not (storage.is_dir() and (storage / "instance.json").is_file()):
+        return None
+    return storage
+
+
 def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> SpaceResolution:
     """Resolve space purely without filesystem side-effects.
 
     Precedence:
-    lock -> pointer (B1/B5) -> B0 legacy -> durable (B2/B3) -> B4 evidence -> B6 fresh.
+    lock -> pointer (B1/B5) -> B0 legacy -> durable (B2/B3)
+    -> B7 legacy claude-code adopt (claude-code only) -> B4 evidence -> B6 fresh.
     """
     storage_str = str(storage)
     var = unexpanded_variable(storage_str)
@@ -491,7 +537,10 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
         if plugin_id and durable_id and plugin_id == durable_id:
             reason = (
                 f"two copies of the same identity for {slug}; "
-                "they may have diverged (interrupted cross-fs copy or manual copy)"
+                "they may have diverged (interrupted cross-fs copy or manual copy). "
+                "run 'conscio space migrate --keep plugin' or '--keep durable' "
+                "(the copy not kept is renamed to a .superseded-<ts> sibling, "
+                "never deleted)"
             )
         else:
             if plugin_unreadable:
@@ -510,7 +559,9 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
 
             reason = (
                 f"identity conflict for {slug}: plugin copy (id {p_id8}) and durable copy (id {d_id8}) "
-                "belong to different identities"
+                "belong to different identities. run 'conscio space migrate --keep plugin' "
+                "or '--keep durable' (the copy not kept is renamed to a "
+                ".superseded-<ts> sibling, never deleted)"
             )
         return SpaceResolution(
             kind="B3",
@@ -523,6 +574,28 @@ def resolve_space(storage: Path | str, env: Mapping[str, str] | None = None) -> 
         )
 
     if not plugin_has_instance and not durable_has_instance:
+        # B7: a legacy materialized claude-code install (v2.11 through v4.9.1)
+        # addressed its space through the old MCP entry's --storage argument;
+        # adopt that live space instead of minting a fresh identity next to
+        # it (GAP 1: a custom label used to be silently orphaned).
+        # The MCP server writes the pointer on repair_pointer, so the
+        # adoption survives the cleanup of the evidence (B1 on the next boot).
+        if runtime == "claude-code":
+            legacy_storage = _legacy_claude_storage(env, durable_target)
+            if legacy_storage is not None:
+                return SpaceResolution(
+                    kind="B7",
+                    target=legacy_storage,
+                    reason="",
+                    repair_pointer=True,
+                    announcement=(
+                        f"adopting the space your previous Claude Code install "
+                        f"used: {legacy_storage}"
+                    ),
+                    slug=slug,
+                    runtime=runtime,
+                )
+
         # B4: Evidence of previous identity without live space
         # Check in strict order: 1. Durable tombstone, 2. Directory peer card
         tombstone = durable_target / "migrated-from.json"
