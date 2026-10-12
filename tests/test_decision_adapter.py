@@ -761,15 +761,18 @@ def test_decide_deadline_exhaustion_raises_timeout():
 
 def test_decide_network_error_with_healthy_deadline_raises_network(monkeypatch):
     # Simulate a socket/network TimeoutError occurring when the overall deadline is still healthy
+    called = []
     def _fake_urlopen(req, timeout):
+        called.append(True)
         raise urllib.error.URLError(TimeoutError("socket timed out"))
 
-    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+    monkeypatch.setattr("conscio.decision_adapter.open_no_redirect", _fake_urlopen)
 
     ad = DecisionAdapter("http://127.0.0.1:9/v1/decide", "m", "DECISION_API_KEY", None, 30.0, "k")
     with pytest.raises(DecisionError) as exc:
         ad.decide({}, {"q_choice": {"type": "choice", "criteria": {"proceed": "", "hold": "", "veto": ""}}})
     assert exc.value.status == "network"
+    assert len(called) == 1
 
 
 def test_decide_connection_refused_raises_network():
@@ -955,8 +958,15 @@ def test_fuzz_decide_contract_never_raises_unexpected_exceptions():
         def _mock_urlopen(*args, _payload=raw_bytes, **kwargs):
             return MockResponse(_payload)
 
-        orig_urlopen = urllib.request.urlopen
-        urllib.request.urlopen = _mock_urlopen
+        import conscio.decision_adapter
+        orig_open = conscio.decision_adapter.open_no_redirect
+        iteration_calls = {"n": 0}
+
+        def _counting_mock(*args, _counter=iteration_calls, **kwargs):
+            _counter["n"] += 1
+            return _mock_urlopen(*args, **kwargs)
+
+        conscio.decision_adapter.open_no_redirect = _counting_mock
         try:
             res = ad_mock.decide("state", questions)
             # If it succeeded, check fields
@@ -966,7 +976,11 @@ def test_fuzz_decide_contract_never_raises_unexpected_exceptions():
         except Exception as exc:
             violations.append(f"Iteration {i} raised unexpected {type(exc).__name__}: {exc}")
         finally:
-            urllib.request.urlopen = orig_urlopen
+            conscio.decision_adapter.open_no_redirect = orig_open
+        # Seam rule (slice 1): the replaced seam must actually be hit, or the
+        # fuzz exercises a path the unmocked code never takes.
+        if iteration_calls["n"] == 0:
+            violations.append(f"Iteration {i}: seam (open_no_redirect) never called — fuzz ran unmocked")
 
     assert not violations, f"Fuzz violations: {violations[:5]}"
 
@@ -1084,9 +1098,9 @@ def test_hub_redact_masks_api_key_in_decision_adapter(tmp_path, monkeypatch):
 
 def test_direct_construction_with_file_url_raises_valueerror_and_no_io(monkeypatch):
     def _explode(*args, **kwargs):
-        raise AssertionError("urlopen must NEVER be called on invalid url construction")
+        raise AssertionError("open_no_redirect must NEVER be called on invalid url construction")
 
-    monkeypatch.setattr(urllib.request, "urlopen", _explode)
+    monkeypatch.setattr("conscio.decision_adapter.open_no_redirect", _explode)
     with pytest.raises(ValueError, match="Invalid url"):
         DecisionAdapter("file:///etc/hostname#", "m", "DECISION_API_KEY", None, 10.0, "secret-key")
 
@@ -1119,14 +1133,17 @@ def test_transport_exception_never_leaks_secret_key_in_str_repr_args_traceback(m
     secret_key = "TOP_SECRET_API_KEY_xyz123"
     ad = DecisionAdapter("https://api.example.com/v1/decide", "m", "DECISION_API_KEY", None, 10.0, secret_key)
 
+    called = []
     def _exploding_urlopen(req, timeout):
+        called.append(True)
         raise ValueError(f"bad header Authorization: Bearer {secret_key}")
 
-    monkeypatch.setattr(urllib.request, "urlopen", _exploding_urlopen)
+    monkeypatch.setattr("conscio.decision_adapter.open_no_redirect", _exploding_urlopen)
 
     with pytest.raises(DecisionError) as exc_info:
         ad.decide({"state": "ok"}, {"q1": {"type": "noul"}})
 
+    assert len(called) == 1
     err = exc_info.value
     assert err.status == "network"
     assert err.__cause__ is None
@@ -1144,9 +1161,9 @@ def test_local_validation_state_rejects_nan_and_non_serializable_without_io(monk
     ad = DecisionAdapter("https://api.example.com/v1/decide", "m", "DECISION_API_KEY", None, 10.0, "key")
 
     def _explode(*args, **kwargs):
-        raise AssertionError("urlopen must NEVER be called on invalid state")
+        raise AssertionError("open_no_redirect must NEVER be called on invalid state")
 
-    monkeypatch.setattr(urllib.request, "urlopen", _explode)
+    monkeypatch.setattr("conscio.decision_adapter.open_no_redirect", _explode)
 
     # State with NaN
     with pytest.raises(ValueError, match="state is not valid JSON"):
@@ -1214,14 +1231,17 @@ def test_transport_exceptions_clean_context_and_no_leak(monkeypatch, exc_factory
 
     exc_to_raise = exc_factory(secret_key)
 
+    called = []
     def _exploding_urlopen(req, timeout):
+        called.append(True)
         raise exc_to_raise
 
-    monkeypatch.setattr(urllib.request, "urlopen", _exploding_urlopen)
+    monkeypatch.setattr("conscio.decision_adapter.open_no_redirect", _exploding_urlopen)
 
     with pytest.raises(DecisionError) as exc_info:
         ad.decide({"state": "ok"}, {"q1": {"type": "noul"}})
 
+    assert len(called) == 1
     err = exc_info.value
     assert err.status == "network"
     assert err.__cause__ is None

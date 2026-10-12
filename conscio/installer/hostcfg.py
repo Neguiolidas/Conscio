@@ -158,13 +158,6 @@ def existing_model(config_path: Path) -> str | None:
     return _arg_value(config_path, "--model")
 
 
-def existing_slug(config_path: Path) -> str | None:
-    """Recover the bound space slug from an existing entry's --storage arg —
-    --repair must rebind the SAME space, never mint a new one."""
-    v = _arg_value(config_path, "--storage")
-    return Path(v).name if v else None
-
-
 def _prune_backups(path: Path) -> None:
     baks = sorted(path.parent.glob(path.name + ".bak.*"))
     for old in baks[:-MAX_BACKUPS]:

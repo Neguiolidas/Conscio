@@ -1,10 +1,11 @@
 # conscio/liaison/watcher.py
 """Native A2A relay watchdog over the shared mailbox (v4.1.1).
 
-Replaces the external relay_watch_hermes.py. Reads liaison.db read-only,
-deposits new peer messages to an outbox JSON (the handoff the main session
-consumes), persists a per-peer cursor in watcher_state inside the same db.
-Zero LLM: pure deterministic plumbing.
+Replaces the external relay_watch_hermes.py. Drains the recipient's own
+spool on each tick, leaving message read status untouched (read_ts = NULL),
+and polls liaison.db. Deposits new peer messages to an outbox JSON (the handoff
+the main session consumes) and persists a per-peer cursor in watcher_state
+inside the same db. Zero LLM: pure deterministic plumbing.
 
 Exit codes: 0 = ok (incl. new messages surfaced via stdout/outbox);
 2 = emit-to-outbox failed (pending_capture — retry next tick);
@@ -24,7 +25,7 @@ from collections.abc import Iterable
 from enum import IntEnum
 from pathlib import Path
 
-from . import relay
+from . import relay, spool
 from .mailbox import resolve_db
 
 BUSY_TIMEOUT_MS = 3000  # mirror relay_watch_hermes.py
@@ -179,13 +180,21 @@ def poll_digest(db: Path, since_id: int, self_id: str,
 
 def tick_once(db: Path, *, self_id: str, peers: list[str],
               outbox: Path | None) -> tuple[list[dict], ExitCode]:
-    """One poll turn per peer. Read cursor → poll → emit outbox → advance.
+    """One poll turn per peer. Drain own spool (unread) → read cursor →
+    poll → emit outbox → advance.
 
     Silent-when-empty: no msgs → outbox untouched, cursors unchanged, OK.
     """
     db = Path(db)
     if not db.exists() or not peers or not self_id:
         return [], ExitCode.CONFIG_ERROR
+
+    try:
+        spool.ingest(db, self_id)
+    except Exception as exc:
+        sys.stderr.write(
+            f"liaison watcher: spool ingest failed: {type(exc).__name__}: {exc}\n"
+        )
 
     state = _load_state(db)
     per_peer: dict[str, list[dict]] = {}

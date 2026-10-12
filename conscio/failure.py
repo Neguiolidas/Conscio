@@ -12,7 +12,23 @@ from conscio.agency.adapter import (
     AdapterConnectionError,
     AdapterHTTPError,
     AdapterTimeout,
+    ProvidersExhausted,
 )
+
+
+def _last_provider_error(exc: Exception) -> Exception:
+    """Follow ProvidersExhausted.__cause__ down to the last provider's error.
+
+    Iterative with a seen-set: a hand-built __cause__ cycle ends the walk instead
+    of recursing until RecursionError, because classify must never raise.
+    """
+    seen: set[int] = set()
+    while isinstance(exc, ProvidersExhausted) and isinstance(exc.__cause__, Exception):
+        if id(exc) in seen:
+            break
+        seen.add(id(exc))
+        exc = exc.__cause__
+    return exc
 
 
 class FailureClass(enum.Enum):
@@ -24,6 +40,8 @@ class FailureClass(enum.Enum):
     MALFORMED_STREAM = "malformed_stream"  # truncated or corrupted response
     PROVIDER_OUTAGE = "provider_outage"    # 5xx server error, service unavailable
     PERMANENT = "permanent"           # unrecoverable error (auth, invalid request, content filter)
+    INVALID_REQUEST = "invalid_request"
+    QUOTA = "quota"
 
 
 class FailureGovernor:
@@ -39,18 +57,32 @@ class FailureGovernor:
     @staticmethod
     def classify(exc: Exception) -> FailureClass:
         """Inspect exception type and message to classify the failure."""
+        # An exhausted chain says nothing about the cause in its own message;
+        # it failed for the reason its last provider did.
+        exc = _last_provider_error(exc)
         # Adapter-typed exceptions first (most specific)
         if isinstance(exc, AdapterTimeout):
             return FailureClass.TIMEOUT
         if isinstance(exc, AdapterConnectionError):
             return FailureClass.PROVIDER_OUTAGE
         if isinstance(exc, AdapterHTTPError):
+            if exc.status == 402:
+                return FailureClass.QUOTA
             if exc.status == 429:
+                err_code = getattr(exc, "error_code", None)
+                if isinstance(err_code, str) and (
+                    err_code == "insufficient_quota" or err_code.startswith("billing")
+                ):
+                    return FailureClass.QUOTA
                 return FailureClass.RATE_LIMIT
+            if exc.status in (400, 404, 422):
+                return FailureClass.INVALID_REQUEST
             if exc.status in (401, 403):
                 return FailureClass.PERMANENT
             if exc.status >= 500:
                 return FailureClass.PROVIDER_OUTAGE
+            if 300 <= exc.status < 400:
+                return FailureClass.PERMANENT  # retrying hits the same redirect
             return FailureClass.MALFORMED_STREAM
         if isinstance(exc, AdapterBadResponse):
             return FailureClass.MALFORMED_STREAM
@@ -75,7 +107,11 @@ class FailureGovernor:
     @staticmethod
     def should_retry(failure_cls: FailureClass) -> bool:
         """Whether the failure class warrants a retry."""
-        return failure_cls is not FailureClass.PERMANENT
+        return failure_cls not in (
+            FailureClass.PERMANENT,
+            FailureClass.INVALID_REQUEST,
+            FailureClass.QUOTA,
+        )
 
     # ── circuit breaker ────────────────────────────────────────────────
 

@@ -13,6 +13,7 @@ same way the honesty hook re-implements blob reading.
 """
 import argparse
 import json
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -22,7 +23,54 @@ from pathlib import Path
 #: previous version's cache is the only surviving record that consent existed.
 CAPABILITY_ARGS = {"--enable-relay": "relay", "--can-create-halls": "halls"}
 
+#: Legacy hook files a pre-4.9.2 materialized install may still have under
+#: the claude dir's hooks/. The installer's legacy_claude keeps the same
+#: literal list; a contract test asserts the two stay equal.
+LEGACY_HOOK_FILES = [
+    "conscio_awareness.py",
+    "conscio_deepminer.py",
+    "conscio_deepminer.json",
+    "conscio_obsstore.py",
+    "conscio_wake.py",
+    "conscio_honesty.py",
+    "conscio_honesty_pkg/__init__.py",
+]
+
 _MARKER = "mcp_capabilities"
+
+
+def _claude_dir() -> Path:
+    """CLAUDE_DIR env else ~/.claude — exactly like v4.9.1 materialize.py."""
+    override = os.environ.get("CLAUDE_DIR")
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".claude"
+
+
+def legacy_notice():
+    """One line when an old materialized install left hooks behind, else None.
+
+    Stat only: no .claude.json parse, no package import. Total by contract
+    on Python 3.10-3.13 AND 3.14: on 3.10-3.13 ``Path.exists``/``is_dir``
+    propagate a ``PermissionError`` (an OSError) for a directory the user
+    cannot read, while 3.14 returns False — so the stats are wrapped in
+    ``except OSError`` and the notice returns None, never raising. The call
+    in main() is deliberately NOT inside its broad try: a raise here is a
+    real defect (the M6 mutation shape), and the __main__ guard below still
+    keeps the hook at exit 0 in real sessions.
+    """
+    try:
+        claude = _claude_dir()
+        hooks = claude / "hooks"
+        if not hooks.is_dir():
+            return None
+        if not any((hooks / rel).exists() for rel in LEGACY_HOOK_FILES):
+            return None
+    except OSError:
+        return None
+    return ("Conscio: legacy hook files from a pre-4.9.2 install are still "
+            f"under {claude}/hooks; retire them with: "
+            "conscio init --host claude-code --remove-legacy")
 
 
 def _line() -> str:
@@ -90,6 +138,12 @@ def main() -> None:
         sys.stdout.write(_line() + "\n")
     except Exception:
         pass
+    # The notice is stat-only and total by contract, so it is NOT swallowed:
+    # a raise here is a real defect (the M6 mutation shape). The __main__
+    # guard below still keeps the hook at exit 0 in real sessions.
+    notice = legacy_notice()
+    if notice:
+        sys.stdout.write(notice + "\n")
     try:
         ap = argparse.ArgumentParser(add_help=False)
         ap.add_argument("--storage", default="")
@@ -103,5 +157,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        pass
     sys.exit(0)

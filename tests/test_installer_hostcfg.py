@@ -286,14 +286,6 @@ def test_existing_model_absent_or_dangling(tmp_path):
     assert hostcfg.existing_model(cfgp) is None
 
 
-def test_existing_slug_from_storage_arg(tmp_path):
-    cfgp = tmp_path / "c.json"
-    hostcfg.write_claude_code("old-space", flags={}, model=None,
-                              config_path=cfgp, ts="T8")
-    assert hostcfg.existing_slug(cfgp) == "old-space"
-    assert hostcfg.existing_slug(tmp_path / "nope.json") is None
-
-
 def test_halls_flag_maps_to_can_create_halls():
     """v4.5.4: Agent's Hall is a consent the installer can grant — before this
     the flag existed only as a hand-typed server arg.

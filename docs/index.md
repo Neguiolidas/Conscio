@@ -110,7 +110,7 @@ and reports a relay message to an unreachable peer as parked, not delivered.
 pip install conscio
 ```
 
-Zero-dependency core (only `numpy` + the Python standard library).
+Small core: `numpy`, `cryptography` and the Python standard library.
 
 In Claude Code, install it as a plugin instead — memory, capture hooks and 14
 slash commands, with no Python toolchain to manage:

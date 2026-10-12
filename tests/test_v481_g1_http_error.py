@@ -50,13 +50,18 @@ def test_classify_adapter_http_error_statuses():
         is FailureClass.PROVIDER_OUTAGE
     )
 
-    # Other 4xx -> MALFORMED_STREAM (preserves fallback to T3 for 400)
+    # 400, 404 -> INVALID_REQUEST (slice 5)
     assert (
         FailureGovernor.classify(AdapterHTTPError("HTTP 400", status=400))
-        is FailureClass.MALFORMED_STREAM
+        is FailureClass.INVALID_REQUEST
     )
     assert (
         FailureGovernor.classify(AdapterHTTPError("HTTP 404", status=404))
+        is FailureClass.INVALID_REQUEST
+    )
+    # Other 4xx -> MALFORMED_STREAM
+    assert (
+        FailureGovernor.classify(AdapterHTTPError("HTTP 418", status=418))
         is FailureClass.MALFORMED_STREAM
     )
 
@@ -72,11 +77,12 @@ def test_post_json_raises_adapter_http_error_on_urllib_http_error():
     )
 
     with (
-        patch("urllib.request.urlopen", side_effect=http_err),
+        patch("conscio.agency.adapters.open_no_redirect", side_effect=http_err) as mock_open,
         pytest.raises(AdapterHTTPError) as exc_info,
     ):
         _post_json(url, {"prompt": "hi"}, timeout=5.0)
 
+    assert mock_open.called
     err = exc_info.value
     assert isinstance(err, AdapterBadResponse)
     assert err.status == 429

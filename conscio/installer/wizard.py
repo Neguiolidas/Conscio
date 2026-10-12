@@ -3,10 +3,11 @@ hostcfg / extras / daemonctl. All console I/O goes through an injected
 PromptIO so the flow is unit-testable; the CLI provides a real terminal IO."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Protocol
 
-from . import daemonctl, extras, hostcfg, spaces
+from . import daemonctl, extras, hostcfg, legacy_claude, spaces
 
 _FLAG_HELP = {
     "act": "act: let the host EXECUTE proposed actions (not just propose). "
@@ -49,6 +50,9 @@ def _write_generic(io: PromptIO, slug: str, flags: dict, model, ts: str,
         use = {**flags, **hostcfg.existing_flags(p)} if repair else flags
         if repair:
             model = model or hostcfg.existing_model(p)
+            if use.get("initiate"):
+                io.echo("  note: initiate applies to the Awake daemon — start it "
+                        "with `conscio daemon --awake --initiate`.")
         hostcfg.backup_then_write_json(
             p,
             mutate=lambda o: hostcfg.upsert_conscio_entry(
@@ -61,15 +65,27 @@ def _write_generic(io: PromptIO, slug: str, flags: dict, model, ts: str,
 
 def run_with(io: PromptIO, *, host: str, repair: bool, model: str | None,
              ts: str, label: str | None = None) -> int:
-    cfg: Path | None = None
-    if repair and host == "claude-code":
-        # repair rebinds the EXISTING space: recover slug + model from the
-        # current entry so a rerun never mints a fresh empty mind or strips
-        # the configured model (pre-Reach defaults produced doubled slugs)
-        from ..integrations.claude_code.materialize import claude_json_path
-        cfg = claude_json_path(None)
-        label = label or hostcfg.existing_slug(cfg)
-        model = model or hostcfg.existing_model(cfg)
+    if host == "claude-code":
+        io.echo("/plugin marketplace add Neguiolidas/Conscio")
+        io.echo("/plugin install conscio")
+        # v2.11 through v4.9.1 materialized this install: copied hooks,
+        # commands and skills into ~/.claude and wrote hook groups and an MCP
+        # entry. The plugin makes those copies run twice — list what is left
+        # and point at the cleanup command.
+        leftovers = legacy_claude.find_leftovers(dict(os.environ))
+        if leftovers["files"] or leftovers["dirs"] or leftovers["settings_groups"] \
+                or leftovers["mcp_entry"] is not None:
+            io.echo("leftovers from a pre-4.9.2 materialized install:")
+            for path in list(leftovers["files"]) + list(leftovers["dirs"]):
+                io.echo(f"  {path}")
+            for group in leftovers["settings_groups"]:
+                io.echo(f"  settings.json hook group: {group}")
+            if leftovers["mcp_entry"] is not None:
+                io.echo(f"  MCP entry: mcpServers.conscio "
+                         f"(storage: {leftovers['storage']})")
+            io.echo("retire them with: conscio init --host claude-code --remove-legacy")
+        return 0
+
     label = label or io.ask("Space label", default=host)
     slug = spaces.slugify(label)
     sp, ident, created = spaces.ensure_space(slug)
@@ -80,8 +96,6 @@ def run_with(io: PromptIO, *, host: str, repair: bool, model: str | None,
     if repair:
         # repair rewrites the binding only — recover the flags the user had
         # already granted instead of silently downgrading them to OFF
-        if host == "claude-code" and cfg is not None:
-            flags.update(hostcfg.existing_flags(cfg))
         if flags.get("initiate"):
             io.echo("  note: initiate applies to the Awake daemon — start it "
                     "with `conscio daemon --awake --initiate`.")
@@ -109,9 +123,5 @@ def run_with(io: PromptIO, *, host: str, repair: bool, model: str | None,
                     "later with `conscio daemon --awake --initiate`.")
 
     # emit host config
-    if host == "claude-code":
-        from ..integrations.claude_code.materialize import materialize
-        materialize(slug, flags=flags, model=model, ts=ts, io=io)
-    else:
-        _write_generic(io, slug, flags, model, ts, repair=repair, host=host)
+    _write_generic(io, slug, flags, model, ts, repair=repair, host=host)
     return 0

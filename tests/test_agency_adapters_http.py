@@ -1,12 +1,23 @@
 """HTTP adapters against an in-process fake server (loopback only)."""
+import email.message
+import http.client
+import io
 import json
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import time
+import urllib.error
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from unittest.mock import patch
 
 import pytest
 
 from conscio.agency import adapters
-from conscio.agency.adapter import AdapterBadResponse, AdapterConnectionError
+from conscio.agency.adapter import (
+    AdapterBadResponse,
+    AdapterConnectionError,
+    AdapterHTTPError,
+)
 from conscio.agency.adapters import (
     AnthropicAdapter,
     GeminiAdapter,
@@ -368,13 +379,16 @@ class TestErrors:
 
         from conscio.agency import adapters
 
-        def fake_urlopen(*args, **kwargs):
+        def fake_open(*args, **kwargs):
+            fake_open.called = True
             raise urllib.error.HTTPError(
                 "http://x", 500, "Server Error", {}, io.BytesIO(b"boom"))
 
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        fake_open.called = False
+        monkeypatch.setattr(adapters, "open_no_redirect", fake_open)
         with pytest.raises(AdapterBadResponse):
             adapters._post_json("http://x", {}, 1.0)
+        assert fake_open.called
 
     def test_the_error_names_the_endpoint_it_could_not_reach(self):
         """'No address associated with hostname' never says which hostname,
@@ -388,17 +402,31 @@ class TestErrors:
     def test_a_key_in_the_query_string_is_not_named(self, monkeypatch):
         """These messages reach the ledger and the event bus."""
         import urllib.error
-        import urllib.request
 
-        def fake_urlopen(*args, **kwargs):
+        def fake_open(*args, **kwargs):
+            fake_open.called = True
             raise urllib.error.URLError("nope")
 
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        fake_open.called = False
+        monkeypatch.setattr(adapters, "open_no_redirect", fake_open)
         with pytest.raises(AdapterConnectionError) as exc:
             adapters._post_json("http://host/v1/chat?key=sk-SEKRET-LEAK-7f3a",
                                 {}, 1.0)
+        assert fake_open.called
         assert "sk-SEKRET-LEAK-7f3a" not in str(exc.value)
         assert "http://host/v1/chat" in str(exc.value)
+
+    def test_endpoint_drops_query_fragment_and_userinfo(self):
+        assert (
+            adapters._endpoint("https://u:p@h:8080/v1/chat?key=K#frag")
+            == "https://h:8080/v1/chat"
+        )
+
+    def test_endpoint_clean_url_unchanged(self):
+        assert (
+            adapters._endpoint("http://127.0.0.1:8080/v1/chat")
+            == "http://127.0.0.1:8080/v1/chat"
+        )
 
 
 class TestAdapterTaxonomyHardening:
@@ -407,16 +435,17 @@ class TestAdapterTaxonomyHardening:
     """
 
     def test_try_break_timeout_maps_to_adapter_timeout(self, monkeypatch):
-        import urllib.request
-
         from conscio.agency.adapter import AdapterTimeout
 
-        def fake_urlopen(*args, **kwargs):
+        def fake_open(*args, **kwargs):
+            fake_open.called = True
             raise TimeoutError("slow")
 
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        fake_open.called = False
+        monkeypatch.setattr(adapters, "open_no_redirect", fake_open)
         with pytest.raises(AdapterTimeout):
             adapters._post_json("http://x", {}, 1.0)
+        assert fake_open.called
 
     def test_try_break_empty_payload_is_badresponse_not_keyerror(self, monkeypatch):
         # The strict extractors (choices/content/candidates) must wrap a missing
@@ -433,13 +462,14 @@ class TestAdapterTaxonomyHardening:
     def test_try_break_api_key_never_in_exception(self, monkeypatch):
         import io
         import urllib.error
-        import urllib.request
 
-        def fake_urlopen(*args, **kwargs):
+        def fake_open(*args, **kwargs):
+            fake_open.called = True
             raise urllib.error.HTTPError(
                 "http://x", 401, "Unauthorized", {}, io.BytesIO(b""))
 
-        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        fake_open.called = False
+        monkeypatch.setattr(adapters, "open_no_redirect", fake_open)
         leaky = "sk-SEKRET-LEAK-7f3a"
         try:
             OpenAIAdapter(model="gpt-4o", api_key=leaky).generate("hi")
@@ -448,3 +478,386 @@ class TestAdapterTaxonomyHardening:
             assert leaky not in repr(exc)
         else:
             raise AssertionError("expected an adapter error")
+        assert fake_open.called
+
+
+def test_post_json_retry_after_parsing():
+    import email.utils
+    import threading
+    from datetime import datetime, timedelta, timezone
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from conscio.agency.adapter import AdapterHTTPError
+
+    header_to_send: str | None = None
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.send_response(429)
+            if header_to_send is not None:
+                self.send_header("Retry-After", header_to_send)
+            self.end_headers()
+            self.wfile.write(b'{"error": "rate limited"}')
+
+        def log_message(self, format, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    url = f"http://127.0.0.1:{port}/v1/chat"
+    try:
+        # 1. Delta-seconds: "7"
+        header_to_send = "7"
+        with pytest.raises(AdapterHTTPError) as exc_info:
+            adapters._post_json(url, {}, 5.0)
+        assert exc_info.value.status == 429
+        assert getattr(exc_info.value, "retry_after", None) == 7.0
+
+        # 2. HTTP-date: ~5s in the future
+        future_dt = datetime.now(timezone.utc) + timedelta(seconds=5)
+        header_to_send = email.utils.format_datetime(future_dt)
+        with pytest.raises(AdapterHTTPError) as exc_info:
+            adapters._post_json(url, {}, 5.0)
+        assert exc_info.value.status == 429
+        ra = getattr(exc_info.value, "retry_after", None)
+        assert ra is not None
+        assert 0.0 <= ra <= 6.0
+
+        # 3. Invalid string: "soon"
+        header_to_send = "soon"
+        with pytest.raises(AdapterHTTPError) as exc_info:
+            adapters._post_json(url, {}, 5.0)
+        assert exc_info.value.status == 429
+        assert getattr(exc_info.value, "retry_after", None) is None
+
+        # 4. Header absent: None
+        header_to_send = None
+        with pytest.raises(AdapterHTTPError) as exc_info:
+            adapters._post_json(url, {}, 5.0)
+        assert exc_info.value.status == 429
+        assert getattr(exc_info.value, "retry_after", None) is None
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_parse_retry_after_direct():
+    from conscio.agency.adapters import _parse_retry_after
+
+    assert _parse_retry_after("7") == 7.0
+    assert _parse_retry_after("0") == 0.0
+    assert _parse_retry_after("-1") is None
+    assert _parse_retry_after("soon") is None
+    assert _parse_retry_after(None) is None
+
+
+def test_error_code_extractor():
+    from conscio.agency.adapters import _error_code
+
+    # OpenAI style code
+    assert _error_code(b'{"error": {"code": "insufficient_quota"}}') == "insufficient_quota"
+    # OpenAI style type when code missing
+    assert _error_code(b'{"error": {"type": "billing_error"}}') == "billing_error"
+    # code preferred over type
+    assert _error_code(b'{"error": {"code": "insufficient_quota", "type": "some_type"}}') == "insufficient_quota"
+    # Non-dict error or missing
+    assert _error_code(b'{"error": "string error"}') is None
+    assert _error_code(b'{"message": "error"}') is None
+    # Malformed JSON
+    assert _error_code(b'not json') is None
+    assert _error_code(b"") is None
+
+
+def test_post_json_429_openai_error_body_real_server():
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from conscio.agency.adapter import AdapterHTTPError
+    from conscio.failure import FailureClass, FailureGovernor
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.send_response(429)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error": {"message": "You exceeded your quota", "code": "insufficient_quota"}}')
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    th = threading.Thread(target=server.serve_forever, daemon=True)
+    th.start()
+    try:
+        with pytest.raises(AdapterHTTPError) as exc_info:
+            adapters._post_json(f"http://127.0.0.1:{port}/v1/chat", {}, 5.0)
+        exc = exc_info.value
+        assert exc.status == 429
+        assert getattr(exc, "error_code", None) == "insufficient_quota"
+        assert FailureGovernor.classify(exc) is FailureClass.QUOTA
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_post_json_429_empty_body_real_server():
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from conscio.agency.adapter import AdapterHTTPError
+    from conscio.failure import FailureClass, FailureGovernor
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.send_response(429)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    th = threading.Thread(target=server.serve_forever, daemon=True)
+    th.start()
+    try:
+        with pytest.raises(AdapterHTTPError) as exc_info:
+            adapters._post_json(f"http://127.0.0.1:{port}/v1/chat", {}, 5.0)
+        exc = exc_info.value
+        assert exc.status == 429
+        assert getattr(exc, "error_code", None) is None
+        assert FailureGovernor.classify(exc) is FailureClass.RATE_LIMIT
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_post_json_429_body_capped_at_4096():
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from conscio.agency.adapter import AdapterHTTPError
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.send_response(429)
+            self.end_headers()
+            self.wfile.write(b'{"error": {"code": "insufficient_quota"}}' + b" " * 8000)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    th = threading.Thread(target=server.serve_forever, daemon=True)
+    th.start()
+    try:
+        with pytest.raises(AdapterHTTPError) as exc_info:
+            adapters._post_json(f"http://127.0.0.1:{port}/v1/chat", {}, 5.0)
+        assert getattr(exc_info.value, "error_code", None) == "insufficient_quota"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+class _RaisingFP:
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    def read(self, *args, **kwargs) -> bytes:
+        raise self._exc
+
+    def close(self) -> None:
+        """No-op: the GC closes the fake body, and it has nothing to release."""
+
+
+def _make_closed_bytesio() -> io.BytesIO:
+    bio = io.BytesIO(b"content")
+    bio.close()
+    return bio
+
+
+@pytest.mark.parametrize(
+    "bad_fp",
+    [
+        _RaisingFP(http.client.IncompleteRead(b"truncated")),
+        _make_closed_bytesio(),
+        _RaisingFP(ValueError("stream corrupted")),
+        _RaisingFP(RuntimeError("body stream broke")),
+    ],
+)
+def test_post_json_429_flaky_fp_error_body_read_does_not_escape(bad_fp):
+    hdrs = email.message.EmailMessage()
+    hdrs["Retry-After"] = "2"
+    http_err = urllib.error.HTTPError(
+        url="http://127.0.0.1:1234/v1/chat",
+        code=429,
+        msg="Too Many Requests",
+        hdrs=hdrs,
+        fp=bad_fp,
+    )
+
+    with (
+        patch("conscio.agency.adapters.open_no_redirect", side_effect=http_err),
+        pytest.raises(AdapterHTTPError) as exc_info,
+    ):
+        adapters._post_json("http://127.0.0.1:1234/v1/chat", {}, 5.0)
+
+    exc = exc_info.value
+    assert exc.status == 429
+    assert exc.error_code is None
+    assert exc.retry_after == 2.0
+
+
+
+
+
+_URL = "http://127.0.0.1:1234/v1/chat"
+
+
+class _ErrorBodyFP:
+    """Error body for a status that must not be read: every read is recorded, then raises."""
+
+    def __init__(self) -> None:
+        self.reads: list[tuple] = []
+
+    def read(self, *args, **kwargs) -> bytes:
+        self.reads.append(args)
+        raise AssertionError("this status's error body must not be read")
+
+    read1 = read
+
+    def close(self) -> None:
+        """No-op: nothing to release."""
+
+
+@pytest.mark.parametrize("status", [400, 402])
+def test_error_body_is_not_read_for_statuses_classified_by_code_alone(status):
+    body = _ErrorBodyFP()
+    http_err = urllib.error.HTTPError(
+        url=_URL, code=status, msg="rejected", hdrs=email.message.EmailMessage(), fp=body)
+
+    with (
+        patch("conscio.agency.adapters.open_no_redirect", side_effect=http_err),
+        pytest.raises(AdapterHTTPError) as exc_info,
+    ):
+        adapters._post_json(_URL, {}, 5.0)
+
+    assert exc_info.value.status == status
+    # The best-effort read swallows the AssertionError, so the recorded calls are
+    # the evidence that no read was attempted.
+    assert body.reads == []
+
+
+@contextmanager
+def _dribbling_server(status: int, body: bytes, gap_s: float):
+    """Loopback server answering `status` and sending `body` one byte every `gap_s` seconds."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.send_response(status)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            try:
+                for byte in body:
+                    time.sleep(gap_s)
+                    self.wfile.write(bytes([byte]))
+                    self.wfile.flush()
+            except OSError:
+                pass  # the client stopped reading at its own deadline
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}/v1/chat"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_dribbled_429_body_is_cut_off_at_the_deadline(monkeypatch):
+    # raising=False: the constant is created by the fix; without it this test
+    # must fail on elapsed time, not on a missing attribute.
+    monkeypatch.setattr(adapters, "ERROR_BODY_DEADLINE_S", 0.5, raising=False)
+    with _dribbling_server(429, b"x" * 12, gap_s=0.25) as url:
+        start = time.monotonic()
+        with pytest.raises(AdapterHTTPError) as exc_info:
+            adapters._post_json(url, {}, 1.0)
+        elapsed = time.monotonic() - start
+
+    assert exc_info.value.status == 429
+    assert elapsed < 2.0
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="pre-existing: the success body read has no total deadline (later slice)",
+)
+def test_a_dribbled_success_body_is_cut_off_at_the_deadline():
+    with _dribbling_server(200, b'{"a": 1}', gap_s=0.35) as url:
+        start = time.monotonic()
+        data = adapters._post_json(url, {}, 0.5)
+        elapsed = time.monotonic() - start
+
+    assert data == {"a": 1}
+    assert elapsed < 2.0
+
+
+@contextmanager
+def _silent_error_server(status: int, hold_s: float):
+    """Loopback server answering `status` with Content-Length 100, then sending no body."""
+
+    release = threading.Event()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.send_response(status)
+            self.send_header("Content-Length", "100")
+            self.end_headers()
+            release.wait(hold_s)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}/v1/chat"
+    finally:
+        release.set()
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_silent_429_body_is_abandoned_at_the_deadline():
+    # The request timeout is 3 s. With no bound on the body read this call takes
+    # 3 s, because the server never sends the 100 bytes it declared.
+    with _silent_error_server(429, hold_s=10.0) as url:
+        start = time.monotonic()
+        with pytest.raises(AdapterHTTPError) as exc_info:
+            adapters._post_json(url, {}, 3.0)
+        elapsed = time.monotonic() - start
+
+    assert exc_info.value.status == 429
+    assert elapsed < adapters.ERROR_BODY_DEADLINE_S + 0.5
+
+
+def test_a_dribble_just_inside_the_socket_timeout_still_stops_at_the_deadline():
+    # One byte every 0.9 s against a 1.0 s request timeout: no single read times
+    # out, so only the deadline can end the body read.
+    with _dribbling_server(429, b"x" * 12, gap_s=0.9) as url:
+        start = time.monotonic()
+        with pytest.raises(AdapterHTTPError) as exc_info:
+            adapters._post_json(url, {}, 1.0)
+        elapsed = time.monotonic() - start
+
+    assert exc_info.value.status == 429
+    assert elapsed < adapters.ERROR_BODY_DEADLINE_S + 0.3

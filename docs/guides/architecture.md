@@ -91,7 +91,7 @@ execution over MCP (`act`) is deferred to v2.0.1.
 
 ## Design invariants
 
-- **Zero-dependency core** — `numpy` + stdlib only. Packaging/doc tooling lives in
+- **Small core** — `numpy` + `cryptography` (noosphere signatures) + stdlib. Packaging/doc tooling lives in
   optional extras and never enters the runtime import graph.
 - **Local-first** — the only network the core may touch is the inference backend
   (localhost by default). No network tools in the registry (rule R7).

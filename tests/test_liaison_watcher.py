@@ -7,15 +7,19 @@ replaced with a native module so peers/self_id have a single source of
 truth and the cursor survives restarts in liaison.db itself.
 """
 import sqlite3
+import time
 
 import pytest
 
-from conscio.liaison import mailbox
+from conscio.liaison import directory, mailbox, spool
 from conscio.liaison.watcher import (
     ExitCode,
     _load_state,
     poll_digest,
     tick_once,
+)
+from conscio.liaison.watcher import (
+    main as watcher_main,
 )
 
 # ── Fixtures ──────────────────────────────────────────────────────────
@@ -444,3 +448,163 @@ class TestPersistentWatcher:
 
         assert rc == int(ExitCode.OK)
         assert '"messages"' in capsys.readouterr().out
+
+
+# ── Wake Slice 1: watcher drains its own spool ────────────────────────
+
+class TestWatcherSpoolDrain:
+    """Wake Slice 1 (2026-10-10): the watcher drains its own spool on every
+    tick before polling, unread, only when db exists, failure non-fatal."""
+
+    def test_w1_tick_once_drains_spool_same_tick(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+        spool_d = directory.spool_dir(SELF)
+        assert spool_d.is_relative_to(tmp_path)
+        db = tmp_path / "liaison.db"
+        mailbox._connect(db).close()
+
+        spool.deposit(SELF, {"from": PEER_A, "to": SELF, "type": "chat",
+                             "payload": {"text": "hello-w1"}})
+        assert list(spool_d.glob("*.json"))
+
+        msgs, code = tick_once(db, self_id=SELF, peers=[PEER_A], outbox=None)
+        assert code == ExitCode.OK
+        assert len(msgs) == 1
+        assert msgs[0]["from_instance"] == PEER_A
+        assert msgs[0]["payload"] == {"text": "hello-w1"}
+        assert list(spool_d.glob("*.json")) == []
+
+    def test_w2_ingested_message_leaves_read_ts_null(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+        spool_d = directory.spool_dir(SELF)
+        assert spool_d.is_relative_to(tmp_path)
+        db = tmp_path / "liaison.db"
+        mailbox._connect(db).close()
+
+        spool.deposit(SELF, {"from": PEER_A, "to": SELF, "type": "chat",
+                             "payload": {"text": "hello-w2"}})
+
+        msgs, code = tick_once(db, self_id=SELF, peers=[PEER_A], outbox=None)
+        assert code == ExitCode.OK
+        assert len(msgs) == 1
+
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            row = conn.execute("SELECT read_ts FROM messages WHERE id=?",
+                               (msgs[0]["id"],)).fetchone()
+            assert row is not None
+            assert row[0] is None
+        finally:
+            conn.close()
+
+        unread = mailbox.inbox(db, to_instance=SELF, unread_only=True)
+        assert any(m["id"] == msgs[0]["id"] for m in unread)
+
+    def test_w3_cli_end_to_end_drains_spool_and_exits(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+        spool_d = directory.spool_dir(SELF)
+        assert spool_d.is_relative_to(tmp_path)
+        db = tmp_path / "liaison.db"
+        mailbox._connect(db).close()
+
+        spool.deposit(SELF, {"from": PEER_A, "to": SELF, "type": "chat",
+                             "payload": {"text": "hello-w3"}})
+
+        t0 = time.time()
+        rc = watcher_main([
+            "--liaison-db", str(db),
+            "--self-id", SELF,
+            "--relay-peer", PEER_A,
+            "--interval", "0.05",
+            "--timeout", "2.0",
+        ])
+        duration = time.time() - t0
+        assert rc == int(ExitCode.OK)
+        assert duration < 1.0
+        out = capsys.readouterr().out
+        assert "hello-w3" in out
+        assert list(spool_d.glob("*.json")) == []
+
+    def test_w4_cli_once_ingests_and_returns_ok(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+        spool_d = directory.spool_dir(SELF)
+        assert spool_d.is_relative_to(tmp_path)
+        db = tmp_path / "liaison.db"
+        mailbox._connect(db).close()
+
+        spool.deposit(SELF, {"from": PEER_A, "to": SELF, "type": "chat",
+                             "payload": {"text": "hello-w4"}})
+
+        rc = watcher_main([
+            "--liaison-db", str(db),
+            "--self-id", SELF,
+            "--relay-peer", PEER_A,
+            "--once",
+        ])
+        assert rc == int(ExitCode.OK)
+        out = capsys.readouterr().out
+        assert "hello-w4" in out
+        assert list(spool_d.glob("*.json")) == []
+
+    def test_w5_ingest_failure_is_not_fatal_and_logs_to_stderr(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+        spool_d = directory.spool_dir(SELF)
+        assert spool_d.is_relative_to(tmp_path)
+        db = tmp_path / "liaison.db"
+        mailbox.send(db, from_instance=PEER_A, to_instance=SELF,
+                     type="chat", payload={"text": "pre-existing"})
+
+        def broken_ingest(d, s_id):
+            raise RuntimeError("simulated ingest failure")
+
+        monkeypatch.setattr(spool, "ingest", broken_ingest)
+
+        msgs, code = tick_once(db, self_id=SELF, peers=[PEER_A], outbox=None)
+        assert code == ExitCode.OK
+        assert len(msgs) == 1
+        assert msgs[0]["payload"] == {"text": "pre-existing"}
+
+        err = capsys.readouterr().err
+        err_lines = [ln for ln in err.splitlines() if "spool ingest failed" in ln]
+        assert len(err_lines) == 1
+        assert "liaison watcher: spool ingest failed: RuntimeError: simulated ingest failure" in err_lines[0]
+
+    def test_w6_missing_db_returns_config_error_and_preserves_spool(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+        spool_d = directory.spool_dir(SELF)
+        assert spool_d.is_relative_to(tmp_path)
+        missing_db = tmp_path / "does_not_exist.db"
+        assert not missing_db.exists()
+
+        spool.deposit(SELF, {"from": PEER_A, "to": SELF, "type": "chat",
+                             "payload": {"text": "hello-w6"}})
+        spool_files = list(spool_d.glob("*.json"))
+        assert len(spool_files) == 1
+
+        msgs, code = tick_once(missing_db, self_id=SELF, peers=[PEER_A], outbox=None)
+        assert code == ExitCode.CONFIG_ERROR
+        assert msgs == []
+        assert not missing_db.exists()
+        assert list(spool_d.glob("*.json")) == spool_files
+
+    def test_w7_non_peer_spool_message_lands_unread_but_not_surfaced(self, tmp_path, monkeypatch):
+        monkeypatch.setenv(directory.RELAY_ROOT_ENV, str(tmp_path / "relay"))
+        spool_d = directory.spool_dir(SELF)
+        assert spool_d.is_relative_to(tmp_path)
+        db = tmp_path / "liaison.db"
+        mailbox._connect(db).close()
+
+        spool.deposit(SELF, {"from": STRANGER, "to": SELF, "type": "chat",
+                             "payload": {"text": "stranger-w7"}})
+
+        msgs, code = tick_once(db, self_id=SELF, peers=[PEER_A], outbox=None)
+        assert code == ExitCode.OK
+        assert msgs == []
+        assert list(spool_d.glob("*.json")) == []
+
+        unread = mailbox.inbox(db, to_instance=SELF, unread_only=True)
+        assert len(unread) == 1
+        assert unread[0]["from_instance"] == STRANGER
+        assert unread[0]["payload"] == {"text": "stranger-w7"}
+        assert unread[0]["read_ts"] is None
+

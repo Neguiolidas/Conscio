@@ -3,10 +3,42 @@ mailbox on a tmp db + a SpyEngine that records read-trio calls and RAISES on any
 mutator (the integrity boundary proof) + MockAdapter."""
 import ast
 import pathlib
+import re
+
+import pytest
 
 from conscio.agency import relay_cognize
 from conscio.agency.adapter import AdapterError, MockAdapter
+from conscio.content_layer import ContentLayerManager
+from conscio.content_store import ContentStore
 from conscio.liaison import mailbox
+
+# Slice 4 T3/T5 helpers: the case/whitespace-insensitive marker match. The
+# marker carries the 16-hex content-derived id (optional id tail for the
+# neutralized forgeries).
+_MARKER = re.compile(
+    r"\[\s*/?\s*UNTRUSTED\s*FOREIGN\s*DATA\s*(?:id\s*=[0-9a-f]{16})?\]",
+    re.IGNORECASE)
+
+
+def _outside_envelopes(text: str) -> str:
+    """Parts of `text` OUTSIDE every untrusted-data envelope (open/close
+    pairing, case/whitespace-insensitive markers)."""
+    parts: list[str] = []
+    depth = 0
+    last = 0
+    for m in _MARKER.finditer(text):
+        if depth == 0:
+            parts.append(text[last:m.start()])
+        if "/" in m.group(0):
+            last = m.end()
+            depth = max(0, depth - 1)
+        else:
+            depth += 1
+            last = m.end()
+    if depth == 0:
+        parts.append(text[last:])
+    return "".join(parts)
 
 PEER = "peer-1111"
 OTHER = "stranger-9999"
@@ -153,7 +185,8 @@ def test_prompt_includes_identity_memory_advisory_and_transcript(tmp_path):
     assert "I am Test, a calm agent." in p              # identity
     assert "we discussed deploys before" in p           # recalled memory
     assert "coherence=0.82" in p                        # advisory signal
-    assert "peer: hello mind" in p                      # transcript
+    assert "hello mind" in p                             # peer words in transcript
+    assert re.search(r"\[UNTRUSTED FOREIGN DATA id=[0-9a-f]{16}\]", p)  # slice 4: peer line enveloped
 
 
 def test_max_reply_chars_truncates_before_fit(tmp_path):
@@ -304,7 +337,7 @@ def test_one_reply_per_peer_per_cycle(tmp_path):
 
 def test_burst_wider_than_thread_window_fully_covered(tmp_path):
     # same coverage contract as relay_respond: the one reply per peer must be
-    # built over a window that includes EVERY row consumed as answered
+    # built over a window that includes EVERY row consumed as answered.
     db = _db(tmp_path)
     for i in range(30):
         mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
@@ -353,3 +386,111 @@ def test_delta_default_off_preserves_history(tmp_path):
     p = captured["p"]
     assert "earlier question" in p              # full history kept by default
     assert "fresh question" in p
+
+
+# ── slice 4: peer lines enveloped in the cognize prompt too (T3) + the stored
+#    exchange keeps the peer side enveloped, never raw (T5) ───────────────────
+
+def test_cognize_respond_peer_text_only_inside_envelope(tmp_path):
+    """T3 (cognize builder): peer words reach the prompt ONLY inside an
+    envelope; the legit reply still goes out with the peer's words present."""
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "omega77 mind probe"}, ts=1.0)
+    captured = {}
+    a = MockAdapter(script=[lambda p: captured.setdefault("p", p) or "ok omega77"])
+    sent = relay_cognize.cognize_respond(SpyEngine(), a, db, ME, [PEER])
+    assert len(sent) == 1                       # legit: the reply went out
+    p = captured["p"]
+    assert "omega77 mind probe" in p            # peer words in the prompt
+    assert "omega77 mind probe" not in _outside_envelopes(p)  # only inside one
+    assert "source: relay:" + PEER[:12] in p
+
+
+def test_remembered_exchange_envelops_the_peer_side(tmp_path):
+    """T5 (measured real): the stored exchange indexes the peer side ALREADY
+    enveloped, so engine.recall can hand the LM a marked envelope, not raw
+    peer text. Our own `me:` reply stays plain (it is ours)."""
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "probe88 cache temperature"})
+    spy = SpyEngine()
+    relay_cognize.cognize_respond(spy, MockAdapter(script=["warm"]), db, ME,
+                                  [PEER], remember=True)
+    assert len(spy.content_store.calls) == 1
+    content = spy.content_store.calls[0]["content"]
+    assert "probe88 cache temperature" in content      # peer words stored
+    assert "warm" in content                             # our reply stored
+    assert re.search(r"\[UNTRUSTED FOREIGN DATA id=[0-9a-f]{16}\]", content)  # the envelope is present
+    # the peer side is wrapped BEFORE our plain `me:` reply line:
+    prefix, sep, rest = content.partition("\nme: ")
+    assert sep, content
+    assert rest == "warm"
+    assert _MARKER.search(prefix) is not None           # an envelope closed it
+
+
+def test_surrogate_peer_text_completes_and_stores_exchange(tmp_path):
+    """B1 on the cognize path: a lone surrogate must not crash the responder.
+    The reply goes out, and the exchange is stored with the body's surrogate
+    dropped (the stored record is an enveloped body on its own line)."""
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "a\ud800b"})
+    spy = SpyEngine()
+    sent = relay_cognize.cognize_respond(spy, MockAdapter(script=["ok"]), db, ME,
+                                         [PEER], remember=True)
+    assert len(sent) == 1
+    assert mailbox.inbox(db, ME, unread_only=True) == []    # inbound consumed
+    assert len(spy.content_store.calls) == 1
+    stored = spy.content_store.calls[0]
+    assert stored["category"] == "external"
+    assert "ab" in stored["content"].split("\n")
+
+
+# ── slice 4 B4-3: recall's 300-character cut (known limitation) ──────────────
+
+class _RecallOverStore(SpyEngine):
+    """SpyEngine whose recall is the REAL ContentLayerManager.recall over a real
+    ContentStore (FTS5), so the 300-character cut is the one production applies.
+    The identity and advisory reads stay canned, as in SpyEngine."""
+
+    def __init__(self, store):
+        super().__init__()
+        self.content_store = store
+        self._layers = ContentLayerManager(content_store=store, world_model=None)
+
+    def recall(self, query, k=3, categories=None):
+        self.calls.append(("recall", query, k))
+        return self._layers.recall(query, k, categories)
+
+
+def _memory_section(prompt: str) -> str:
+    """The 'Relevant memory' block: from its heading to the next blank line."""
+    head = "Relevant memory:\n"
+    assert head in prompt, prompt
+    return prompt.split(head, 1)[1].split("\n\n", 1)[0]
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "pre-existing: ContentLayerManager.recall cuts each snippet at 300 characters "
+    "(content_layer.py:164) and a stored envelope is longer, so its close marker "
+    "and guidance are lost in the cognize prompt; fix in a later slice"))
+def test_recalled_envelope_keeps_its_close_marker_in_the_cognize_prompt(tmp_path):
+    db = _db(tmp_path)
+    engine = _RecallOverStore(ContentStore(db_path=tmp_path / "ctx.db"))
+    long_text = "omega99 " + "a remembered detail about the cache warm-up. " * 8
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": long_text}, ts=1.0)
+    relay_cognize.cognize_respond(engine, MockAdapter(script=["noted"]), db, ME,
+                                  [PEER], remember=True)          # stores the exchange
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "omega99"}, ts=2.0)
+    captured = {}
+    adapter = MockAdapter(script=[lambda p: captured.setdefault("p", p) or "ok"])
+    relay_cognize.cognize_respond(engine, adapter, db, ME, [PEER])  # recalls it
+    memory = _memory_section(captured["p"])
+    opens = re.findall(r"\[UNTRUSTED FOREIGN DATA id=([0-9a-f]{16})\]", memory)
+    assert opens, "the stored exchange was not recalled into the prompt"
+    for eid in opens:
+        assert f"[/UNTRUSTED FOREIGN DATA id={eid}]" in memory, (
+            "a recalled envelope lost its close marker at the 300-character cut")

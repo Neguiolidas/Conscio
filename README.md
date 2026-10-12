@@ -20,10 +20,10 @@ it recalls, weighs, gates and commits with numbers that carry their own
 evidence (`measured`, `derived`, `asserted`, or honestly `none`). It makes
 small, local models and frontier models punch above their size by giving them
 memory, self-judgment and procedural skill — and proves every claim by
-measurement, not assertion. Local-first and zero-dep at the core
-(`numpy` + stdlib `sqlite3`, nothing else).
+measurement, not assertion. Local-first with a small core
+(`numpy`, plus `cryptography` for signed noosphere artifacts; storage is stdlib `sqlite3`).
 
-**Latest release — `v4.9.1` "The catalog ships: honesty in the loop, robustez in the box":** the complete v4.9 audit series lands with the new `conscio/robustez/` library (21 stdlib-only modules), Ed25519 TOFU signing in the Noosphere, `compact(purge_tombstoned=True)`, `sensitivity` labels on the knowledge store, a 180 s gateway deadline, and Windows `filelock` replacing fcntl. Full suite: 4917 passed, zero failures.
+**Latest release — `v4.9.2` "One install path, and a waiter that wakes":** the Claude Code plugin is the only install path (`conscio init --host claude-code` writes nothing and prints the two `/plugin` commands); upgrading from 4.9.1 or earlier, the plugin adopts your legacy space instead of minting a blank identity, and `conscio init --host claude-code --remove-legacy` retires the old copies into a timestamped backup; the relay Stop hook asks once for a background waiter that wakes the idle session; `conscio.robustez` is removed and its guarantees live in the product; model calls no longer follow redirects; and a quota or invalid-request failure moves the fallback chain straight to the next provider.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 
@@ -50,7 +50,7 @@ conscio init                 # wizard: bind this host to its own space
 pip install -e ".[dev]"      # from source, with the dev toolchain
 ```
 
-Requires Python ≥ 3.10. The core depends only on `numpy` (`sqlite3` is stdlib) and is
+Requires Python ≥ 3.10. The core depends on `numpy` and `cryptography` (`sqlite3` is stdlib) and is
 typed (PEP 561). The wheel ships console scripts `conscio`, `conscio-mcp`,
 `conscio-daemon`, `conscio-hub`, `conscio-observatory`, `conscio-bench`. `dev`/`docs`
 extras never enter the runtime import graph.

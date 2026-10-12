@@ -41,6 +41,7 @@ from pathlib import Path
 from urllib import error as urlerror
 from urllib import request
 
+from ..http_safety import open_no_redirect
 from . import directory, relay, spool
 
 log = logging.getLogger("conscio.liaison.relay_net")
@@ -206,7 +207,7 @@ def transport_post(base_url: str, msg: dict, *, token: str,
             headers={"Content-Type": "application/json",
                      _AUTH_HEADER: f"Bearer {token}"},
             method="POST")
-        with request.urlopen(req, timeout=timeout) as resp:
+        with open_no_redirect(req, timeout=timeout) as resp:
             return ACCEPTED if resp.status == 200 else REJECTED
     except urlerror.HTTPError as exc:        # before URLError: it subclasses it
         log.warning("relay_net: %s rejected the message (HTTP %s)",

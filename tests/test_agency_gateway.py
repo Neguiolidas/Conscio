@@ -7,10 +7,12 @@ from conscio.agency.adapter import (
     AdapterCaps,
     AdapterConnectionError,
     AdapterError,
+    AdapterHTTPError,
     AdapterTimeout,
     MockAdapter,
 )
 from conscio.agency.contracts import PROPOSAL_SCHEMA, ActionProposal
+from conscio.agency.fallback_multi import MultiProviderFallbackAdapter
 from conscio.agency.gateway import (
     GatewayError,
     OutputGateway,
@@ -408,6 +410,26 @@ class TestTransportFailureIsNotADecodeFailure:
         proposal = gw.request_action("BASE", PROPOSAL_SCHEMA)
         assert proposal.tool == "echo" and gw.last_tier == "T3"
 
+    def test_slice5_http_400_at_t2_cascades_to_t3(self):
+        from conscio.agency.adapter import AdapterHTTPError
+        adapter = MockAdapter(script=[
+            _dies(AdapterHTTPError("HTTP 400: response_format unsupported", status=400)),
+            _valid_kv()])
+        gw = OutputGateway(adapter)
+        proposal = gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert proposal.tool == "echo"
+        assert gw.last_tier == "T3"
+
+    def test_slice5_http_402_at_t2_skips_lower_tier(self):
+        from conscio.agency.adapter import AdapterHTTPError
+        adapter = MockAdapter(script=[
+            _dies(AdapterHTTPError("payment required", status=402)),
+            _valid_kv()])
+        gw = OutputGateway(adapter)
+        with pytest.raises(GatewayError):
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert len(adapter.calls) == 1
+
     def test_a_permanent_failure_is_still_named_permanent(self):
         adapter = MockAdapter(script=[_dies(AdapterError("HTTP 401: unauthorized"))] * 4)
         gw = OutputGateway(adapter)
@@ -433,3 +455,58 @@ class TestTransportFailureIsNotADecodeFailure:
         with pytest.raises(GatewayError):
             gw.request_action("BASE", PROPOSAL_SCHEMA)
         assert gw.request_action("BASE", PROPOSAL_SCHEMA).tool == "echo"
+
+
+def _chain(*provider_scripts):
+    """A real MultiProviderFallbackAdapter whose providers are MockAdapters.
+
+    Production builds this chain when several providers are configured. A
+    bare MockAdapter skips the chain's exhaustion path, which is where the
+    failure class is decided.
+    """
+    fp = MultiProviderFallbackAdapter(
+        providers=[{"model": f"m{i}", "base_url": f"u{i}"}
+                   for i in range(len(provider_scripts))],
+        retry_per_provider=1, backoff_base=0.01)
+    fp._adapters = [MockAdapter(script=list(s)) for s in provider_scripts]
+    return fp
+
+
+class TestFallbackChainKeepsTheFailureClass:
+    """An exhausted chain reports its last provider's class to the gateway.
+
+    If the chain reported PERMANENT, a 400 would skip the T2->T3 cascade and
+    a 402 would open the breaker for good.
+    """
+
+    def test_slice5_400_on_every_provider_cascades_to_t3(self):
+        http_400 = AdapterHTTPError("HTTP 400: response_format unsupported", status=400)
+        chain = _chain([_dies(http_400), _valid_kv()], [_dies(http_400)])
+        gw = OutputGateway(chain)
+        proposal = gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert proposal.tool == "echo"
+        assert gw.last_tier == "T3"
+
+    def test_a_quota_failure_is_labelled_as_quota(self):
+        http_402 = AdapterHTTPError("payment required", status=402)
+        gw = OutputGateway(_chain([_dies(http_402)], [_dies(http_402)]))
+        with pytest.raises(GatewayError) as exc:
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert str(exc.value).startswith("quota failure:")
+
+    def test_a_rejected_request_on_every_tier_is_labelled_as_invalid_request(self):
+        http_400 = AdapterHTTPError("bad request", status=400)
+        gw = OutputGateway(_chain([_dies(http_400), _dies(http_400)],
+                                  [_dies(http_400), _dies(http_400)]))
+        with pytest.raises(GatewayError) as exc:
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        assert str(exc.value).startswith("invalid request failure:")
+
+    def test_slice5_402_on_every_provider_skips_lower_tier(self):
+        http_402 = AdapterHTTPError("payment required", status=402)
+        chain = _chain([_dies(http_402), _valid_kv()], [_dies(http_402), _valid_kv()])
+        gw = OutputGateway(chain)
+        with pytest.raises(GatewayError):
+            gw.request_action("BASE", PROPOSAL_SCHEMA)
+        calls = sum(len(a.calls) for a in chain._adapters)
+        assert calls == 2, "T3 was called after a quota failure"

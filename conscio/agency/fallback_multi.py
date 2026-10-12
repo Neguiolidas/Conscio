@@ -44,6 +44,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from ..output_filter import SecretMask
 from .adapter import (
     AdapterBadResponse,
     AdapterCaps,
@@ -52,6 +53,7 @@ from .adapter import (
     AdapterTimeout,
     InferenceAdapter,
     InferenceResult,
+    ProvidersExhausted,
 )
 
 log = logging.getLogger("conscio.fallback")
@@ -61,25 +63,26 @@ _DEFAULT_BACKOFF_BASE = 1.0
 _DEFAULT_BACKOFF_MAX = 10.0
 _DEFAULT_TIMEOUT = 120.0
 
-# Patterns to strip from error messages to prevent credential leakage
-_SENSITIVE_PATTERNS = (
-    "Bearer ", "Authorization:", "api_key=", "api-key:",
-    "nvapi-", "sk-", "ng-",
+# Extra patterns for exception sanitization beyond SecretMask defaults
+_EXCEPTION_EXTRA_PATTERNS = [
+    r"(?i)\bBearer\s+\S+",
+    r"(?i)\bAuthorization:\s*(?:(?:Bearer|Basic)\s+)?\S+",
+    r"(?i)\bapi[_-]?key\s*[:=]\s*\S+",
+    r"\bnvapi-[A-Za-z0-9_-]+\b",
+    r"\bsk-[A-Za-z0-9_-]+\b",
+    r"\bng-[A-Za-z0-9_-]+\b",
+    r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b",
+]
+
+_EXCEPTION_MASK = SecretMask(
+    replacement="[REDACTED]",
+    extra_patterns=_EXCEPTION_EXTRA_PATTERNS,
 )
 
 
 def _sanitize_exc(exc: Exception) -> str:
     """Strip credentials from exception messages before logging."""
-    msg = str(exc)
-    for pat in _SENSITIVE_PATTERNS:
-        idx = msg.find(pat)
-        if idx >= 0:
-            # Replace everything from the pattern to the next space or end
-            end = msg.find(" ", idx + len(pat))
-            if end < 0:
-                end = len(msg)
-            msg = msg[:idx] + pat + "[REDACTED]" + msg[end:]
-    return msg
+    return _EXCEPTION_MASK.apply(str(exc))
 
 
 @dataclass
@@ -204,20 +207,33 @@ class MultiProviderFallbackAdapter(InferenceAdapter):
                     last_exc = exc
                     safe_msg = _sanitize_exc(exc)
                     from ..failure import FailureClass, FailureGovernor
-                    if FailureGovernor.classify(exc) == FailureClass.PERMANENT:
+                    cls = FailureGovernor.classify(exc)
+                    if not FailureGovernor.should_retry(cls):
                         log.warning(
-                            "provider %d (%s @ %s) failed with PERMANENT error: "
+                            "provider %d (%s @ %s) failed with %s error: "
                             "%s — skipping retries",
-                            idx, cfg.model, cfg.base_url, safe_msg,
+                            idx, cfg.model, cfg.base_url, cls.value, safe_msg,
+                        )
+                        break
+
+                    retry_after = (
+                        getattr(exc, "retry_after", None)
+                        if cls is FailureClass.RATE_LIMIT
+                        else None
+                    )
+                    if retry_after is not None and retry_after > self._backoff_max:
+                        log.warning(
+                            "provider %d (%s @ %s) Retry-After %.1fs exceeds backoff_max %.1fs — advancing",
+                            idx, cfg.model, cfg.base_url, retry_after, self._backoff_max,
                         )
                         break
 
                     wait = min(
                         self._backoff_base * (2 ** attempt),
                         self._backoff_max,
-                    )
-                    # Add jitter (0.8x - 1.2x) to avoid thundering herd
-                    wait *= (0.8 + 0.4 * random.random())
+                    ) * (0.8 + 0.4 * random.random())
+                    if retry_after is not None:
+                        wait = max(wait, retry_after)
                     # Sanitize error message: strip any Authorization header
                     # or api_key that an API might echo in error responses
                     log.warning(
@@ -238,7 +254,7 @@ class MultiProviderFallbackAdapter(InferenceAdapter):
 
         # All providers exhausted
         if last_exc:
-            raise AdapterError(
+            raise ProvidersExhausted(
                 f"all {len(self._configs)} providers exhausted"
             ) from last_exc
         raise AdapterError("fallback chain exhausted with no error")

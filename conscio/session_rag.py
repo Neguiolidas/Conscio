@@ -31,6 +31,7 @@ from typing import Optional
 
 import numpy as np
 
+from .http_safety import open_no_redirect
 from .sqlite_tuning import tune
 
 logger = logging.getLogger(__name__)
@@ -234,7 +235,7 @@ class OpenAICompatibleEmbedder:
             req.add_header("Authorization", f"Bearer {self.api_key}")
 
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with open_no_redirect(req, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 # OpenAI format: {"data": [{"embedding": [...]}]}
                 embeddings = data.get("data", [])
@@ -284,7 +285,7 @@ class OllamaEmbedder:
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with open_no_redirect(req, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return data.get("embedding", [])
         except (urllib.error.URLError, OSError) as e:

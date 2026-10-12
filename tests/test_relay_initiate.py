@@ -3,10 +3,35 @@ tmp db + a SpyEngine whose read-trio is recorded and whose every mutator RAISES
 (the read-only boundary proof) + MockAdapter."""
 import ast
 import pathlib
+import re
 
 from conscio.agency import relay_initiate
 from conscio.agency.adapter import MockAdapter
 from conscio.liaison import mailbox
+
+_MARKER = re.compile(
+    r"\[\s*/?\s*UNTRUSTED\s*FOREIGN\s*DATA\s*(?:id\s*=[0-9a-f]{16})?\]",
+    re.IGNORECASE)
+
+
+def _outside_envelopes(text: str) -> str:
+    """Parts of `text` OUTSIDE every untrusted-data envelope (open/close
+    pairing, case/whitespace-insensitive markers)."""
+    parts: list[str] = []
+    depth = 0
+    last = 0
+    for m in _MARKER.finditer(text):
+        if depth == 0:
+            parts.append(text[last:m.start()])
+        if "/" in m.group(0):
+            last = m.end()
+            depth = max(0, depth - 1)
+        else:
+            depth += 1
+            last = m.end()
+    if depth == 0:
+        parts.append(text[last:])
+    return "".join(parts)
 
 PEER = "peer-1111"
 PEER2 = "peer-2222"
@@ -338,3 +363,21 @@ def test_no_engine_import_in_module_source():
         if isinstance(node, ast.Import):
             for n in node.names:
                 assert "engine" not in n.name.split("."), n.name
+
+
+# ── slice 4: peer lines in the initiate transcript are enveloped too (T3) ──
+
+def test_initiate_peer_text_only_inside_envelope(tmp_path):
+    """T3 (initiate path): the directed builder's transcript carries the peer's
+    words ONLY inside an envelope; the legit opener still goes out."""
+    db = _db(tmp_path)
+    mailbox.send(db, from_instance=PEER, to_instance=ME, type="chat",
+                 payload={"text": "nova55 sync status"}, ts=1.0)
+    captured = {}
+    a = MockAdapter(script=[lambda p: captured.setdefault("p", p) or "status nova55 ok"])
+    sent = relay_initiate.initiate(SpyEngine(), a, db, ME, [PEER])
+    assert len(sent) == 1                            # legit: the opener went out
+    p = captured["p"]
+    assert "nova55 sync status" in p                 # peer words in the prompt
+    assert "nova55 sync status" not in _outside_envelopes(p)  # only inside one
+    assert "source: relay:" + PEER[:12] in p

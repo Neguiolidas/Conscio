@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import adapter_config
+from .http_safety import open_no_redirect
 
 QUESTION_TYPES = ("noul", "choice", "score")
 
@@ -188,7 +189,7 @@ class DecisionAdapter:
                     request = urllib.request.Request(
                         url, data=payload, headers=headers, method="POST"
                     )
-                    with urllib.request.urlopen(request, timeout=remaining) as response:
+                    with open_no_redirect(request, timeout=remaining) as response:
                         raw = response.read()
                     break
                 except urllib.error.HTTPError as err:

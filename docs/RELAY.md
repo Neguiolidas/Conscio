@@ -15,7 +15,7 @@ trusting another computer is a decision, not a default.
 Install each agent and answer **yes** to the relay consent:
 
 ```bash
-conscio init --host claude-code      # wizard: "enable relay?" → y
+conscio init --host verdent          # wizard: "enable relay?" → y
 conscio init --host antigravity      # same wizard, another agent, same machine
 ```
 
@@ -60,6 +60,16 @@ Delivery is store-and-forward. If the peer's session is closed, the message is
 deposited in **its** spool and ingested the next time that agent runs any tool.
 Nothing is lost, and nothing has to be re-sent.
 
+### Inside a plugin session: the Stop hook arms a waiter
+
+The Claude Code plugin ships a Stop hook that never announces messages. On
+turn end it checks once for a live **waiter** — a wait-and-exit process the
+agent starts with its own background tool (`run_in_background`) using the
+exact command the hook prints. With no waiter armed it blocks that turn end
+once and prints the command; the waiter then wakes the idle session when it
+exits. Agents that never received a relay message are never asked (their
+spool directory does not exist), and at most one turn end in a row is forced.
+
 ### Reactivity, without a unit to arm
 
 If a session should be *woken* by an incoming message (rather than finding it on
@@ -91,9 +101,12 @@ python3 -m conscio.liaison.watcher --persistent \
 object per line: a delivery, or a heartbeat naming the current state. It only
 stops on a signal. Without it the watcher keeps its original contract — it
 returns after the first delivery and again at `--timeout`, so whoever started it
-has to arm it again after every exchange. A db that has not been created yet or
-a peer that has not published its card are reported each tick and waited out,
-because both resolve themselves once the other agent boots.
+has to arm it again after every exchange. On every tick, the watcher drains its
+own spool into the database before polling, so a message sent while nobody was
+awake reaches it, leaving read status untouched (`read_ts = NULL`). A db that
+has not been created yet or a peer that has not published its card are reported
+each tick and waited out, because both resolve themselves once the other agent
+boots.
 
 ---
 

@@ -141,16 +141,16 @@ builds, and only one of them holds:
 
 | alarm | speaks when | covers idle time | measured robustness |
 |---|---|---|---|
-| `conscio_wake.py` hook | on **Stop**, when the turn ENDS | no | stable |
+| `conscio_wake.py` guard | on **Stop**, once (asks to arm the waiter) | no | stable |
 | `Monitor` over an endless loop | on every stdout line | yes | **died 4x in a row** |
 | a process that **waits and exits** | on exit — the exit IS the event | yes | 5 fires / 2 attributed wakes, no failure |
 
-The hook reads `<storage>/liaison.db` with the identity in
-`<storage>/instance.json` and keeps a per-session cursor in
-`wake-cursor.json`. It works, but it **only speaks at the end of a turn**: a
-message that lands while the agent sits idle waiting for its operator is
-announced at the next turn end, not when it arrives. Diagnosing that as "the
-relay failed" is wrong — the cursor proves the message was queued.
+The hook no longer reads the mailbox at turn end and keeps no cursor. On
+**Stop** it asks once for the waiter to be armed (blocking that turn end at
+most once), and the **waiter** — armed with the agent's background tool —
+announces traffic when it exits, covering idle time. Diagnosing idle silence
+as "the relay failed" is wrong — with no waiter armed, the Stop hook says so
+in one line on stderr.
 
 ### Prefer waiting and exiting over watching forever
 
@@ -192,25 +192,15 @@ Rules the loop must respect, in either mode:
 
 ### Turning the Stop hook off
 
-Both alarms keep separate cursors, so the hook re-announces at the end of the
-turn what the watcher already delivered in the middle of it. To keep only the
-watcher, use the hook's own opt-out key — **do not edit the plugin's
-`hooks.json`**, which is cache and disappears on the next update:
+There is no `wake-off` opt-out any more: the guard stands down on its own
+(`arm_blocked` alternation — at most one forced turn end in a row), and a
+plugin user who never joined a relay is never asked to arm anything (their
+spool directory does not exist). **Do not edit the plugin's `hooks.json`**,
+which is cache and disappears on the next update.
 
-```bash
-touch <storage>/wake-off
-```
-
-Verified: with the file present the hook returns 0 and stays quiet; with it
-removed the same call returns 2 and announces — a check with the power to tell
-the two apart. One `wake-off` covers every registration: the user
-`settings.json` entry and the plugin `hooks.json` entry are the same script
-(identical checksum) over the same storage, and the cursor advances before the
-hook blocks, so a second run goes quiet on its own.
-
-Do not turn the hook off until the watcher has earned it. Redundancy costs one
-duplicate announcement per turn; a watcher that dies unnoticed costs every
-message until someone looks.
+Redundancy between the guard and a watcher you arm yourself costs one extra
+arming line per turn; a watcher that dies unnoticed costs every message until
+someone looks.
 
 ### Proving which alarm woke you
 
@@ -256,7 +246,7 @@ Before reporting a loss, check the known confusions:
 - **`conscio_recall` returns empty** → it is sensitive to formulation; the
   same content found by one query can be missed by another. An empty recall
   is "not matched", never "not stored".
-- **A file "missing" from a package** → a green materialize test proves the
+- **A file "missing" from a package** → a passing install test proves the
   local disk, not the artifact; assert `git ls-files --error-unmatch` for
   anything the deliverable must carry.
 

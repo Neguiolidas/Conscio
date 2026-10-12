@@ -7,7 +7,261 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [4.9.2] - 2026-10-12 — One install path, and a waiter that wakes
+
+### Added
+- **Upgrade path from a materialized install (v2.11 through v4.9.1)**: the
+  old `conscio init --host claude-code` copied hooks, commands and skills
+  into `~/.claude`, registered hook groups in `settings.json` and wrote an
+  MCP entry into `~/.claude.json` (its `--storage` pointed at the legacy
+  space). This release makes the plugin the only install path (see
+  Removed) and resolves what the old install left behind:
+  - **B7 resolver state**: when a Claude Code plugin boots with neither a
+    plugin space nor a durable space, the resolver reads the old
+    `mcpServers.conscio` entry's `--storage` argument (from `~/.claude.json`,
+    or `$CLAUDE_JSON`). If that path is a live space (`instance.json`) and is
+    not the default-label slot, it is adopted instead of minting a fresh
+    identity — a custom-label legacy space (e.g. `instances/my-laptop`) is no
+    longer silently orphaned. Any missing entry or wrong-shape file is no
+    evidence and the resolver never raises (top-level null/list/string,
+    `mcpServers` that is not a dict, `args` that is not a list of strings, or
+    `--storage` without a value all fall through to B4/B6); a path without
+    `instance.json` is no evidence too. The pointer the MCP server writes on
+    the adoption makes the result survive the evidence being cleaned up
+    (B1 on the next boot).
+  - **`conscio space migrate --keep plugin|durable`** resolves a B3 conflict
+    (two live copies of a space): after the liveness gates a plain migrate
+    applies to the copy being archived (with `--keep plugin` the durable copy
+    too — an active process or a recent write on that path defers the rename,
+    exit 2), the copy not kept is **renamed** (never deleted) to a
+    `.superseded-<UTC>` sibling, with the undo printed. `--keep durable`
+    archives the plugin copy (the plugin then adopts the durable space, B2);
+    `--keep plugin` archives the durable copy and the normal flow moves the
+    plugin copy into the durable slot. Without `--keep` a B3 still refuses
+    (exit 2), and its reason now names this command; `--keep` on a non-B3
+    state exits 2 and touches nothing.
+  - **`conscio init --host claude-code --remove-legacy`** (new flag, valid
+    only with `--host claude-code`) moves every leftover into
+    `~/.conscio/legacy-backup/<UTC>/` keeping the relative layout, prunes
+    only the Conscio hook entries in `settings.json` (user entries in the
+    same group survive; a group or event is dropped only when it ends
+    empty) and the `mcpServers.conscio` entry — `~/.claude.json` is rewritten
+    only when it actually has that entry (each rewrite through the
+    backup+verify path) — and never deletes. It parses both JSON files before
+    moving anything: an unparseable one is exit 2, naming the file, touching
+    nothing. It is
+    identity-guarded: the "stranded space" it protects is only the one the
+    legacy Claude install was bound to (the MCP entry's `--storage`, else the
+    Stop hook's `--storage` that v4.5.4+ wrote, else the default claude-code
+    slot) — other runtimes' live spaces are never blocked; if that space is
+    live and the plugin resolves elsewhere it refuses (exit 2) and says to
+    start Claude Code once, and `--retire-previous-space` proceeds instead,
+    leaving the space on disk, untouched, no longer run. A second run prints
+    "nothing to remove".
+  - **SessionStart legacy notice**: the awareness hook prints one line (stat
+    only, OSError-safe: an unreadable dir is skipped, never raised — total
+    on Python 3.10-3.13) when legacy hook files are still under the claude
+    dir's `hooks/`, naming the `--remove-legacy` command; no hooks dir means
+    no line, and the hook keeps its always-exits-0 contract. The wizard lists
+    the same leftovers after the two `/plugin` lines.
+
+### Changed
+- **wake**: the Stop hook no longer announces relay messages at turn end. It
+  asks once for the agent to arm a **waiter** — a wait-and-exit process
+  started with the agent's background tool — and the waiter polls the agent's
+  mailbox and spool, waking the idle session when it exits (Claude Code and
+  zcode). Agents that never received a relay message are never asked: the
+  guard checks the agent's spool directory before asking anything, and at
+  most one turn end in a row is forced (`arm_blocked` alternation).
+
+### Removed
+- **`wake-off`** and **`wake-cursor.json`**: the guard keeps no cursor and
+  honours no opt-out file; a live waiter stands down on its own.
+- **`conscio.robustez`** (shipped in 4.9.0 and 4.9.1) is removed with no
+  deprecation shim; importing it raises `ModuleNotFoundError`. Each kept
+  guarantee now lives in the product: redirect refusal and the
+  response-size cap in `agency/adapters.py`; credential redaction in
+  `agency/fallback_multi.py`; failure classes in `failure.py`; the
+  untrusted-data envelope in `conscio/untrusted.py`; verifier-unavailable
+  reporting in `pipelines.verify`. The other modules had no consumer in
+  the product or duplicated a rule it already had. For code still pinned
+  to 4.9.x: `robustez.ingest` checked only the first URL of a redirect
+  chain against its SSRF blocklist, and `robustez.ssrf` let a hostname
+  with a root dot through.
+- **`conscio.integrations.claude_code.materialize`** (shipped in 4.9.0 and
+  4.9.1) is removed with no deprecation shim; importing it raises
+  `ModuleNotFoundError`. The Claude Code plugin is the only install path:
+  `conscio init --host claude-code` (with or without `--repair`) writes
+  nothing — no space, no `~/.claude` file, no `settings.json`, no
+  `~/.claude.json` — prints the two `/plugin` commands and exits 0; Claude
+  Code assets (commands, skill, hooks) are distributed and updated
+  exclusively via the plugin. Each kept guarantee now lives in the product:
+  `govern status` finds the capture space through
+  `installer.durable.known_plugin_data_dirs`, and the honesty hooks are
+  vendored in the plugin assets tree, which the marketplace copies verbatim.
+
+### Fixed
+
+- **noosphere signing**: `cryptography` is now a core runtime dependency.
+  4.9.0 added Ed25519 signing to the noosphere but declared `cryptography`
+  only in the `dev` extra, so on a plain `pip install conscio`
+  `conscio noosphere publish` failed with `ModuleNotFoundError` and import
+  rejected every signed artifact as `signature_invalid`. A missing
+  `cryptography` now raises `ImportError` from `verify_signature` instead
+  of being reported as a forged signature.
+
+- **liaison (watcher)**: Drain recipient's own spool (`spool.ingest`) on every
+  tick before polling, leaving message read status untouched (`read_ts =
+  NULL`). Since v4.5.4 (`47fd1f8`), an agent running a supervised watcher
+  without a separate reactor or active MCP session could have incoming messages
+  sit uningested in its spool directory; `tick_once` now drains its own spool
+  whenever `liaison.db` exists, with failures logged non-fatally to stderr.
+
+- **agency failure classes**: two new `FailureClass` values stop the provider
+  retry loop from repeating a request that cannot succeed. `400`, `404` and
+  `422` classify as `INVALID_REQUEST`; `402`, and a `429` whose JSON error code
+  is `insufficient_quota` or starts with `billing`, classify as `QUOTA`. A
+  plain `429` stays `RATE_LIMIT`. The error code is `error.code` when that is a
+  string, otherwise `error.type` when that is a string, otherwise none. Only a
+  `429` body is read: at most its first 4 KiB, and the read ends at a 2-second
+  deadline (`ERROR_BODY_DEADLINE_S`). Before each read the response socket's
+  timeout is set to the time left, so a silent body or a slow drip ends at the
+  deadline: measured at 2.00 s both for a body that never arrives and for one
+  byte every 0.9 s, where it previously returned at the headers (0.00 s). That
+  is a cost: each `429` attempt now waits up to 2 s for a body that never
+  comes. If the response socket cannot be reached, the deadline is checked only
+  between reads, and a read already in flight may still wait one request
+  timeout. A body that is not complete JSON within those limits yields no code.
+  The fallback adapter does not retry either class on the same provider:
+  `MultiProviderFallbackAdapter` moves to the next provider at once. The
+  gateway still sends one request at T3 after a `400`, as before, because an
+  unsupported `response_format` is what T3 fixes. The HTTP adapter
+  (`adapters.py`) parses `Retry-After` (seconds or HTTP-date) onto the error
+  and nothing more. `MultiProviderFallbackAdapter` acts on it, and only for
+  `RATE_LIMIT`: a value above `backoff_max` advances to the next provider at
+  once, and a value within the cap is the minimum wait before the next attempt
+  on the same provider. That wait is slept only between attempts, so it has no
+  effect when `retry_per_provider` is 1. The gateway does not read
+  `Retry-After`. A body read that fails, with any exception, still surfaces as
+  `AdapterHTTPError` carrying the status and `Retry-After`.
+  **Behaviour change:** an exhausted fallback chain now raises
+  `ProvidersExhausted` (an `AdapterError`, same message) and is classified by
+  its last provider's error instead of as `PERMANENT`. Through a multi-provider
+  chain, a schema `400` and a timeout now reach T3 in `OutputGateway`; both
+  stopped at T2 before. A single adapter already reached T3 for both. A single
+  adapter's `402` also changes: it stops at T2 after one request (`QUOTA`),
+  where previously it sent a second request and reached T3. `QUOTA`,
+  `RATE_LIMIT` and outages (`5xx`, connection refused) stop at T2 through a
+  chain, as they did before. `QUOTA` stops the lower tiers at once, because
+  every tier calls the same provider. A `GatewayError` now names the class it
+  stopped on for a permanent, quota or invalid-request stop: `permanent
+  failure:`, `quota failure:` or `invalid request failure:`. A chain that ends
+  on an outage or timeout reads `adapter call failed (provider_outage)` or
+  `(timeout)`, where previously it said `permanent failure:`. `FailureGovernor`
+  is instantiated nowhere in `conscio/`, and nothing there calls `record()` or
+  `is_open()`, so no runtime circuit breaker changes.
+  `FailureGovernor.record()` now counts a `QUOTA` or outage failure as
+  retryable; an exhausted chain's such failure used to arrive as `PERMANENT`
+  and was marked permanent.
+
+- **verifier unavailable**: when the observation store cannot be opened or a
+  pointer lookup raises `sqlite3.Error`, `pipelines.verify` reports those
+  criteria in a new `unverified` list with `verifier_unavailable: True`
+  (fail-closed, `pass: False`) and records the error class in a top-level
+  `reason` string. Only pointer-shaped evidence (`obs:<digits>` or a 64-hex
+  blob hash) can be `unverified`; prose evidence fails with "evidence is not a
+  resolvable pointer" whether the store is up or down. The `obs:` digits are
+  ASCII, at most 19 significant (leading zeros stay valid) and at most
+  2^63−1 (SQLite's INTEGER maximum): evidence `obs:` followed by non-ASCII
+  digits or a number SQLite cannot store used to make `verify` raise or, for
+  other-script digits, resolve as the ASCII number, and it now fails as not
+  a resolvable pointer. A suffix with more than 19 significant digits used
+  to crash `verify` with a ValueError (CPython caps int() conversion at 4300
+  digits, leading zeros counted) and now fails as not a resolvable pointer;
+  a zero-padded well-formed id resolves through `engine.verify` exactly like
+  its ASCII spelling (it used to crash at the lookup).
+  Pre-existing since v4.6.0. Lookup queries and store
+  opening run under `engine._obs_lock`. A failure midway through verification
+  preserves any criteria that already verified. `gate:vetoed` payloads now
+  carry `unverified_criteria` and `verifier_unavailable`.
+  **Behaviour change:** `verify` results now include `"unverified"` and
+  `"verifier_unavailable"` keys on all paths; an unavailable or locked
+  observation database is no longer reported as a forged pointer, prose
+  evidence keeps failing as a non-pointer, and cached connection or database
+  lookup errors no longer escape unhandled.
+
+### Security
+
+- **agency adapters**: model calls no longer follow redirects. `urllib`
+  re-sent `Authorization`, `x-api-key` and `x-goog-api-key` to the redirect
+  target, including a different host. A 3xx now fails as a permanent error
+  (not retried) whose message names only the target's origin
+  (`scheme://host:port`), never its path, query, fragment or credentials.
+  **Behaviour change:** a provider configured at `http://` that redirects to
+  `https://` used to work and now fails; point `base_url` at the final address.
+- **agency adapters**: a response body larger than 32 MiB is refused instead
+  of being read into memory whole.
+- **agency adapters**: error messages name the endpoint without userinfo,
+  query string or fragment; any of them can carry a key or token, and these
+  messages reach the ledger and the event bus.
+- **fallback adapter**: provider errors are redacted with the product's
+  `SecretMask` plus the exception-only patterns, before they are logged. The
+  old redactor stopped at the first match of each prefix, so a second key got
+  through. It also missed `ghp_`, `AKIA` and `xox` tokens, and a value after
+  `Authorization:` or `api-key:` (it cut at the space right after the colon,
+  so nothing was redacted). Exception messages are redacted more aggressively
+  than tool output: `bearer <word>` (any case) and `api_key = <value>` are
+  hidden even when they are prose. The shared `SecretMask` used on tool
+  output is unchanged.
+- **credentialed sites**: the other four modules that send a credential
+  (`hub/providers`, `decision_adapter`, `liaison/relay_net`, `session_rag`)
+  no longer follow redirects either, so `Authorization: Bearer` and API keys
+  are never forwarded to a redirect target. A test now fails the build if any
+  module that names a credential header reaches a redirect-following urllib
+  opener or imports `requests`, `httpx`, `aiohttp` or `urllib3`.
+  **Behaviour change:** a provider whose model listing redirects now gets the
+  static fallback list (`probe_models` returns `source="fallback"`); point
+  `base_url` at the final address.
+- **untrusted-data envelope**: one envelope (`conscio/untrusted.py`) now wraps
+  the peer text on these paths: the Noosphere trial (goal and step rationales
+  reach the Skeptic enveloped, source `noosphere-trial`), the peer lines of the
+  relay transcripts (`auto_respond`, `cognize_respond`, `initiate`), and stored
+  relay exchanges. Two paths are not wrapped, a known limitation pinned by
+  strict xfail tests: the Skeptic prompt JSON-dumps a proposal's args unwrapped,
+  and recall cuts stored exchanges at 300 characters in the cognize prompt,
+  which can lose a stored envelope's close marker and guidance. Any case, and
+  any Unicode whitespace between the letters, of the words `UNTRUSTED FOREIGN
+  DATA` is rewritten to `UNTRUSTED_FOREIGN_DATA` in one linear pass, in the
+  body and in the source line. Brackets are left as they are in the body; the
+  source line loses its brackets. Unicode "format" controls (category Cf:
+  zero-width space, soft hyphen, BOM, bidi overrides) and lone surrogates
+  (category Cs) are dropped first, so the id hash and the enveloped peer text
+  are always UTF-8 encodable. Our own `me:` rows are not filtered, so a lone
+  surrogate in one reaches the prompt as it is. Every HTTP request in
+  `adapters.py` goes through `_post_json`, which calls `json.dumps` and so
+  escapes the surrogate; this does not crash today. A forged `me:` line inside
+  peer text stays between the id-bearing markers, so it is still data. The open and close markers carry a
+  16-hex content-derived id (sha256 of the final body, truncated; the output
+  stays deterministic): a close marker without this envelope's id does not end
+  the data. Documented limitation: look-alikes built from homoglyphs (e.g. a
+  Cyrillic Е), combining marks (e.g. U+0301), invisible Default_Ignorable
+  characters that are not Cf (variation selectors U+FE00-FE0F, U+034F, Hangul
+  fillers U+115F, U+1160, U+3164, U+FFA0) or the braille blank U+2800 survive the
+  rewrite and can read as a marker; the id still keeps them from closing the
+  envelope. Relay transcripts state the rule once, in `TRANSCRIPT_GUIDANCE`,
+  which names no id, and every peer line keeps its id-bearing open and close
+  markers. Stored exchanges and the Noosphere trial keep the per-envelope
+  guidance line, which names that envelope's id.
+  **Behaviour change:** relay prompts now carry envelopes, so they get longer.
+  Which rows reach the prompt does not change: `max_prompt_chars` bounds the
+  conversation text, measured before wrapping, and the envelope adds on top of
+  it 118 characters per surviving peer line (for a 12-character peer id, whose
+  source line reads `relay:<id>`: the two markers and the source line), plus the
+  marker-word rewrite where it applies,
+  and one guidance line of 197 characters and a newline per transcript that has
+  a surviving peer line. Text that spells out the marker words is rewritten
+  even without brackets. Stored
+  exchanges from before this change are not rewritten.
 
 ## [4.9.1] - 2026-10-09 — Attribution cleanup
 

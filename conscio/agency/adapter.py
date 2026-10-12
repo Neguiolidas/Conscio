@@ -30,12 +30,24 @@ class AdapterBadResponse(AdapterError):
     pass
 
 
+class ProvidersExhausted(AdapterError):
+    """Raised when every provider of a fallback chain failed; __cause__ is the last provider's error."""
+
+
 class AdapterHTTPError(AdapterBadResponse):
     """HTTP error from an inference backend carrying the status code."""
 
-    def __init__(self, message: str, status: int) -> None:
+    def __init__(
+        self,
+        message: str,
+        status: int,
+        retry_after: float | None = None,
+        error_code: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.status = int(status)
+        self.retry_after = float(retry_after) if retry_after is not None else None
+        self.error_code = str(error_code) if error_code is not None else None
 
 
 @dataclass

@@ -1,7 +1,8 @@
 # Conscio — Usage Manual
 
 Self-awareness framework for AI agents. Local-first Python + SQLite FTS5.
-One runtime dependency (`numpy`); everything else is the standard library.
+Two runtime dependencies (`numpy`, and `cryptography` for noosphere signatures);
+everything else is the standard library.
 
 **Version:** see [CHANGELOG](CHANGELOG.md) · **License:** AGPL-3.0-or-later · **Python:** 3.10+
 
@@ -14,6 +15,18 @@ commands, with no Python toolchain to manage:
 /plugin marketplace add Neguiolidas/Conscio
 /plugin install conscio
 ```
+
+**Upgrading from 4.9.1 or earlier** (the old install copied hooks/commands/
+skills into `~/.claude` and wrote a `conscio` MCP entry into
+`~/.claude.json`): start Claude Code once — the resolver adopts your legacy
+space, including a custom-label one (state B7). If two live copies of a space
+conflict, resolve with `conscio space migrate --keep plugin` or `--keep
+durable` (the copy not kept is renamed to a `.superseded-<UTC>` sibling,
+never deleted). Then retire the old copies with
+`conscio init --host claude-code --remove-legacy` — they move to
+`~/.conscio/legacy-backup/<UTC>/`, nothing is deleted, and the command is
+identity-guarded (it refuses when the plugin does not resolve to your legacy
+space; pass `--retire-previous-space` to proceed anyway).
 
 As a library or CLI:
 

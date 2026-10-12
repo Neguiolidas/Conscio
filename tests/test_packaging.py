@@ -47,6 +47,13 @@ def test_docs_extra_is_dev_only():
     assert all("mkdocs" not in dep for dep in _pyproject()["project"]["dependencies"])
 
 
+def test_noosphere_signing_library_is_a_runtime_dependency():
+    # v4.9.0 shipped cryptography in the dev extra only: a plain pip install
+    # crashed on publish and filed every valid signature as forged.
+    deps = _pyproject()["project"]["dependencies"]
+    assert any(dep.startswith("cryptography") for dep in deps)
+
+
 def test_core_import_pulls_no_packaging_or_doc_tooling():
     import importlib
     import sys

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 
 from ..liaison import mailbox, relay
+from ..untrusted import TRANSCRIPT_GUIDANCE, untrusted_envelope
 
 DEFAULT_SYSTEM = (
     "You are an autonomous agent replying to a peer agent over a relay "
@@ -68,19 +69,45 @@ def _fit(reply: dict) -> dict:
     return dict(reply, text=text[:lo])
 
 
+def _from_self(m: dict, self_id: str) -> bool:
+    return m.get("from_instance") == self_id
+
+
+def _plain_line(m: dict, text: str, self_id: str) -> str:
+    """The labelled line as HEAD rendered it. The budget is measured on these."""
+    return ("me: " if _from_self(m, self_id) else "peer: ") + text
+
+
+def _wrapped_line(m: dict, text: str, self_id: str) -> str:
+    """The line that reaches the prompt: our lines as they are, peer lines
+    inside their id-bearing envelope (guidance comes once, from the transcript)."""
+    if _from_self(m, self_id):
+        return f"me: {text}"
+    frm = str(m.get("from_instance", ""))
+    return "peer: " + untrusted_envelope(
+        text, source=f"relay:{frm[:12]}", guidance=False)
+
+
 def _transcript(rows: list[dict], self_id: str, max_chars: int) -> str:
     """Render a two-party thread as a labelled transcript, reserved-type rows
-    excluded (the review channel never enters chat context). R1: clamp to
-    max_chars by dropping OLDEST lines, always keeping the newest."""
-    lines: list[str] = []
-    for m in rows:
-        if m.get("type") in relay.RESERVED_TYPES:
-            continue
-        who = "me" if m.get("from_instance") == self_id else "peer"
-        lines.append(f"{who}: {_msg_text(m.get('payload'))}")
-    while len(lines) > 1 and len("\n".join(lines)) > max_chars:
-        lines.pop(0)
-    return "\n".join(lines)
+    excluded (the review channel never enters chat context). The budget is
+    measured on the RAW labelled lines, as before the envelope existed: drop
+    OLDEST lines while the joined text exceeds max_chars, always keeping the
+    newest. Only the survivors are wrapped, so the envelope never removes a
+    row the raw rule keeps. The envelope overhead sits on top of max_chars.
+    TRANSCRIPT_GUIDANCE is the first line whenever a peer line survives."""
+    turns = [(m, _msg_text(m.get("payload"))) for m in rows
+             if m.get("type") not in relay.RESERVED_TYPES]
+    while len(turns) > 1 and len(_raw_text(turns, self_id)) > max_chars:
+        turns.pop(0)
+    lines = [_wrapped_line(m, text, self_id) for m, text in turns]
+    if all(_from_self(m, self_id) for m, _ in turns):
+        return "\n".join(lines)
+    return "\n".join([TRANSCRIPT_GUIDANCE, *lines])
+
+
+def _raw_text(turns: list[tuple[dict, str]], self_id: str) -> str:
+    return "\n".join(_plain_line(m, text, self_id) for m, text in turns)
 
 
 # ── Delta transcript (Ato 1b): incremental context, 70-90% token cut ────────
