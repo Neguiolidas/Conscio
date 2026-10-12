@@ -9,7 +9,7 @@ Updated each phase. Current as of **v2.3.0** (2026-06-23).
 | # | Claim | Evidence | Status |
 |---|-------|----------|--------|
 | 1 | `reflect()` is passive — never calls an LLM | `reflect()` has no adapter dependency; all inference lives behind `act()` (`conscio/engine.py`) | PROVEN |
-| 2 | Core is zero-deps (numpy + sqlite3 only) | `pyproject.toml` dependencies = `["numpy>=1.24"]`; sqlite3 is stdlib | PROVEN |
+| 2 | Small core (numpy + cryptography; storage is stdlib sqlite3) | `pyproject.toml` dependencies = `["numpy>=1.24", "cryptography>=42"]` (cryptography since v4.9.2, for noosphere Ed25519 signing); sqlite3 is stdlib | PROVEN |
 | 3 | Deterministic sabotage is 100% blocked, zero executions | `tests/test_agency_adversarial.py::test_a3_deterministic_sabotage_100_percent_blocked`, `::test_a3_nothing_ever_executes` | PROVEN |
 | 4 | The Skeptic catches semantic sabotage (machinery) | bench semantic catch-rate = 1.0 with MockAdapter (1.0-by-construction) | PARTIAL (mock) |
 | 5 | The Skeptic catches semantic sabotage **on a real ≤4B model** | `docs/bench/v1.2-immune-qwen3.5-0.8b.json`: semantic catch-rate **1.0** (qwen3.5-0.8b, open mode) | MEASURED |

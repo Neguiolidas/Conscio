@@ -7,15 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [4.9.2] - 2026-10-11 — One install path, and a waiter that wakes
+## [4.9.2] - 2026-10-12 — One install path, and a waiter that wakes
 
 ### Added
 - **Upgrade path from a materialized install (v2.11 through v4.9.1)**: the
   old `conscio init --host claude-code` copied hooks, commands and skills
   into `~/.claude`, registered hook groups in `settings.json` and wrote an
   MCP entry into `~/.claude.json` (its `--storage` pointed at the legacy
-  space). 4.9.2 made the plugin the only install path; this release resolves
-  what the old install left behind:
+  space). This release makes the plugin the only install path (see
+  Removed) and resolves what the old install left behind:
   - **B7 resolver state**: when a Claude Code plugin boots with neither a
     plugin space nor a durable space, the resolver reads the old
     `mcpServers.conscio` entry's `--storage` argument (from `~/.claude.json`,
