@@ -23,7 +23,7 @@ memory, self-judgment and procedural skill — and proves every claim by
 measurement, not assertion. Local-first with a small core
 (`numpy`, plus `cryptography` for signed noosphere artifacts; storage is stdlib `sqlite3`).
 
-**Latest release — `v4.9.2` "One install path, and a waiter that wakes":** the Claude Code plugin is the only install path (`conscio init --host claude-code` writes nothing and prints the two `/plugin` commands); upgrading from 4.9.1 or earlier, the plugin adopts your legacy space instead of minting a blank identity, and `conscio init --host claude-code --remove-legacy` retires the old copies into a timestamped backup; the relay Stop hook asks once for a background waiter that wakes the idle session; `conscio.robustez` is removed and its guarantees live in the product; model calls no longer follow redirects; and a quota or invalid-request failure moves the fallback chain straight to the next provider.
+**Latest release — `v4.9.3` "The wheel ships its data, and the silence warns":** the published 4.9.2 wheel was missing `model-providers.json`, the voice presets and the axis packs, so every install ran with no provider table, no voice style and no axes — quietly, because all three loaders are advisory by design. 4.9.3 ships them, adds a release gate that checks the wheel artifact itself rather than the source tree (a stale `build/` hides the gap), and makes a missing data file warn once naming the path, while a preset switched off on purpose stays silent.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 
