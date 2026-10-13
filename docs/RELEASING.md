@@ -106,17 +106,26 @@ catch a new pytest breaking the 3.10–3.13 matrix early, and since the release
 requires CI green, a break there still blocks the release. Only the release is
 pinned; `ci.yml` and the `[dev]` extra are deliberately left floating.
 
-Prove it by hand (the check the test automates). Build into a directory you
-have just emptied — a `dist/` that already holds an older release makes
-`ls dist/*.whl` match two wheels, and `unzip` then extracts nothing and every
-file reads as missing:
+Prove it by hand (the check the test automates). The block stages the TRACKED
+tree into `$work` — the same `git ls-files` staging `test_wheel_contents_guard.py`
+does — and builds there, so it checks the working tree and writes nothing into
+the repo. Building in place leaves `conscio.egg-info/` and `build/` behind, which
+is exactly the stale state this section warns contaminates the next build:
 
 ```bash
 work="$HOME/.cache/conscio-release-check"
-rm -rf "$work"
-python3 -m build --outdir "$work/dist"
-mkdir -p "$work/scratch"
+rm -rf "$work"; mkdir -p "$work/src" "$work/scratch"
+cd "$(git rev-parse --show-toplevel)"
+
+git ls-files -z | while IFS= read -r -d '' f; do
+  [ -f "$f" ] || continue                    # tracked but deleted from the tree
+  mkdir -p "$work/src/$(dirname "$f")"       # dirname, not ${f%/*}: a bare
+  cp "$f" "$work/src/$f"                     # filename would make a directory
+done
+
+python3 -m build --outdir "$work/dist" "$work/src"
 unzip -q "$(ls "$work/dist"/*.whl)" -d "$work/scratch"
+
 git ls-files conscio | grep -v '\.py$' | while read -r f; do
   [ -f "$work/scratch/$f" ] || echo "MISSING FROM WHEEL: $f"
 done
@@ -127,8 +136,12 @@ Silence above means every tracked data file shipped. To judge a wheel that is
 already built, without building a second one:
 
 ```bash
-CONSCIO_WHEEL=dist/conscio-*.whl \
-  python -m pytest tests/test_wheel_contents_guard.py -q --tb=short
+# Point at ONE wheel FILE. In `VAR=glob cmd` the shell does not expand the glob,
+# so a pattern here reaches pytest as a literal path and the guard refuses it
+# ("CONSCIO_WHEEL points at no file") — that was measured, not guessed.
+wheel="$(ls -t dist/*.whl | head -1)"
+CONSCIO_WHEEL="$wheel" \
+  python3 -m pytest tests/test_wheel_contents_guard.py -q --tb=short
 ```
 
 When it goes red, something reads that file at runtime and it is not packaged.
