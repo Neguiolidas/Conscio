@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.9.3] - Unreleased — The wheel ships its data, and the silence warns
+
+### Fixed
+- **The package now ships the data files it reads at runtime.**
+  `model-providers.json`, `presets/axes/*` and `presets/voice/*` were absent
+  from the published 4.9.2 wheel *and* sdist (measured: 32 of the 35 tracked
+  non-`.py` files under `conscio/` shipped, three did not), so every installed
+  copy ran with no provider table, no voice preset and no axis pack. Nothing
+  failed anywhere: `provider_specs.load_provider_specs()` is only reached
+  through the hub, which catches it, `resolve_voice_preset` returns `''` and
+  `axis_pack._read_pack` returns `[]` — advisory by design, invisible in
+  practice. The three paths are now listed in `[tool.setuptools.package-data]`,
+  which feeds both the wheel and the sdist (re-measured: 35 of 35).
+- **A release gate that judges the artifact, not the source tree.**
+  `tests/test_wheel_contents.py` stages the tracked tree with `git ls-files`
+  and builds a wheel from that staging area, then asserts every non-`.py` file
+  tracked under `conscio/` is in the wheel's namelist; exceptions live only in
+  a documented `EXCLUDED` dict, and the three families above may never be one.
+  `.github/workflows/release.yml` runs the same check against the exact wheel
+  it is about to publish, before the upload. Building in place was the second
+  half of the bug: a stale `build/` and `conscio.egg-info/` re-inject files the
+  configuration no longer lists, which kept the check green after the fix was
+  reverted (observed twice before the guard was made to stage its own copy).
+
+### Changed
+- **A missing data file warns once instead of vanishing.**
+  `voice_preset.resolve_voice_preset`, `axis_pack._read_pack` and the hub's
+  provider-spec fallback each emit one warning per process, naming the exact
+  path that is missing. The deliberate off switches stay silent and are pinned
+  by tests: `voice_preset=""` or `"none"` (constructor argument, or
+  `CONSCIO_VOICE_PRESET` including set-but-empty) and `axis_packs=[]`. The hub
+  mirror now logs the `ValueError` it falls back on — its own comment already
+  promised the spec loader would be loud, and the loader only raises.
+
 ## [4.9.2] - 2026-10-12 — One install path, and a waiter that wakes
 
 ### Added
