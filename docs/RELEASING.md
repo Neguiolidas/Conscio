@@ -45,6 +45,9 @@ After this, no secrets are needed — the `publish` job authenticates via OIDC.
 3. **Update `README.md`** and `docs/CLAIMS.md` if the surface changed
    (shipped-state only).
 4. **Verify locally** (mirrors the CI gate):
+   Run these from inside the project's own activated venv: `pytest`, `build` and
+   `twine` are dev-only tools, absent from a system interpreter, and whichever is
+   missing fails at the command that reaches it first.
    ```bash
    for f in tests/test_*.py; do python -m pytest "$f" -q; done
    ruff check conscio/ tests/
