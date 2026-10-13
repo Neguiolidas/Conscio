@@ -23,20 +23,35 @@ DEFAULT_PACKS = ["core"]
 
 # One warning per missing pack per process: load_axes() runs on every semantic
 # construction, and a missing pack means the install lost data, not that
-# nobody asked for it.
-_warned: set[str] = set()
+# nobody asked for it. Keyed by (kind, path): a pack that is NOT THERE is the
+# 4.9.2 packaging bug, a pack that is there but unreadable is a different
+# failure, and collapsing both into one message hides which one happened.
+_warned: set[tuple[str, str]] = set()
 
 
 def _warn_missing(path: Path) -> None:
     """Announce a pack the install should have shipped but did not."""
-    key = str(path)
+    key = ("missing", str(path))
     if key in _warned:
         return
     _warned.add(key)
     log.warning(
         "axis pack not found: %s — the install ships no such file; "
         "these axes are skipped and contradiction detection stays partial",
-        key,
+        path,
+    )
+
+
+def _warn_unusable(path: Path, reason: object) -> None:
+    """Announce a pack that exists but cannot be parsed or read."""
+    key = ("unreadable", str(path))
+    if key in _warned:
+        return
+    _warned.add(key)
+    log.warning(
+        "axis pack unreadable: %s — the file exists but could not be loaded "
+        "(%s); these axes are skipped and contradiction detection stays partial",
+        path, reason,
     )
 
 
@@ -66,7 +81,8 @@ def _read_pack(name: str) -> list[dict]:
         return []
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):     # B-013: ValueError covers UnicodeDecodeError
+    except (OSError, ValueError) as exc:  # ValueError covers UnicodeDecodeError
+        _warn_unusable(path, exc)
         return []
     axes = data.get("axes", [])
     return axes if isinstance(axes, list) else []

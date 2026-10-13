@@ -54,6 +54,10 @@ def test_missing_voice_preset_warns_once_naming_the_path(
     warned = _warnings(caplog, VOICE)
     assert len(warned) == 1, f"one warning per process, got {len(warned)}"
     assert str(missing) in caplog.text, caplog.text
+    # Which kind: a file that is NOT THERE is the 4.9.2 packaging bug, and the
+    # message must not be confusable with the corrupt-file case.
+    assert "not found" in warned[0].getMessage()
+    assert "unreadable" not in warned[0].getMessage()
 
 
 def test_missing_axis_pack_warns_once_naming_the_path(
@@ -68,6 +72,64 @@ def test_missing_axis_pack_warns_once_naming_the_path(
     warned = _warnings(caplog, AXES)
     assert len(warned) == 1, f"one warning per process, got {len(warned)}"
     assert str(missing) in caplog.text, caplog.text
+    assert "not found" in warned[0].getMessage()
+    assert "unreadable" not in warned[0].getMessage()
+
+
+def test_corrupt_axis_pack_warns_unreadable_not_missing(
+        tmp_path, monkeypatch, caplog) -> None:
+    """A pack that IS there but will not parse is a different failure.
+
+    Advisory loading means the process keeps running degraded — but silently
+    degrading was the very bug this release fixes. The warning names the path
+    and the error, and it says "unreadable", never "not found".
+    """
+    monkeypatch.setattr(axis_pack, "AXES_DIR", tmp_path)
+    broken = tmp_path / "core.json"
+    broken.write_text("{ not json", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger=AXES):
+        assert axis_pack.load_axes(["core"]) == []
+
+    warned = _warnings(caplog, AXES)
+    assert len(warned) == 1, f"one warning per process, got {len(warned)}"
+    assert "unreadable" in warned[0].getMessage()
+    assert "not found" not in warned[0].getMessage()
+    assert str(broken) in caplog.text, caplog.text
+
+
+def test_binary_axis_pack_warns_unreadable_with_the_decode_error(
+        tmp_path, monkeypatch, caplog) -> None:
+    """B-013 survived as a crash fix; the silence never got fixed. It does now."""
+    monkeypatch.setattr(axis_pack, "AXES_DIR", tmp_path)
+    (tmp_path / "core.json").write_bytes(b"\xff\xfe\x00 not utf8 json \xff")
+
+    with caplog.at_level(logging.WARNING, logger=AXES):
+        assert axis_pack.load_axes(["core"]) == []
+
+    assert "unreadable" in caplog.text, caplog.text
+    assert "decode" in caplog.text.lower(), (
+        f"the error itself must be named, got: {caplog.text}")
+
+
+def test_voice_preset_that_is_not_a_file_warns_unreadable(
+        tmp_path, monkeypatch, caplog) -> None:
+    """The install shipped a PATH that is not a usable file — not a missing one.
+
+    voice_preset never reads the preset's CONTENT (the framework only surfaces
+    its name), so this branch is the whole of "corrupt" for a voice preset.
+    """
+    monkeypatch.setattr(voice_preset, "PRESET_DIR", tmp_path)
+    (tmp_path / "coherence-style.md").mkdir()      # exists, is a directory
+
+    with caplog.at_level(logging.WARNING, logger=VOICE):
+        assert voice_preset.resolve_voice_preset("coherence-style") == ""
+
+    warned = _warnings(caplog, VOICE)
+    assert len(warned) == 1, f"one warning per process, got {len(warned)}"
+    assert "unreadable" in warned[0].getMessage()
+    assert "not found" not in warned[0].getMessage()
+    assert str(tmp_path / "coherence-style.md") in caplog.text
 
 
 def test_voice_off_switch_via_engine_stays_silent(tmp_path, caplog) -> None:
