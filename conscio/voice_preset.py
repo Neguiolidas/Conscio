@@ -10,9 +10,30 @@ no engine logic. Zero dependencies — markdown read + existence check only.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
+log = logging.getLogger("conscio.voice_preset")
+
 PRESET_DIR = Path(__file__).parent / "presets" / "voice"
+
+# Resolution runs on every engine start, so a missing file would otherwise
+# warn once per process start forever. Keyed by path: one warning per missing
+# file per process, and no repeat for the ones already reported.
+_warned: set[str] = set()
+
+
+def _warn_missing(path: Path) -> None:
+    """Announce a preset the install should have shipped but did not."""
+    key = str(path)
+    if key in _warned:
+        return
+    _warned.add(key)
+    log.warning(
+        "voice preset not found: %s — the install ships no such file; "
+        "voice injection stays off (resolve_voice_preset returns '')",
+        key,
+    )
 
 
 def resolve_voice_preset(name: str) -> str:
@@ -20,13 +41,17 @@ def resolve_voice_preset(name: str) -> str:
     Return the preset name if its file exists; '' for 'none'/empty/missing.
 
     A missing preset disables injection rather than crashing — selection is
-    advisory, never fatal.
+    advisory, never fatal. An empty name or 'none' is the OFF SWITCH: the user
+    asked for no voice, so it stays silent. A named preset whose file is gone
+    is the opposite case — an install missing data — and that warns.
     """
     name = (name or "").strip()
     if not name or name.lower() == "none":
         return ""
-    if (PRESET_DIR / f"{name}.md").is_file():
+    path = PRESET_DIR / f"{name}.md"
+    if path.is_file():
         return name
+    _warn_missing(path)
     return ""
 
 

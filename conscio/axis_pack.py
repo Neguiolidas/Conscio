@@ -12,11 +12,32 @@ skipped, never fatal. Zero dependencies (json + pathlib + os).
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 
+log = logging.getLogger("conscio.axis_pack")
+
 AXES_DIR = Path(__file__).parent / "presets" / "axes"
 DEFAULT_PACKS = ["core"]
+
+# One warning per missing pack per process: load_axes() runs on every semantic
+# construction, and a missing pack means the install lost data, not that
+# nobody asked for it.
+_warned: set[str] = set()
+
+
+def _warn_missing(path: Path) -> None:
+    """Announce a pack the install should have shipped but did not."""
+    key = str(path)
+    if key in _warned:
+        return
+    _warned.add(key)
+    log.warning(
+        "axis pack not found: %s — the install ships no such file; "
+        "these axes are skipped and contradiction detection stays partial",
+        key,
+    )
 
 
 def available_axis_packs() -> list[str]:
@@ -41,6 +62,7 @@ def _read_pack(name: str) -> list[dict]:
     """Return a pack's axis list, or [] if missing/unreadable (advisory)."""
     path = AXES_DIR / f"{name}.json"
     if not path.is_file():
+        _warn_missing(path)
         return []
     try:
         data = json.loads(path.read_text(encoding="utf-8"))

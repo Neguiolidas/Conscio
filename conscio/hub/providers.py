@@ -5,6 +5,7 @@ job is building an adapter; listing models is a Hub concern. Stdlib urllib only.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import urllib.error
@@ -14,6 +15,8 @@ from typing import Any
 
 from ..http_safety import open_no_redirect
 from . import config as _config
+
+log = logging.getLogger(__name__)
 
 BUILTIN = [t for t in _config.KNOWN_TYPES if t != "multi-fallback"]
 
@@ -34,10 +37,13 @@ KNOWN_MODELS: dict[str, list[str]] = {
 try:
     from ..provider_specs import load_provider_specs as _load_specs
     _DEFAULT_BASE_URL = {k: str(v["base_url"]) for k, v in _load_specs().items()}
-except ValueError:
-    # Packaging bug: fail-fast is provider_specs' job; the hub keeps a
-    # mirror so a broken file logs loudly at the spec loader and probes
-    # still run against the shipped defaults below.
+except ValueError as exc:
+    # Packaging bug: fail-fast is provider_specs' job, and it raises instead of
+    # logging — so if nobody says anything here, the hub silently runs on a
+    # mirrored table. The mirror still keeps probes alive (below); the warning
+    # is what makes the degraded state visible at import time, once per process.
+    log.warning(
+        "provider specs unavailable, hub serving its built-in mirror: %s", exc)
     _DEFAULT_BASE_URL = {
         "lmstudio": "http://localhost:1234/v1",
         "ollama": "http://localhost:11434",
