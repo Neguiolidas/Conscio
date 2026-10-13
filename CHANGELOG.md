@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   practice. The three paths are now listed in `[tool.setuptools.package-data]`,
   which feeds both the wheel and the sdist (re-measured: 35 of 35).
 - **A release gate that judges the artifact, not the source tree.**
-  `tests/test_wheel_contents.py` stages the tracked tree with `git ls-files`
+  `tests/test_wheel_contents_guard.py` stages the tracked tree with `git ls-files`
   and builds a wheel from that staging area, then asserts every non-`.py` file
   tracked under `conscio/` is in the wheel's namelist; exceptions live only in
   a documented `EXCLUDED` dict, and the three families above may never be one.

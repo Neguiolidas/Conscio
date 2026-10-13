@@ -88,7 +88,7 @@ axis pack. The lesson is that a guard must judge the ARTIFACT — a check that
 reads the source tree is green by construction, because in the source tree every
 file exists.
 
-`tests/test_wheel_contents.py` is that check. It compares `git ls-files conscio`
+`tests/test_wheel_contents_guard.py` is that check. It compares `git ls-files conscio`
 filtered to non-`.py` (what SHOULD ship) against the namelist of a real wheel
 (what DID ship), with exceptions only in a documented `EXCLUDED` dict.
 
@@ -98,6 +98,13 @@ the working directory: measured, a build in place is fed by a stale `build/` and
 with the fix reverted that guard stayed green twice, until both directories
 were removed. `CONSCIO_WHEEL` judging an already-built wheel skips the build
 entirely, which is how the release workflow reuses the artifact it publishes.
+
+The release job runs this check between `Build + check` and the
+version-agreement step, and its pytest is pinned on purpose. A release stays
+reproducible on the exact version its gate ran, while CI floats — CI exists to
+catch a new pytest breaking the 3.10–3.13 matrix early, and since the release
+requires CI green, a break there still blocks the release. Only the release is
+pinned; `ci.yml` and the `[dev]` extra are deliberately left floating.
 
 Prove it by hand (the check the test automates). Build into a directory you
 have just emptied — a `dist/` that already holds an older release makes
@@ -121,7 +128,7 @@ already built, without building a second one:
 
 ```bash
 CONSCIO_WHEEL=dist/conscio-*.whl \
-  python -m pytest tests/test_wheel_contents.py -q --tb=short
+  python -m pytest tests/test_wheel_contents_guard.py -q --tb=short
 ```
 
 When it goes red, something reads that file at runtime and it is not packaged.

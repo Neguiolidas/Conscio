@@ -89,7 +89,7 @@ jobs:
           wheel="$(ls dist/*.whl)"
           echo "guarding $wheel"
           CONSCIO_WHEEL="$wheel" \
-            python -m pytest tests/test_wheel_contents.py -q --tb=short -p no:cacheprovider
+            python -m pytest tests/test_wheel_contents_guard.py -q --tb=short -p no:cacheprovider
 
       # A tag push cannot disagree with itself, but a dispatch can be given any
       # tag, and PyPI uploads are permanent. Refuse before publish rather than
