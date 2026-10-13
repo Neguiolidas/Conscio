@@ -78,7 +78,14 @@ jobs:
       - name: Package-data guard (wheel contents)
         run: |
           set -euo pipefail
-          python -m pip install pytest
+          # Pinned on purpose: this is the step that stands between a green
+          # build and an immutable PyPI upload, and a floating pytest would let
+          # the gate change under the release without anyone choosing it. The
+          # version below is the one the local gate ran (5155 tests, 0
+          # failures). The repo itself only declares pytest>=7.0
+          # (pyproject.toml [dev]) and CI installs that extra, so a CI run
+          # resolves whatever pip picks — keep the two in step deliberately.
+          python -m pip install "pytest==9.0.2"
           wheel="$(ls dist/*.whl)"
           echo "guarding $wheel"
           CONSCIO_WHEEL="$wheel" \
