@@ -64,17 +64,3 @@ def load_provider_specs() -> dict[str, dict[str, Any]]:
     log.debug("provider specs loaded from %s (%d providers)", _JSON_PATH, len(data))
     return data
 
-
-def provider_types() -> tuple[str, ...]:
-    """The provider type names the JSON declares (single source of truth)."""
-    return tuple(sorted(load_provider_specs().keys()))
-
-
-def default_base_url(provider_type: str) -> str:
-    """The shipped default base URL for a provider type.
-
-    Raises KeyError for an unknown type: callers validate against
-    provider_types() first, so a KeyError here is a real bug, not a
-    fallback case.
-    """
-    return str(load_provider_specs()[provider_type]["base_url"])
