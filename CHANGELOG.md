@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [4.9.3] - Unreleased — The wheel ships its data, and the silence warns
+## [4.9.3] - 2026-10-14 — The wheel ships its data, and the silence warns
 
 ### Fixed
 - **The package now ships the data files it reads at runtime.**
