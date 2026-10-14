@@ -45,6 +45,11 @@ After this, no secrets are needed — the `publish` job authenticates via OIDC.
 3. **Update `README.md`** and `docs/CLAIMS.md` if the surface changed
    (shipped-state only).
 4. **Verify locally** (mirrors the CI gate):
+   Run these from inside the project's own activated venv: `pytest` and `build`
+   come with the `[dev]` extra and are absent from a system interpreter; `twine`
+   is not in `[dev]`, so install it into the venv first (`pip install twine`, or
+   `uv pip install twine` in a venv made by uv), as the CI `package` job does.
+   Whichever tool is missing fails at the command that reaches it first.
    ```bash
    for f in tests/test_*.py; do python -m pytest "$f" -q; done
    ruff check conscio/ tests/
@@ -78,6 +83,80 @@ After this, no secrets are needed — the `publish` job authenticates via OIDC.
    ```
 7. Watch the **Release** workflow: `gate` → `build` → `publish`. On success the
    wheel + sdist are live on PyPI.
+
+### The package-data guard (wheel contents)
+
+v4.9.2 published a wheel with no `model-providers.json`, no `presets/axes/*`
+and no `presets/voice/*`. Nothing failed: the three loaders are advisory by
+design, so every install ran with no provider table, no voice preset and no
+axis pack. The lesson is that a guard must judge the ARTIFACT — a check that
+reads the source tree is green by construction, because in the source tree every
+file exists.
+
+`tests/test_wheel_contents_guard.py` is that check. It compares `git ls-files conscio`
+filtered to non-`.py` (what SHOULD ship) against the namelist of a real wheel
+(what DID ship), with exceptions only in a documented `EXCLUDED` dict.
+
+It builds its wheel from a `git ls-files`-staged copy of the tree, never from
+the working directory: measured, a build in place is fed by a stale `build/` and
+`conscio.egg-info/`, which re-inject files the configuration no longer lists —
+with the fix reverted that guard stayed green twice, until both directories
+were removed. `CONSCIO_WHEEL` judging an already-built wheel skips the build
+entirely, which is how the release workflow reuses the artifact it publishes.
+
+The release job runs this check between `Build + check` and the
+version-agreement step, and its pytest is pinned on purpose. A release stays
+reproducible on the exact version its gate ran, while CI floats — CI exists to
+catch a new pytest breaking the 3.10–3.13 matrix early, and since the release
+requires CI green, a break there still blocks the release. Only the release is
+pinned; `ci.yml` and the `[dev]` extra are deliberately left floating.
+
+Prove it by hand (the check the test automates). The block stages the TRACKED
+tree into `$work` — the same `git ls-files` staging `test_wheel_contents_guard.py`
+does — and builds there, so it checks the working tree and writes nothing into
+the repo. Building in place leaves `conscio.egg-info/` and `build/` behind, which
+is exactly the stale state this section warns contaminates the next build:
+
+```bash
+work="$HOME/.cache/conscio-release-check"
+rm -rf "$work"; mkdir -p "$work/src" "$work/scratch"
+cd "$(git rev-parse --show-toplevel)"
+
+git ls-files -z | while IFS= read -r -d '' f; do
+  [ -f "$f" ] || continue                    # tracked but deleted from the tree
+  mkdir -p "$work/src/$(dirname "$f")"       # dirname, not ${f%/*}: a bare
+  cp "$f" "$work/src/$f"                     # filename would make a directory
+done
+
+python3 -m build --outdir "$work/dist" "$work/src"
+unzip -q "$(ls "$work/dist"/*.whl)" -d "$work/scratch"
+
+git ls-files conscio | grep -v '\.py$' | while read -r f; do
+  [ -f "$work/scratch/$f" ] || echo "MISSING FROM WHEEL: $f"
+done
+rm -rf "$work"
+```
+
+Silence above means every tracked data file shipped. To judge a wheel that is
+already built, without building a second one:
+
+```bash
+# Point at ONE wheel FILE. In `VAR=glob cmd` the shell does not expand the glob,
+# so a pattern here reaches pytest as a literal path and the guard refuses it
+# ("CONSCIO_WHEEL points at no file") — that was measured, not guessed.
+wheel="$(ls -t dist/*.whl | head -1)"
+CONSCIO_WHEEL="$wheel" \
+  python3 -m pytest tests/test_wheel_contents_guard.py -q --tb=short
+```
+
+When it goes red, something reads that file at runtime and it is not packaged.
+Two legitimate endings, one of each kind:
+
+- put the path in `[tool.setuptools.package-data]` — the normal fix, and it
+  feeds the sdist as well as the wheel;
+- or add it to `EXCLUDED` in the test **with the reason written**. The three
+  4.9.2 families (`model-providers.json`, `presets/axes/*.json`,
+  `presets/voice/*.md`) may never be excluded; the test refuses it.
 
 ## Docs
 

@@ -81,6 +81,13 @@ version = {attr = "conscio.__version__"}
 [tool.setuptools.package-data]
 conscio = [
   "py.typed",
+  # Data the code reads at runtime. Anything missing here ships a wheel that
+  # imports cleanly and then degrades in silence — v4.9.2 lost the provider
+  # table, the voice presets and the axis packs this way, and every published
+  # install ran without them.
+  "model-providers.json",
+  "presets/axes/*",
+  "presets/voice/*",
   "hub/static/*",
   "observatory/static/*",
   "integrations/claude_code/assets/**/*",

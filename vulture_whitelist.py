@@ -404,9 +404,7 @@ question_sha256
 
 
 
-# v4.9 provider_specs / calibration / model_providers_json_check public API
-provider_types  # noqa: F821
-default_base_url  # noqa: F821
+# v4.9 calibration / model_providers_json_check public API
 brier  # noqa: F821
 JSON_PATH  # noqa: F821
 

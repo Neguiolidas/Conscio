@@ -5,6 +5,7 @@ job is building an adapter; listing models is a Hub concern. Stdlib urllib only.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import urllib.error
@@ -14,6 +15,8 @@ from typing import Any
 
 from ..http_safety import open_no_redirect
 from . import config as _config
+
+log = logging.getLogger(__name__)
 
 BUILTIN = [t for t in _config.KNOWN_TYPES if t != "multi-fallback"]
 
@@ -29,23 +32,31 @@ KNOWN_MODELS: dict[str, list[str]] = {
 }
 
 # Default base_url per type — the JSON is the single source of truth (v4.9,
-# the v4.9 audit); the dict mirrors it only for the probe path, which
-# must work even if load fails at import time (probe has its own retry).
+# the v4.9 audit). _MIRROR_BASE_URL is the fallback for the probe path, which
+# must keep working when the JSON fails to load at import time. It is a module
+# constant, not a literal inside the except branch, precisely so
+# tests/test_provider_specs.py can compare it against the JSON: a mirror nobody
+# measures is a mirror that drifts.
+_MIRROR_BASE_URL: dict[str, str] = {
+    "lmstudio": "http://localhost:1234/v1",
+    "ollama": "http://localhost:11434",
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com",
+    "gemini": "https://generativelanguage.googleapis.com",
+    "openai-compat": "http://localhost:8000/v1",
+}
+
 try:
     from ..provider_specs import load_provider_specs as _load_specs
     _DEFAULT_BASE_URL = {k: str(v["base_url"]) for k, v in _load_specs().items()}
-except ValueError:
-    # Packaging bug: fail-fast is provider_specs' job; the hub keeps a
-    # mirror so a broken file logs loudly at the spec loader and probes
-    # still run against the shipped defaults below.
-    _DEFAULT_BASE_URL = {
-        "lmstudio": "http://localhost:1234/v1",
-        "ollama": "http://localhost:11434",
-        "openai": "https://api.openai.com/v1",
-        "anthropic": "https://api.anthropic.com",
-        "gemini": "https://generativelanguage.googleapis.com",
-        "openai-compat": "http://localhost:8000/v1",
-    }
+except ValueError as exc:
+    # Packaging bug: fail-fast is provider_specs' job, and it raises instead of
+    # logging — so if nobody says anything here, the hub silently runs on a
+    # mirrored table. The mirror still keeps probes alive (below); the warning
+    # is what makes the degraded state visible at import time, once per process.
+    log.warning(
+        "provider specs unavailable, hub serving its built-in mirror: %s", exc)
+    _DEFAULT_BASE_URL = dict(_MIRROR_BASE_URL)
 
 _CACHE: dict[tuple[str, str, str], tuple[float, dict]] = {}
 _CACHE_TTL = 60.0

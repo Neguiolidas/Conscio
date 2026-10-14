@@ -29,15 +29,8 @@ def test_hub_known_types_reads_the_json() -> None:
     """The hub's known_types() derives from the same file (one truth)."""
     types = known_types()
     assert "multi-fallback" in types
-    for name in provider_specs.provider_types():
+    for name in provider_specs.load_provider_specs():
         assert name in types, f"JSON provider {name} missing from known_types()"
-
-
-def test_default_base_url_lookup() -> None:
-    assert provider_specs.default_base_url("openai") \
-        == "https://api.openai.com/v1"
-    with pytest.raises(KeyError):
-        provider_specs.default_base_url("nonexistent")
 
 
 def test_load_is_cached_single_process() -> None:
@@ -70,8 +63,31 @@ def test_fail_fast_on_missing_field(monkeypatch: pytest.MonkeyPatch,
     provider_specs.load_provider_specs.cache_clear()
 
 
-def test_hub_defaults_match_json() -> None:
-    """The hub's probe defaults and the JSON agree — the mirror is honest."""
+def test_hub_serves_the_json_not_the_mirror() -> None:
+    """A healthy install derives _DEFAULT_BASE_URL from the JSON."""
     from conscio.hub import providers as hub_providers
-    for name, url in hub_providers._DEFAULT_BASE_URL.items():
-        assert url == provider_specs.default_base_url(name)
+
+    from_json = {k: str(v["base_url"])
+                 for k, v in provider_specs.load_provider_specs().items()}
+    assert hub_providers._DEFAULT_BASE_URL == from_json
+
+
+def test_hub_fallback_mirror_matches_the_json() -> None:
+    """The mirror a BROKEN install serves must agree with the JSON.
+
+    Comparing _DEFAULT_BASE_URL against the JSON compares the file with
+    itself — the hub derives that dict from the very file under test, so the
+    old version of this test passed without measuring anything. The mirror is
+    what an install with no JSON actually serves, so the mirror is what gets
+    measured: both directions, because a JSON provider absent from the mirror
+    loses its default the moment the file goes missing.
+    """
+    from conscio.hub import providers as hub_providers
+
+    specs = provider_specs.load_provider_specs()
+    absent = [n for n in specs if n not in hub_providers._MIRROR_BASE_URL]
+    assert not absent, f"JSON providers missing from the fallback mirror: {absent}"
+    drifted = {name: (url, specs[name]["base_url"])
+                for name, url in hub_providers._MIRROR_BASE_URL.items()
+                if specs[name]["base_url"] != url}
+    assert not drifted, f"fallback mirror drifted from the JSON: {drifted}"
