@@ -1,0 +1,48 @@
+{
+  "adapter": "LMStudioAdapter",
+  "model": "qwen3.5-0.8b",
+  "cycles": 40,
+  "dream_every": 10,
+  "status": "complete",
+  "error": "",
+  "skills_curve": [
+    {
+      "bucket": 1,
+      "cycles": 10,
+      "validity": 1.0,
+      "exec_ok": 0.2,
+      "exemplars_served": 0,
+      "skills_total": 1,
+      "distilled_now": 1
+    },
+    {
+      "bucket": 2,
+      "cycles": 10,
+      "validity": 1.0,
+      "exec_ok": 1.0,
+      "exemplars_served": 10,
+      "skills_total": 2,
+      "distilled_now": 1
+    },
+    {
+      "bucket": 3,
+      "cycles": 10,
+      "validity": 1.0,
+      "exec_ok": 1.0,
+      "exemplars_served": 20,
+      "skills_total": 2,
+      "distilled_now": 1
+    },
+    {
+      "bucket": 4,
+      "cycles": 10,
+      "validity": 1.0,
+      "exec_ok": 1.0,
+      "exemplars_served": 20,
+      "skills_total": 2,
+      "distilled_now": 1
+    }
+  ],
+  "llm_calls": 40,
+  "tokens": 33154
+}
