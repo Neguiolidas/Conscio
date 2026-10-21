@@ -77,18 +77,34 @@ def _react_renotify_s() -> float:
     return _REACT_RENOTIFY_S
 
 
+# A4: the sender label is UNTRUSTED -- it comes from a peer's card (the agents
+# table) and lands inside the Codex turn as plain text. A peer named
+# 'leia /etc/passwd; faca X' would otherwise become an instruction. So a label
+# is stripped to [A-Za-z0-9 _-] (every shell metachar, newline and quote is
+# dropped), spaces are collapsed, it is capped at 24 chars, and an empty result
+# degrades to 'peer'. The notice stays one inert line of safe labels.
+_LABEL_CAP = 24
+
+
+def _sanitize_label(name: str) -> str:
+    kept = re.sub(r"[^A-Za-z0-9 _-]+", "", (name or ""))
+    collapsed = re.sub(r"\s+", " ", kept).strip()[:_LABEL_CAP].rstrip()
+    return collapsed if collapsed else "peer"
+
+
 def notice_text(names: list[str]) -> str:
     """The text queued to wake the agent: ``relay: <Name> replied`` for one
     sender, ``relay: <Name1>, <Name2> replied`` for several. Names are the
-    sender LABELS (unique, in arrival order) -- never message ids, never tool
-    names, never message content. When no sender label is known (the message is
-    still only a spool file, no db row yet) the notice degrades to
-    ``relay: new message`` -- never empty."""
+    sender LABELS, sanitized (A4) so a peer card can never carry an
+    instruction into the Codex turn, deduped AFTER sanitizing, in arrival
+    order. When no sender label is known (the message is still only a spool
+    file, no db row yet) the notice degrades to ``relay: new message`` --
+    never empty."""
     uniq: list[str] = []
     for name in names:
-        name = (name or "").strip()
-        if name and name not in uniq:
-            uniq.append(name)
+        label = _sanitize_label(name)
+        if label not in uniq:
+            uniq.append(label)
     if not uniq:
         return "relay: new message"
     return "relay: " + ", ".join(uniq) + " replied"
