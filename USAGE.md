@@ -197,6 +197,30 @@ Payload cap 64KB, retention 7 days after read.
   dispatch-only aliases.
 - Observatório read-only: `/api/agents`, `/api/halls`, `/api/mailboxes`.
 
+#### Codex reactor — waking an idle Codex session
+
+The Codex CLI has only a **Stop** hook, and a Stop hook cannot wake an idle
+session: relay traffic sat unread until a human typed. `conscio_wake.py react`
+closes that gap — a long-lived, read-only process that queues **one notice**
+per outstanding batch of unread messages into the Codex session:
+
+```
+codex queue --thread <session uuid> --message "relay: <Name> replied"
+```
+
+The notice is a label, never content (no message text, no ids). One latch:
+nothing else goes out until everything is read. An outstanding notice still
+unread after 30 min queues one more. A failed queue retries the same batch on
+a backoff (60 s → 15 min). The reactor exits when the Codex process dies
+(`--owner-pid`). Tunes: `CONSCIO_CODEX_BIN`, `CONSCIO_REACT_DEBOUNCE_S`,
+`CONSCIO_REACT_RENOTIFY_S`, `CONSCIO_REACT_RETRY_BASE_S`,
+`CONSCIO_REACT_RETRY_CAP_S`. Alive: `<space>/reactors/<session>.lock` and
+`<space>/reactors/<session>.json`. Details: `docs/RELAY.md`.
+
+<!-- T2 -->
+<!-- The Codex host hooks (SessionStart spawn, Stop keep-alive, plugin install)
+     are defined by the hooks task; that part is filled in there. -->
+
 ### v3.3 — Gate tools
 
 - `conscio_decide(question, options)` — structural decision with ADR

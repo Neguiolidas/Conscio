@@ -70,6 +70,101 @@ once and prints the command; the waiter then wakes the idle session when it
 exits. Agents that never received a relay message are never asked (their
 spool directory does not exist), and at most one turn end in a row is forced.
 
+### The Codex reactor: an idle Codex that wakes itself
+
+The Codex CLI has only a **Stop** hook for the relay, and a Stop hook cannot
+wake an idle session: an idle Codex never notices relay traffic until a human
+types. The **reactor** (`conscio_wake.py react`) closes that gap. It is a
+long-lived, read-only process that lives in the Codex agent's own space and
+queues **one notice** into the Codex session when traffic arrives:
+
+```
+codex queue --thread <session uuid> --message "relay: <Name> replied"
+```
+
+The notice is a **label, never content**: sender names only — no message text,
+no message ids, no tool names. One sender reads `relay: Claude replied`;
+several senders read `relay: Claude, Gemini replied` (unique names, in
+arrival order); a message that has not reached the database yet (it is still
+only a spool file) degrades to `relay: new message`. The Codex reads the
+notice and then reads its own inbox — the same `conscio_relay` `inbox` call
+every other agent uses.
+
+**One outstanding notice.** The reactor keeps a single latch: from the moment a
+notice goes out until there is nothing unread left — spool empty *and* no
+unread row in the database — nothing else goes out, whether the new traffic is
+a spool file or a database row. The queued notice is durable and the Codex
+core starts it when the session goes idle, so the reactor does not detect idle
+itself.
+
+**A safety re-notify.** While a notice stays outstanding and unread, one more
+notice goes out every 30 minutes (the clock restarts on each send). It covers
+a turn the human interrupted, or a notice the Codex ignored: the latch can
+never block the agent forever.
+
+**A failed queue retries the same batch.** A `codex queue` that exits
+non-zero leaves the batch unnotified: the error is written to the state file
+and the same batch is retried after 60 s, then 120 s, then 240 s … capped at
+15 min. Never a tight loop, never a queue spam.
+
+**It exits with the Codex.** The reactor is given `--owner-pid`, the Codex
+process; when that process is gone the reactor exits 0.
+
+**One reactor per session.** A reactor holds a non-blocking lock on
+`<space>/reactors/<session>.lock`. A second reactor for the same session waits
+`2 × interval + 1` seconds for the lock and then stands down (exit 0) without
+queueing anything.
+
+<!-- T2 -->
+<!-- The Codex host hooks — the SessionStart hook that spawns the reactor, the
+     Stop hook that keeps it alive, and the plugin install for the Codex host —
+     are defined by the hooks task; that part of this section is filled in
+     there. -->
+
+**Command line.**
+
+```
+conscio_wake.py react --storage <space> --session <codex session uuid> \
+  --owner-pid <pid> [--interval 2] [--liaison-db <path>]
+```
+
+`--storage` and `--session` are required; `--owner-pid` is what makes the
+reactor exit with the Codex; the interval defaults to 2 seconds and the liaison
+database to `<space>/liaison.db`. A setup the reactor cannot work with (no
+`--storage`, no `--session`, a non-integer `--interval`, a space that cannot
+be resolved, a missing database, a missing or invalid instance id, no `codex`
+CLI at all) exits 3 with one line on stderr. Any other failure exits 0: a
+broken relay must never trap the session.
+
+**What it reads.**
+
+| variable | default | what it decides |
+|---|---|---|
+| `CONSCIO_CODEX_BIN` | the first `codex` on `PATH` | which CLI queues the notice |
+| `CONSCIO_REACT_DEBOUNCE_S` | `3.0` | how long a fresh batch is collected before one notice goes out |
+| `CONSCIO_REACT_RENOTIFY_S` | `1800.0` (30 min) | how long an outstanding notice may stay unread before one more goes out |
+| `CONSCIO_REACT_RETRY_BASE_S` | `60.0` | the first backoff after a failed queue |
+| `CONSCIO_REACT_RETRY_CAP_S` | `900.0` (15 min) | the backoff ceiling |
+| `CONSCIO_RELAY_ROOT` | `~/.conscio/relay` | where the spool is counted |
+| `CONSCIO_SELF_ID` | the `instance_id` in `<space>/instance.json` | which mailbox is ours |
+
+**Is it alive?** Everything the reactor owns lives in one directory:
+
+```
+<space>/reactors/<session>.lock    # the lock that keeps a second reactor out
+<space>/reactors/<session>.json    # the state: outstanding, outstanding_since,
+                                   # error, retry_at, backoff_s
+```
+
+`error` carries the last queue failure and `retry_at` when the same batch is
+retried; `outstanding` says a notice is still waiting to be read.
+
+**One Codex-side edge, known and accepted.** The Codex core starts a queued
+item when the thread goes idle with the cause `Completed`. A turn the human
+interrupted (cause `Interrupted`) does not start it: the notice waits for the
+next turn that completes. The queued item is never lost — it stays pending on
+the Codex side — so the reactor has nothing to fix and does not re-queue it.
+
 ### Reactivity, without a unit to arm
 
 If a session should be *woken* by an incoming message (rather than finding it on

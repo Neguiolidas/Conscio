@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The Codex reactor wakes an idle Codex session on relay traffic.**
+  The Codex CLI has only a Stop hook for the relay, and a Stop hook cannot
+  wake an idle session: an idle Codex noticed nothing until a human typed.
+  The new `react` subcommand of the plugin hook (`conscio_wake.py react`) is a
+  long-lived, read-only process that queues **one notice** per outstanding
+  batch of unread messages into the Codex session with
+  `codex queue --thread <session uuid> --message "relay: <Name> replied"`.
+  The notice is a label, never content: sender names only, no message text and
+  no message ids (`relay: Claude replied`, `relay: Claude, Gemini replied`,
+  and `relay: new message` while a message is still only a spool file). One
+  latch holds the notice until everything is read — spool empty *and* no
+  unread row — so a burst is one notice, not one per message; an outstanding
+  notice still unread after 30 min queues one more, a failed queue retries
+  the same batch on a backoff (60 s, doubling, capped at 15 min) with the
+  error kept in the state file, and the reactor exits 0 when the Codex process
+  dies (`--owner-pid`). The Codex core idle-gates the durable queue, so the
+  reactor does not detect idle itself and does not re-queue an outstanding
+  batch. The reactor reads `CONSCIO_CODEX_BIN`, `CONSCIO_REACT_DEBOUNCE_S`
+  (3 s), `CONSCIO_REACT_RENOTIFY_S` (1800 s), `CONSCIO_REACT_RETRY_BASE_S`
+  (60 s), `CONSCIO_REACT_RETRY_CAP_S` (900 s), `CONSCIO_RELAY_ROOT` and
+  `CONSCIO_SELF_ID`; its lock and state live in `<space>/reactors/`.
+
 ### Fixed
 - **The MCP server answers `resources/templates/list` instead of refusing it.**
   The server advertises the `resources` capability but routed only
