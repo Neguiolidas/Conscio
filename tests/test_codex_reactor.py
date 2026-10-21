@@ -247,6 +247,15 @@ def test_notice_text_sanitizes_hostile_sender_labels():
     assert _hook().notice_text(["###"]) == "relay: peer replied"
 
 
+def test_notice_text_keeps_a_legitimate_label_readable():
+    """(Hermet R2, AGENTS 6.1) the sanitizer must not mangle a legitimate
+    label into something broken. A name with a dot keeps its letters and its
+    spaces -- only the characters outside the safe set are dropped, so the
+    notice still reads like the sender it names."""
+    assert _hook().notice_text(["Claude", "Gemini", "Dr. Zico"]) == \
+        "relay: Claude, Gemini, Dr Zico replied"
+
+
 # ── pure helpers: the single-latch outstanding decision ──────────────────────
 
 def _dec(pending, outstanding, can, now, since, renotify=1800.0):
