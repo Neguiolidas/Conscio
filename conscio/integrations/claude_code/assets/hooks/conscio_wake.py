@@ -14,6 +14,14 @@ Two subcommands, one file:
   when something arrives for this instance, 2 on the ceiling with the exact
   re-arm command, and 3 on failure. Reserved and self-sent rows never wake
   it. Spool files are counted, never opened or ingested.
+* ``react`` -- the Codex reactor (Codex plan §3.2 as amended by §6). A
+  long-lived, read-only process: when unread relay messages addressed to this
+  agent arrive, it queues ONE notice per outstanding batch to the Codex
+  session via ``codex queue --thread <session> --message "relay: <Name>, …
+  replied"``. The notice is a label, never message content or ids. The
+  Codex core idle-gates and keeps the queue durable, so the reactor does
+  not detect idle itself and does not re-queue an outstanding batch. It
+  exits when the owning Codex process (``--owner-pid``) dies.
 
 Two properties make the pair safe to leave armed:
 
@@ -25,12 +33,15 @@ Two properties make the pair safe to leave armed:
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
 import re
 import shlex
+import shutil
 import sqlite3
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -48,6 +59,68 @@ RESERVED = frozenset({"review_request", "review_verdict", "board.propose"})
 _WAIT_MAX_SHOWN = 10  # rows printed on traffic; the rest is counted
 _WAIT_TEXT = 220  # characters kept per message line
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_REACT_DEBOUNCE_S = 3.0  # wait after a fresh batch before queuing, to fold a
+                        # burst into one notice (override: CONSCIO_REACT_DEBOUNCE_S)
+_REACT_RETRY_BASE_S = 60.0   # queue-failure backoff: 60 s, doubling, capped
+_REACT_RETRY_CAP_S = 900.0   # at 15 min (overrides: CONSCIO_REACT_RETRY_{BASE,CAP}_S)
+_REACT_RENOTIFY_S = 1800.0   # safety: an outstanding notice still unread after
+                             # 30 min re-queues ONE notice (override: CONSCIO_REACT_RENOTIFY_S)
+
+
+def _react_renotify_s() -> float:
+    raw = (os.environ.get("CONSCIO_REACT_RENOTIFY_S") or "").strip()
+    if raw:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            return _REACT_RENOTIFY_S
+    return _REACT_RENOTIFY_S
+
+
+def notice_text(names: list[str]) -> str:
+    """The text queued to wake the agent: ``relay: <Name> replied`` for one
+    sender, ``relay: <Name1>, <Name2> replied`` for several. Names are the
+    sender LABELS (unique, in arrival order) -- never message ids, never tool
+    names, never message content. When no sender label is known (the message is
+    still only a spool file, no db row yet) the notice degrades to
+    ``relay: new message`` -- never empty."""
+    uniq: list[str] = []
+    for name in names:
+        name = (name or "").strip()
+        if name and name not in uniq:
+            uniq.append(name)
+    if not uniq:
+        return "relay: new message"
+    return "relay: " + ", ".join(uniq) + " replied"
+
+
+def react_notice_decision(pending: bool, outstanding: bool, can_attempt: bool,
+                          now: float, outstanding_since: float | None,
+                          renotify_s: float) -> bool:
+    """Whether to queue a notice now -- the single-latch decision.
+
+    ``pending`` is True while ANYTHING is unread: spool>0 OR an unread db row
+    (a peer's message reaches the Codex space FIRST as a spool file; the db row
+    only appears after the agent calls ``inbox``). A notice is ``outstanding``
+    from the moment one goes out until there is nothing unread left; while it
+    is outstanding NOTHING else goes out, whether the new content is spool or
+    db (the queued notice is durable and its turn reads the whole inbox).
+
+    Safety (plan §3.2): an outstanding notice still unread after ``renotify_s``
+    (30 min) re-queues ONE notice and restarts the clock -- this covers a turn
+    the human interrupted, or a Codex that ignored the notice, so the latch
+    never blocks the agent forever. ``can_attempt`` is False inside a queue
+    backoff, in which case a send is held, not dropped.
+
+    The caller clears the latch (+``outstanding_since``) when pending drops to
+    False, and sets both on a successful send (which (re)starts the clock)."""
+    if outstanding and not pending:
+        return False                       # all read: caller clears the latch
+    if outstanding:
+        # still pending: only the timed safety re-notify fires, one at a time
+        return (outstanding_since is not None
+                and (now - outstanding_since) >= renotify_s and can_attempt)
+    return pending and can_attempt          # a fresh batch: one notice
 
 
 def _argv_opt(argv: list[str], name: str) -> str | None:
@@ -276,6 +349,21 @@ def _lca_ok(pid: int, me: int) -> bool:
     return False
 
 
+def _pid_gone(pid: int) -> bool:
+    """True when `pid` no longer names a live process: /proc/<pid> is missing,
+    or the process is a zombie (already dead, awaiting reap) -- an owner that
+    has died but not been reaped must count as gone."""
+    p = PROC_ROOT / str(pid)
+    if not p.exists():
+        return True
+    try:
+        stat_text = (p / "stat").read_text(encoding="utf-8")
+        state = stat_text.rsplit(")", 1)[-1].split()[0]
+        return state == "Z"
+    except Exception:
+        return True
+
+
 def _alive_owned(pid: int, session: str, me: int) -> bool:
     """A live waiter on MY chain: /proc exists, its cmdline names hook+wait+
     session, and the LCA rule holds."""
@@ -446,11 +534,256 @@ def _cmd_wait(argv: list[str]) -> int:
         return 3
 
 
+# ── reactor (`react` subcommand) — Codex plan §3.2, as amended by §6 ────────
+# A stdlib, read-only Codex wake: queue one "relay: … replied" notice per
+# outstanding batch of unread messages. The db is opened read-only; the queue
+# is idle-gated and durable on the Codex side, so the only state the reactor
+# keeps is its own cursor (last_notified) and a queue-failure marker.
+
+
+def _react_lock_path(storage: Path, session: str) -> Path:
+    return storage / "reactors" / f"{session}.lock"
+
+
+def _react_state_path(storage: Path, session: str) -> Path:
+    return storage / "reactors" / f"{session}.json"
+
+
+def _react_state_load(path: Path) -> dict:
+    # one latch (outstanding) for both spool and db, plus the queue-failure
+    # backoff. backoff_s 0 means "use the configured base". Less state is
+    # better: no last_notified, no per-source counters.
+    state = {"outstanding": False, "outstanding_since": None, "error": None,
+             "retry_at": None, "backoff_s": 0}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            for key in state:
+                if key in data:
+                    state[key] = data[key]
+    except Exception:
+        pass
+    return state
+
+
+def _react_state_save(path: Path, state: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(state), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _react_unread_rows(db: Path, self_id: str) -> list[dict]:
+    """Read-only: the unread rows addressed to me (``read_ts IS NULL``), in
+    arrival order, self-sent and reserved types excluded -- the ``wait`` query
+    plus the read-mark filter, reused for the outstanding-notice decision."""
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+        rows = list(conn.execute(
+            "SELECT id, from_instance, type FROM messages "
+            "WHERE to_instance=? AND from_instance != ? AND read_ts IS NULL "
+            "ORDER BY id", (self_id, self_id)))
+    finally:
+        conn.close()
+    return [{"id": r[0], "from": r[1] or "peer", "type": r[2] or "relay"}
+            for r in rows if (r[2] or "relay") not in RESERVED]
+
+
+def _codex_bin() -> str | None:
+    """The codex CLI: CONSCIO_CODEX_BIN (tests point it at a fake), else the
+    first ``codex`` on PATH. No machine-specific path is hard-coded."""
+    raw = (os.environ.get("CONSCIO_CODEX_BIN") or "").strip()
+    if raw:
+        return raw
+    return shutil.which("codex")
+
+
+def _react_debounce_s() -> float:
+    raw = (os.environ.get("CONSCIO_REACT_DEBOUNCE_S") or "").strip()
+    if raw:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            return _REACT_DEBOUNCE_S
+    return _REACT_DEBOUNCE_S
+
+
+def _react_retry_base_s() -> float:
+    raw = (os.environ.get("CONSCIO_REACT_RETRY_BASE_S") or "").strip()
+    if raw:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            return _REACT_RETRY_BASE_S
+    return _REACT_RETRY_BASE_S
+
+
+def _react_retry_cap_s() -> float:
+    raw = (os.environ.get("CONSCIO_REACT_RETRY_CAP_S") or "").strip()
+    base = _react_retry_base_s()
+    if raw:
+        try:
+            return max(base, float(raw))
+        except ValueError:
+            return _REACT_RETRY_CAP_S
+    return _REACT_RETRY_CAP_S
+
+
+def _react_queue(codex: str | None, session: str, text: str) -> tuple[bool, str]:
+    """One ``codex queue --thread <session> --message <notice>``. Returns
+    (ok, error): on failure the error is the message to persist to the state
+    file (the batch stays unnotified), never a raised exception."""
+    if not codex:
+        return False, "codex CLI not found (CONSCIO_CODEX_BIN / PATH)"
+    try:
+        proc = subprocess.run(
+            [codex, "queue", "--thread", session, "--message", text],
+            capture_output=True, timeout=30)
+        if proc.returncode == 0:
+            return True, ""
+        return False, f"codex queue exited {proc.returncode}"
+    except Exception as exc:
+        return False, f"codex queue failed: {exc.__class__.__name__}"
+
+
+def _react_should_attempt(state: dict, now: float) -> bool:
+    """Whether a pending batch may be (re)queued now. A healthy state always
+    queues; after a failure the SAME batch is retried on a backoff (``retry_at``
+    = the earliest retry time, 60 s doubling to a 15-min cap) -- never a tight
+    loop, and never gated on a new message arriving (a lone failed message
+    must not sit unnotified forever)."""
+    if not state.get("error"):
+        return True
+    retry_at = state.get("retry_at")
+    return retry_at is not None and now >= retry_at
+
+
+def _cmd_react(argv: list[str]) -> int:
+    """Long-lived Codex reactor: queue one ``relay: … replied`` notice per
+    outstanding batch, exit 0 when the owning Codex process dies. Read-only on
+    the db; the queue is idle-gated and durable on the Codex side, so there is
+    no idle detection and no re-queueing here (plan §6)."""
+    storage_raw = _argv_opt(argv, "--storage")
+    session = (_argv_opt(argv, "--session") or "").strip()
+    owner_pid = (_argv_opt(argv, "--owner-pid") or "").strip()
+    if not storage_raw:
+        sys.stderr.write("[react] FAILED: no --storage\n")
+        return 3
+    if not session:
+        sys.stderr.write("[react] FAILED: no --session\n")
+        return 3
+    try:
+        interval = max(0, int(_argv_opt(argv, "--interval") or 2))
+    except ValueError:
+        sys.stderr.write("[react] FAILED: --interval must be an integer\n")
+        return 3
+    owner = int(owner_pid) if owner_pid else 0
+
+    storage = _resolve_storage(storage_raw)
+    if storage is None:
+        sys.stderr.write("[react] FAILED: storage could not be resolved\n")
+        return 3
+    db = Path(_argv_opt(argv, "--liaison-db") or storage / "liaison.db")
+    if not db.exists():
+        sys.stderr.write(f"[react] FAILED: liaison db missing at {db}\n")
+        return 3
+    self_id = _self_id(storage)
+    if not self_id or not _ID_RE.fullmatch(self_id):
+        sys.stderr.write("[react] FAILED: self id missing or invalid\n")
+        return 3
+
+    # (d) a second reactor for the same session yields to the first: hold a
+    # non-blocking flock on the session lock; while it is held, retry for
+    # 2*interval + 1 s, then exit 0 quietly.
+    lock_path = _react_lock_path(storage, session)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
+    retry_deadline = time.monotonic() + 2 * interval + 1
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except (BlockingIOError, InterruptedError, OSError):
+            if time.monotonic() >= retry_deadline:
+                sys.stdout.write("[react] another reactor holds the lock for "
+                                 "this session; standing down\n")
+                os.close(lock)
+                return 0
+            time.sleep(0.5)
+
+    state_path = _react_state_path(storage, session)
+    state = _react_state_load(state_path)
+    if _codex_bin() is None:
+        # hard "not found": no codex CLI on CONSCIO_CODEX_BIN nor PATH. Record
+        # it, log once, and exit non-zero so the launcher knows the reactor
+        # cannot wake the Codex -- never crash-loop, never spawn a storm.
+        state["error"] = "codex CLI not found (CONSCIO_CODEX_BIN / PATH)"
+        _react_state_save(state_path, state)
+        sys.stderr.write("[react] " + state["error"] + "\n")
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        os.close(lock)
+        return 3
+    pending_since: float | None = None
+    try:
+        while True:
+            if owner > 0 and _pid_gone(owner):
+                return 0                     # (d) the owning Codex process is gone
+            now = time.time()
+            rows = _react_unread_rows(db, self_id)
+            spool = _spool_count(_spool_dir(self_id))
+            pending = spool > 0 or bool(rows)  # unread in EITHER source
+            send = react_notice_decision(
+                pending, state["outstanding"], _react_should_attempt(state, now),
+                now, state["outstanding_since"], _react_renotify_s())
+            if send:
+                names: list[str] = []
+                for r in rows:
+                    label = _sender_label(db, r["from"])
+                    if label and label not in names:
+                        names.append(label)
+                text = notice_text(names)      # no db row (spool only) -> "relay: new message"
+                if pending_since is None:
+                    pending_since = now
+                if now - pending_since >= _react_debounce_s():
+                    ok, err = _react_queue(_codex_bin(), session, text)
+                    done = time.time()
+                    if ok:
+                        state["outstanding"] = True        # latched until fully read
+                        state["outstanding_since"] = done  # (re)start the safety clock
+                        state["error"] = None
+                        state["retry_at"] = None
+                        state["backoff_s"] = 0
+                    else:
+                        base = state.get("backoff_s") or _react_retry_base_s()
+                        state["error"] = err          # same batch retried on the backoff
+                        state["retry_at"] = done + base
+                        state["backoff_s"] = min(base * 2, _react_retry_cap_s())
+                    _react_state_save(state_path, state)
+                    pending_since = None
+            elif not pending and state["outstanding"]:
+                state["outstanding"] = False
+                state["outstanding_since"] = None      # everything read: clear latch + clock
+                _react_state_save(state_path, state)
+                pending_since = None
+            else:
+                pending_since = None
+            time.sleep(interval)
+    finally:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+        except Exception:
+            pass
+        os.close(lock)
+
+
 if __name__ == "__main__":
     try:
         argv = sys.argv[1:]
         if argv and argv[0] == "wait":
             sys.exit(_cmd_wait(argv[1:]))
+        if argv and argv[0] == "react":
+            sys.exit(_cmd_react(argv[1:]))
         sys.exit(main(argv))
     except Exception:  # a broken relay must never trap the session
         sys.exit(0)
