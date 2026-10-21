@@ -681,13 +681,14 @@ def _cmd_react(argv: list[str]) -> int:
     the db; the queue is idle-gated and durable on the Codex side, so there is
     no idle detection and no re-queueing here (plan §6)."""
     storage_raw = _argv_opt(argv, "--storage")
+    mcp_config = (_argv_opt(argv, "--mcp-config") or "").strip()
     session = (_argv_opt(argv, "--session") or "").strip()
     owner_pid = (_argv_opt(argv, "--owner-pid") or "").strip()
-    if not storage_raw:
-        sys.stderr.write("[react] FAILED: no --storage\n")
-        return 3
     if not session:
         sys.stderr.write("[react] FAILED: no --session\n")
+        return 3
+    if not storage_raw and not mcp_config:
+        sys.stderr.write("[react] FAILED: no --storage and no --mcp-config\n")
         return 3
     try:
         interval = max(0, int(_argv_opt(argv, "--interval") or 2))
@@ -696,10 +697,23 @@ def _cmd_react(argv: list[str]) -> int:
         return 3
     owner = int(owner_pid) if owner_pid else 0
 
-    storage = _resolve_storage(storage_raw)
-    if storage is None:
-        sys.stderr.write("[react] FAILED: storage could not be resolved\n")
-        return 3
+    mcp_resolved = False
+    if storage_raw:
+        storage = _resolve_storage(storage_raw)
+        if storage is None:
+            sys.stderr.write("[react] FAILED: storage could not be resolved\n")
+            return 3
+    else:
+        # T2b: the hook only tried the cheap in-process resolve; run the single
+        # resolver under the MCP server's own interpreter HERE, on this first
+        # iteration (detached; it never blocks a Codex session open). On
+        # failure: write the cause to the state file and exit non-zero.
+        storage, cause = _react_mcp_resolve(mcp_config)
+        if storage is None:
+            _react_mcp_error_state(mcp_config, session, cause)
+            sys.stderr.write("[react] " + cause + "\n")
+            return 3
+        mcp_resolved = True
     db = Path(_argv_opt(argv, "--liaison-db") or storage / "liaison.db")
     if not db.exists():
         sys.stderr.write(f"[react] FAILED: liaison db missing at {db}\n")
@@ -730,6 +744,11 @@ def _cmd_react(argv: list[str]) -> int:
 
     state_path = _react_state_path(storage, session)
     state = _react_state_load(state_path)
+    if mcp_resolved:
+        # T2b: persist the space the .mcp.json resolved to, so a later restart
+        # of this reactor can resume without re-running the interpreter.
+        state["storage"] = str(storage)
+        _react_state_save(state_path, state)
     if _codex_bin() is None:
         # hard "not found": no codex CLI on CONSCIO_CODEX_BIN nor PATH. Record
         # it, log once, and exit non-zero so the launcher knows the reactor
@@ -916,26 +935,45 @@ _CODEX_MCP_SNIPPET = (
 )
 
 
-def _codex_mcp_config() -> dict:
-    """The plugin's ``.mcp.json`` -- the MCP server's source of truth for the
-    space it uses. ``CONSCIO_CODEX_MCP_CONFIG`` overrides the path (tests);
-    else the file at the plugin root (CLAUDE_PLUGIN_ROOT / CODEX_PLUGIN_ROOT
-    when the harness set it, else next to this hook's parent). {} when it
-    cannot be read or is not an object."""
+def _codex_mcp_config_path() -> str:
+    """The .mcp.json the reactor should resolve from: CONSCIO_CODEX_MCP_CONFIG
+    (a test override), else the file at the plugin root (CLAUDE_PLUGIN_ROOT /
+    CODEX_PLUGIN_ROOT when the harness set it, else next to this hook's
+    parent). "" when it cannot be determined."""
     raw = (os.environ.get("CONSCIO_CODEX_MCP_CONFIG") or "").strip()
     if raw:
-        path = Path(raw).expanduser()
-    else:
-        root = (os.environ.get("CLAUDE_PLUGIN_ROOT")
-                or os.environ.get("CODEX_PLUGIN_ROOT") or "").strip()
-        base = (Path(root).expanduser() if root
-                else Path(__file__).resolve().parent.parent)
-        path = base / ".mcp.json"
+        return raw
+    root = (os.environ.get("CLAUDE_PLUGIN_ROOT")
+            or os.environ.get("CODEX_PLUGIN_ROOT") or "").strip()
+    base = (Path(root).expanduser() if root
+            else Path(__file__).resolve().parent.parent)
+    return str(base / ".mcp.json")
+
+
+def _codex_mcp_config() -> dict:
+    """The parsed .mcp.json at _codex_mcp_config_path() -- the MCP server's
+    source of truth for the space it uses. {} when it cannot be read or is not
+    an object."""
+    path = _codex_mcp_config_path()
+    if not path:
+        return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _read_mcp_server(mcp_config: str) -> dict:
+    """The mcpServers.conscio server dict from an EXPLICIT .mcp.json path
+    (the reactor's T2b --mcp-config input). {} when it cannot be read/parsed."""
+    if not mcp_config:
+        return {}
+    try:
+        data = json.loads(Path(mcp_config).expanduser().read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return _codex_mcp_server(data if isinstance(data, dict) else {})
 
 
 def _codex_mcp_server(config: dict) -> dict:
@@ -1025,46 +1063,74 @@ def _codex_mcp_space_via_interpreter(interpreter: list[str], env: dict) -> Path 
     return p if (p is not None and p.is_dir()) else None
 
 
-def _codex_mcp_space() -> Path | None:
-    """§3.3: the space the Codex reactor must use, resolved with the SINGLE
-    resolver the MCP server uses (no second copy). Read the plugin's
-    ``.mcp.json`` for the server's ``--storage`` input; run
-    ``resolve_space`` on it -- in-process when the package is importable, else
-    under the server's own interpreter (reading the path from stdout, with a
-    timeout). None when neither yields a directory; the caller logs and skips
-    the spawn."""
-    server = _codex_mcp_server(_codex_mcp_config())
-    storage_input = _codex_mcp_storage_input(server)
-    inproc = _codex_mcp_space_inprocess(storage_input)
-    if inproc is not None:
-        return inproc
-    server_env = {str(k): str(v) for k, v in
-                  (server.get("env") or {}).items()}
-    env = {**os.environ, **server_env,
-           "CONSCIO_CODEX_STORAGE_INPUT": storage_input or ""}
-    return _codex_mcp_space_via_interpreter(_codex_mcp_interpreter(server), env)
-
-
-def _codex_storage(storage_arg: str | None) -> Path | None:
-    """§3.3: reuse the single resolver (no second copy). When the harness
-    passes a real, resolvable ``--storage`` (the Claude case:
-    ``${CLAUDE_PLUGIN_DATA}/space``), use it. Under Codex that var is empty and
-    the harness passes a root-level path (``/space``); that is not a real space
-    -- parent ``/`` or not a directory -- so fall back to resolving the MCP
-    server's own inputs from ``.mcp.json``. None (log; the caller skips the
-    spawn) when neither yields a directory."""
+def _codex_inprocess_storage(storage_arg: str | None) -> Path | None:
+    """T2b: the HOOK's cheap, in-process-only storage resolution. A real
+    harness ``--storage`` (the Claude case: ``${CLAUDE_PLUGIN_DATA}/space``) is
+    used directly; otherwise the MCP server's ``--storage`` from ``.mcp.json``
+    is resolved IN-PROCESS (importlib guard). It never runs the server's
+    interpreter / uvx here -- the hook must stay near-zero-cost and never hold
+    up the Codex session open (plan T2b). None when it cannot resolve cheaply."""
     if storage_arg:
         p = _resolve_storage(storage_arg)
         if p is not None and p.parent != Path("/") and p.is_dir():
             return p
-    target = _codex_mcp_space()
-    if target is not None:
-        return target
-    sys.stderr.write(
-        "[codex] storage: could not resolve the space "
-        "(harness --storage and the .mcp.json resolver both failed); "
-        "not spawning a reactor\n")
-    return None
+    server = _codex_mcp_server(_codex_mcp_config())
+    return _codex_mcp_space_inprocess(_codex_mcp_storage_input(server))
+
+
+def _codex_spawn_spec(storage_arg: str | None) -> tuple[Path | None, str | None]:
+    """T2b: which reactor arg the hook passes. A resolved --storage when the
+    cheap in-process path lands; else the .mcp.json path (--mcp-config) for the
+    detached reactor to resolve on its first iteration. Exactly one of the two
+    is set (or both are None when there is nothing to hand the reactor)."""
+    resolved = _codex_inprocess_storage(storage_arg)
+    if resolved is not None:
+        return resolved, None
+    return None, _codex_mcp_config_path() or None
+
+
+def _react_mcp_resolve(mcp_config: str) -> tuple[Path | None, str]:
+    """T2b: the REACTOR's first-iteration storage resolution -- the SINGLE
+    resolver run under the MCP server's own interpreter (never in the hook),
+    reading the path from stdout with a timeout. Returns (path, "") on
+    success, (None, cause) when it cannot -- the cause is what gets written to
+    the state file and the reason the reactor exits non-zero."""
+    server = _read_mcp_server(mcp_config)
+    if not server:
+        return None, f"invalid .mcp.json at {mcp_config} (no mcpServers.conscio)"
+    storage_input = _codex_mcp_storage_input(server)
+    if not (storage_input or "").strip():
+        return None, f"no --storage in the .mcp.json at {mcp_config}"
+    server_env = {str(k): str(v) for k, v in
+                  (server.get("env") or {}).items()}
+    env = {**os.environ, **server_env,
+           "CONSCIO_CODEX_STORAGE_INPUT": storage_input}
+    interpreter = _codex_mcp_interpreter(server)
+    if not interpreter:
+        return None, f"no runnable interpreter in the .mcp.json at {mcp_config}"
+    target = _codex_mcp_space_via_interpreter(interpreter, env)
+    if target is None:
+        return None, (f"the MCP interpreter could not resolve the space "
+                      f"(--storage {storage_input!r}) at {mcp_config}")
+    return target, ""
+
+
+def _react_mcp_error_state(mcp_config: str, session: str, cause: str) -> None:
+    """T2b: best-effort -- record a resolution failure in the state file under
+    the .mcp.json's own ``--storage`` input (the space it names), when that
+    dir exists. No-op otherwise (the cause is already on stderr)."""
+    storage_input = _codex_mcp_storage_input(_read_mcp_server(mcp_config))
+    raw = (storage_input or "").strip()
+    if not raw:
+        return
+    storage = Path(raw).expanduser()
+    if not storage.is_dir():
+        return
+    state_path = _react_state_path(storage, session)
+    state = _react_state_load(state_path)
+    state["error"] = cause
+    _react_state_save(state_path, state)
+
 
 
 def _reactor_live(storage: Path, session: str) -> bool:
@@ -1087,20 +1153,30 @@ def _reactor_live(storage: Path, session: str) -> bool:
         os.close(fd)
 
 
-def _codex_spawn_reactor(storage: Path, session: str, owner_pid: int) -> int:
+def _codex_spawn_reactor(session: str, owner_pid: int,
+                         storage: Path | None = None,
+                         mcp_config: str | None = None) -> int:
     """Spawn the reactor detached (new session; stdin closed, stdout/stderr to
-    a log in the space). Returns the child pid, or 0 when it could not be
-    spawned. Never raises."""
+    a log). Pass a resolved --storage when the in-process path landed; else the
+    .mcp.json path (--mcp-config) and the reactor resolves it itself. Logs to
+    the space when known, else a fallback dir. Returns the child pid, or 0 when
+    it could not be spawned. Never raises."""
     if owner_pid <= 0:
         return 0
-    log = storage / "reactors" / f"{session}.log"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    argv = [sys.executable, str(Path(__file__).resolve()), "react",
-            "--storage", str(storage), "--session", session,
-            "--owner-pid", str(owner_pid), "--interval", "2"]
+    base = [sys.executable, str(Path(__file__).resolve()), "react",
+            "--session", session, "--owner-pid", str(owner_pid),
+            "--interval", "2"]
+    if storage is not None:
+        log = storage / "reactors" / f"{session}.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        base += ["--storage", str(storage)]
+    else:
+        log = Path.home() / ".conscio" / "reactor-logs" / f"{session}.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        base += ["--mcp-config", mcp_config or ""]
     try:
         with open(log, "ab") as out:
-            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
+            proc = subprocess.Popen(base, stdin=subprocess.DEVNULL,
                                     stdout=out, stderr=subprocess.STDOUT,
                                     start_new_session=True)
         return proc.pid
@@ -1109,17 +1185,20 @@ def _codex_spawn_reactor(storage: Path, session: str, owner_pid: int) -> int:
 
 
 def _cmd_codex_start(argv: list[str], payload: dict) -> int:
-    """Codex SessionStart (§6.3): spawn the reactor detached, then print the
-    notice instruction as JSON ``hookSpecificOutput.additionalContext``. Never
-    blocks; a non-Codex host is a no-op (the safe default)."""
+    """Codex SessionStart (§6.3, T2b): spawn the reactor detached, then print
+    the notice instruction as JSON ``hookSpecificOutput.additionalContext``.
+    Never blocks and never runs the server interpreter (uvx) here -- when the
+    cheap in-process resolve does not land it hands the .mcp.json path to the
+    reactor to resolve. A non-Codex host is a no-op (the safe default)."""
     if not is_codex_host(payload, _codex_sessions_root()):
         return 0
     session = str(payload.get("session_id") or "").strip()
-    storage = _codex_storage(_argv_opt(argv, "--storage"))
-    if session and storage is not None:
+    storage, mcp_config = _codex_spawn_spec(_argv_opt(argv, "--storage"))
+    if session and (storage is not None or mcp_config):
         owner = _codex_owner_pid()
         if owner > 0:
-            _codex_spawn_reactor(storage, session, owner)
+            _codex_spawn_reactor(session, owner,
+                                 storage=storage, mcp_config=mcp_config)
     sys.stdout.write(json.dumps({"hookSpecificOutput": {
         "hookEventName": "SessionStart",
         "additionalContext": _codex_notice_instruction()}}) + "\n")
@@ -1127,14 +1206,23 @@ def _cmd_codex_start(argv: list[str], payload: dict) -> int:
 
 
 def _cmd_codex_stop(argv: list[str], payload: dict) -> int:
-    """Codex Stop (§3.3): never block. If no live reactor holds the lock for
-    this session, spawn one. Exit 0 always; a non-Codex host is a no-op."""
+    """Codex Stop (§3.3, T2b): never block. If a live reactor does not already
+    hold the lock for this session (when the space is known), spawn one -- with
+    --storage or, when only the .mcp.json is known, --mcp-config. Exit 0
+    always; a non-Codex host is a no-op."""
     if not is_codex_host(payload, _codex_sessions_root()):
         return 0
     session = str(payload.get("session_id") or "").strip()
-    storage = _codex_storage(_argv_opt(argv, "--storage"))
-    if session and storage is not None and not _reactor_live(storage, session):
-        _codex_spawn_reactor(storage, session, _codex_owner_pid())
+    owner = _codex_owner_pid()
+    if not session or owner <= 0:
+        return 0
+    storage, mcp_config = _codex_spawn_spec(_argv_opt(argv, "--storage"))
+    if storage is not None and _reactor_live(storage, session):
+        return 0          # a live reactor already holds the lock
+    if storage is None and not mcp_config:
+        return 0          # nothing to hand the reactor
+    _codex_spawn_reactor(session, owner,
+                         storage=storage, mcp_config=mcp_config)
     return 0
 
 

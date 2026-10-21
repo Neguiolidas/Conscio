@@ -671,3 +671,82 @@ def test_owner_death_with_a_broken_db_exits_zero(tmp_path):
     finally:
         proc.terminate(); proc.wait(timeout=15)
         owner.terminate(); owner.wait(timeout=15)
+
+
+# ── T2b: the reactor resolves the space from the .mcp.json path ──────────────
+
+def _react_argv_mcp(mcp_config: str, owner_pid: int | str,
+                    db: Path | None, interval: str = "0") -> list[str]:
+    argv = [sys.executable, str(HOOK), "react",
+            "--mcp-config", mcp_config, "--session", SESSION_C,
+            "--owner-pid", str(owner_pid), "--interval", interval]
+    if db is not None:
+        argv += ["--liaison-db", str(db)]
+    return argv
+
+
+def _make_fake_uvx(tmp_path: Path) -> Path:
+    """A fake MCP server interpreter: stands in for `uvx --from conscio==X
+    python` and echoes the CONSCIO_CODEX_STORAGE_INPUT it is handed."""
+    interp = tmp_path / "fake-uvx"
+    interp.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys\n"
+        "s = os.environ.get('CONSCIO_CODEX_STORAGE_INPUT') or ''\n"
+        "sys.stdout.write(s)\n"
+        "sys.exit(0 if s else 1)\n", encoding="utf-8")
+    interp.chmod(0o755)
+    return interp
+
+
+def _make_mcp_config(tmp_path: Path, space: Path, command: str) -> Path:
+    mcp = tmp_path / "mcp.json"
+    mcp.write_text(json.dumps({"mcpServers": {"conscio": {
+        "command": command,
+        "args": ["conscio-mcp", "--storage", str(space)]}}}), encoding="utf-8")
+    return mcp
+
+
+def test_reactor_mcp_config_resolves_storage(tmp_path):
+    """(Claude 538-2) the reactor receives the .mcp.json path (--mcp-config) and
+    resolves the space via the MCP server's own interpreter on its first
+    iteration, persisting it in the state file."""
+    space = tmp_path / "space"
+    _seed_db(space, [(PEER_A, "one")])      # the db the reactor derives from storage
+    _spool_dir(tmp_path)
+    wrapper, log = _fake_codex(tmp_path, "mcp-resolve")
+    mcp = _make_mcp_config(tmp_path, space, str(_make_fake_uvx(tmp_path)))
+    owner = _owner(2.0)
+    env = _react_env(tmp_path, codex=str(wrapper), log=str(log),
+                     debounce="0.1")
+    errlog = tmp_path / "react-stderr.log"
+    with errlog.open("w", encoding="utf-8") as handle:
+        proc = subprocess.Popen(
+            _react_argv_mcp(str(mcp), owner.pid, None, interval="1"),
+            stdout=subprocess.DEVNULL, stderr=handle, env=env)
+    try:
+        _wait_reactor_in_loop(space)
+        st = _state(space)
+        assert st.get("storage") == str(space), st   # resolved + persisted
+    finally:
+        proc.terminate(); proc.wait(timeout=15)
+        owner.terminate(); owner.wait(timeout=15)
+
+
+def test_reactor_invalid_mcp_config_writes_error_and_exits(tmp_path):
+    """(Claude 538-3) the .mcp.json is unusable (a broken interpreter): the
+    reactor writes the cause to the state file and exits non-zero. The
+    SessionStart that launched it has already exited cleanly."""
+    space = tmp_path / "space"
+    _seed_db(space, [])        # a valid space dir so the error state has a home
+    _spool_dir(tmp_path)
+    wrapper, log = _fake_codex(tmp_path, "mcp-invalid")
+    mcp = _make_mcp_config(tmp_path, space, str(tmp_path / "no-such-uvx"))
+    env = _react_env(tmp_path, codex=str(wrapper), log=str(log),
+                     debounce="0.1")
+    r = subprocess.run(
+        _react_argv_mcp(str(mcp), "0", None, interval="0"),
+        capture_output=True, text=True, env=env, timeout=30)
+    assert r.returncode != 0, (r.returncode, r.stdout, r.stderr)
+    st = _state(space)
+    assert st.get("error"), st      # the resolution cause was recorded

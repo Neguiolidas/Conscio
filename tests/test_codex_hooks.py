@@ -162,75 +162,75 @@ def test_codex_stop_never_blocks_and_exits_zero(tmp_path):
     assert time.time() - start < 10     # it does not block the Codex turn
 
 
-# ── the storage resolver: the single resolver on the MCP server's own inputs ─
+# ── T2b: the hook stays in-process only and hands the .mcp.json to the reactor ─
 
-def test_storage_mcp_inprocess_resolves_the_server_space(tmp_path):
-    """(Claude 529-1) with no harness --storage the hook resolves the space via
-    the SINGLE resolver (conscio.installer.durable.resolve_space) on the MCP
-    server's own --storage from .mcp.json. Here the package is importable in
-    this python, so the in-process importlib guard takes it (no second copy)."""
+def test_spawn_spec_inprocess_present_uses_storage(tmp_path):
+    """(T2b) when the in-process resolver lands (the package is importable in
+    this python), the hook spawns the reactor with a resolved --storage and no
+    --mcp-config. This is the cheap fast path."""
     space = _make_space(tmp_path)
     mcp = tmp_path / "mcp.json"
-    # a runner command that CANNOT resolve (nonexistent): the in-process guard
-    # is the only path that can succeed here, so this test isolates it.
     mcp.write_text(json.dumps({"mcpServers": {"conscio": {
         "command": str(tmp_path / "no-such-runner"),
         "args": ["conscio-mcp", "--storage", str(space)]}}}), encoding="utf-8")
     os.environ["CONSCIO_CODEX_MCP_CONFIG"] = str(mcp)
     os.environ.pop("CONSCIO_CODEX_NO_INPROCESS", None)
     try:
-        assert _hook()._codex_storage(None) == space
+        assert _hook()._codex_spawn_spec(None) == (space, None)
     finally:
         os.environ.pop("CONSCIO_CODEX_MCP_CONFIG", None)
         os.environ.pop("CONSCIO_CODEX_NO_INPROCESS", None)
 
 
-def test_storage_mcp_interpreter_resolves_the_server_space(tmp_path):
-    """(Claude 529-1) when the package is NOT importable in-process (forced
-    off here), the hook runs the MCP server's OWN interpreter (from .mcp.json)
-    with -c and reads the resolved path from stdout. The fake interpreter stands
-    in for `uvx --from conscio==X python` and echoes the resolver's input."""
-    space = _make_space(tmp_path)
-    interp = tmp_path / "fake-uvx"
-    interp.write_text(
-        "#!/usr/bin/env python3\n"
-        "import os, sys\n"
-        "s = os.environ.get('CONSCIO_CODEX_STORAGE_INPUT') or ''\n"
-        "sys.stdout.write(s)\n"
-        "sys.exit(0 if s else 1)\n", encoding="utf-8")
-    interp.chmod(0o755)
-    mcp = tmp_path / "mcp.json"
-    mcp.write_text(json.dumps({"mcpServers": {"conscio": {
-        "command": str(interp),
-        "args": ["conscio-mcp", "--storage", str(space)]}}}), encoding="utf-8")
-    os.environ["CONSCIO_CODEX_MCP_CONFIG"] = str(mcp)
-    os.environ["CONSCIO_CODEX_NO_INPROCESS"] = "1"      # force the interpreter path
-    try:
-        assert _hook()._codex_storage(None) == space
-    finally:
-        os.environ.pop("CONSCIO_CODEX_MCP_CONFIG", None)
-        os.environ.pop("CONSCIO_CODEX_NO_INPROCESS", None)
-
-
-def test_storage_broken_interpreter_logs_no_spawn_exit_zero(tmp_path):
-    """(Claude 529-1) the .mcp.json interpreter points nowhere: the hook logs
-    the failure, spawns no reactor, and still exits 0 (never traps the Codex
-    turn)."""
+def test_session_start_inprocess_absent_does_not_run_interpreter(tmp_path):
+    """(Claude 538-1) with the in-process resolver absent, the hook must NOT run
+    the server interpreter (uvx): a bomb interpreter records its invocation, and
+    the hook never triggers it -- it exits in <1s with the JSON instruction,
+    ready to hand the .mcp.json path to the reactor instead."""
     space = _make_space(tmp_path)
     sessions = tmp_path / "codex-sessions"
     sessions.mkdir()
-    broken = tmp_path / "no-such-uvx"      # does not exist
+    bomb = tmp_path / "bomb"
+    bomb.write_text("#!/bin/sh\ntouch " + str(tmp_path / "bomb-ran") + "\n",
+                    encoding="utf-8")
+    bomb.chmod(0o755)
     mcp = tmp_path / "mcp.json"
     mcp.write_text(json.dumps({"mcpServers": {"conscio": {
-        "command": str(broken),
+        "command": str(bomb),
         "args": ["conscio-mcp", "--storage", str(space)]}}}), encoding="utf-8")
     env = _codex_env(tmp_path, sessions, None)
     env["CONSCIO_CODEX_MCP_CONFIG"] = str(mcp)
-    env["CONSCIO_CODEX_NO_INPROCESS"] = "1"
+    env["CONSCIO_CODEX_NO_INPROCESS"] = "1"      # in-process resolver absent
     payload = {"session_id": SESSION_C, "transcript_path": str(sessions / "t.json")}
+    start = time.time()
     r = subprocess.run(
-        [sys.executable, str(HOOK), "codex_stop"],      # no --storage: the MCP path
+        [sys.executable, str(HOOK), "codex_session_start"],
         input=json.dumps(payload), capture_output=True, text=True, env=env, timeout=30)
+    elapsed = time.time() - start
     assert r.returncode == 0, (r.stdout, r.stderr)
-    assert "could not resolve the space" in r.stderr, r.stderr
-    assert not (space / "reactors" / f"{SESSION_C}.log").exists()   # no spawn
+    out = json.loads(r.stdout.strip())
+    assert out["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+    assert elapsed < 1.0, f"the hook ran the (slow) interpreter: {elapsed:.2f}s"
+    assert not (tmp_path / "bomb-ran").exists(), \
+        "the hook invoked the server interpreter (T2b forbids that in the hook)"
+
+
+def test_spawn_spec_inprocess_absent_hands_mcp_config(tmp_path):
+    """(T2b) when the in-process resolver is absent and the harness --storage is
+    a root-level path (the empty CLAUDE_PLUGIN_DATA case), the hook hands the
+    .mcp.json path to the reactor (--mcp-config) rather than a resolved space."""
+    space = _make_space(tmp_path)
+    mcp = tmp_path / "mcp.json"
+    mcp.write_text(json.dumps({"mcpServers": {"conscio": {
+        "command": str(tmp_path / "no-such-runner"),
+        "args": ["conscio-mcp", "--storage", str(space)]}}}), encoding="utf-8")
+    os.environ["CONSCIO_CODEX_MCP_CONFIG"] = str(mcp)
+    os.environ["CONSCIO_CODEX_NO_INPROCESS"] = "1"
+    try:
+        # /space is the empty-plugin-data root the Codex harness passes
+        storage, mcp_config = _hook()._codex_spawn_spec("/space")
+        assert storage is None, "in-process absent -> no resolved storage"
+        assert mcp_config == str(mcp)
+    finally:
+        os.environ.pop("CONSCIO_CODEX_MCP_CONFIG", None)
+        os.environ.pop("CONSCIO_CODEX_NO_INPROCESS", None)
