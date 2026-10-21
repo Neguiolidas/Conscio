@@ -193,6 +193,29 @@ def test_invalid_manifest_keeps_act_disabled(tmp_path):
         eng.close()
 
 
+def test_serve_ends_cleanly_when_the_client_vanishes(tmp_path):
+    """A client that closes the pipe mid-session is a teardown, not a crash.
+
+    serve() returns instead of raising on EPIPE: the host-visible failure
+    this replaces was a server that died with a traceback while the client
+    was still waiting for the response it had already abandoned.
+    """
+    class GoneReader(io.StringIO):
+        def write(self, *_a, **_k):
+            raise BrokenPipeError(32, "Broken pipe")
+
+    b, eng, seen = _bindings(tmp_path)
+    try:
+        requests = [INIT,
+                    {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}]
+        serve(b, io.StringIO("".join(json.dumps(r) + "\n"
+                                     for r in requests)),
+              GoneReader())                       # must not raise
+    finally:
+        seen.close()
+        eng.close()
+
+
 def test_legacy_dotted_tool_name_still_dispatches(tmp_path):
     """v4.1 renamed the surface; a caller scripted against the old spelling must
     not break.

@@ -113,3 +113,38 @@ def test_initialize_calls_on_initialize_with_params():
               "params": {"protocolVersion": "2025-06-18",
                          "conscio": {"tools": [{"name": "x"}]}}})
     assert seen["tools"] == [{"name": "x"}]
+
+
+def test_resources_templates_list_is_empty_not_an_error():
+    """The resources capability is advertised, so templates/list is answered
+    (empty), not refused: an error here is a warning on every client connect.
+    """
+    d = _d()
+    _init(d)
+    res = d.handle({"jsonrpc": "2.0", "id": 7,
+                    "method": "resources/templates/list"})
+    assert "error" not in res
+    assert res["result"] == {"resourceTemplates": []}
+
+
+def test_resources_templates_list_still_gated_on_initialize():
+    res = _d().handle({"jsonrpc": "2.0", "id": 8,
+                       "method": "resources/templates/list"})
+    assert res["error"]["code"] == j.INVALID_REQUEST
+
+
+def test_initialize_hook_failure_costs_the_request_not_the_process():
+    """The initialize hook parses a client-supplied host manifest through the
+    engine. A hook that raises must return INTERNAL_ERROR and leave the
+    server alive to serve the next request — the client-reported failure was
+    exactly a server that died here with no response at all.
+    """
+    class B(FakeBindings):
+        def on_initialize(self, params):
+            raise RuntimeError("broken host manifest")
+
+    d = Dispatcher(B())
+    res = d.handle({"jsonrpc": "2.0", "id": 0, "method": "initialize",
+                    "params": {"protocolVersion": "2025-06-18"}})
+    assert res["error"]["code"] == j.INTERNAL_ERROR
+    assert d.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **The MCP server answers `resources/templates/list` instead of refusing it.**
+  The server advertises the `resources` capability but routed only
+  `resources/list` and `resources/read`; `resources/templates/list` fell
+  through to `MethodNotFound` on every client connect (measured: the OpenCode
+  client logs `failed to list MCP resource templates:
+  unknown method 'resources/templates/list'` at every session start, for
+  every session). The route now returns `{"resourceTemplates": []}` — the
+  resources this server offers are static and live in `RESOURCE_DEFS`, so the
+  honest answer is an empty template list, not an error.
+- **A broken `initialize` hook costs the request, not the server.**
+  `Dispatcher.handle` ran the `initialize` hook (`on_initialize` →
+  `engine.enable_host_act`, the `--enable-act` host-manifest wiring) outside
+  its per-message `try` block, unlike every other route: an exception there
+  escaped `handle`, escaped the `serve()` loop and killed the process with no
+  response at all — the failure the client reports as
+  `MCP server process exited` mid-session. The hook is now guarded and
+  answers `INTERNAL_ERROR`; the server keeps serving the next request.
+- **A client that vanishes no longer takes the server down with a traceback.**
+  `_write` raised (EPIPE / closed file) straight into the `serve()` loop when
+  the reader disappeared between requests. `_write` now reports the failure
+  and `serve()` returns: teardown reads as a clean exit (verified with the
+  real binary: exit 0, stderr carrying only the startup banner), not as a
+  crash.
+
+---
+
 ## [4.9.3] - 2026-10-14 — The wheel ships its data, and the silence warns
 
 ### Fixed

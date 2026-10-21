@@ -164,6 +164,35 @@ could point your replies anywhere. So: two machines, one `pair` each.
 The remote agent does **not** need to be running when you send: the bridge
 deposits into its spool, and its next tool call ingests.
 
+### Client-only remote peers and HTTPS reverse proxies
+
+Some remote environments cannot bind a listening port (sandboxed VMs, mobile
+clients, or strict NATs) and instead pull their messages from a host machine or
+expose the bridge through a TLS reverse proxy (such as `tailscale serve`). Three
+operational rules govern this topology:
+
+1. **Unreachable remote peers fall back to local spool parking (`PARKED`).** When
+   `transport_post` receives no answer from a paired remote URL (`UNREACHABLE`),
+   `deliver_route` automatically deposits the message into the local spool under
+   that peer's `<instance_id>` (`~/.conscio/relay/spool/<instance_id>/`). A
+   client-only peer can therefore long-poll the host's spool to retrieve its
+   mail without running a listener of its own. (If the remote bridge actively
+   answers with an HTTP 4xx/5xx error, delivery returns `REJECTED` and is *not*
+   parked, surfacing the misconfiguration immediately.)
+2. **TLS reverse proxies require the MagicDNS hostname, never the raw IP.** When
+   exposing a relay or long-poll bridge via `tailscale serve` (HTTPS), the proxy
+   terminates TLS using SNI bound to the machine's `<node>.<tailnet>.ts.net`
+   certificate. Requests aimed at the raw Tailscale IP (`100.x.y.z`) fail TLS
+   handshake or return `HTTP 400`. Always pair and poll using the full HTTPS
+   hostname (`https://<node>.<tailnet>.ts.net:<port>`), and only use raw IPs
+   when connecting over plain HTTP directly to `conscio-relay-bridge --bind
+   <tailscale-ip>`.
+3. **Full canonical UUIDs on every query.** Spool directories and directory
+   cards are indexed strictly by the 36-character `instance_id` UUID. Short
+   aliases or truncated prefixes look up a non-existent directory and return an
+   empty mailbox. Both polling (`GET`) and remote deposits (`POST /relay/msg`)
+   must pass the exact `instance_id`.
+
 ---
 
 ## 4. Trust model

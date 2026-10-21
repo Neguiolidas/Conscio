@@ -1598,28 +1598,40 @@ def serve(bindings: Bindings, instream, outstream, *,
     bindings.announce_presence()      # addressable from boot, not from use
     for frame in j.read_frames(instream, max_bytes):
         if frame is j.OVERSIZE:
-            _write(outstream, j.make_error(None, j.INVALID_REQUEST,
-                                           "frame too large"))
+            if not _write(outstream, j.make_error(None, j.INVALID_REQUEST,
+                                                  "frame too large")):
+                return                # client closed the pipe: leave quietly
             continue
         try:
             msg = json.loads(frame)
         except json.JSONDecodeError:
-            _write(outstream, j.make_error(None, j.PARSE_ERROR, "parse error"))
+            if not _write(outstream, j.make_error(None, j.PARSE_ERROR,
+                                                  "parse error")):
+                return
             continue
         if not isinstance(msg, dict):
-            _write(outstream, j.make_error(None, j.INVALID_REQUEST,
-                                           "request must be an object"))
+            if not _write(outstream, j.make_error(None, j.INVALID_REQUEST,
+                                                  "request must be an object")):
+                return
             continue
         response = dispatcher.handle(msg)
-        if response is not None:
-            _write(outstream, response)
+        if response is not None and not _write(outstream, response):
+            return                    # EPIPE: nobody is left to answer
         for note in bindings.drain_notifications():
-            _write(outstream, note)
+            if not _write(outstream, note):
+                return
 
 
-def _write(outstream, obj: dict) -> None:
-    outstream.write(json.dumps(obj) + "\n")
-    outstream.flush()
+def _write(outstream, obj: dict) -> bool:
+    """Write one frame. Returns False when the reader is gone (EPIPE / closed
+    file) so the caller can end the session without a traceback — a client
+    that vanished is not an error worth a stack trace on stderr."""
+    try:
+        outstream.write(json.dumps(obj) + "\n")
+        outstream.flush()
+        return True
+    except (OSError, ValueError):     # BrokenPipeError, closed file
+        return False
 
 
 def _build_adapter(spec: str):
