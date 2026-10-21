@@ -725,24 +725,55 @@ def _cmd_react(argv: list[str]) -> int:
         os.close(lock)
         return 3
     pending_since: float | None = None
+    db_error: str | None = None     # the db failure WE wrote (state["error"]
+                                    # is also the queue failure's field: only
+                                    # what we wrote may be cleared)
     try:
         while True:
             if owner > 0 and _pid_gone(owner):
                 return 0                     # (d) the owning Codex process is gone
             now = time.time()
-            rows = _react_unread_rows(db, self_id)
-            spool = _spool_count(_spool_dir(self_id))
-            pending = spool > 0 or bool(rows)  # unread in EITHER source
-            send = react_notice_decision(
-                pending, state["outstanding"], _react_should_attempt(state, now),
-                now, state["outstanding_since"], _react_renotify_s())
-            if send:
+            try:
+                rows = _react_unread_rows(db, self_id)
+                spool = _spool_count(_spool_dir(self_id))
+                pending = spool > 0 or bool(rows)  # unread in EITHER source
+                send = react_notice_decision(
+                    pending, state["outstanding"], _react_should_attempt(state, now),
+                    now, state["outstanding_since"], _react_renotify_s())
                 names: list[str] = []
-                for r in rows:
-                    label = _sender_label(db, r["from"])
-                    if label and label not in names:
-                        names.append(label)
-                text = notice_text(names)      # no db row (spool only) -> "relay: new message"
+                if send:
+                    for r in rows:
+                        label = _sender_label(db, r["from"])
+                        if label and label not in names:
+                            names.append(label)
+            except sqlite3.Error as exc:
+                # The liaison db vanished or turned unreadable under the
+                # reactor's feet (the space was rebuilt, the file rotated, the
+                # disk hiccuped). That is a transient condition, not a reason
+                # to die: an exception here used to escape the loop, be
+                # swallowed by the module's top-level handler and end the
+                # reactor SILENTLY (exit 0, no traceback, nothing in the state
+                # file) -- the session then simply stopped being woken. The
+                # failure is recorded in the state file, ONE line goes to
+                # stderr, and the loop sleeps and reads again. The owner-pid
+                # check above runs every iteration, so the reactor still exits
+                # 0 when the Codex process dies.
+                message = f"{exc.__class__.__name__}: {exc}"
+                if state.get("error") != message:
+                    sys.stderr.write(f"[react] liaison db unreadable: {message}\n")
+                    sys.stderr.flush()
+                    state["error"] = message
+                    _react_state_save(state_path, state)
+                db_error = message
+                time.sleep(interval)
+                continue
+            if db_error is not None:
+                if state.get("error") == db_error:
+                    state["error"] = None     # the db answered again
+                    _react_state_save(state_path, state)
+                db_error = None
+            if send:
+                text = notice_text(names)     # no db row (spool only) -> "relay: new message"
                 if pending_since is None:
                     pending_since = now
                 if now - pending_since >= _react_debounce_s():
