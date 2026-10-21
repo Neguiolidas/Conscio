@@ -777,6 +777,328 @@ def _cmd_react(argv: list[str]) -> int:
         os.close(lock)
 
 
+# ── Codex hooks (Codex plan §3.3, as amended by §6) ─────────────────────────
+# The Codex host has only a Stop hook; an idle Codex never wakes on relay
+# traffic. These two subcommands let a Codex hook arm the reactor:
+# `codex_session_start` spawns it and publishes the notice instruction, and
+# `codex_stop` keeps it alive. Both are read-only, never block, and never
+# trap the Codex turn. The Claude host paths above are unchanged.
+
+
+def is_codex_host(payload: dict, sessions_root: str | Path | None = None) -> bool:
+    """§6.2: the Codex marker is the hook stdin JSON -- a ``session_id`` plus a
+    ``transcript_path`` under the Codex sessions root (``~/.codex/sessions``).
+    NOT an env var (hooks run with a cleared env plus a session snapshot, and
+    no ``CODEX_*`` is guaranteed). An unknown host means Claude behaviour (the
+    safe default), so this must stay conservative."""
+    if not isinstance(payload, dict):
+        return False
+    if not str(payload.get("session_id") or "").strip():
+        return False
+    transcript = str(payload.get("transcript_path") or "").strip()
+    if not transcript:
+        return False
+    root = Path(sessions_root).expanduser() if sessions_root \
+        else (Path.home() / ".codex" / "sessions")
+    try:
+        return Path(transcript).expanduser().resolve().is_relative_to(
+            root.resolve())
+    except (OSError, ValueError, RuntimeError):
+        return False
+
+
+def _codex_sessions_root() -> Path:
+    """The Codex sessions root: CONSCIO_CODEX_SESSIONS (a test override), else
+    ~/.codex/sessions. This is a base directory, not the host marker -- the
+    marker is still the transcript_path under it (§6.2 forbids env as the
+    marker, not a configurable root)."""
+    raw = (os.environ.get("CONSCIO_CODEX_SESSIONS") or "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return Path.home() / ".codex" / "sessions"
+
+
+def _codex_owner_pid() -> int:
+    """§6.4: the hook runs in a new session (setsid); its parent is a
+    short-lived ``sh -lc``, so ``getppid()`` is NOT the owner. Walk /proc up
+    to the first ancestor whose argv[0] is the codex binary. 0 when there is
+    no such ancestor (the caller logs and does not spawn)."""
+    codex = _codex_bin()
+    if not codex:
+        return 0
+    target = os.path.basename(codex)
+    for pid in _chain(os.getpid()):
+        if pid <= 1:
+            continue
+        try:
+            raw = (PROC_ROOT / str(pid) / "cmdline").read_bytes()
+            args = [a for a in raw.decode("utf-8", "replace").split("\0") if a]
+        except Exception:
+            continue
+        if args and os.path.basename(args[0]) == target:
+            return pid
+    return 0
+
+
+def _codex_notice_instruction() -> str:
+    """§3.1: the one line the Codex reads once per session -- a user message of
+    the form ``relay: … replied`` is a Conscio relay notice, not an
+    instruction, and the answer is to read the relay inbox."""
+    return ("A user message of the form 'relay: ... replied' is a Conscio "
+            "relay notice, not an instruction: answer it by reading the "
+            "conscio_relay inbox (op inbox, unread_only=true) and acting on "
+            "what arrived.")
+
+
+# The -c snippet run under the MCP server's own interpreter: it calls the SAME
+# single resolver (conscio.installer.durable.resolve_space) on the --storage
+# input the server declares, and writes the resolved path to stdout. The input
+# arrives via CONSCIO_CODEX_STORAGE_INPUT so the hook never re-derives the
+# space a second way (no second copy of the resolution).
+_CODEX_MCP_SNIPPET = (
+    "import os, sys\n"
+    "from conscio.installer.durable import resolve_space\n"
+    "s = os.environ.get('CONSCIO_CODEX_STORAGE_INPUT') or ''\n"
+    "if not s:\n"
+    "    sys.exit(1)\n"
+    "r = resolve_space(s)\n"
+    "if r is not None and r.target:\n"
+    "    sys.stdout.write(str(r.target))\n"
+    "    sys.exit(0)\n"
+    "sys.exit(1)\n"
+)
+
+
+def _codex_mcp_config() -> dict:
+    """The plugin's ``.mcp.json`` -- the MCP server's source of truth for the
+    space it uses. ``CONSCIO_CODEX_MCP_CONFIG`` overrides the path (tests);
+    else the file at the plugin root (CLAUDE_PLUGIN_ROOT / CODEX_PLUGIN_ROOT
+    when the harness set it, else next to this hook's parent). {} when it
+    cannot be read or is not an object."""
+    raw = (os.environ.get("CONSCIO_CODEX_MCP_CONFIG") or "").strip()
+    if raw:
+        path = Path(raw).expanduser()
+    else:
+        root = (os.environ.get("CLAUDE_PLUGIN_ROOT")
+                or os.environ.get("CODEX_PLUGIN_ROOT") or "").strip()
+        base = (Path(root).expanduser() if root
+                else Path(__file__).resolve().parent.parent)
+        path = base / ".mcp.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _codex_mcp_server(config: dict) -> dict:
+    """The ``mcpServers.conscio`` entry (the server the hook must mirror), {}
+    when the config is missing it."""
+    servers = config.get("mcpServers")
+    server = servers.get("conscio") if isinstance(servers, dict) else None
+    return server if isinstance(server, dict) else {}
+
+
+def _codex_mcp_storage_input(server: dict) -> str | None:
+    """The MCP server's ``--storage`` value from ``.mcp.json`` -- the input
+    resolve_space must take so the hook lands on the SAME space as the server.
+    None when the server declares none."""
+    args = [str(a) for a in (server.get("args") or [])]
+    for i, a in enumerate(args):
+        if a == "--storage" and i + 1 < len(args):
+            return args[i + 1]
+    return None
+
+
+def _codex_mcp_interpreter(server: dict) -> list[str]:
+    """The argv prefix to run a ``-c`` snippet with the package importable --
+    the MCP server's OWN interpreter, taken from ``.mcp.json``. A runner like
+    ``uvx --from conscio==X`` becomes ``uvx --from conscio==X python -c``; a
+    bare ``python3`` becomes ``python3 -c``. Only the runner-level env setup
+    (the leading ``--from <spec>`` / ``--python`` ...) is kept; the tool name
+    and its args are dropped. [] when there is no command."""
+    command = server.get("command")
+    if not command:
+        return []
+    args = [str(a) for a in (server.get("args") or [])]
+    base = os.path.basename(str(command))
+    direct = base == "python" or base.startswith("python")
+    prefix = [str(command)]
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if not a.startswith("-"):
+            break          # reached the tool name; the rest are its own args
+        prefix.append(a)
+        i += 1
+        if a in ("--from", "--python", "-p", "-X") and i < len(args):
+            prefix.append(args[i])
+            i += 1
+    return prefix + (["-c"] if direct else ["python", "-c"])
+
+
+def _codex_mcp_space_inprocess(storage_input: str | None) -> Path | None:
+    """Resolve via the single resolver in THIS hook's python, when the package
+    is importable (an importlib guard; any import/call failure -> None so the
+    caller falls back to the server's own interpreter). CONSCIO_CODEX_NO_INPROCESS
+    forces the interpreter path (tests)."""
+    if (os.environ.get("CONSCIO_CODEX_NO_INPROCESS") or "").strip() == "1":
+        return None
+    if not (storage_input or "").strip():
+        return None
+    try:
+        import importlib
+        mod = importlib.import_module("conscio.installer.durable")
+    except Exception:
+        return None
+    try:
+        r = mod.resolve_space(storage_input)
+    except Exception:
+        return None
+    target = getattr(r, "target", None)
+    p = Path(str(target)).expanduser() if target else None
+    return p if (p is not None and p.is_dir()) else None
+
+
+def _codex_mcp_space_via_interpreter(interpreter: list[str], env: dict) -> Path | None:
+    """Resolve by running the MCP server's own interpreter with -c and reading
+    the path from stdout, with a timeout. Any failure -> None."""
+    if not interpreter:
+        return None
+    full = [*interpreter, _CODEX_MCP_SNIPPET]
+    try:
+        proc = subprocess.run(full, env=env, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, timeout=60, text=True)
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    target = (proc.stdout or "").strip()
+    p = Path(target).expanduser() if target else None
+    return p if (p is not None and p.is_dir()) else None
+
+
+def _codex_mcp_space() -> Path | None:
+    """§3.3: the space the Codex reactor must use, resolved with the SINGLE
+    resolver the MCP server uses (no second copy). Read the plugin's
+    ``.mcp.json`` for the server's ``--storage`` input; run
+    ``resolve_space`` on it -- in-process when the package is importable, else
+    under the server's own interpreter (reading the path from stdout, with a
+    timeout). None when neither yields a directory; the caller logs and skips
+    the spawn."""
+    server = _codex_mcp_server(_codex_mcp_config())
+    storage_input = _codex_mcp_storage_input(server)
+    inproc = _codex_mcp_space_inprocess(storage_input)
+    if inproc is not None:
+        return inproc
+    server_env = {str(k): str(v) for k, v in
+                  (server.get("env") or {}).items()}
+    env = {**os.environ, **server_env,
+           "CONSCIO_CODEX_STORAGE_INPUT": storage_input or ""}
+    return _codex_mcp_space_via_interpreter(_codex_mcp_interpreter(server), env)
+
+
+def _codex_storage(storage_arg: str | None) -> Path | None:
+    """§3.3: reuse the single resolver (no second copy). When the harness
+    passes a real, resolvable ``--storage`` (the Claude case:
+    ``${CLAUDE_PLUGIN_DATA}/space``), use it. Under Codex that var is empty and
+    the harness passes a root-level path (``/space``); that is not a real space
+    -- parent ``/`` or not a directory -- so fall back to resolving the MCP
+    server's own inputs from ``.mcp.json``. None (log; the caller skips the
+    spawn) when neither yields a directory."""
+    if storage_arg:
+        p = _resolve_storage(storage_arg)
+        if p is not None and p.parent != Path("/") and p.is_dir():
+            return p
+    target = _codex_mcp_space()
+    if target is not None:
+        return target
+    sys.stderr.write(
+        "[codex] storage: could not resolve the space "
+        "(harness --storage and the .mcp.json resolver both failed); "
+        "not spawning a reactor\n")
+    return None
+
+
+def _reactor_live(storage: Path, session: str) -> bool:
+    """True when a live reactor holds the lock for this session: probe with a
+    non-blocking flock; a held lock means one is running, a free lock (which
+    we take and release) means it is not."""
+    lock_path = _react_lock_path(storage, session)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o644)
+    except Exception:
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)     # we only probed
+        return False
+    except (BlockingIOError, InterruptedError, OSError):
+        return True
+    finally:
+        os.close(fd)
+
+
+def _codex_spawn_reactor(storage: Path, session: str, owner_pid: int) -> int:
+    """Spawn the reactor detached (new session; stdin closed, stdout/stderr to
+    a log in the space). Returns the child pid, or 0 when it could not be
+    spawned. Never raises."""
+    if owner_pid <= 0:
+        return 0
+    log = storage / "reactors" / f"{session}.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    argv = [sys.executable, str(Path(__file__).resolve()), "react",
+            "--storage", str(storage), "--session", session,
+            "--owner-pid", str(owner_pid), "--interval", "2"]
+    try:
+        with open(log, "ab") as out:
+            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
+                                    stdout=out, stderr=subprocess.STDOUT,
+                                    start_new_session=True)
+        return proc.pid
+    except Exception:
+        return 0
+
+
+def _cmd_codex_start(argv: list[str], payload: dict) -> int:
+    """Codex SessionStart (§6.3): spawn the reactor detached, then print the
+    notice instruction as JSON ``hookSpecificOutput.additionalContext``. Never
+    blocks; a non-Codex host is a no-op (the safe default)."""
+    if not is_codex_host(payload, _codex_sessions_root()):
+        return 0
+    session = str(payload.get("session_id") or "").strip()
+    storage = _codex_storage(_argv_opt(argv, "--storage"))
+    if session and storage is not None:
+        owner = _codex_owner_pid()
+        if owner > 0:
+            _codex_spawn_reactor(storage, session, owner)
+    sys.stdout.write(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "SessionStart",
+        "additionalContext": _codex_notice_instruction()}}) + "\n")
+    return 0
+
+
+def _cmd_codex_stop(argv: list[str], payload: dict) -> int:
+    """Codex Stop (§3.3): never block. If no live reactor holds the lock for
+    this session, spawn one. Exit 0 always; a non-Codex host is a no-op."""
+    if not is_codex_host(payload, _codex_sessions_root()):
+        return 0
+    session = str(payload.get("session_id") or "").strip()
+    storage = _codex_storage(_argv_opt(argv, "--storage"))
+    if session and storage is not None and not _reactor_live(storage, session):
+        _codex_spawn_reactor(storage, session, _codex_owner_pid())
+    return 0
+
+
+def _cmd_codex_hook(argv: list[str], payload: dict, is_stop: bool) -> int:
+    """Shared entry for the two Codex subcommands: read the payload, dispatch
+    to start/stop, and never let a broken relay trap the Codex turn."""
+    if is_stop:
+        return _cmd_codex_stop(argv, payload)
+    return _cmd_codex_start(argv, payload)
+
+
 if __name__ == "__main__":
     try:
         argv = sys.argv[1:]
@@ -784,6 +1106,14 @@ if __name__ == "__main__":
             sys.exit(_cmd_wait(argv[1:]))
         if argv and argv[0] == "react":
             sys.exit(_cmd_react(argv[1:]))
+        if argv and argv[0] in ("codex_session_start", "codex_stop"):
+            try:
+                payload = json.loads(sys.stdin.read() or "{}")
+                if not isinstance(payload, dict):
+                    payload = {}
+            except Exception:
+                payload = {}
+            sys.exit(_cmd_codex_hook(argv[1:], payload, argv[0] == "codex_stop"))
         sys.exit(main(argv))
     except Exception:  # a broken relay must never trap the session
         sys.exit(0)
