@@ -516,3 +516,149 @@ def test_reactor_exits_when_the_owner_pid_dies(tmp_path):
     # a reactor with a live 1 s owner exits cleanly when the owner dies, well
     # inside the timeout -- it does not outlive the owning Codex process
     assert r.returncode == 0, (r.stdout, r.stderr)
+
+
+# ── behaviour: a broken liaison db does not kill the reactor (A1) ───────────
+#
+# The liaison db can vanish or turn unreadable under the reactor's feet (the
+# space is rebuilt, the file is rotated, the disk hiccups). That is a transient
+# condition, not a reason to die: the reactor is the thing that has to keep
+# the session awake, and the doc promises that any failure other than a bad
+# setup exits 0. The failure is recorded in the state file (never swallowed
+# in silence) and the loop keeps polling.
+
+
+def _start_reactor(space: Path, tmp_path: Path, db: Path, owner_pid: int,
+                   wrapper: Path, log: Path, errlog: Path,
+                   renotify: str | None = None) -> subprocess.Popen:
+    """A live reactor whose stderr goes to a FILE: a pipe would risk filling
+    up and blocking the reactor -- the exact failure this task is about."""
+    env = _react_env(tmp_path, codex=str(wrapper), log=str(log), debounce="0.1",
+                     renotify=renotify)
+    with errlog.open("w", encoding="utf-8") as handle:
+        proc = subprocess.Popen(
+            _react_argv(space, db, owner_pid, interval="1"),
+            stdout=subprocess.DEVNULL, stderr=handle, env=env)
+    return proc
+
+
+def _wait_reactor_in_loop(space: Path, timeout: float = 8.0) -> None:
+    """Wait until the reactor is really polling.
+
+    The lock file is created AFTER the startup checks (the db must exist at
+    startup, or the reactor exits 3), so its presence means the reactor is
+    inside the loop and reading. Deleting the db before that would race the
+    startup and test the wrong thing."""
+    lock = space / "reactors" / f"{SESSION_C}.lock"
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if lock.exists():
+            time.sleep(0.2)          # let the first read happen
+            return
+        time.sleep(0.05)
+    raise AssertionError("the reactor never reached the loop")
+
+
+def test_db_removed_mid_loop_keeps_the_reactor_alive_and_records_the_error(tmp_path):
+    """(A1) the liaison db vanishes under the reactor's feet: it does NOT die
+    with a traceback. The failure lands in the state file, ONE line goes to
+    stderr, and the reactor keeps polling."""
+    space = tmp_path / "space"
+    db = _seed_db(space, [(PEER_A, "one")])
+    wrapper, log = _fake_codex(tmp_path, "broken-db")
+    errlog = tmp_path / "react-stderr.log"
+    owner = _owner(6.0)
+    proc = _start_reactor(space, tmp_path, db, owner.pid, wrapper, log, errlog)
+    try:
+        _wait_calls(log, 1, timeout=8)        # it was alive and reading
+        db.unlink()                             # the db vanishes
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            if _state(space).get("error"):
+                break
+            time.sleep(0.05)
+        st = _state(space)
+        assert st.get("error"), st             # the failure is recorded
+        assert "unable to open database" in str(st["error"]), st
+        assert proc.poll() is None, "the reactor died with the db"
+        err = errlog.read_text(encoding="utf-8")
+        assert "liaison db unreadable" in err, err
+        assert err.count("\n") == 1, f"expected ONE line, got: {err!r}"
+        assert "Traceback" not in err, err
+    finally:
+        proc.terminate(); proc.wait(timeout=15)
+        owner.terminate(); owner.wait(timeout=15)
+
+
+def test_recreated_db_clears_the_error_and_queues_the_new_unread_message(tmp_path):
+    """(A1, Hermet 2684) the WHOLE flow, not half of it: the db vanishes (the
+    reactor stays alive and says why in the state file), the db comes back
+    WITH A NEW UNREAD MESSAGE, and the reactor resumes its job -- the error
+    clears AND the fake codex is called EXACTLY ONCE with the notice naming
+    the new sender. Without the queue call the catch could be a silent
+    swallower that just stopped noticing."""
+    space = tmp_path / "space"
+    db = _seed_db(space, [])          # empty: there is nothing to announce yet
+    wrapper, log = _fake_codex(tmp_path, "recreated")
+    errlog = tmp_path / "react-stderr.log"
+    owner = _owner(12.0)
+    proc = _start_reactor(space, tmp_path, db, owner.pid, wrapper, log, errlog)
+    try:
+        _wait_reactor_in_loop(space)           # the reactor is really polling
+        db.unlink()                             # the db vanishes under its feet
+        deadline = time.time() + 6
+        while time.time() < deadline:
+            if _state(space).get("error"):
+                break
+            time.sleep(0.05)
+        st = _state(space)
+        assert st.get("error"), st
+        assert "unable to open database" in str(st["error"]), st
+        assert proc.poll() is None, "the reactor died with the db"
+        assert _calls(log) == [], _calls(log)   # nothing announced while it was down
+        # the db is back, with a new unread message
+        _seed_db(space, [(PEER_B, "after the outage")])
+        _wait_calls(log, 1, timeout=12)
+        deadline = time.time() + 6
+        while time.time() < deadline:
+            if _state(space).get("error") is None:
+                break
+            time.sleep(0.05)
+        st = _state(space)
+        assert st.get("error") is None, st      # the error cleared
+        calls = _calls(log)
+        assert len(calls) == 1, calls           # EXACTLY one notice
+        argv = calls[0]["argv"]
+        message = argv[argv.index("--message") + 1]
+        assert message.startswith("relay:"), message
+        assert "peer-b-cx" in message, message   # it names the NEW sender
+    finally:
+        proc.terminate(); proc.wait(timeout=15)
+        owner.terminate(); owner.wait(timeout=15)
+
+
+def test_owner_death_with_a_broken_db_exits_zero(tmp_path):
+    """(A1) the db is broken AND the Codex process dies: the reactor still
+    exits 0. The owner check runs every iteration, before the db is read, so
+    a broken db cannot keep it alive past its owner."""
+    space = tmp_path / "space"
+    db = _seed_db(space, [(PEER_A, "one")])
+    wrapper, log = _fake_codex(tmp_path, "broken-owner")
+    errlog = tmp_path / "react-stderr.log"
+    owner = _owner(4.0)
+    proc = _start_reactor(space, tmp_path, db, owner.pid, wrapper, log, errlog)
+    try:
+        _wait_calls(log, 1, timeout=8)
+        _wait_reactor_in_loop(space)
+        db.unlink()                             # the db breaks while the owner lives
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            if _state(space).get("error"):
+                break
+            time.sleep(0.05)
+        assert _state(space).get("error"), _state(space)
+        rc = proc.wait(timeout=12)              # the owner dies meanwhile
+        assert rc == 0, f"the reactor exited {rc} with a broken db"
+    finally:
+        proc.terminate(); proc.wait(timeout=15)
+        owner.terminate(); owner.wait(timeout=15)
