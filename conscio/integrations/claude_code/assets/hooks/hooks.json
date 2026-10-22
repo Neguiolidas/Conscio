@@ -10,6 +10,10 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_deepminer.py\" session-start --obsstore \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_obsstore.py\" --storage \"${CLAUDE_PLUGIN_DATA}/space\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/conscio_wake.py\" codex_session_start --storage \"${CLAUDE_PLUGIN_DATA}/space\""
           }
         ]
       }

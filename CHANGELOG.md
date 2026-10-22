@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.10.0] - 2026-10-22 — The Codex wakes itself, and the wheel ships its lock
+
+### Added
+- **The Codex reactor wakes an idle Codex session on relay traffic.**
+  The Codex CLI has only a Stop hook for the relay, and a Stop hook cannot
+  wake an idle session: an idle Codex noticed nothing until a human typed.
+  The new `react` subcommand of the plugin hook (`conscio_wake.py react`) is a
+  long-lived, read-only process that queues **one notice** per outstanding
+  batch of unread messages into the Codex session with
+  `codex queue --thread <session uuid> --message "relay: <Name> replied"`.
+  The notice is a label, never content: sender names only, no message text and
+  no message ids (`relay: Claude replied`, `relay: Claude, Gemini replied`,
+  and `relay: new message` while a message is still only a spool file). One
+  latch holds the notice until everything is read — spool empty *and* no
+  unread row — so a burst is one notice, not one per message; an outstanding
+  notice still unread after 30 min queues one more, a failed queue retries
+  the same batch on a backoff (60 s, doubling, capped at 15 min) with the
+  error kept in the state file, and the reactor exits 0 when the Codex process
+  dies (`--owner-pid`). The Codex core idle-gates the durable queue, so the
+  reactor does not detect idle itself and does not re-queue an outstanding
+  batch. The reactor reads `CONSCIO_CODEX_BIN`, `CONSCIO_REACT_DEBOUNCE_S`
+  (3 s), `CONSCIO_REACT_RENOTIFY_S` (1800 s), `CONSCIO_REACT_RETRY_BASE_S`
+  (60 s), `CONSCIO_REACT_RETRY_CAP_S` (900 s), `CONSCIO_RELAY_ROOT` and
+  `CONSCIO_SELF_ID`; its lock and state live in `<space>/reactors/`.
+  The Codex `SessionStart` hook only spawns the reactor: it never runs the MCP
+  server's interpreter and never blocks the session open. When it cannot
+  resolve the space cheaply, it hands the reactor the plugin's `.mcp.json`
+  path (`--mcp-config`) and the reactor resolves the space on its first
+  iteration, under the server's own interpreter, with a 60 s timeout. An
+  unusable `.mcp.json` — absent, invalid JSON, or without `mcpServers.conscio`
+  — is refused, not guessed: the cause is printed on stderr (`invalid
+  .mcp.json at <path> (no mcpServers.conscio)`, and the two sibling causes
+  for a missing `--storage` and a missing interpreter) and the reactor exits
+  3. While the space is unknown, the reactor's output goes to
+  `~/.conscio/reactor-logs/<session>.log`.
+- **The shipped plugin arms the Codex reactor; no hand edit is needed.**
+  Claude Code and the Codex share one `hooks.json`, and the shipped one never
+  called the reactor: the `SessionStart` had no `codex_session_start` and the
+  `Stop` called the Claude guard, which asks Claude for a waiter and exits 2.
+  The `SessionStart` gains one entry (`codex_session_start`, with the
+  plugin's own `--storage`; on Claude it is a no-op — an unknown host means
+  Claude behaviour), and the `Stop` keeps calling `stop`: the hook now reads
+  its payload once, before anything else, and a Codex host — its transcript
+  under the Codex sessions root — is handed to the reactor path, which never
+  returns 2. A Claude payload keeps the previous behaviour exactly: exit 2
+  with the arming command on stderr. The plugin cache no longer has to be
+  edited by hand.
+- **The phantom-tool guard scans the whole hooks package.** A
+  `conscio.<x>` citation in an asset is read by file type: in Markdown it
+  names a tool and stays strict (the known-tools list plus a hand-kept
+  module list — a real module cited as a tool is still a phantom there);
+  in a hook's `.py` it names an import, and the module must exist
+  (probed with `find_spec`, never imported). The seven files under
+  `conscio_honesty_pkg/` — previously never scanned — are covered, and a
+  test pins that every `.py` on disk under `hooks/` is in the scan
+  (`e311190`, `df6bc2f`, `8a231a4`).
+
+### Fixed
+- **The MCP server answers `resources/templates/list` instead of refusing it.**
+  The server advertises the `resources` capability but routed only
+  `resources/list` and `resources/read`; `resources/templates/list` fell
+  through to `MethodNotFound` on every client connect (measured: the OpenCode
+  client logs `failed to list MCP resource templates:
+  unknown method 'resources/templates/list'` at every session start, for
+  every session). The route now returns `{"resourceTemplates": []}` — the
+  resources this server offers are static and live in `RESOURCE_DEFS`, so the
+  honest answer is an empty template list, not an error.
+- **A broken `initialize` hook costs the request, not the server.**
+  `Dispatcher.handle` ran the `initialize` hook (`on_initialize` →
+  `engine.enable_host_act`, the `--enable-act` host-manifest wiring) outside
+  its per-message `try` block, unlike every other route: an exception there
+  escaped `handle`, escaped the `serve()` loop and killed the process with no
+  response at all — the failure the client reports as
+  `MCP server process exited` mid-session. The hook is now guarded and
+  answers `INTERNAL_ERROR`; the server keeps serving the next request.
+- **A client that vanishes no longer takes the server down with a traceback.**
+  `_write` raised (EPIPE / closed file) straight into the `serve()` loop when
+  the reader disappeared between requests. `_write` now reports the failure
+  and `serve()` returns: teardown reads as a clean exit (verified with the
+  real binary: exit 0, stderr carrying only the startup banner), not as a
+  crash.
+- **The lock carries the runtime dependency the wheel needs.**
+  `pyproject.toml` has required `cryptography>=42` at runtime since
+  `26db5c6`, but `uv.lock` was never relocked, so an install from the lock
+  left it out. The lock now carries `cryptography`, `cffi` and `pycparser`.
+
+---
+
 ## [4.9.3] - 2026-10-14 — The wheel ships its data, and the silence warns
 
 ### Fixed

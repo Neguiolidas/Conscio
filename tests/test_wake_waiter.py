@@ -331,6 +331,8 @@ def test_detached_waiter_is_not_owned(tmp_path):
 
 def test_stdlib_contract_reserved_and_spool_dir(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location("_wake_hook_w2", HOOK)
+    assert spec is not None and spec.loader is not None, \
+        f"the wake hook is not loadable: {HOOK}"
     hook = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(hook)
 

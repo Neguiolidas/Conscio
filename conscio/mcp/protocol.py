@@ -43,7 +43,14 @@ class Dispatcher:
             # requests even if the client skips the initialized notification
             # (which, when sent, is handled above and is idempotent).
             self.initialized = True
-            return make_response(mid, self._initialize(params))
+            try:
+                return make_response(mid, self._initialize(params))
+            except Exception:
+                # The whole server dying over one bad host manifest is the
+                # failure the client reports as "process exited" mid-session;
+                # a broken hook costs the request, not the process.
+                return None if is_notification else make_error(
+                    mid, INTERNAL_ERROR, "initialize failed")
         if method == "ping":
             return None if is_notification else make_response(mid, {})
 
@@ -74,6 +81,14 @@ class Dispatcher:
             return self.b.call_tool(name, params.get("arguments") or {})
         if method == "resources/list":
             return {"resources": self.b.resource_defs()}
+        if method == "resources/templates/list":
+            # The server advertises the resources capability, so a full
+            # resources surface answers templates/list even with no templates
+            # to offer. An error here is a warning on EVERY client connect
+            # (measured: OpenCode logs "failed to list MCP resource
+            # templates" at each session start); this server's resources are
+            # static, so the honest answer is an empty list.
+            return {"resourceTemplates": []}
         if method == "resources/read":
             uri = params.get("uri")
             if not uri:

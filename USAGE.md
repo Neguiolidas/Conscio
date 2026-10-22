@@ -197,6 +197,44 @@ Payload cap 64KB, retention 7 days after read.
   dispatch-only aliases.
 - Observatório read-only: `/api/agents`, `/api/halls`, `/api/mailboxes`.
 
+#### Codex reactor — waking an idle Codex session
+
+The Codex CLI has only a **Stop** hook, and a Stop hook cannot wake an idle
+session: relay traffic sat unread until a human typed. `conscio_wake.py react`
+closes that gap — a long-lived, read-only process that queues **one notice**
+per outstanding batch of unread messages into the Codex session:
+
+```
+codex queue --thread <session uuid> --message "relay: <Name> replied"
+```
+
+The notice is a label, never content (no message text, no ids). One latch:
+nothing else goes out until everything is read. An outstanding notice still
+unread after 30 min queues one more. A failed queue retries the same batch on
+a backoff (60 s → 15 min). The reactor exits when the Codex process dies
+(`--owner-pid`). Tunes: `CONSCIO_CODEX_BIN`, `CONSCIO_REACT_DEBOUNCE_S`,
+`CONSCIO_REACT_RENOTIFY_S`, `CONSCIO_REACT_RETRY_BASE_S`,
+`CONSCIO_REACT_RETRY_CAP_S`. Alive: `<space>/reactors/<session>.lock` and
+`<space>/reactors/<session>.json`. Details: `docs/RELAY.md`.
+
+The shipped plugin arms it: one `hooks.json` serves both hosts. Its
+`SessionStart` calls `codex_session_start` (a no-op on Claude) and its `Stop`
+reads the payload first — a Codex host is handed to the reactor, which starts
+one and never blocks the turn; a Claude payload keeps asking for the waiter
+(exit 2). No hand edit of the plugin cache is needed.
+
+After a plugin update the Codex re-approves the changed hooks once (`/hooks`) — the host's own trust step, not a relay one.
+
+The Codex `SessionStart` hook only spawns the reactor: it never runs the MCP
+server's interpreter and never blocks the session open. When it cannot resolve
+the space cheaply, it hands the reactor the plugin's `.mcp.json` path
+(`--mcp-config`) and the **reactor** resolves the space on its first iteration,
+under the server's own interpreter, with a 60 s timeout. An unusable
+`.mcp.json` — absent, invalid JSON, or without `mcpServers.conscio` — is a
+refusal: the reactor prints the cause on stderr and exits 3, never guessing
+another space. While the space is unknown, its output goes to
+`~/.conscio/reactor-logs/<session>.log`.
+
 ### v3.3 — Gate tools
 
 - `conscio_decide(question, options)` — structural decision with ADR
