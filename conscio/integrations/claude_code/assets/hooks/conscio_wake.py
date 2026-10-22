@@ -226,15 +226,37 @@ def _set_arm_blocked(storage: Path, session: str, record: dict | None,
     os.replace(tmp, path)
 
 
+def _read_stdin_payload() -> tuple[dict, bool]:
+    """The hook payload from stdin, read ONCE. ({}, False) when stdin is not a
+    JSON object: the Claude guard treats that as 'no payload' and stays silent.
+    The read happens before anything else so a Codex host can be recognised
+    without reading stdin a second time."""
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+    except Exception:
+        return {}, False
+    if not isinstance(payload, dict):
+        return {}, False
+    return payload, True
+
+
 def main(argv: list[str]) -> int:
     """Stop guard (spec §2.2): never announces, never opens the db (C9).
 
-    Order: no /proc -> 0; storage, self id or session unresolved or stdin
-    not JSON -> 0; the own spool dir missing -> 0 (a plugin user who never
-    joined a relay is never asked to arm anything). A live owned waiter ->
-    clear arm_blocked, exit 0. Else arm_blocked set -> clear it, exit 0
-    (C5: at most one forced turn end in a row). Else set arm_blocked, exit 2
-    with the exact arming command on stderr."""
+    Order: the payload first -- a Codex host (its transcript under the Codex
+    sessions root) belongs to the reactor path, not to this guard, and the
+    Stop hook of the shipped plugin is the same command for both hosts; then
+    no /proc -> 0; storage, self id or session unresolved or stdin not JSON
+    -> 0; the own spool dir missing -> 0 (a plugin user who never joined a
+    relay is never asked to arm anything). A live owned waiter -> clear
+    arm_blocked, exit 0. Else arm_blocked set -> clear it, exit 0 (C5: at
+    most one forced turn end in a row). Else set arm_blocked, exit 2 with the
+    exact arming command on stderr."""
+    payload, payload_ok = _read_stdin_payload()
+    if payload_ok and is_codex_host(payload, _codex_sessions_root()):
+        # C1: a Codex host is not this guard's business -- the reactor path
+        # answers it, and it never returns 2 (the waiter arming is Claude's).
+        return _cmd_codex_stop(argv, payload)
     if not PROC_ROOT.exists():
         return 0                                  # C8: cannot tell live from dead
     storage_raw = _argv_opt(argv, "--storage")
@@ -249,9 +271,7 @@ def main(argv: list[str]) -> int:
     if not _spool_dir(self_id).is_dir():
         return 0                                  # not on the relay (C6)
 
-    try:
-        payload = json.loads(sys.stdin.read() or "{}")
-    except Exception:
+    if not payload_ok:
         return 0
     session = str(payload.get("session_id") or "").strip()
     if not session:

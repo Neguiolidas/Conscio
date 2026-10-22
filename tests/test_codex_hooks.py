@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 import sqlite3
 import subprocess
 import sys
@@ -234,3 +235,92 @@ def test_spawn_spec_inprocess_absent_hands_mcp_config(tmp_path):
     finally:
         os.environ.pop("CONSCIO_CODEX_MCP_CONFIG", None)
         os.environ.pop("CONSCIO_CODEX_NO_INPROCESS", None)
+
+
+# ── C1 (4.10.0): the Stop guard routes a Codex host to the reactor ───────────
+
+HOOKS_JSON = HOOK.parent / "hooks.json"
+
+
+def _claude_env(tmp_path: Path, space: Path) -> dict:
+    """The env of the Claude Stop hook: the agent's space, its own spool (so
+    the guard is on the relay) and a relay root under the test tree."""
+    env = dict(os.environ)
+    env["CONSCIO_RELAY_ROOT"] = str(tmp_path / "relay-root")
+    (tmp_path / "relay-root" / "spool" / SELF_ID).mkdir(parents=True,
+                                                        exist_ok=True)
+    env["CONSCIO_SELF_ID"] = SELF_ID
+    env.pop("CONSCIO_CODEX_SESSIONS", None)
+    env.pop("CONSCIO_CODEX_BIN", None)
+    return env
+
+
+def test_stop_with_a_codex_payload_never_asks_for_a_waiter_and_wakes_the_reactor(
+        tmp_path):
+    """(C1) the shipped Stop command is the same for both hosts: the payload
+    says Codex, so the guard hands the session to the reactor (exit 0, no
+    'no waiter' message) instead of arming Claude's waiter (exit 2)."""
+    space = _make_space(tmp_path)
+    sessions = tmp_path / "codex-sessions"
+    sessions.mkdir()
+    # the codex ancestor: a copy of bash named 'codex' (the owner walk looks
+    # for an ancestor whose argv[0] is the codex binary)
+    fake_codex = tmp_path / "codex"
+    fake_codex.write_bytes(Path("/bin/bash").read_bytes())
+    fake_codex.chmod(0o755)
+    env = _claude_env(tmp_path, space)
+    env["CONSCIO_CODEX_SESSIONS"] = str(sessions)
+    env["CONSCIO_CODEX_BIN"] = str(fake_codex)
+    payload = {"session_id": SESSION_C, "transcript_path": str(sessions / "t.json")}
+    payload_file = tmp_path / "payload.json"
+    payload_file.write_text(json.dumps(payload), encoding="utf-8")
+    hook_cmd = f"{sys.executable} {HOOK} stop --storage {space}"
+    # the '&& true' keeps bash from exec'ing the hook in place: the codex
+    # ancestor has to stay alive as the hook's parent
+    r = subprocess.run(
+        ["bash", "-c",
+         (f"cat {payload_file} | {fake_codex} -c "
+          f"{shlex.quote(hook_cmd + ' && true')}")],
+        capture_output=True, text=True, env=env, timeout=30)
+    assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+    assert "no waiter" not in r.stderr, r.stderr
+    log = space / "reactors" / f"{SESSION_C}.log"
+    deadline = time.time() + 10
+    while time.time() < deadline and not log.exists():
+        time.sleep(0.05)
+    assert log.exists(), "the reactor was not triggered"
+
+
+def test_stop_with_a_claude_payload_still_asks_for_the_waiter(tmp_path):
+    """(C1) the Claude behaviour is untouched: a Claude payload without a
+    waiter still exits 2 with the arming command on stderr."""
+    space = _make_space(tmp_path)
+    env = _claude_env(tmp_path, space)
+    payload = {"session_id": SESSION_C, "transcript_path": "/not/a/codex/t.json"}
+    r = subprocess.run(
+        [sys.executable, str(HOOK), "stop", "--storage", str(space)],
+        input=json.dumps(payload), capture_output=True, text=True, env=env,
+        timeout=30)
+    assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
+    assert "no waiter for this session" in r.stderr, r.stderr
+
+
+def test_the_shipped_hooks_json_arms_the_reactor_without_machine_paths():
+    """(C1) the shipped hooks.json: the SessionStart arms the Codex reactor,
+    every command is relative to ${CLAUDE_PLUGIN_ROOT} (no machine path), and
+    the Stop keeps calling `stop` -- the code, not the file, routes a Codex
+    payload."""
+    data = json.loads(HOOKS_JSON.read_text(encoding="utf-8"))
+    hooks = data["hooks"]
+    commands = [h["command"] for group in hooks.values()
+                for entry in group for h in entry["hooks"]]
+    start = [h["command"] for entry in hooks["SessionStart"]
+             for h in entry["hooks"]]
+    assert any("codex_session_start" in c for c in start), start
+    stop = [h["command"] for entry in hooks["Stop"] for h in entry["hooks"]]
+    assert any('conscio_wake.py" stop --storage "${CLAUDE_PLUGIN_DATA}/space"'
+               in c for c in stop), stop
+    for c in commands:
+        assert "${CLAUDE_PLUGIN_ROOT}" in c, c
+        assert "/home/" not in c, c
+        assert c.startswith('python3 "${CLAUDE_PLUGIN_ROOT}/'), c
