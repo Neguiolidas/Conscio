@@ -126,6 +126,18 @@ never returns 2. A **Claude** payload keeps the old behaviour exactly: exit 2
 with the arming command on stderr, asking Claude for a waiter. Nothing in the
 plugin cache has to be edited by hand; the cache is rebuilt from the package.
 
+**After updating the plugin, the Codex asks once to trust the changed
+hooks** (`/hooks`): it will not run them until you approve. This is the
+host's own trust mechanism, not a relay step.
+
+**The reactor is a detached process: it does NOT show up in the Codex's
+`/ps`.** To check it is alive, read the log at
+`~/.conscio/reactor-logs/<session>.log` while the space is still unknown
+(the fallback the spawner uses when the reactor was handed the `.mcp.json`
+path, `conscio_wake.py:1194`), then `<space>/reactors/<session>.log` once the
+space is known (`:1190`), and the state at `<space>/reactors/<session>.json`
+(`:584`). The reactor runs detached (`start_new_session=True`, `:1201`).
+
 **The SessionStart never runs the server.** The Codex `SessionStart` hook
 spawns the reactor detached and prints the notice instruction as JSON; it
 never runs the MCP server's interpreter (`uvx`) and never blocks the session

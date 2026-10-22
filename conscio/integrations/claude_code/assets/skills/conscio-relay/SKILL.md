@@ -240,6 +240,8 @@ Use `unread_only=false` with your `since_id` cursor — the reactor marks
 messages read on ingestion, so a box filtered by the unread flag can look
 empty while the message is already there.
 
+After a plugin update the Codex re-approves the changed hooks once (`/hooks`) — the host's own trust step, not a relay one.
+
 ## Message style (relay responses)
 
 Direct and cohesive, always. No fluff, no greeting padding, no restating what

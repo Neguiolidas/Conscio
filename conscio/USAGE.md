@@ -223,6 +223,8 @@ reads the payload first — a Codex host is handed to the reactor, which starts
 one and never blocks the turn; a Claude payload keeps asking for the waiter
 (exit 2). No hand edit of the plugin cache is needed.
 
+After a plugin update the Codex re-approves the changed hooks once (`/hooks`) — the host's own trust step, not a relay one.
+
 The Codex `SessionStart` hook only spawns the reactor: it never runs the MCP
 server's interpreter and never blocks the session open. When it cannot resolve
 the space cheaply, it hands the reactor the plugin's `.mcp.json` path

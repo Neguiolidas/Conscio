@@ -54,6 +54,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returns 2. A Claude payload keeps the previous behaviour exactly: exit 2
   with the arming command on stderr. The plugin cache no longer has to be
   edited by hand.
+- **The phantom-tool guard scans the whole hooks package.** A
+  `conscio.<x>` citation in an asset is read by file type: in Markdown it
+  names a tool and stays strict (the known-tools list plus a hand-kept
+  module list — a real module cited as a tool is still a phantom there);
+  in a hook's `.py` it names an import, and the module must exist
+  (probed with `find_spec`, never imported). The seven files under
+  `conscio_honesty_pkg/` — previously never scanned — are covered, and a
+  test pins that every `.py` on disk under `hooks/` is in the scan
+  (`e311190`, `df6bc2f`, `8a231a4`).
 
 ### Fixed
 - **The MCP server answers `resources/templates/list` instead of refusing it.**
