@@ -22,6 +22,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 HOOK = (
     Path(__file__).resolve().parents[1]
     / "conscio" / "integrations" / "claude_code" / "assets" / "hooks"
@@ -750,3 +752,37 @@ def test_reactor_invalid_mcp_config_writes_error_and_exits(tmp_path):
     assert r.returncode != 0, (r.returncode, r.stdout, r.stderr)
     st = _state(space)
     assert st.get("error"), st      # the resolution cause was recorded
+
+
+# ── L1: an unusable .mcp.json is refused, whatever shape it has ──────────────
+
+@pytest.mark.parametrize("shape", ["absent", "broken-json", "no-conscio"])
+def test_reactor_refuses_an_unusable_mcp_config(tmp_path, shape):
+    """(L1) the .mcp.json the reactor was handed cannot be used: the file is
+    absent, the JSON is broken, or the config carries no mcpServers.conscio.
+    In every shape the reactor says WHY ("invalid .mcp.json"), exits non-zero
+    and leaves NO state behind: a resolve that invented a space would wake the
+    wrong Codex session and bury the failure."""
+    fake = tmp_path / "fake-space"     # the space a broken resolve would invent
+    _spool_dir(tmp_path)
+    wrapper, log = _fake_codex(tmp_path, f"mcp-{shape}")
+    mcp = tmp_path / "mcp.json"
+    if shape == "broken-json":
+        mcp.write_text("{ this is not json", encoding="utf-8")
+    elif shape == "no-conscio":
+        # a valid config naming ANOTHER server, and pointing it at a space:
+        # the reactor must not fall back to it.
+        mcp.write_text(json.dumps({"mcpServers": {"other": {
+            "command": "conscio-mcp",
+            "args": ["conscio-mcp", "--storage", str(fake)]}}}),
+            encoding="utf-8")
+    env = _react_env(tmp_path, codex=str(wrapper), log=str(log),
+                     debounce="0.1")
+    r = subprocess.run(
+        _react_argv_mcp(str(mcp), "0", None, interval="0"),
+        capture_output=True, text=True, env=env, timeout=30)
+    assert r.returncode != 0, (r.returncode, r.stdout, r.stderr)
+    assert "invalid .mcp.json" in r.stderr, r.stderr
+    assert not fake.exists(), fake              # no state in a space it invented
+    assert not list(tmp_path.rglob("reactors")), \
+        list(tmp_path.rglob("reactors"))         # no state anywhere
