@@ -1,4 +1,5 @@
 """Every conscio.<name> an asset mentions must be a tool the server can serve."""
+import importlib.util
 import re
 from pathlib import Path
 
@@ -19,23 +20,35 @@ KNOWN = {d["name"] for group in (BASE_TOOL_DEFS, ACT_TOOL_DEFS,
 REF = re.compile(r"\bconscio\.[a-z_]\w*")
 
 # `conscio.<nome>` é ambíguo: é como uma tool MCP se chama E como um módulo
-# Python se importa. Citar um módulo numa docstring é legítimo, então cada um
-# entra aqui à mão. Um módulo novo citado num asset QUEBRA o teste de propósito:
-# obriga um humano a decidir a qual dos dois namespaces aquilo pertence. Não
-# use find_spec() para automatizar isto — falharia aberto, engolindo uma tool
-# fantasma sempre que o nome inventado coincidisse com um módulo real
-# (`conscio.engine`, `conscio.mcp`…).
-MODULE_REFS = {"conscio.timeutil", "conscio.liaison"}
+# Python se importa. Citar um módulo numa docstring é legítimo, então um
+# `conscio.<x>` citado num asset passa quando `conscio.<x>` é um módulo que
+# existe. A sondagem é find_spec, NUNCA import: importar o módulo para
+# checá-lo executaria o código dele (medido: a sonda de import custa caro
+# demais para um guarda que roda em toda a suíte). Consequência aceita: um
+# nome de tool inventado que coincida com um módulo real passaria — o
+# guarda refusa o que não existe nem como tool nem como módulo.
+def _is_module(ref: str) -> bool:
+    """True when `ref` names an importable module of this package."""
+    try:
+        return importlib.util.find_spec(ref) is not None
+    except (ImportError, ValueError):
+        return False
+
 
 # Terceiro namespace que colide com o mesmo padrão: NOME DE ARQUIVO. O banco do
 # espaço chama-se `conscio.db`, e citá-lo é obrigatório em qualquer texto que
 # explique onde uma coisa é gravada — a skill de relay cita justamente para
-# dizer que `conscio_remember` NÃO escreve nele. Separado de MODULE_REFS porque
-# a decisão humana é outra: aqui se pergunta "isto é um arquivo?", lá "isto é um
-# módulo?". Juntar os dois num set só apagaria a pergunta.
+# dizer que `conscio_remember` NÃO escreve nele. Não é um módulo: continua
+# listado à mão.
 FILE_REFS = {"conscio.db"}
 
-NON_TOOL_REFS = MODULE_REFS | FILE_REFS
+
+def _phantom_refs(text: str) -> list[str]:
+    """The conscio.<name> citations in `text` that name neither a tool the
+    server serves nor a module that exists."""
+    return sorted({ref for ref in REF.findall(text)
+                   if ref not in KNOWN and ref not in FILE_REFS
+                   and not _is_module(ref)})
 
 
 def _asset_files():
@@ -47,11 +60,19 @@ def _asset_files():
 def test_no_phantom_tool_references():
     phantoms = {}
     for path in _asset_files():
-        bad = {ref for ref in REF.findall(path.read_text("utf-8"))
-               if ref not in KNOWN and ref not in NON_TOOL_REFS}
+        bad = _phantom_refs(path.read_text("utf-8"))
         if bad:
-            phantoms[path.name] = sorted(bad)
+            phantoms[path.name] = bad
     assert not phantoms, f"assets cite tools that do not exist: {phantoms}"
+
+
+def test_a_real_module_is_not_a_phantom_but_an_invented_name_still_is():
+    """The guard accepts a module that exists — the T2b imports
+    `conscio.installer.durable` in the hook — and still refuses a name that
+    exists neither as a tool nor as a module."""
+    assert _phantom_refs("from conscio.installer.durable import resolve_space") == []
+    assert _phantom_refs("run conscio.no_such_module_xyz now") == [
+        "conscio.no_such_module_xyz"]
 
 
 def test_stack_dependent_commands_explain_instead_of_failing():
@@ -70,5 +91,6 @@ def test_skill_only_cites_tools_available_in_balanced():
     text = (ASSETS / "skills" / "conscio" / "SKILL.md").read_text("utf-8")
     cited = set(REF.findall(text))
     outside = (cited - modes.BALANCED_TOOLS - {MODE_TOOL_DEF["name"]}
-               - NON_TOOL_REFS)
+               - {ref for ref in cited
+                  if ref in FILE_REFS or _is_module(ref)})
     assert not outside, f"SKILL.md cites tools absent from the plugin's default mode: {sorted(outside)}"
