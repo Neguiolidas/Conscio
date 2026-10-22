@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [4.10.0] - 2026-10-22 — The Codex wakes itself, and the wheel ships its lock
 
 ### Added
 - **The Codex reactor wakes an idle Codex session on relay traffic.**
@@ -42,6 +42,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for a missing `--storage` and a missing interpreter) and the reactor exits
   3. While the space is unknown, the reactor's output goes to
   `~/.conscio/reactor-logs/<session>.log`.
+- **The shipped plugin arms the Codex reactor; no hand edit is needed.**
+  Claude Code and the Codex share one `hooks.json`, and the shipped one never
+  called the reactor: the `SessionStart` had no `codex_session_start` and the
+  `Stop` called the Claude guard, which asks Claude for a waiter and exits 2.
+  The `SessionStart` gains one entry (`codex_session_start`, with the
+  plugin's own `--storage`; on Claude it is a no-op — an unknown host means
+  Claude behaviour), and the `Stop` keeps calling `stop`: the hook now reads
+  its payload once, before anything else, and a Codex host — its transcript
+  under the Codex sessions root — is handed to the reactor path, which never
+  returns 2. A Claude payload keeps the previous behaviour exactly: exit 2
+  with the arming command on stderr. The plugin cache no longer has to be
+  edited by hand.
 
 ### Fixed
 - **The MCP server answers `resources/templates/list` instead of refusing it.**
@@ -67,6 +79,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `serve()` returns: teardown reads as a clean exit (verified with the
   real binary: exit 0, stderr carrying only the startup banner), not as a
   crash.
+- **The lock carries the runtime dependency the wheel needs.**
+  `pyproject.toml` has required `cryptography>=42` at runtime since
+  `26db5c6`, but `uv.lock` was never relocked, so an install from the lock
+  left it out. The lock now carries `cryptography`, `cffi` and `pycparser`.
 
 ---
 

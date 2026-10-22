@@ -23,7 +23,7 @@ memory, self-judgment and procedural skill — and proves every claim by
 measurement, not assertion. Local-first with a small core
 (`numpy`, plus `cryptography` for signed noosphere artifacts; storage is stdlib `sqlite3`).
 
-**Latest release — `v4.9.3` "The wheel ships its data, and the silence warns":** the published 4.9.2 wheel was missing `model-providers.json`, the voice presets and the axis packs, so every install ran with no provider table, no voice style and no axes — quietly, because all three loaders are advisory by design. 4.9.3 ships them, adds a release gate that checks the wheel artifact itself rather than the source tree (a stale `build/` hides the gap), and makes a missing data file warn once naming the path, while a preset switched off on purpose stays silent.
+**Latest release — `v4.10.0` "The Codex wakes itself, and the wheel ships its lock":** the Codex CLI could not notice relay traffic while it sat idle, and the plugin never armed the reactor that fixes it: the shipped `hooks.json` now starts it (no hand edit of the plugin cache), the `Stop` hook recognises a Codex host and wakes the reactor instead of asking Claude for a waiter, and the reactor resolves the space from the plugin's own `.mcp.json` under the server's own interpreter — refusing an unusable one instead of guessing. The MCP server also answers `resources/templates/list` instead of refusing it, a broken `initialize` hook costs the request instead of the process, a client that vanishes ends the session cleanly, and the lock file finally carries the `cryptography` the wheel has required at runtime.
 
 See [CHANGELOG](CHANGELOG.md) for details.
 

@@ -217,6 +217,12 @@ a backoff (60 s → 15 min). The reactor exits when the Codex process dies
 `CONSCIO_REACT_RETRY_CAP_S`. Alive: `<space>/reactors/<session>.lock` and
 `<space>/reactors/<session>.json`. Details: `docs/RELAY.md`.
 
+The shipped plugin arms it: one `hooks.json` serves both hosts. Its
+`SessionStart` calls `codex_session_start` (a no-op on Claude) and its `Stop`
+reads the payload first — a Codex host is handed to the reactor, which starts
+one and never blocks the turn; a Claude payload keeps asking for the waiter
+(exit 2). No hand edit of the plugin cache is needed.
+
 The Codex `SessionStart` hook only spawns the reactor: it never runs the MCP
 server's interpreter and never blocks the session open. When it cannot resolve
 the space cheaply, it hands the reactor the plugin's `.mcp.json` path

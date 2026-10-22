@@ -115,6 +115,17 @@ process; when that process is gone the reactor exits 0.
 `2 × interval + 1` seconds for the lock and then stands down (exit 0) without
 queueing anything.
 
+**The shipped plugin arms it; no hand edit is needed.** Claude Code and the
+Codex share one `hooks.json`, and the shipped one does the whole job: its
+`SessionStart` calls `codex_session_start` (a no-op on Claude — an unknown
+host means Claude behaviour), and its `Stop` calls the same `stop` command for
+both hosts. The hook reads its payload once, before anything else: a **Codex
+host** — its transcript under the Codex sessions root — is handed to the
+reactor path, which starts a reactor when none holds the session lock and
+never returns 2. A **Claude** payload keeps the old behaviour exactly: exit 2
+with the arming command on stderr, asking Claude for a waiter. Nothing in the
+plugin cache has to be edited by hand; the cache is rebuilt from the package.
+
 **The SessionStart never runs the server.** The Codex `SessionStart` hook
 spawns the reactor detached and prints the notice instruction as JSON; it
 never runs the MCP server's interpreter (`uvx`) and never blocks the session

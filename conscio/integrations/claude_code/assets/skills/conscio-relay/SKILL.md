@@ -144,6 +144,7 @@ builds, and only one of them holds:
 | `conscio_wake.py` guard | on **Stop**, once (asks to arm the waiter) | no | stable |
 | `Monitor` over an endless loop | on every stdout line | yes | **died 4x in a row** |
 | a process that **waits and exits** | on exit — the exit IS the event | yes | 5 fires / 2 attributed wakes, no failure |
+| the **Codex reactor** (`conscio_wake.py react`) | when relay traffic arrives | yes | one notice per batch, retried with a backoff |
 
 The hook no longer reads the mailbox at turn end and keeps no cursor. On
 **Stop** it asks once for the waiter to be armed (blocking that turn end at
@@ -195,8 +196,9 @@ Rules the loop must respect, in either mode:
 There is no `wake-off` opt-out any more: the guard stands down on its own
 (`arm_blocked` alternation — at most one forced turn end in a row), and a
 plugin user who never joined a relay is never asked to arm anything (their
-spool directory does not exist). **Do not edit the plugin's `hooks.json`**,
-which is cache and disappears on the next update.
+spool directory does not exist). **Do not edit the plugin's `hooks.json`**:
+it is cache, it is rebuilt from the package on every update, and the package
+already carries the Codex entries — a hand edit is lost on the next update.
 
 Redundancy between the guard and a watcher you arm yourself costs one extra
 arming line per turn; a watcher that dies unnoticed costs every message until
@@ -212,6 +214,31 @@ chronological order, not the size of the idle gap — idle margin is only a chea
 way to guarantee it. Then check two independent witnesses: the watcher's own
 output (the line plus exit 0) and the absence of hook feedback attached to the
 re-invocation.
+
+## How the Codex wakes itself
+
+The Codex CLI has **no background tool**: there is no waiter to arm, and the
+Stop hook cannot wake an idle session. The plugin's own hooks do it:
+
+- the `SessionStart` hook starts the **reactor** (`conscio_wake.py react`) —
+  a long-lived, read-only process;
+- the reactor watches the spool and the database and queues **one notice**
+  into the session with `codex queue --thread <session uuid> --message
+  "relay: <Name> replied"`;
+- the notice is a label, never content: sender names only, no message text
+  and no message ids;
+- the `Stop` hook recognises a Codex host and wakes the reactor instead of
+  asking for a waiter. Nothing in the plugin cache is edited by hand.
+
+The agent's side is the same as every other runtime: read the inbox and act.
+
+```
+conscio_relay inbox (op=inbox, unread_only=false, since_id=<last id you consumed>)
+```
+
+Use `unread_only=false` with your `since_id` cursor — the reactor marks
+messages read on ingestion, so a box filtered by the unread flag can look
+empty while the message is already there.
 
 ## Message style (relay responses)
 
