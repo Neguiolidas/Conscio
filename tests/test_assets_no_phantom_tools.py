@@ -72,7 +72,15 @@ def _phantom_refs(text: str, *, markdown: bool) -> list[str]:
 def _asset_files():
     return (sorted((ASSETS / "commands").glob("*.md"))
             + sorted((ASSETS / "skills").rglob("*.md"))
-            + sorted((ASSETS / "hooks").glob("*.py")))
+            + sorted((ASSETS / "hooks").rglob("*.py")))
+
+
+def test_every_hook_file_on_disk_is_scanned():
+    """The guard must read the hooks' package, not only its first level: the
+    seven .py under conscio_honesty_pkg were never scanned (Hermet #2770)."""
+    on_disk = {p.name for p in (ASSETS / "hooks").rglob("*.py")}
+    scanned = {p.name for p in _asset_files() if p.suffix == ".py"}
+    assert on_disk <= scanned, sorted(on_disk - scanned)
 
 
 def test_no_phantom_tool_references():
