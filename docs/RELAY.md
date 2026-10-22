@@ -115,26 +115,47 @@ process; when that process is gone the reactor exits 0.
 `2 × interval + 1` seconds for the lock and then stands down (exit 0) without
 queueing anything.
 
-<!-- T2 -->
-<!-- The Codex host hooks — the SessionStart hook that spawns the reactor, the
-     Stop hook that keeps it alive, and the plugin install for the Codex host —
-     are defined by the hooks task; that part of this section is filled in
-     there. -->
+**The SessionStart never runs the server.** The Codex `SessionStart` hook
+spawns the reactor detached and prints the notice instruction as JSON; it
+never runs the MCP server's interpreter (`uvx`) and never blocks the session
+open. When the cheap in-process resolve lands, the hook hands the reactor the
+resolved `--storage`; otherwise it hands the reactor the plugin's `.mcp.json`
+path (`--mcp-config`) and the **reactor** resolves the space itself, on its
+first iteration, under the server's own interpreter, with a 60 s timeout. The
+`Stop` hook does the same: it spawns a reactor whenever none holds the lock
+for that session.
 
 **Command line.**
 
 ```
-conscio_wake.py react --storage <space> --session <codex session uuid> \
+conscio_wake.py react (--storage <space> | --mcp-config <path to .mcp.json>) \
+  --session <codex session uuid> \
   --owner-pid <pid> [--interval 2] [--liaison-db <path>]
 ```
 
-`--storage` and `--session` are required; `--owner-pid` is what makes the
-reactor exit with the Codex; the interval defaults to 2 seconds and the liaison
-database to `<space>/liaison.db`. A setup the reactor cannot work with (no
-`--storage`, no `--session`, a non-integer `--interval`, a space that cannot
-be resolved, a missing database, a missing or invalid instance id, no `codex`
-CLI at all) exits 3 with one line on stderr. Any other failure exits 0: a
-broken relay must never trap the session.
+`--session` is required, and the reactor needs either `--storage` or
+`--mcp-config`; `--owner-pid` is what makes the reactor exit with the Codex;
+the interval defaults to 2 seconds and the liaison database to
+`<space>/liaison.db`. A setup the reactor cannot work with (no `--storage` and
+no `--mcp-config`, no `--session`, a non-integer `--interval`, a space that
+cannot be resolved, a missing database, a missing or invalid instance id, no
+`codex` CLI at all) exits 3 with one line on stderr. Any other failure exits
+0: a broken relay must never trap the session.
+
+**An unusable `.mcp.json` is a refusal, not a guess.** With `--mcp-config`,
+the reactor reads the `mcpServers.conscio` entry of the plugin's `.mcp.json`
+and resolves the space from its `--storage`. When it cannot, it says why on
+stderr and exits 3 — it never falls back to another space:
+
+| the `.mcp.json` | the cause on stderr |
+|---|---|
+| absent, or JSON that does not parse, or no `mcpServers.conscio` | `invalid .mcp.json at <path> (no mcpServers.conscio)` |
+| the `conscio` entry names no `--storage` | `no --storage in the .mcp.json at <path>` |
+| the entry names no runnable interpreter | `no runnable interpreter in the .mcp.json at <path>` |
+| the interpreter cannot resolve the space | `the MCP interpreter could not resolve the space (--storage <value>) at <path>` |
+
+The cause is also written to the state file under the `.mcp.json`'s own
+`--storage` input, when that directory exists.
 
 **What it reads.**
 
@@ -154,7 +175,12 @@ broken relay must never trap the session.
 <space>/reactors/<session>.lock    # the lock that keeps a second reactor out
 <space>/reactors/<session>.json    # the state: outstanding, outstanding_since,
                                    # error, retry_at, backoff_s
+<space>/reactors/<session>.log     # the reactor's own output
 ```
+
+When the space is still unknown — the reactor was handed the `.mcp.json` path
+and has not resolved it yet — its output goes to a fallback directory instead:
+`~/.conscio/reactor-logs/<session>.log`.
 
 `error` carries the last queue failure and `retry_at` when the same batch is
 retried; `outstanding` says a notice is still waiting to be read.

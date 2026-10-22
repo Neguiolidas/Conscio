@@ -217,9 +217,15 @@ a backoff (60 s → 15 min). The reactor exits when the Codex process dies
 `CONSCIO_REACT_RETRY_CAP_S`. Alive: `<space>/reactors/<session>.lock` and
 `<space>/reactors/<session>.json`. Details: `docs/RELAY.md`.
 
-<!-- T2 -->
-<!-- The Codex host hooks (SessionStart spawn, Stop keep-alive, plugin install)
-     are defined by the hooks task; that part is filled in there. -->
+The Codex `SessionStart` hook only spawns the reactor: it never runs the MCP
+server's interpreter and never blocks the session open. When it cannot resolve
+the space cheaply, it hands the reactor the plugin's `.mcp.json` path
+(`--mcp-config`) and the **reactor** resolves the space on its first iteration,
+under the server's own interpreter, with a 60 s timeout. An unusable
+`.mcp.json` — absent, invalid JSON, or without `mcpServers.conscio` — is a
+refusal: the reactor prints the cause on stderr and exits 3, never guessing
+another space. While the space is unknown, its output goes to
+`~/.conscio/reactor-logs/<session>.log`.
 
 ### v3.3 — Gate tools
 

@@ -31,6 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (3 s), `CONSCIO_REACT_RENOTIFY_S` (1800 s), `CONSCIO_REACT_RETRY_BASE_S`
   (60 s), `CONSCIO_REACT_RETRY_CAP_S` (900 s), `CONSCIO_RELAY_ROOT` and
   `CONSCIO_SELF_ID`; its lock and state live in `<space>/reactors/`.
+  The Codex `SessionStart` hook only spawns the reactor: it never runs the MCP
+  server's interpreter and never blocks the session open. When it cannot
+  resolve the space cheaply, it hands the reactor the plugin's `.mcp.json`
+  path (`--mcp-config`) and the reactor resolves the space on its first
+  iteration, under the server's own interpreter, with a 60 s timeout. An
+  unusable `.mcp.json` — absent, invalid JSON, or without `mcpServers.conscio`
+  — is refused, not guessed: the cause is printed on stderr (`invalid
+  .mcp.json at <path> (no mcpServers.conscio)`, and the two sibling causes
+  for a missing `--storage` and a missing interpreter) and the reactor exits
+  3. While the space is unknown, the reactor's output goes to
+  `~/.conscio/reactor-logs/<session>.log`.
 
 ### Fixed
 - **The MCP server answers `resources/templates/list` instead of refusing it.**
