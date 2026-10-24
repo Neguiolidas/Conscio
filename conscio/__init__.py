@@ -40,6 +40,7 @@ from .gates import (  # noqa: F401
     COUNCIL_ROLES,
     COUNCIL_VOTES,
     council,
+    council_trait_scores,
     decide,
     delivery_check,
     investigate,
