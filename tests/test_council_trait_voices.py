@@ -80,13 +80,16 @@ def test_skeptic_unverified_swings_mitigated_bypass_to_veto(engine):
     """skeptic: bypasses_checks (4) with verified (2) sits at 2 < hold 3
     (proceed); adding unverified (2) pushes score to 4 >= veto 4 (veto).
     Pins W_SKEPTIC_UNVERIFIED > 0."""
+    # Round 2 (2026-10-24): integer scores add across voices; the voice
+    # line is hold 2 / veto 5. bypasses_checks 3 - verified 1 = 2 (hold);
+    # + unverified 2 = 4 — the score must rise with the unverified trait.
     mitigated_only = gates._voice_skeptic(
         engine, "skip the build step", "already reviewed", None)
     unverified_combo = gates._voice_skeptic(
         engine, "skip the build step", "already reviewed but probably has edge cases", None)
-    assert mitigated_only["vote"] == "proceed"
-    assert unverified_combo["vote"] == "veto"
-    assert _gates_severity(unverified_combo["vote"]) > _gates_severity(mitigated_only["vote"])
+    assert mitigated_only["vote"] == "hold"
+    assert unverified_combo["trait_score"] > mitigated_only["trait_score"]
+    assert gates.W_SKEPTIC_UNVERIFIED > 0
     assert any("trait unverified" in c for c in unverified_combo["concerns"])
 
 
@@ -149,9 +152,11 @@ def test_critic_irreversible_without_reversible_holds(engine):
         engine, "drop the orders table", "no backup available", None)
     mitigated = gates._voice_critic(
         engine, "drop the orders table", "backup available", None)
-    assert naked["vote"] == "hold"
+    # Round 2: the critic's own share is small (1); the council sums it
+    # with the architect's irreversible (2) — the score is what moves.
+    assert naked["trait_score"] > mitigated["trait_score"]
     assert mitigated["vote"] == "proceed"
-    assert _gates_severity(naked["vote"]) > _gates_severity(mitigated["vote"])
+    assert gates.W_CRITIC_IRREVERSIBLE_NO_REVERSIBLE > 0
 
 
 # ── council level: the verdict follows the stricter voice ────────────
@@ -177,17 +182,26 @@ def test_council_recommendation_follows_trait_veto(engine):
 
 
 def test_council_hold_without_veto_when_two_holds(engine):
-    """No trait veto, but at least two trait holds -> the council
-    holds (aggregation rule: >= 2 holds -> hold)."""
+    """Round 2 (2026-10-24): the text part of the verdict reads the SUM
+    of the voices' trait scores. Two moderate concerns in two different
+    voices (underspecified + pending step) add up to hold even though
+    no single voice vetoes; dropping a table with no backup on top of
+    that crosses the veto line."""
     result = gates.council(
+        engine,
+        question="ship the release",
+        context="the deadline is tbd and the migration is still pending",
+    )
+    votes = _votes(result)
+    assert votes.count("veto") == 0
+    assert result["recommendation"] == "hold"
+    worse = gates.council(
         engine,
         question="ship the release",
         context="the deadline is tbd; drop the orders table; no backup available",
     )
-    votes = _votes(result)
-    assert votes.count("veto") == 0
-    assert votes.count("hold") >= 2
-    assert result["recommendation"] == "hold"
+    assert worse["recommendation"] == "veto"
+    assert worse["trait_score"]["total"] >= worse["trait_score"]["veto_at"]
 
 
 def test_council_clean_engine_still_proceeds_unanimously(engine):

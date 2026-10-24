@@ -2,7 +2,8 @@
 """Trait extraction for the Council (spec 2026-09-26, section 5.1).
 
 ``extract_traits(question, context, options) -> Traits`` reads the English
-text of the Council input and lights a fixed set of nine boolean traits.
+text of the Council input and lights a fixed set of boolean traits (nine
+from the spec, plus failure_evidence and missing_check since 2026-10-24).
 The extractor is deterministic, dependency-free, and offline: it is pure
 regex over the input text.
 
@@ -76,10 +77,12 @@ LOCAL_NEGATORS = frozenset({
     "cannot", "lack", "lacks", "lacking",
     "dont", "doesnt", "didnt", "isnt", "arent", "wasnt", "werent",
     "hasnt", "havent", "hadnt", "cant", "couldnt", "wont", "wouldnt", "shouldnt",
+    # Round 2 (2026-10-24): Portuguese (PT-BR) local negators.
+    "não", "nao", "sem", "nunca", "nenhum", "nenhuma", "nem", "jamais",
 })
 #: Clause negators: cancel every trigger later in the SAME sentence
 #: (a null subject negates the whole predicate: "nobody ... has reviewed").
-CLAUSE_NEGATORS = frozenset({"nobody", "nothing"})
+CLAUSE_NEGATORS = frozenset({"nobody", "nothing", "ninguém", "ninguem", "nada"})
 #: Mitigator traits: post-trigger absence predicates apply ONLY to these three
 #: (spec 5.1 item 7, H51 finding 1; cancelling risk traits post-trigger is prohibited).
 _MITIGATOR_TRAITS = frozenset({"reversible", "verified", "low_stakes"})
@@ -109,7 +112,9 @@ _SENTENCE_END = ".!?;"
 # name, not the negator "no"); contractions stay one word ("don't",
 # "doesn\u2019t"); a decimal "1.5" tokenizes as "1" and "5".
 _WORD_RE = re.compile(
-    r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*(?:['\u2019][A-Za-z0-9]+)*")
+    r"[^\W_]+(?:-[^\W_]+)*(?:['\u2019][^\W_]+)*")
+# Round 2 (2026-10-24): letters are Unicode letters, so Portuguese words
+# with accents ("não", "ninguém") are one word each, as in English.
 
 # Trigger table: trait -> (pattern, provenance). Every pattern is compiled
 # case-insensitive; single-word triggers are word-boundary anchored.
@@ -173,6 +178,44 @@ TRIGGERS: dict[str, list[tuple[str, str]]] = {
         (r"\bnot\s+decided\b", "spec 5.1 (atomic: starts with a negation word)"),
         (r"\bunclear\b", "dev c1-15; spec 5.1"),
     ],
+    # Evidence AGAINST the action is already on the table: a crash, a
+    # failure, a regression, or a measured lack of gain (2026-10-24
+    # council-calibration fix: before it no trait read this evidence,
+    # so a question carrying it lit nothing and four clean voices
+    # rubber-stamped "proceed"). Pre-trigger negation still applies:
+    # "no regression" and "did not crash" stay off.
+    "failure_evidence": [
+        (r"\bcrash(?:es|ed|ing)?\b", "repro 2026-10-24 (hugepages SIGBUS)"),
+        (r"\bsigbus\b", "repro 2026-10-24"),
+        (r"\bsegfaults?\b", "2026-10-24 fix"),
+        (r"\bpanic(?:s|ked)?\b", "2026-10-24 fix"),
+        (r"\bout\s+of\s+memory\b", "dev a06"),
+        (r"\boom\b", "2026-10-24 fix"),
+        (r"\bregress(?:ion|ions|ed)\b", "dev c1-13"),
+        (r"\bbroke(?:n)?\b", "dev b07"),
+        # "false failures" are reports that were wrong, not failures.
+        (r"(?<!false )\bfail(?:s|ed|ing|ure|ures)\b",
+         "dev a01 a15 b21 b25 c1-07 c1-13 c1-17; repro 2026-10-24 (false failures)"),
+        (r"\bno\s+(?:measurable\s+|measured\s+|real\s+)?(?:gain|improvement|benefit|speedup)\b",
+         "repro 2026-10-24 (atomic: starts with a negation word)"),
+        (r"\bdata\s+loss\b", "2026-10-24 fix"),
+    ],
+    # A required check is DECLARED not done: never run, not reviewed,
+    # not verified, nobody looked, we do not know (2026-10-24 fix: the
+    # negation rule only switched the "verified" mitigator OFF; it never
+    # turned the missing check into a risk). Every pattern is atomic —
+    # it starts with its own negation word, which does not self-cancel.
+    "missing_check": [
+        (r"\bnever\s+(?:been\s+)?(?:run|executed|tested|reviewed|measured|verified|observed)\b",
+         "dev a19 b11 m06"),
+        (r"(?:\bnot|\b[A-Za-z]+n['\u2019]t)\s+(?:yet\s+)?(?:been\s+)?"
+         r"(?:reviewed|verified|tested|measured|confirmed"
+         r"|observed|validated|approved|happened|run)\b",
+         "dev a04 a12 b14 b20 m06 m08"),
+        (r"\bnobody\b[^.;!?]*?\b(?:reviewed|measured|verified|tested|knows)\b", "dev a08 b15"),
+        (r"\b(?:do|does|did)\s+not\s+know\b", "dev b17"),
+        (r"\bno\s+(?:usage\s+)?(?:metrics?|alerts?)\b", "dev b17 c1-07"),
+    ],
     # Mitigator: there is a way back.
     "reversible": [
         (r"\bbackups?\b", "dev b23 c1-01 m01 m02; spec 5.1"),
@@ -197,10 +240,172 @@ TRIGGERS: dict[str, list[tuple[str, str]]] = {
         (r"\bdocumentation[\s-]*only\b", "dev c1-11; spec 5.1"),
         (r"\bcomments?\b", "dev c1-12; spec 5.1"),
         (r"\bprivate\b", "dev c1-01 m09 m10; spec 5.1"),
-        (r"\blocal\b", "dev b10 m11 m12; spec 5.1"),
+        # Round 2: "local" is low stakes for files and branches, NOT for a
+        # local API/server/port/panel — a browser on the host reaches it
+        # (repro 2026-10-24, api_no_guard: "local" read as low risk).
+        (r"\blocal\b(?!\s+(?:web\s+)?(?:api|apis|panel|server|service|endpoint|port|socket|http|network|dashboard)s?\b)",
+         "dev b10 m11 m12; spec 5.1; round 2 scope rule"),
         (r"\bscratch\b", "dev b10 m11 m12; spec 5.1"),
     ],
 }
+
+# ── Round 2 lexicon (2026-10-24) ─────────────────────────────────────
+# Filipe: "the Council has to work on its own; the judge is only an extra
+# voice". The deterministic voices now read Portuguese (PT-BR) as well as
+# English, and six new risk/mitigation traits. Every pattern is general
+# domain vocabulary (not lifted from one case); provenance "r2 lexicon".
+# Tuned on dev only; heldout and the strawberry_audit split untouched.
+_R2_TRIGGERS: dict[str, list[tuple[str, str]]] = {
+    "irreversible": [
+        (r"\bwipe[sd]?\b", "r2 lexicon"),
+        (r"\boverwrit(?:e|es|ing|ten)\b", "r2 lexicon"),
+        (r"\breset\s+--hard\b", "r2 lexicon"),
+        (r"\b(?:apagar|apaga|apague|deletar|delete|excluir|exclua|sobrescrever|descartar|destruir|dropar)\b", "r2 lexicon PT"),
+    ],
+    "blast_radius": [
+        (r"\b(?:every|all)\s+(?:producers?|users?|customers?|clients?|projects?|tenants?|machines?|hosts?)\b", "r2 lexicon (broad scope)"),
+        (r"\bfor\s+everyone\b", "r2 lexicon (broad scope)"),
+        (r"\b(?:the|new)\s+default\b", "r2 lexicon (changes the default for everyone)"),
+        (r"\b(?:produção|producao|todos\s+os\s+usuários|todos\s+os\s+clientes|público|publico|publicar)\b", "r2 lexicon PT"),
+    ],
+    "bypasses_checks": [
+        (r"\b(?:not|n['\u2019]t)\s+(?:run|wait\s+for)\s+(?:the\s+)?(?:\w+\s+)?(?:tests?|review|ci|checks?)\b", "r2 lexicon (atomic)"),
+        (r"\bwithout\s+waiting\b", "r2 lexicon (atomic)"),
+        (r"\bstraight\s+to\b", "r2 lexicon (push straight to)"),
+        (r"\b(?:pular|pula|ignorar|desativar|desabilitar|burlar)\b", "r2 lexicon PT"),
+    ],
+    "unverified": [
+        (r"\bshould\s+be\s+fine\b", "r2 lexicon"),
+        (r"\bsupposedly\b", "r2 lexicon"),
+        (r"\bclaims?\b", "r2 lexicon"),
+        (r"\bdescribes?\s+(?:it|the\s+change)\s+as\b", "r2 lexicon"),
+        (r"\b(?:provavelmente|supostamente|acho\s+que|deve\s+funcionar)\b", "r2 lexicon PT"),
+        (r"\b(?:não|nao|sem)\s+(?:foi\s+)?(?:testad[oa]s?|testes?)\b", "r2 lexicon PT (atomic)"),
+    ],
+    "data_exposure": [
+        (r"\b(?:senhas?|credenciais|chaves?\s+de\s+api|segredos?|dados\s+pessoais)\b", "r2 lexicon PT"),
+        (r"\bsecrets?\b", "r2 lexicon"),
+    ],
+    "underspecified": [
+        (r"\bdisagree\b", "r2 lexicon (no consensus)"),
+        (r"\bno\s+consensus\b", "r2 lexicon (atomic)"),
+        (r"\bedge\s+cases?\b", "r2 lexicon"),
+        (r"\b(?:a\s+definir|indefinid[oa]|não\s+está\s+claro|nao\s+esta\s+claro|discordam|não\s+sabemos|nao\s+sabemos)\b", "r2 lexicon PT"),
+    ],
+    "failure_evidence": [
+        (r"\bsig(?:segv|kill|abrt)\b", "r2 lexicon"),
+        (r"\b(?:hangs?|hung|freezes?|froze|frozen|deadlocks?)\b", "r2 lexicon"),
+        (r"\bblack\s+screen\b", "r2 lexicon"),
+        (r"\bstays?\s+black\b", "r2 lexicon"),
+        (r"\bdied\b", "r2 lexicon"),
+        (r"\b(?:bug|bugs)\b", "r2 lexicon"),
+        (r"\b(?:respawn|restart|crash|boot|reconnect)(?:s|ed|ing)?\s+(?:\w+\s+){0,3}(?:loops?|every)\b|\bkeeps?\s+the\s+loop\b", "r2 lexicon (respawn loop)"),
+        (r"\b(?:falh(?:a|as|ou|aram|ando)|travou|trava|travando|quebr(?:ou|ado|ada)|regressão|regressao|piorou|tela\s+preta|morreu|sem\s+ganho)\b", "r2 lexicon PT"),
+    ],
+    "missing_check": [
+        (r"\bno\s+(?:\w+\s+){0,2}data\b", "r2 lexicon (atomic: no traffic data)"),
+        (r"\bno\s+(?:ci|test|smoke)\s+(?:run|tests?)\b", "r2 lexicon (atomic)"),
+        (r"\b(?:not|n['\u2019]t)\s+(?:yet\s+)?(?:been\s+)?(?:executed|exercised|covered)\b", "r2 lexicon (atomic)"),
+        (r"\b(?:não|nao)\s+(?:foi\s+)?(?:verificad[oa]|medid[oa]|revisad[oa]|confirmad[oa]|aprovad[oa])\b", "r2 lexicon PT (atomic)"),
+        (r"\bningu[eé]m\s+(?:\w+\s+){0,3}(?:testou|verificou|mediu|revisou)\b", "r2 lexicon PT"),
+    ],
+    "reversible": [
+        (r"\broll(?:ed)?\s+back\b", "r2 lexicon"),
+        (r"\b(?:can|could)\s+be\s+(?:changed|turned|switched|flipped|set)\s+back\b", "r2 lexicon"),
+        (r"\b(?:can|could)\s+be\s+(?:rebuilt|restored|reverted|undone|regenerated)\b", "r2 lexicon"),
+        (r"\bregenerated\b", "r2 lexicon"),
+        (r"\b(?:configurable|toggle|flag\s+flip)\b", "r2 lexicon"),
+        (r"\b(?:revers[ií]vel|reverter|desfazer|cópia\s+de\s+segurança)\b", "r2 lexicon PT"),
+    ],
+    "verified": [
+        (r"\b(?:tested|confirmed|benchmarked|rehearsed)\b", "r2 lexicon"),
+        (r"\bpass(?:es|ed)?\s+(?:the\s+)?(?:full\s+)?(?:test|ci)\b", "r2 lexicon"),
+        (r"\btest\s+suite\s+passes\b", "r2 lexicon"),
+        (r"\btests?(?:\s+suite)?\s+covers?\b", "r2 lexicon"),
+        (r"\b(?:testad[oa]s?|verificad[oa]s?|medid[oa]s?|confirmad[oa]s?|testes\s+passam)\b", "r2 lexicon PT"),
+    ],
+    "low_stakes": [
+        (r"\b(?:only|just)\s+(?:a\s+)?(?:cosmetic|docs?|readme|log\s+message|example)\b", "r2 lexicon"),
+        (r"\bcosmetic\b", "r2 lexicon"),
+        (r"\bread[\s-]*only\b", "r2 lexicon"),
+        (r"\badditive\b|\bpure\s+addition\b", "r2 lexicon"),
+        (r"\b(?:temporári[oa]|rascunho|só\s+documentação|apenas\s+documentação|comentários?)\b", "r2 lexicon PT"),
+    ],
+    # NEW: security exposure (veto line): an unauthenticated or
+    # cross-site reachable surface, turned-off verification, injection.
+    "security_exposure": [
+        (r"\b(?:tls|ssl|certificate|cert)\s+(?:\w+\s+)?verification\b", "r2 lexicon"),
+        (r"\bverify\s*=\s*false\b", "r2 lexicon"),
+        (r"\b(?:no|without)\s+(?:auth|authentication|authorization|login|password)\b(?!\s+(?:bypass|change|changes|impact|issue|regression))", "r2 lexicon (atomic)"),
+        (r"\bunauthenticated\b", "r2 lexicon"),
+        (r"\bwithout\s+(?:host|origin|csrf)(?:/\w+)?\s+checks?\b", "r2 lexicon (atomic)"),
+        (r"\bany\s+(?:web\s+)?(?:site|page|origin|website)\b", "r2 lexicon"),
+        (r"\bcross[\s-]*site\b", "r2 lexicon"),
+        (r"\bcsrf\b", "r2 lexicon"),
+        (r"\bdns\s+rebinding\b", "r2 lexicon"),
+        (r"\b(?:sql|command|shell)\s+injection\b", "r2 lexicon"),
+        (r"\bshell\s+command\b", "r2 lexicon"),
+        (r"\b0\.0\.0\.0\b", "r2 lexicon"),
+        (r"\bopen\s+port\b", "r2 lexicon"),
+        (r"\bworld[\s-]*(?:readable|writable)\b", "r2 lexicon"),
+        (r"\bchmod\s+777\b", "r2 lexicon"),
+        (r"\b(?:sem\s+autenticação|sem\s+autenticacao|qualquer\s+site|qualquer\s+página|injeção|vulnerabilidade)\b", "r2 lexicon PT"),
+    ],
+    # NEW: the stated process forbids it (veto line together with any
+    # other risk): runbook, policy, approval not given.
+    "procedure_violation": [
+        (r"\brunbook\s+says\b", "r2 lexicon"),
+        (r"\bpolicy\s+(?:says|requires|forbids)\b", "r2 lexicon"),
+        (r"\b(?:needs|requires|require)\s+(?:an?\s+)?(?:explicit\s+)?(?:approval|sign[\s-]*off)\b", "r2 lexicon"),
+        (r"\bmaintenance\s+window\b", "r2 lexicon"),
+        (r"\bwithout\s+approval\b", "r2 lexicon (atomic)"),
+        (r"\b(?:sem\s+aprovação|sem\s+aprovacao|precisa\s+de\s+aprovação|janela\s+de\s+manutenção)\b", "r2 lexicon PT"),
+    ],
+    # NEW: data would be lost: the only copy, a stale backup.
+    "data_loss_risk": [
+        (r"\b(?:exists?|lives?|is\s+stored)\s+only\s+in\b", "r2 lexicon"),
+        (r"\bonly\s+copy\b", "r2 lexicon"),
+        (r"\b(?:no|without\s+an?|without)\s+(?:\w+\s+)?backups?\b", "r2 lexicon (atomic: no backup)"),
+        (r"\bsem\s+(?:\w+\s+)?(?:backup|cópia)\b", "r2 lexicon PT (atomic)"),
+        (r"\b(?:não|nao)\s+(?:há|ha|tem|existe)\s+(?:\w+\s+)?(?:backup|cópia)\b", "r2 lexicon PT (atomic)"),
+        (r"\b(?:week|month|day)s?[\s-]+old\b", "r2 lexicon (stale backup)"),
+        (r"\b(?:lose|lost|losing)\s+(?:\w+\s+){0,2}(?:data|orders|records|rows|files|work)\b", "r2 lexicon"),
+        (r"\b(?:perda\s+de\s+dados|única\s+cópia|unica\s+copia|perder\s+dados)\b", "r2 lexicon PT"),
+    ],
+    # NEW (mitigator of failure_evidence): the action IS the remedy for the
+    # failure on the table — revert the commit that broke the build, roll
+    # back, guard against it. Round 1 vetoed these.
+    "remediation": [
+        (r"^\s*(?:should|can|shall)\s+(?:we|i)\s+(?:revert|roll\s+back|restore|undo|fix|guard|patch)\b", "r2 lexicon (question action)"),
+        (r"\bturns?\s+(?:that|this|the)\s+(?:failure|crash|error)\s+into\b", "r2 lexicon"),
+        (r"\bclean\s+refusal\b", "r2 lexicon"),
+        (r"\b(?:prevents?|guards?\s+against|avoids?\s+the)\b", "r2 lexicon"),
+        (r"\bfix(?:es)?\s+(?:a|the)\s+(?:security\s+)?(?:bug|crash|vulnerability|regression|leak)\b", "r2 lexicon"),
+        (r"\b(?:corrige|evita|reverter\s+o\s+commit)\b", "r2 lexicon PT"),
+    ],
+    # NEW: the question asks to close / accept / hand over AS IS.
+    "premature_closure": [
+        (r"\bas\s+it\s+is\b", "r2 lexicon"),
+        (r"\bas\s+is\b", "r2 lexicon"),
+        (r"\bmark(?:ed)?\s+(?:\w+\s+){0,4}(?:as\s+)?(?:done|resolved|fixed|complete|closed)\b", "r2 lexicon"),
+        (r"\bclose\s+(?:the\s+)?(?:incident|ticket|issue|bug)\b", "r2 lexicon"),
+        (r"\bhand(?:\s+it)?\s+over\b", "r2 lexicon"),
+        (r"\bsign\s+off\b", "r2 lexicon"),
+        (r"\b(?:do\s+jeito\s+que\s+está|como\s+está|marcar\s+como\s+(?:resolvido|feito|pronto)|fechar\s+o\s+(?:incidente|ticket)|entregar)\b", "r2 lexicon PT"),
+    ],
+    # NEW: a step is declared still open or pending.
+    "pending_step": [
+        (r"\[open\]", "r2 lexicon (audit tag)"),
+        (r"\bneeds?\s+(?:a\s+)?(?:cold\s+boot|reboot|restart|migration|fresh)\b", "r2 lexicon"),
+        (r"\bstill\s+(?:open|pending|TBD|broken|failing|missing|unknown)\b", "r2 lexicon"),
+        (r"\b(?:has|have)\s+not\s+(?:yet\s+)?(?:landed|shipped)\b", "r2 lexicon (atomic)"),
+        (r"\bnot\s+(?:done|finished)\s+yet\b", "r2 lexicon (atomic)"),
+        (r"\b(?:pending|todo|follow[\s-]*up\s+required)\b", "r2 lexicon"),
+        (r"\b(?:pendente|ainda\s+(?:aberto|falta|não)|precisa\s+de\s+(?:reboot|boot))\b", "r2 lexicon PT"),
+    ],
+}
+for _trait, _pats in _R2_TRIGGERS.items():
+    TRIGGERS.setdefault(_trait, []).extend(_pats)
 
 #: Compiled once; (pattern, provenance) pairs keep the documentation next to
 #: the source the table was cut from.
@@ -225,6 +430,20 @@ class Traits:
     reversible: bool = False
     verified: bool = False
     low_stakes: bool = False
+    # 2026-10-24 council-calibration: evidence against the action, and a
+    # required check declared missing. Risk traits; default False.
+    failure_evidence: bool = False
+    missing_check: bool = False
+    # Round 2 (2026-10-24): six more trait families, plus a mitigator the
+    # text explicitly denies ("no rollback plan", "not local", "not a
+    # typo fix", "without a feature flag").
+    security_exposure: bool = False
+    procedure_violation: bool = False
+    data_loss_risk: bool = False
+    remediation: bool = False
+    premature_closure: bool = False
+    pending_step: bool = False
+    mitigator_denied: bool = False
 
 
 def extract_traits(
@@ -248,9 +467,52 @@ def extract_traits(
         segments.extend(str(opt) for opt in options if str(opt))
 
     lit = {name: False for name in _COMPILED}
+    lit["mitigator_denied"] = False
     for segment in segments:
         _light_in_segment(segment, lit)
+        if not lit["mitigator_denied"]:
+            lit["mitigator_denied"] = _mitigator_denied_in(segment)
     return Traits(**lit)
+
+
+#: Mitigators whose explicit denial is itself a risk (round 2).
+_DENIABLE_MITIGATORS = ("reversible", "low_stakes")
+
+
+def _mitigator_denied_in(segment: str) -> bool:
+    """Round 2 (2026-10-24): True when a reversible/low_stakes trigger is
+    cancelled by a LOCAL negator or a post-trigger absence predicate in
+    this segment ("no rollback plan", "without a feature flag", "not a
+    private branch", "not local", "backups are missing"). Before, such a
+    denial only switched the mitigator off and the text read as neutral;
+    the labels treat it as a risk. A clause negator ("Nothing is removed
+    in dry-run mode") is NOT a denial of the mitigator."""
+    words = [m.group(0) for m in _WORD_RE.finditer(segment)]
+    spans = [m.span() for m in _WORD_RE.finditer(segment)]
+    if not words:
+        return False
+    breaks = _sentence_breaks(segment)
+    for name in _DENIABLE_MITIGATORS:
+        for pattern, _where in _COMPILED[name]:
+            for match in pattern.finditer(segment):
+                first_w, last_w = _trigger_word_span(match.start(), match.end(), spans)
+                if first_w >= len(words):
+                    continue
+                if not _trigger_negated(segment, words, spans, breaks,
+                                        first_w, last_w, True, set()):
+                    continue
+                # Cancelled by a clause negator earlier in the sentence?
+                clause = False
+                for j in range(first_w - 1, -1, -1):
+                    lo, hi = spans[j][1], spans[j + 1][0]
+                    if any(lo <= p <= hi for p in breaks):
+                        break
+                    if words[j].lower() in CLAUSE_NEGATORS:
+                        clause = True
+                        break
+                if not clause:
+                    return True
+    return False
 
 
 def _light_in_segment(segment: str, lit: dict[str, bool]) -> None:
