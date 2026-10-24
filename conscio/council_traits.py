@@ -252,7 +252,7 @@ TRIGGERS: dict[str, list[tuple[str, str]]] = {
 # voice". The deterministic voices now read Portuguese (PT-BR) as well as
 # English, and six new risk/mitigation traits. Every pattern is general
 # domain vocabulary (not lifted from one case); provenance "r2 lexicon".
-# Tuned on dev only; heldout and the strawberry_audit split untouched.
+# Tuned on dev only; heldout and the live-audit split untouched.
 _R2_TRIGGERS: dict[str, list[tuple[str, str]]] = {
     "irreversible": [
         (r"\bwipe[sd]?\b", "r2 lexicon"),
