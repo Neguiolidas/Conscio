@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [4.10.1] - 2026-10-24 — The Council stops rubber-stamping
+## [4.11.0] - 2026-10-24 — The Council stops rubber-stamping
 
 ### Fixed
 - **The deterministic Council no longer approves everything.** In a live

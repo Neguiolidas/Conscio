@@ -279,7 +279,7 @@ from conscio.gates import COUNCIL_ROLES, COUNCIL_VOTES, council_trait_scores
 
 COUNCIL_ROLES
 COUNCIL_VOTES
-# Public API since 4.10.1 (documented in USAGE.md and tested in
+# Public API since 4.11.0 (documented in USAGE.md and tested in
 # test_council_round2.py): pure per-voice trait scores, no engine needed.
 council_trait_scores
 

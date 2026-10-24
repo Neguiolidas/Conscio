@@ -316,7 +316,7 @@ and — judged mode only — a `judge` report with `verdict`,
 its pre-gate choice: it differs from the final recommendation
 exactly when `gate_reason` is not None.
 
-**New council result fields (additive, v4.10.1)**: `trait_score`
+**New council result fields (additive, v4.11.0)**: `trait_score`
 (`{total, hold_at, veto_at}` — the summed text-part score the
 recommendation was read from) on the result, and per voice
 `state_vote` (the engine-state vote before traits) plus that
@@ -335,7 +335,7 @@ of a problem.
 
 **Limitation — the deterministic council reads a fixed lexicon.** The
 trait extractor behind the four voices is deterministic text
-extraction over a fixed trigger table (v4.10.1: English plus a
+extraction over a fixed trigger table (v4.11.0: English plus a
 PT-BR lexicon — `não`/`sem`/`nunca` negate, and risk words like
 `apagar`, `produção`, `tela preta`, `sem backup` light their traits).
 A question whose vocabulary is not in the table lights no traits and
