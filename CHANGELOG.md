@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **The deterministic Council no longer approves everything.** In a live
-  audit (the Strawberry emulator) every finding sent through
+  audit of another project every finding sent through
   `engine.council()` came back `proceed` with four clean voices, including
   questions whose own text carried the evidence against
   ("adopt host hugepages given no measured gain and one SIGBUS crash").
@@ -38,6 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   target 0.45 not reached); 14 of 53 heldout cases light no trait. The
   judged mode is unchanged — with the judge loaded, calibration comes
   from the judge.
+- Known severity skew: an OPEN finding that already shows a failure
+  (black screen on cold boot, respawn loop) comes back `veto` instead
+  of `hold` — failure evidence weighs 5 even when the fix is planned.
+  A "pending + failure = hold" rule is the next candidate, but needs
+  fresh labeled data to be tuned without poisoning the heldout.
+- Known trigger that misleads: `verified` discounts 1 even when the
+  verification was PARTIAL (the api_no_guard audit case lights
+  "guard ... verified" and exits at hold instead of veto).
 
 
 ## [4.10.0] - 2026-10-22 — The Codex wakes itself, and the wheel ships its lock

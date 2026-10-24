@@ -209,8 +209,8 @@ TRIGGERS: dict[str, list[tuple[str, str]]] = {
         (r"\bnever\s+(?:been\s+)?(?:run|executed|tested|reviewed|measured|verified|observed)\b",
          "dev a19 b11 m06"),
         (r"(?:\bnot|\b[A-Za-z]+n['\u2019]t)\s+(?:yet\s+)?(?:been\s+)?"
-         r"(?:reviewed|verified|tested|measured|confirmed"
-         r"|observed|validated|approved|happened|run)\b",
+         + r"(?:reviewed|verified|tested|measured|confirmed"
+         + r"|observed|validated|approved|happened|run)\b",
          "dev a04 a12 b14 b20 m06 m08"),
         (r"\bnobody\b[^.;!?]*?\b(?:reviewed|measured|verified|tested|knows)\b", "dev a08 b15"),
         (r"\b(?:do|does|did)\s+not\s+know\b", "dev b17"),

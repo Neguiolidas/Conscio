@@ -130,9 +130,6 @@ VOICE_HOLD_AT = 2
 VOICE_VETO_AT = 5
 COUNCIL_HOLD_AT = 2
 COUNCIL_VETO_AT = 5
-# Round-1 names, kept as aliases of the shared voice line.
-ARCH_HOLD_AT = SKEPTIC_HOLD_AT = PRAG_HOLD_AT = CRITIC_HOLD_AT = VOICE_HOLD_AT
-ARCH_VETO_AT = SKEPTIC_VETO_AT = PRAG_VETO_AT = CRITIC_VETO_AT = VOICE_VETO_AT
 
 
 def _threshold_vote(score: int, hold_at: int, veto_at: int) -> str:
@@ -228,30 +225,6 @@ def _critic_score(traits: Traits) -> tuple[int, list[str]]:
 def _voice_trait_vote(scorer, traits: Traits) -> tuple[str, list[str], int]:
     score, concerns = scorer(traits)
     return _threshold_vote(score, VOICE_HOLD_AT, VOICE_VETO_AT), concerns, score
-
-
-def _architect_traits(traits: Traits) -> tuple[str, list[str]]:
-    """Architect trait vote: (vote, lit risk-trait concerns)."""
-    vote, concerns, _ = _voice_trait_vote(_architect_score, traits)
-    return vote, concerns
-
-
-def _skeptic_traits(traits: Traits) -> tuple[str, list[str]]:
-    """Skeptic trait vote: (vote, lit risk-trait concerns)."""
-    vote, concerns, _ = _voice_trait_vote(_skeptic_score, traits)
-    return vote, concerns
-
-
-def _pragmatist_traits(traits: Traits) -> tuple[str, list[str]]:
-    """Pragmatist trait vote: (vote, lit risk-trait concerns)."""
-    vote, concerns, _ = _voice_trait_vote(_pragmatist_score, traits)
-    return vote, concerns
-
-
-def _critic_traits(traits: Traits) -> tuple[str, list[str]]:
-    """Critic trait vote: (vote, lit risk-trait concerns). Deterministic."""
-    vote, concerns, _ = _voice_trait_vote(_critic_score, traits)
-    return vote, concerns
 
 
 _VOICE_SCORERS = {

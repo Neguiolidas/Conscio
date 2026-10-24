@@ -2,8 +2,8 @@
 
 The deterministic council (no judge) must stand on its own: Portuguese
 lexicon, scope of "local", explicit denial of a mitigator, the action that
-IS the remedy, and the summed trait score. The third split (12 Strawberry
-audit findings, labels justified in the file) is a regression guard here,
+IS the remedy, and the summed trait score. The third split (12 live-audit
+cases from another project, labels justified in the file) is a regression guard here,
 never a tuning set: every hold/veto finding must come back NOT proceed.
 """
 from __future__ import annotations
@@ -13,11 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from conscio import ConsciousnessEngine
-from conscio import gates
+from conscio import ConsciousnessEngine, gates
 from conscio.council_traits import extract_traits
 
-AUDIT = Path(__file__).parent / "fixtures" / "council_bench" / "audit_strawberry_2026-10-24.jsonl"
+AUDIT = Path(__file__).parent / "fixtures" / "council_bench" / "audit_cases.jsonl"
 
 
 @pytest.fixture
