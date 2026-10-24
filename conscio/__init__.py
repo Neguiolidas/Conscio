@@ -6,7 +6,7 @@ and goal generation. Adapts behavior based on the underlying model's
 context window size.
 """
 
-__version__ = "4.10.0"
+__version__ = "4.11.0"
 __author__ = "Neguiolidas / Neguitech"
 
 from .agency import (
@@ -40,6 +40,7 @@ from .gates import (  # noqa: F401
     COUNCIL_ROLES,
     COUNCIL_VOTES,
     council,
+    council_trait_scores,
     decide,
     delivery_check,
     investigate,

@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.11.0] - 2026-10-24 — The Council stops rubber-stamping
+
+### Fixed
+- **The deterministic Council no longer approves everything.** In a live
+  audit of another project every finding sent through
+  `engine.council()` came back `proceed` with four clean voices, including
+  questions whose own text carried the evidence against
+  ("adopt host hugepages given no measured gain and one SIGBUS crash").
+  Three defects together: (1) with no judge configured the Council runs
+  deterministic — expected behavior, but nothing flagged that "proceed"
+  had read no content; (2) the deterministic trait table had no trigger
+  for **failure evidence** (crash, SIGBUS, regression, no measured gain)
+  nor for a **check declared missing** (never run, not reviewed, nobody
+  has looked), so the negation rule only switched the `verified`
+  mitigator off and never turned the absence into risk; (3) one voice
+  alone in hold could not hold the Council (2-hold rule).
+- Two new risk traits: `failure_evidence` and `missing_check`, with
+  atomic patterns that start with their own negation word. Round 2 adds
+  `security_exposure`, `procedure_violation`, `data_loss_risk`,
+  `remediation` (the action IS the fix — cancels failure evidence),
+  `premature_closure`, `pending_step`, and `mitigator_denied`, plus a
+  PT-BR lexicon and a Unicode tokenizer (nao/ninguem are one word).
+- Aggregation by summed score: each voice scores its own traits (risk
+  adds, mitigators subtract), the Council decides on the SUM of the
+  four voices (hold from 2, veto from 5); the engine state votes keep
+  the old rule and the stricter part wins. Additive `trait_score`
+  fields and the pure `council_trait_scores()`.
+- Honest boundary: heldout kappa 0.105 -> 0.352 (dev 0.135 -> 0.706,
+  target 0.45 not reached); 14 of 53 heldout cases light no trait. The
+  judged mode is unchanged — with the judge loaded, calibration comes
+  from the judge.
+- Known severity skew: an OPEN finding that already shows a failure
+  (black screen on cold boot, respawn loop) comes back `veto` instead
+  of `hold` — failure evidence weighs 5 even when the fix is planned.
+  A "pending + failure = hold" rule is the next candidate, but needs
+  fresh labeled data to be tuned without poisoning the heldout.
+- Known trigger that misleads: `verified` discounts 1 even when the
+  verification was PARTIAL (the api_no_guard audit case lights
+  "guard ... verified" and exits at hold instead of veto).
+
+
 ## [4.10.0] - 2026-10-22 — The Codex wakes itself, and the wheel ships its lock
 
 ### Added

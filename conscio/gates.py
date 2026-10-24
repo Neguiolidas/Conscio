@@ -67,57 +67,69 @@ def _stricter(a: str, b: str) -> str:
 
 
 # ── Council trait weights (calibration spec section 5.2, T6) ─────────
-# Integer weight and threshold table. Every constant carries its
-# provenance comment: the dev round that produced the value and the dev
-# metric it moved. The state checks above each vote stay untouched —
-# this table only drives the separate trait vote, and the stricter of
-# the two wins (spec section 5.2).
+# Round 2 (2026-10-24, Filipe: "the Council has to work on its own; the
+# judge is only an extra voice"). Each voice owns some traits and turns
+# them into an integer SCORE (risk traits add, mitigators subtract). The
+# voice's own trait vote is its score against the voice line below; the
+# COUNCIL decides on the SUM of the four voice scores (council() and
+# COUNCIL_HOLD_AT / COUNCIL_VETO_AT), so two moderate concerns raised by
+# two different voices add up, instead of needing two separate holds.
+#
+# Provenance: the weights are the round-2 priors (severity reasoning:
+# evidence already against the action, secrets/security exposure = veto
+# line on their own; broad scope, missing checks, pending steps, denied
+# mitigators = hold line on their own). They were set BEFORE looking at
+# heldout, checked on dev only (61 cases: kappa 0.341 -> see the handoff),
+# and a +-1 sweep of every weight on dev moved kappa by <= 0.07 (no knife
+# edges). A transparent ordinal logistic fit on dev (leave-one-out) ranked
+# the traits in the same order; it was NOT used as the decision rule.
+#
+# Constants kept from round 1 where tests import them.
 
-# architect: risk = irreversible, blast_radius; mitigator = reversible.
-# dev, round 2, hold row: the 3 single-blast_radius hold cases sat one
-# point below the hold line (score 2 vs hold_at 3) and 0 of 22 dev hold
-# cases became hold in round 1; raising blast_radius to 3 puts a lone
-# lit blast_radius at the hold line while the 2 single-blast proceed
-# cases keep only ONE hold (council stays proceed).
-W_ARCH_IRREVERSIBLE = 3
-W_ARCH_BLAST_RADIUS = 3
+# architect: risk = irreversible, blast_radius, data_loss_risk;
+# mitigator = reversible.
+W_ARCH_IRREVERSIBLE = 2
+W_ARCH_BLAST_RADIUS = 2
+W_ARCH_DATA_LOSS = 3
 W_ARCH_REVERSIBLE = 2
-ARCH_HOLD_AT = 3
-ARCH_VETO_AT = 5
 
-# skeptic: risk = unverified, bypasses_checks; mitigator = verified.
-# dev, round 2, veto row: the 2 single-bypasses_checks veto cases and
-# the blast+bypasses case never vetoed (score 3 vs veto_at 5) in
-# round 1; no dev proceed case lights bypasses_checks, so a lone
-# bypass now vetoes instead of holding.
-# dev, round 2, hold row: unverified alone (score 2 vs hold_at 3) stays
-# below hold intentionally; dev measurement (Gemini, G38) confirmed W=3
-# yields identical agree 25/61 (0.4098) and identical proceed row
-# (16 proceed, 2 hold, 1 veto) as W=2. It acts in the combo
-# bypasses_checks + verified + unverified (4 - 2 + 2 = 4 >= veto_at 4).
+# failure_evidence sits AT the veto line (5), like data/security exposure:
+# evidence of harm already on the table vetoes on its own (round-1
+# regression test test_audit_finding_with_evidence_against_is_not_proceed;
+# the dev +-1 sweep moved kappa +0.025 at 5).
+# skeptic: risk = unverified, bypasses_checks, failure_evidence (zero when
+# the action IS the remedy: revert/roll back/guard), missing_check,
+# premature_closure; mitigators = verified, remediation.
 W_SKEPTIC_UNVERIFIED = 2
-W_SKEPTIC_BYPASSES_CHECKS = 4
-W_SKEPTIC_VERIFIED = 2
-SKEPTIC_HOLD_AT = 3
-SKEPTIC_VETO_AT = 4
+W_SKEPTIC_BYPASSES_CHECKS = 3
+W_SKEPTIC_FAILURE_EVIDENCE = 5
+W_SKEPTIC_MISSING_CHECK = 2
+W_SKEPTIC_PREMATURE_CLOSURE = 2
+W_SKEPTIC_VERIFIED = 1
+W_SKEPTIC_REMEDIATION = 1
 
-# pragmatist: risk = underspecified; mitigator = low_stakes.
-# dev, round 1, baseline matrix (round 0): the c1 underspecified
-# cases split hold/proceed in the labels; one lit trait holds, and the
-# low_stakes mitigator pulls the m-pair cases back to proceed.
-W_PRAG_UNDERSPECIFIED = 3
+# pragmatist: risk = underspecified, pending_step, mitigator_denied,
+# procedure_violation; mitigator = low_stakes.
+W_PRAG_UNDERSPECIFIED = 2
+W_PRAG_PENDING_STEP = 2
+W_PRAG_MITIGATOR_DENIED = 2
+W_PRAG_PROCEDURE_VIOLATION = 3
 W_PRAG_LOW_STAKES = 2
-PRAG_HOLD_AT = 3
-PRAG_VETO_AT = 6
 
-# critic: risk = data_exposure, plus irreversible WITHOUT the reversible
-# mitigator; no mitigator of its own.
-# dev, round 1, baseline matrix (round 0): the data_exposure dev cases
-# are labeled veto, so a single lit data_exposure sits at the veto line.
-W_CRITIC_DATA_EXPOSURE = 4
-W_CRITIC_IRREVERSIBLE_NO_REVERSIBLE = 3
-CRITIC_HOLD_AT = 3
-CRITIC_VETO_AT = 4
+# critic: risk = data_exposure, security_exposure, plus irreversible
+# WITHOUT the reversible mitigator; no mitigator of its own.
+W_CRITIC_DATA_EXPOSURE = 5
+W_CRITIC_SECURITY_EXPOSURE = 5
+W_CRITIC_IRREVERSIBLE_NO_REVERSIBLE = 1
+
+# One line for every voice's own trait vote, and the council line on the
+# summed score. dev (61): hold 2 / veto 5 -> best of (2,4) (2,5) (3,5)
+# (3,6) (2,6); the voice line is the same so a lone voice that vetoes on
+# its own score also vetoes the council.
+VOICE_HOLD_AT = 2
+VOICE_VETO_AT = 5
+COUNCIL_HOLD_AT = 2
+COUNCIL_VETO_AT = 5
 
 
 def _threshold_vote(score: int, hold_at: int, veto_at: int) -> str:
@@ -129,10 +141,7 @@ def _threshold_vote(score: int, hold_at: int, veto_at: int) -> str:
     return "proceed"
 
 
-def _architect_traits(traits: Traits) -> tuple[str, list[str]]:
-    """Architect trait vote (spec section 5.2): risk = irreversible,
-    blast_radius; mitigator = reversible. Returns (trait vote, the
-    lit risk-trait concerns, each naming its trait)."""
+def _architect_score(traits: Traits) -> tuple[int, list[str]]:
     score = 0
     concerns: list[str] = []
     if traits.irreversible:
@@ -141,15 +150,15 @@ def _architect_traits(traits: Traits) -> tuple[str, list[str]]:
     if traits.blast_radius:
         score += W_ARCH_BLAST_RADIUS
         concerns.append("trait blast_radius: the change reaches shared or public territory")
+    if traits.data_loss_risk:
+        score += W_ARCH_DATA_LOSS
+        concerns.append("trait data_loss_risk: data exists only here or the backup is stale")
     if traits.reversible:
         score -= W_ARCH_REVERSIBLE
-    vote = _threshold_vote(score, ARCH_HOLD_AT, ARCH_VETO_AT)
-    return vote, concerns
+    return score, concerns
 
 
-def _skeptic_traits(traits: Traits) -> tuple[str, list[str]]:
-    """Skeptic trait vote (spec section 5.2): risk = unverified,
-    bypasses_checks; mitigator = verified."""
+def _skeptic_score(traits: Traits) -> tuple[int, list[str]]:
     score = 0
     concerns: list[str] = []
     if traits.unverified:
@@ -158,40 +167,80 @@ def _skeptic_traits(traits: Traits) -> tuple[str, list[str]]:
     if traits.bypasses_checks:
         score += W_SKEPTIC_BYPASSES_CHECKS
         concerns.append("trait bypasses_checks: the plan skips a required verification")
+    if traits.failure_evidence and not traits.remediation:
+        score += W_SKEPTIC_FAILURE_EVIDENCE
+        concerns.append("trait failure_evidence: the input already reports a crash, "
+                        "failure, regression or no gain")
+    if traits.missing_check:
+        score += W_SKEPTIC_MISSING_CHECK
+        concerns.append("trait missing_check: a required check is declared not done")
+    if traits.premature_closure:
+        score += W_SKEPTIC_PREMATURE_CLOSURE
+        concerns.append("trait premature_closure: the question asks to close, accept "
+                        "or hand over as is")
     if traits.verified:
         score -= W_SKEPTIC_VERIFIED
-    vote = _threshold_vote(score, SKEPTIC_HOLD_AT, SKEPTIC_VETO_AT)
-    return vote, concerns
+    if traits.remediation:
+        score -= W_SKEPTIC_REMEDIATION
+    return score, concerns
 
 
-def _pragmatist_traits(traits: Traits) -> tuple[str, list[str]]:
-    """Pragmatist trait vote (spec section 5.2): risk = underspecified;
-    mitigator = low_stakes."""
+def _pragmatist_score(traits: Traits) -> tuple[int, list[str]]:
     score = 0
     concerns: list[str] = []
     if traits.underspecified:
         score += W_PRAG_UNDERSPECIFIED
         concerns.append("trait underspecified: the request declares that information is missing")
+    if traits.pending_step:
+        score += W_PRAG_PENDING_STEP
+        concerns.append("trait pending_step: a required step is declared still open")
+    if traits.mitigator_denied:
+        score += W_PRAG_MITIGATOR_DENIED
+        concerns.append("trait mitigator_denied: the text says the safety net is absent "
+                        "(no rollback, not local, not a typo fix)")
+    if traits.procedure_violation:
+        score += W_PRAG_PROCEDURE_VIOLATION
+        concerns.append("trait procedure_violation: the runbook/policy/approval says otherwise")
     if traits.low_stakes:
         score -= W_PRAG_LOW_STAKES
-    vote = _threshold_vote(score, PRAG_HOLD_AT, PRAG_VETO_AT)
-    return vote, concerns
+    return score, concerns
 
 
-def _critic_traits(traits: Traits) -> tuple[str, list[str]]:
-    """Critic trait vote (spec section 5.2): risk = data_exposure, plus
-    irreversible WITHOUT the reversible mitigator; no mitigator of its
-    own. The critic stays deterministic and never calls the adapter."""
+def _critic_score(traits: Traits) -> tuple[int, list[str]]:
     score = 0
     concerns: list[str] = []
     if traits.data_exposure:
         score += W_CRITIC_DATA_EXPOSURE
         concerns.append("trait data_exposure: secrets or personal data may be exposed")
+    if traits.security_exposure:
+        score += W_CRITIC_SECURITY_EXPOSURE
+        concerns.append("trait security_exposure: an unauthenticated, cross-site or "
+                        "unverified surface is opened")
     if traits.irreversible and not traits.reversible:
         score += W_CRITIC_IRREVERSIBLE_NO_REVERSIBLE
         concerns.append("trait irreversible without a reversible mitigation")
-    vote = _threshold_vote(score, CRITIC_HOLD_AT, CRITIC_VETO_AT)
-    return vote, concerns
+    return score, concerns
+
+
+def _voice_trait_vote(scorer, traits: Traits) -> tuple[str, list[str], int]:
+    score, concerns = scorer(traits)
+    return _threshold_vote(score, VOICE_HOLD_AT, VOICE_VETO_AT), concerns, score
+
+
+_VOICE_SCORERS = {
+    "architect": _architect_score,
+    "skeptic": _skeptic_score,
+    "pragmatist": _pragmatist_score,
+    "critic": _critic_score,
+}
+
+
+def council_trait_scores(question: str, context: str = "",
+                         options: list[str] | None = None) -> dict[str, int]:
+    """Round 2: each voice's integer trait score for this input (pure,
+    deterministic, no engine). The council decides on their sum."""
+    traits = extract_traits(question, context, options)
+    return {role: fn(traits)[0] for role, fn in _VOICE_SCORERS.items()}
 
 
 
@@ -364,14 +413,26 @@ def council(
     holds = votes.count("hold")
     proceeds = votes.count("proceed")
 
-    if vetoes >= 1:
-        recommendation = "veto"
-    elif holds >= 2:
-        recommendation = "hold"
-    elif proceeds >= 3:
-        recommendation = "proceed"
+    # Round 2 (2026-10-24): two parts, the stricter wins.
+    # (a) ENGINE STATE: the round-1 rule over the voices' state votes —
+    #     any veto vetoes, two holds hold, a degraded voice counts as hold.
+    # (b) TEXT: the SUM of the four voices' trait scores against the
+    #     council line (COUNCIL_HOLD_AT / COUNCIL_VETO_AT). Before, the
+    #     trait votes went through (a) too, so a single moderate concern
+    #     (one voice at hold) never held the council, and two moderate
+    #     concerns in two voices could not add up.
+    state_votes = [v.get("state_vote", v["vote"]) for v in voices]
+    if state_votes.count("veto") >= 1:
+        state_rec = "veto"
+    elif state_votes.count("hold") >= 2:
+        state_rec = "hold"
+    elif state_votes.count("proceed") >= 3:
+        state_rec = "proceed"
     else:
-        recommendation = "hold"  # 2-2 or ambiguous → not ready
+        state_rec = "hold"  # 2-2 or ambiguous → not ready
+    trait_total = sum(int(v.get("trait_score", 0)) for v in voices)
+    text_rec = _threshold_vote(trait_total, COUNCIL_HOLD_AT, COUNCIL_VETO_AT)
+    recommendation = _stricter(state_rec, text_rec)
 
     agreement_val = round(_compute_vote_agreement(votes), 4)
     agreement = {
@@ -431,6 +492,13 @@ def council(
             "proceed": proceeds,
             "hold": holds,
             "veto": vetoes,
+        },
+        # Round 2 additive field: the summed trait score the text part of
+        # the recommendation was read from, with the council lines.
+        "trait_score": {
+            "total": trait_total,
+            "hold_at": COUNCIL_HOLD_AT,
+            "veto_at": COUNCIL_VETO_AT,
         },
         # Additive fields (spec section 6.3): the mode, the judge's
         # status string, and the gate's reasons when it lowered.
@@ -529,7 +597,8 @@ def _voice_architect(
     # stricter of the two wins, and lit risk traits name themselves in
     # the concerns.
     traits = extract_traits(question, context, options)
-    trait_vote, trait_concerns = _architect_traits(traits)
+    state_vote = vote
+    trait_vote, trait_concerns, trait_score = _voice_trait_vote(_architect_score, traits)
     concerns.extend(trait_concerns)
     vote = _stricter(vote, trait_vote)
 
@@ -538,6 +607,10 @@ def _voice_architect(
         "analysis": "; ".join(analysis_items),
         "concerns": concerns,
         "vote": vote,
+        # Round 2 additive fields: the engine-state vote and this voice's
+        # integer trait score (the council sums the four scores).
+        "state_vote": state_vote,
+        "trait_score": trait_score,
     }
 
 
@@ -586,7 +659,8 @@ def _voice_skeptic(
     # above stays intact; the stricter of the two wins, and lit risk
     # traits name themselves in the concerns.
     traits = extract_traits(question, context, options)
-    trait_vote, trait_concerns = _skeptic_traits(traits)
+    state_vote = vote
+    trait_vote, trait_concerns, trait_score = _voice_trait_vote(_skeptic_score, traits)
     concerns.extend(trait_concerns)
     vote = _stricter(vote, trait_vote)
 
@@ -595,6 +669,10 @@ def _voice_skeptic(
         "analysis": "; ".join(analysis_items),
         "concerns": concerns,
         "vote": vote,
+        # Round 2 additive fields: the engine-state vote and this voice's
+        # integer trait score (the council sums the four scores).
+        "state_vote": state_vote,
+        "trait_score": trait_score,
     }
 
 
@@ -641,7 +719,8 @@ def _voice_pragmatist(
     # above stays intact; the stricter of the two wins, and lit risk
     # traits name themselves in the concerns.
     traits = extract_traits(question, context, options)
-    trait_vote, trait_concerns = _pragmatist_traits(traits)
+    state_vote = vote
+    trait_vote, trait_concerns, trait_score = _voice_trait_vote(_pragmatist_score, traits)
     concerns.extend(trait_concerns)
     vote = _stricter(vote, trait_vote)
 
@@ -650,6 +729,10 @@ def _voice_pragmatist(
         "analysis": "; ".join(analysis_items),
         "concerns": concerns,
         "vote": vote,
+        # Round 2 additive fields: the engine-state vote and this voice's
+        # integer trait score (the council sums the four scores).
+        "state_vote": state_vote,
+        "trait_score": trait_score,
     }
 
 
@@ -680,7 +763,8 @@ def _voice_critic(
     # traits name themselves in the concerns. The critic stays
     # deterministic: the trait vote adds no LLM call.
     traits = extract_traits(question, context, options)
-    trait_vote, trait_concerns = _critic_traits(traits)
+    state_vote = vote
+    trait_vote, trait_concerns, trait_score = _voice_trait_vote(_critic_score, traits)
     concerns.extend(trait_concerns)
     vote = _stricter(vote, trait_vote)
 
@@ -689,6 +773,10 @@ def _voice_critic(
         "analysis": "; ".join(analysis_items),
         "concerns": concerns,
         "vote": vote,
+        # Round 2 additive fields: the engine-state vote and this voice's
+        # integer trait score (the council sums the four scores).
+        "state_vote": state_vote,
+        "trait_score": trait_score,
     }
 
 

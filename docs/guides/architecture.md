@@ -31,7 +31,7 @@ two surfaces — passive `reflect()` and audited `act()` — never blur.
 │ semantic reconciliation (antonym axes) · voice & axis presets         │ │
 └────────────────────────────────────────────────────────────────────────┘ │
 ┌─────────────── Gates (v3.0) · conscio/gates.py ──────────────────────┐ │
-│ decide (ADRs) · council (3 voices) · loop_gate · delivery_check       │ │
+│ decide (ADRs) · council (4 voices) · loop_gate · delivery_check       │ │
 │ investigate (read-before-act) · _check_closed guard                   │ │
 └────────────────────────────────────────────────────────────────────────┘ │
 ┌─────────────── Pipelines (v3.0) · conscio/pipelines.py ──────────────┐ │

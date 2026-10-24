@@ -275,10 +275,16 @@ WorldModel.prune_stale
 WorldModel.record_prediction
 
 # ── gates (v3.0) ────────────────────────────────────────────────────
-from conscio.gates import COUNCIL_ROLES, COUNCIL_VOTES
+from conscio.gates import COUNCIL_ROLES, COUNCIL_VOTES, council_trait_scores
 
 COUNCIL_ROLES
 COUNCIL_VOTES
+# Public API since 4.11.0 (documented in USAGE.md and tested in
+# test_council_round2.py): pure per-voice trait scores, no engine needed.
+# Lives in conscio.gates and re-exported by conscio/__init__ next to its
+# sibling council(), so both conscio.council_trait_scores and
+# conscio.gates.council_trait_scores resolve.
+council_trait_scores
 
 # ── pipelines (v3.0) ───────────────────────────────────────────────
 from conscio.pipelines import PROMOTION_GATES

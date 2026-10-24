@@ -238,7 +238,7 @@ another space. While the space is unknown, its output goes to
 ### v3.3 — Gate tools
 
 - `conscio_decide(question, options)` — structural decision with ADR
-- `conscio_council(question)` — 3-voice deterministic review (architect, skeptic, pragmatist)
+- `conscio_council(question)` — 4-voice deterministic review (architect, skeptic, pragmatist, critic)
   (historical: at the time the council had 3 deterministic voices plus an
   optional LLM Critic; the critic became the 4th voice by v3.7.0)
 - `conscio_loop_gate(world_state)` — act/block gate: last reflection, rationalization scan, proposal freshness
@@ -316,6 +316,14 @@ and — judged mode only — a `judge` report with `verdict`,
 its pre-gate choice: it differs from the final recommendation
 exactly when `gate_reason` is not None.
 
+**New council result fields (additive, v4.11.0)**: `trait_score`
+(`{total, hold_at, veto_at}` — the summed text-part score the
+recommendation was read from) on the result, and per voice
+`state_vote` (the engine-state vote before traits) plus that
+voice's integer `trait_score`. The pure helper
+`conscio.council_trait_scores(question, context, options)` returns
+the four per-voice scores without an engine.
+
 **Readiness gate.** A `proceed` only leaves the council when the
 engine is ready — not in `action_lockdown` (circuit breaker), not
 in a critical metabolic state, and, when a coherence score exists,
@@ -325,12 +333,15 @@ promotes; a hold or a veto passes through unchanged. A missing
 coherence score is not a reason — absence of data is not evidence
 of a problem.
 
-**Limitation — the deterministic council reads English.** The trait
-extractor behind the four voices is a deterministic English text
-extraction: a question in another language lights no traits and the
-council falls back to its state-only votes (normally `proceed`).
-The calibration corpus is English; broader language coverage is a
-future round, with the owner.
+**Limitation — the deterministic council reads a fixed lexicon.** The
+trait extractor behind the four voices is deterministic text
+extraction over a fixed trigger table (v4.11.0: English plus a
+PT-BR lexicon — `não`/`sem`/`nunca` negate, and risk words like
+`apagar`, `produção`, `tela preta`, `sem backup` light their traits).
+A question whose vocabulary is not in the table lights no traits and
+the council falls back to its state-only votes (normally `proceed`).
+The calibration corpus is English and PT-BR; broader language
+coverage is a future round, with the owner.
 
 ### Resources (read-only URIs)
 
