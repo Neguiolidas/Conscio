@@ -72,6 +72,11 @@ class Dispatcher:
         return None if is_notification else make_response(mid, result)
 
     def _route(self, method: str, params: dict) -> dict:
+        # handle() only normalises falsy params; a truthy non-dict (e.g. a
+        # string) would make every params.get below an AttributeError.
+        # Coerce once, here, so no handler can raise it.
+        if not isinstance(params, dict):
+            params = {}
         if method == "tools/list":
             return {"tools": self.b.tool_defs()}
         if method == "tools/call":
@@ -94,17 +99,47 @@ class Dispatcher:
             if not uri:
                 raise InvalidParams("missing resource uri")
             return self.b.read_resource(uri)
+        # SEP-2640 (Skills extension): protocol-level methods, NOT tools.
+        # The gate lives in the Bindings methods (same source,
+        # self.skills_enabled, as the initialize advertisement); _route
+        # only delegates, so a disabled gate surfaces as MethodNotFound.
+        if method == "skills/list":
+            return self.b.skills_list(params.get("cursor"))
+        if method == "skills/get":
+            uri = params.get("uri")
+            if not isinstance(uri, str) or not uri:
+                raise InvalidParams("missing skill uri")
+            return self.b.skills_get(uri)
+        if method == "resources/directory/read":
+            uri = params.get("uri")
+            if not isinstance(uri, str) or not uri:
+                raise InvalidParams("missing resource uri")
+            return self.b.skills_directory_read(uri, params.get("cursor"))
         raise MethodNotFound(f"unknown method '{method}'")
 
     def _initialize(self, params: dict) -> dict:
+        if not isinstance(params, dict):
+            params = {}
         hook = getattr(self.b, "on_initialize", None)
         if hook is not None:                 # v2.0.1: host manifest wiring
             hook(params)
         requested = params.get("protocolVersion")
         version = (requested if requested in SUPPORTED_PROTOCOLS
                    else SUPPORTED_PROTOCOLS[-1])
+        capabilities: dict = {"tools": {"listChanged": True},
+                              "resources": {}}
+        if getattr(self.b, "skills_enabled", False):
+            # SEP-2640 §Capability Declaration (SEP-2133 negotiation):
+            # the extension lives in capabilities.extensions, and a server
+            # declaring it MUST also declare the resources capability
+            # (already declared above, {} suffices: the SEP sets no
+            # content requirement on it). directoryRead is always true
+            # when the extension is declared: this version has no state
+            # with skills on and directory read off (single gate, see
+            # CHANGELOG); a second flag would be needed to split them.
+            capabilities["extensions"] = {
+                "io.modelcontextprotocol/skills": {"directoryRead": True}}
         return {"protocolVersion": version,
                 "serverInfo": {"name": "conscio", "version": self.b.version()},
-                "capabilities": {"tools": {"listChanged": True},
-                                 "resources": {}},
+                "capabilities": capabilities,
                 "conscio": self.b.conscio_meta()}

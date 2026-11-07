@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-CAPABILITIES: tuple[str, ...] = ("relay", "halls")
+CAPABILITIES: tuple[str, ...] = ("relay", "halls", "skills")
 
 _FILENAME = "mcp_capabilities"
 

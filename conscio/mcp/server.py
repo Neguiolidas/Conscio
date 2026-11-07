@@ -4,6 +4,7 @@ conscio-mcp CLI. stdout is the protocol channel; logging goes to stderr."""
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import sys
@@ -36,6 +37,7 @@ from .schemas import (
     validate_event,
 )
 from .seen import SeenStore
+from .skills import SkillsCatalog
 
 
 def _flatten(d: dict) -> dict:
@@ -87,7 +89,9 @@ class Bindings:
                  mode: str = modes.DEFAULT_MODE,
                  identity_model: str = "", identity_familia: str = "",
                  identity_runtime: str = "", identity_papel: str = "",
-                 can_create_halls: bool = False) -> None:
+                 can_create_halls: bool = False,
+                 skills: bool = False,
+                 skills_root: Path | None = None) -> None:
         self.engine = engine
         self.seen = seen
         self.adapter_name = adapter_name
@@ -101,6 +105,11 @@ class Bindings:
                                  else mailbox.default_db())
         self.relay = relay                   # v2.6.1: --enable-relay
         self.relay_peers = tuple(relay_peers)
+        # SEP-2640: skills extension gate. The catalog is lazy: load()
+        # runs on the first skills method call, never at boot, and never
+        # with the gate off.
+        self.skills_enabled = skills
+        self.skills_catalog = SkillsCatalog(root=skills_root)
         self.auto_review = auto_review        # v2.6.2: --auto-review
         self.last_auto_apply_ts = 0.0         # v2.6.3 #2: throttle clock
         self.mode = mode                      # v4.0: lite / balanced / ultra
@@ -187,8 +196,29 @@ class Bindings:
                 "reviewers_count": len(self.reviewers),
                 "relay_enabled": self.relay,
                 "relay_peers_count": len(self.relay_peers),
+                "skills_enabled": self.skills_enabled,
                 "auto_review_enabled": self.auto_review,
                 "supported_protocols": SUPPORTED_PROTOCOLS}
+
+    # ------------------------------------------------------- SEP-2640 skills
+    def skills_list(self, cursor: str | None = None) -> dict:
+        """skills/list. Gate checked here AND in _route's delegation:
+        one source (self.skills_enabled) for advertisement and dispatch,
+        so the two can never drift. Never touches the catalog gated off."""
+        if not self.skills_enabled:
+            raise j.MethodNotFound("skills are not enabled")
+        return self.skills_catalog.list_skills(cursor)
+
+    def skills_get(self, uri: str) -> dict:
+        if not self.skills_enabled:
+            raise j.MethodNotFound("skills are not enabled")
+        return self.skills_catalog.get_skill(uri)
+
+    def skills_directory_read(self, uri: str,
+                              cursor: str | None = None) -> dict:
+        if not self.skills_enabled:
+            raise j.MethodNotFound("skills are not enabled")
+        return self.skills_catalog.directory_read(uri, cursor)
 
     def tool_defs(self) -> list[dict]:
         defs = list(BASE_TOOL_DEFS)
@@ -1577,6 +1607,23 @@ class Bindings:
         if base == "conscio://handoff":
             return {"contents": [{"uri": uri, "mimeType": "text/markdown",
                                  "text": self._handoff_payload()}]}
+        if parsed.scheme == "skill":
+            # SEP-2640: skill files are ordinary resources. Gate off means
+            # the URI is unknown, exactly as before this extension existed.
+            if not self.skills_enabled:
+                raise j.InvalidParams(f"unknown resource '{uri}'")
+            data, mime = self.skills_catalog.read_file(uri)
+            try:
+                text = data.decode("utf-8")
+            except UnicodeDecodeError:
+                # MCP ReadResourceResult: binary content rides in "blob"
+                # (base64) instead of "text"; no local schema defines it,
+                # it is the base-protocol shape.
+                return {"contents": [{"uri": uri, "mimeType": mime,
+                                      "blob": base64.b64encode(data).decode(
+                                          "ascii")}]}
+            return {"contents": [{"uri": uri, "mimeType": mime,
+                                  "text": text}]}
         raise j.InvalidParams(f"unknown resource '{uri}'")
 
     @staticmethod
@@ -1670,6 +1717,8 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="mailbox db path (default $CONSCIO_HOME/liaison.db)")
     parser.add_argument("--enable-relay", action="store_true",
                         help="enable opt-in general cross-agent messaging")
+    parser.add_argument("--enable-skills", action="store_true",
+                        help="enable opt-in MCP skills extension (SEP-2640)")
     parser.add_argument("--relay-peer", action="append", default=[],
                         metavar="INSTANCE_ID",
                         help="trusted relay peer instance_id (repeatable); "
@@ -2060,6 +2109,8 @@ def main(argv: list[str] | None = None) -> int:
                                                args.enable_relay)
     halls_on = capabilities.resolve_capability(engine.storage, "halls",
                                                args.can_create_halls)
+    skills_on = capabilities.resolve_capability(engine.storage, "skills",
+                                                args.enable_skills)
     self_instance_id, liaison_db = resolve_identity(
         engine.storage, hermes_review=args.enable_hermes_review,
         relay_on=relay_on, liaison_db_arg=args.liaison_db)
@@ -2078,7 +2129,8 @@ def main(argv: list[str] | None = None) -> int:
                         identity_familia=ident[1],
                         identity_runtime=ident[2],
                         identity_papel=ident[3],
-                        can_create_halls=halls_on)
+                        can_create_halls=halls_on,
+                        skills=skills_on)
     mode = "act" if args.enable_act else "propose-only"
     if args.enable_hermes_review:
         if args.reviewer:

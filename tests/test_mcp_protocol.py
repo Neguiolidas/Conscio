@@ -1,9 +1,18 @@
 # tests/test_mcp_protocol.py
 from conscio.mcp import jsonrpc as j
 from conscio.mcp.protocol import SUPPORTED_PROTOCOLS, Dispatcher
+from conscio.mcp.skills import SkillsCatalog
 
 
 class FakeBindings:
+    # SEP-2640: the Dispatcher advertises the extension from
+    # skills_enabled and routes the three methods to these, so the fake
+    # needs them too (and the same gate, or the tests lie about it).
+    skills_enabled = True
+
+    def __init__(self):
+        self._catalog = SkillsCatalog()
+
     def version(self):
         return "2.0.0"
 
@@ -27,6 +36,21 @@ class FakeBindings:
     def read_resource(self, uri):
         return {"contents": [{"uri": uri, "mimeType": "application/json",
                               "text": "{}"}]}
+
+    def skills_list(self, cursor=None):
+        if not self.skills_enabled:
+            raise j.MethodNotFound("skills are not enabled")
+        return self._catalog.list_skills(cursor)
+
+    def skills_get(self, uri):
+        if not self.skills_enabled:
+            raise j.MethodNotFound("skills are not enabled")
+        return self._catalog.get_skill(uri)
+
+    def skills_directory_read(self, uri, cursor=None):
+        if not self.skills_enabled:
+            raise j.MethodNotFound("skills are not enabled")
+        return self._catalog.directory_read(uri, cursor)
 
 
 def _d():
