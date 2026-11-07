@@ -59,11 +59,13 @@ def _req(mid, method, params=None):
 
 
 def _frontmatter(path: Path) -> dict:
-    text = path.read_text("utf-8").lstrip("\ufeff")
-    lines = text.splitlines()
-    assert lines[0].strip() == "---"
-    end = lines.index("---", 1)
-    return yaml.safe_load("\n".join(lines[1:end]))
+    # Independent of the implementation's line splitting: regex-extract
+    # the --- block (BOM + CRLF tolerated) and parse it. Sharing the
+    # implementation's split primitive would let a split bug pass here.
+    text = path.read_text("utf-8")
+    m = re.match(r"\ufeff?---\r?\n(.*?)\r?\n---(?:\r?\n|$)", text, re.S)
+    assert m, f"no frontmatter in {path}"
+    return yaml.safe_load(m.group(1))
 
 
 def _skill_files(root: Path, name: str, *, frontmatter=None, extra=None):
@@ -195,6 +197,22 @@ def test_resources_read_symlink_escape_rejected(tmp_path):
     assert res[1]["error"]["code"] == j.INVALID_PARAMS
 
 
+def test_resources_read_rejects_nul_and_nonstring_uri(tmp_path):
+    # Hostile review #3: %00 / literal NUL and non-string uris must be
+    # -32602 (InvalidParams), never -32603 (InternalError).
+    b, _, _ = _bindings(tmp_path)
+    res = _run(b, [INIT,
+                   _req(1, "resources/read",
+                        {"uri": "skill://conscio/%00/SKILL.md"}),
+                   _req(2, "resources/read",
+                        {"uri": "skill://conscio/\x00/SKILL.md"}),
+                   _req(3, "resources/read", {"uri": 42}),
+                   _req(4, "resources/read",
+                        {"uri": ["skill://conscio/SKILL.md"]})])
+    for r in res[1:]:
+        assert r["error"]["code"] == j.INVALID_PARAMS, r
+
+
 def test_directory_read_lists_direct_child(tmp_path):
     b, _, _ = _bindings(tmp_path)
     res = _run(b, [INIT,
@@ -256,6 +274,20 @@ def test_directory_read_subdirectory(tmp_path):
         "skill://multi/scripts/run.py"}
 
 
+def test_skills_methods_reject_non_dict_params(tmp_path):
+    # Hostile review #4: non-dict params must be -32602, not a silent
+    # success via coercion to {}. initialize keeps its pre-existing
+    # leniency (documented in the CHANGELOG, out of scope here).
+    b, _, _ = _bindings(tmp_path)
+    res = _run(b, [INIT,
+                   _req(1, "skills/list", "hello"),
+                   _req(2, "skills/list", [1, 2]),
+                   _req(3, "skills/get", "hello"),
+                   _req(4, "resources/directory/read", [1, 2])])
+    for r in res[1:]:
+        assert r["error"]["code"] == j.INVALID_PARAMS, r
+
+
 # ---------------------------------------------------------------- gate
 
 def test_gate_off(tmp_path):
@@ -272,7 +304,9 @@ def test_gate_off(tmp_path):
     for r in res[1:4]:
         assert r["error"]["code"] == j.METHOD_NOT_FOUND, r
     assert res[4]["error"]["code"] == j.INVALID_PARAMS
-    tools_off = res[5]["result"]
+    # tools/list still answers with the gate off.
+    assert isinstance(res[5]["result"]["tools"], list)
+    assert res[5]["result"]["tools"]
 
 
 def test_gate_on_tools_list_identical(tmp_path):
@@ -286,6 +320,32 @@ def test_gate_on_tools_list_identical(tmp_path):
     assert on[0]["result"]["capabilities"]["extensions"][
         "io.modelcontextprotocol/skills"] == {"directoryRead": True}
     assert on[0]["result"]["capabilities"]["resources"] == {}
+
+
+def test_resources_list_identical_gate_on_off(tmp_path):
+    # Hostile review #13e: the gate must not change resources/list.
+    b_on, _, _ = _bindings(tmp_path, skills=True)
+    on = _run(b_on, [INIT, _req(1, "resources/list")])
+    b_off, _, _ = _bindings(tmp_path, skills=False)
+    off = _run(b_off, [INIT, _req(1, "resources/list")])
+    assert on[1]["result"] == off[1]["result"]
+
+
+def test_gate_persists_without_flag(tmp_path):
+    # Hostile review #13g: a capability persisted in storage turns the
+    # gate on at the next boot with no --enable-skills flag.
+    from conscio.mcp.capabilities import resolve_capability, write_capabilities
+    storage = tmp_path / "storage"
+    storage.mkdir()
+    write_capabilities(storage, {"skills"})
+    assert resolve_capability(storage, "skills", False) is True
+    b, _, _ = _bindings(
+        tmp_path,
+        skills=resolve_capability(storage, "skills", False))
+    res = _run(b, [INIT, _req(1, "skills/list")])
+    assert "io.modelcontextprotocol/skills" in \
+        res[0]["result"]["capabilities"]["extensions"]
+    assert res[1]["result"]["skills"]
 
 
 def test_initialize_future_version_falls_back_and_no_cache_attrs(tmp_path):
@@ -322,7 +382,7 @@ def test_protocol_fake_lists_and_gets():
                   "method": "resources/directory/read",
                   "params": {"uri": "skill://conscio"}})
     assert r["result"]["resources"][0]["uri"] == "skill://conscio/SKILL.md"
-    # non-dict params must not raise AttributeError (coerced to {})
+    # non-dict params are rejected with InvalidParams, not coerced.
     r = d.handle({"jsonrpc": "2.0", "id": 3, "method": "skills/get",
                   "params": "not-a-dict"})
     assert r["error"]["code"] == j.INVALID_PARAMS
@@ -361,6 +421,58 @@ def test_catalog_excludes_invalid_frontmatter(tmp_path):
     assert len(cat.list_skills()["skills"]) == 1
 
 
+def test_catalog_excludes_non_json_frontmatter(tmp_path):
+    # Hostile review #1: yaml.safe_load produces datetime.date / bytes,
+    # which json.dumps cannot serialize; the skill must be excluded.
+    def build(root):
+        _skill_files(root, "good")
+        d = root / "dated"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(
+            "---\nname: dated\ndescription: x\nreleased: 2026-11-07\n"
+            "---\n\n# T\n", "utf-8")
+        d2 = root / "bindata"
+        d2.mkdir(parents=True)
+        (d2 / "SKILL.md").write_text(
+            "---\nname: bindata\ndescription: x\ndata: !!binary aGk=\n"
+            "---\n\n# T\n", "utf-8")
+    cat = _catalog(tmp_path, build)
+    assert [s["uri"] for s in cat.list_skills()["skills"]] == \
+        ["skill://good/SKILL.md"]
+
+
+def test_catalog_excludes_deeply_nested_frontmatter(tmp_path):
+    # Hostile review #2: 2000 levels of nesting raise RecursionError in
+    # yaml.safe_load; only that skill may die, never the catalog.
+    def build(root):
+        _skill_files(root, "good")
+        d = root / "deep"
+        d.mkdir(parents=True)
+        nested = "[" * 2000 + "]" * 2000
+        (d / "SKILL.md").write_text(
+            f"---\nname: deep\ndescription: x\nnested: {nested}\n"
+            "---\n\n# T\n", "utf-8")
+    cat = _catalog(tmp_path, build)
+    assert [s["uri"] for s in cat.list_skills()["skills"]] == \
+        ["skill://good/SKILL.md"]
+
+
+def test_frontmatter_yaml_coercions_are_json_values(tmp_path):
+    # Hostile review #1, documented side: YAML's lossy coercions are
+    # judged on the parsed value (flag: yes -> True, 1.10 -> 1.1).
+    root = tmp_path / "skills"
+    d = root / "coerced"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_text(
+        "---\nname: coerced\ndescription: x\nflag: yes\nversion: 1.10\n"
+        "---\n\n# T\n", "utf-8")
+    cat = SkillsCatalog(root=root)
+    skills = cat.list_skills()["skills"]
+    assert len(skills) == 1
+    assert skills[0]["frontmatter"]["flag"] is True
+    assert skills[0]["frontmatter"]["version"] == 1.1
+
+
 def test_catalog_excludes_oversize_skills(tmp_path):
     def build(root):
         _skill_files(root, "good")
@@ -372,6 +484,36 @@ def test_catalog_excludes_oversize_skills(tmp_path):
     cat = _catalog(tmp_path, build)
     assert [s["uri"] for s in cat.list_skills()["skills"]] == \
         ["skill://good/SKILL.md"]
+
+
+def test_boundary_512_files_in_513_out(tmp_path):
+    # Hostile review #13c: exact file-count boundary (SKILL.md included).
+    root = tmp_path / "skills"
+    d = _skill_files(root, "edge512")
+    for i in range(511):
+        (d / f"f{i:03}.txt").write_text("", "utf-8")
+    d2 = _skill_files(root, "over513")
+    for i in range(512):
+        (d2 / f"f{i:03}.txt").write_text("", "utf-8")
+    cat = SkillsCatalog(root=root)
+    assert [s["uri"] for s in cat.list_skills()["skills"]] == \
+        ["skill://edge512/SKILL.md"]
+
+
+def test_boundary_16mib_in_plus_one_out(tmp_path):
+    # Hostile review #13c: exact total-bytes boundary (SKILL.md included).
+    from conscio.mcp.skills import MAX_BYTES_PER_SKILL
+    root = tmp_path / "skills"
+    d = _skill_files(root, "exact")
+    skill_size = (d / "SKILL.md").stat().st_size
+    (d / "big.bin").write_bytes(b"\0" * (MAX_BYTES_PER_SKILL - skill_size))
+    d2 = _skill_files(root, "over")
+    skill_size2 = (d2 / "SKILL.md").stat().st_size
+    (d2 / "big.bin").write_bytes(
+        b"\0" * (MAX_BYTES_PER_SKILL - skill_size2 + 1))
+    cat = SkillsCatalog(root=root)
+    assert [s["uri"] for s in cat.list_skills()["skills"]] == \
+        ["skill://exact/SKILL.md"]
 
 
 def test_catalog_accepts_bom_and_crlf_and_extra_fields(tmp_path):
@@ -397,9 +539,20 @@ def test_catalog_binary_file_reads_as_blob(tmp_path):
     res = _run(b, [INIT, _req(1, "resources/read",
                               {"uri": "skill://bin/img.png"})])
     c = res[1]["result"]["contents"][0]
-    assert c["mimeType"] == "application/octet-stream"
+    assert c["mimeType"] == "image/png"
     assert base64.b64decode(c["blob"]) == png
     assert "text" not in c
+
+
+def test_mime_types_use_stdlib(tmp_path):
+    # Hostile review #9: the 5-suffix map is now a fallback; stdlib
+    # mimetypes answers the rest.
+    from conscio.mcp.skills import mime_for
+    assert mime_for(Path("x.png")) == "image/png"
+    assert mime_for(Path("x.py")) == "text/x-python"
+    assert mime_for(Path("x.md")) == "text/markdown"
+    assert mime_for(Path("x.yaml")) == "text/plain"
+    assert mime_for(Path("x.unknownext")) == "application/octet-stream"
 
 
 def test_catalog_empty_root_lists_nothing(tmp_path):
@@ -412,11 +565,22 @@ def test_catalog_empty_root_lists_nothing(tmp_path):
 
 
 def test_digest_is_sensitive_to_one_byte(tmp_path):
-    raw = (CANON / "conscio" / "SKILL.md").read_bytes()
-    good = "sha256:" + hashlib.sha256(raw).hexdigest()
+    # Hostile review #13a: flip one byte of a catalogued SKILL.md and
+    # prove the digest in skills/list changes with it.
+    root = tmp_path / "skills"
+    d = _skill_files(root, "onebyte")
+    cat = SkillsCatalog(root=root)
+    before = cat.list_skills()["skills"][0]["resources"][0]
+    assert before["uri"] == "skill://onebyte/SKILL.md"
+    raw = (d / "SKILL.md").read_bytes()
     bad = bytearray(raw)
-    bad[10] ^= 0xFF
-    assert "sha256:" + hashlib.sha256(bytes(bad)).hexdigest() != good
+    bad[-7] = ord("U")  # "# Title" -> "# Uitle": one ASCII byte, still valid
+    (d / "SKILL.md").write_bytes(bytes(bad))
+    cat2 = SkillsCatalog(root=root)
+    after = cat2.list_skills()["skills"][0]["resources"][0]
+    assert after["digest"] != before["digest"]
+    assert after["digest"] == "sha256:" + hashlib.sha256(bytes(bad)).hexdigest()
+    assert after["size"] == len(bad)
 
 
 def test_catalog_snapshot_does_not_reread_disk(tmp_path):
@@ -428,6 +592,81 @@ def test_catalog_snapshot_does_not_reread_disk(tmp_path):
                                 "---\n\n# changed\n", "utf-8")
     data, _ = cat.read_file("skill://snap/SKILL.md")
     assert b"changed" not in data
+
+
+def test_directory_read_serves_snapshot_not_disk(tmp_path):
+    # Hostile review #6: directory_read reads the snapshot, never disk.
+    root = tmp_path / "skills"
+    d = _skill_files(root, "snap", extra={"old.txt": "old\n"})
+    cat = SkillsCatalog(root=root)
+    assert [c["name"] for c in
+            cat.directory_read("skill://snap")["resources"]] == \
+        ["SKILL.md", "old.txt"]
+    (d / "new.txt").write_text("new\n", "utf-8")
+    (d / "old.txt").unlink()
+    after = cat.directory_read("skill://snap")["resources"]
+    assert [c["name"] for c in after] == ["SKILL.md", "old.txt"]
+    data, _ = cat.read_file("skill://snap/old.txt")
+    assert data == b"old\n"
+    with pytest.raises(j.InvalidParams):
+        cat.read_file("skill://snap/new.txt")
+
+
+def test_symlink_file_dropped_from_manifest(tmp_path):
+    # Hostile review #5: an escaping symlink file must not enter the
+    # manifest (no digest/size of external content) nor directory_read,
+    # while the skill itself survives.
+    root = tmp_path / "skills"
+    outside = tmp_path / "secret.txt"
+    outside.write_text("do not serve", "utf-8")
+    d = _skill_files(root, "linky", extra={"refs/real.md": "# real\n"})
+    (d / "escape.txt").symlink_to(outside)
+    b, _, _ = _bindings(tmp_path, skills_root=root)
+    res = _run(b, [INIT, _req(1, "skills/list"),
+                   _req(2, "resources/directory/read",
+                        {"uri": "skill://linky"}),
+                   _req(3, "resources/read",
+                        {"uri": "skill://linky/escape.txt"})])
+    entry = res[1]["result"]["skills"][0]
+    assert {r["uri"] for r in entry["resources"]} == {
+        "skill://linky/SKILL.md", "skill://linky/refs/real.md"}
+    assert {c["name"] for c in res[2]["result"]["resources"]} == {
+        "SKILL.md", "refs"}
+    assert res[3]["error"]["code"] == j.INVALID_PARAMS
+
+
+def test_symlink_skill_md_and_skill_dir_escapes_excluded(tmp_path):
+    # Hostile review #5: SKILL.md escaping excludes the skill; a skill
+    # directory symlink escaping SKILLS_ROOT excludes the skill too.
+    root = tmp_path / "skills"
+    _skill_files(root, "good")
+    outside_md = tmp_path / "outside.md"
+    outside_md.write_text("---\nname: linkmd\ndescription: x\n---\n\n# T\n",
+                          "utf-8")
+    d = root / "linkmd"
+    d.mkdir()
+    (d / "SKILL.md").symlink_to(outside_md)
+    _skill_files(tmp_path, "ext")
+    (root / "ext").symlink_to(tmp_path / "ext", target_is_directory=True)
+    cat = SkillsCatalog(root=root)
+    assert [s["uri"] for s in cat.list_skills()["skills"]] == \
+        ["skill://good/SKILL.md"]
+
+
+def test_unreadable_file_excludes_skill(tmp_path):
+    # Hostile review #8: a chmod-000 manifest file excludes the whole
+    # skill (with a log), it does not vanish from the manifest silently.
+    root = tmp_path / "skills"
+    d = _skill_files(root, "locked", extra={"notes.txt": "secret\n"})
+    _skill_files(root, "good")
+    locked = d / "notes.txt"
+    locked.chmod(0o000)
+    try:
+        cat = SkillsCatalog(root=root)
+        assert [s["uri"] for s in cat.list_skills()["skills"]] == \
+            ["skill://good/SKILL.md"]
+    finally:
+        locked.chmod(0o644)
 
 
 def test_wire_temp_catalog_mixed_valid_invalid(tmp_path):
