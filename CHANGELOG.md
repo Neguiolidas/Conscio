@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **MCP Skills extension (SEP-2640): serve the plugin's skills over MCP.**
+  With `--enable-skills` (persisted per space like `--enable-relay`, via the
+  `skills` capability), the server declares
+  `capabilities.extensions["io.modelcontextprotocol/skills"]` with
+  `{"directoryRead": true}` in `initialize` and implements `skills/list`,
+  `skills/get` and `resources/directory/read` as protocol-level methods —
+  not tools, so nothing new appears in `tools/list`. The two canonical
+  plugin skills (`conscio`, `conscio-relay`) are served as `skill://`
+  resources readable via `resources/read`; each entry carries its YAML
+  frontmatter verbatim (as parsed JSON) and a complete `{uri, digest, size}`
+  manifest with `sha256:` digests. Gate off (the default): the three methods
+  answer `MethodNotFound`, `initialize` declares no extension, and
+  `resources/read` of a `skill://` URI is `-32602`, as before.
+- Decisions (explicit, not omissions): a single gate — `directoryRead` is
+  always `true` when the extension is declared, there is no state with
+  skills on and directory read off; splitting them needs a second flag.
+  `resources/list` is unchanged: discovery is via `skills/list` and files
+  are addressable via `resources/read` (SEP-2640 §3, §6). No `ttlMs` or
+  `cacheScope`: the declared protocol is at most `2025-06-18` (those arrive
+  with `2026-07-28`, SEP-2549).
+- Known debts: `skills/list` is single-page (no `nextCursor`; an unknown
+  cursor is `-32602`) — paginate by offset when a third skill arrives or
+  the catalog passes 10. No file watching: editing a `SKILL.md` needs a
+  server restart. Per-skill limits are the SEP's: 512 files and 16 MiB
+  total; a skill breaking either, or with invalid frontmatter, is excluded
+  at load (logged to stderr) and the server still starts.
+
 ## [4.11.0] - 2026-10-24 — The Council stops rubber-stamping
 
 ### Fixed

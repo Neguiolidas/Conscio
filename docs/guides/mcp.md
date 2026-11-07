@@ -42,6 +42,9 @@ command:
   [Audited act](#audited-act-v201-opt-in)).
 - `--enable-hermes-review --reviewer <id>` (repeatable) — enable review channel.
 - `--enable-relay --relay-peer <id>` (repeatable) — enable cross-host relay.
+- `--enable-skills` — enable the MCP Skills extension (SEP-2640): serve the
+  plugin's `conscio` and `conscio-relay` skills as `skill://` resources (see
+  [Skills](#skills-sep-2640-opt-in---enable-skills)).
 - `--liaison-db <path>` — mailbox path (default `$HERMES_HOME/liaison.db`).
 - `--max-frame-bytes` (default `1048576`), `--seen-max-rows` (default `10000`),
   `--seen-max-age-days` (default `30`).
@@ -435,6 +438,34 @@ surfaced by relay. Payload cap: 64KB. Retention: 7 days after read.
 | `conscio://state` | ConsciousnessState snapshot. |
 | `conscio://events?type=&category=&since=&limit=` | Recent events. |
 | `conscio://handoff` | Latest session handoff (markdown). |
+
+## Skills (SEP-2640, opt-in `--enable-skills`)
+
+With `--enable-skills`, the server declares the
+`io.modelcontextprotocol/skills` extension in `initialize`
+(`{"directoryRead": true}`) and serves the two canonical plugin skills as
+`skill://` resources:
+
+- `skills/list` — the catalog (currently `skill://conscio/SKILL.md` and
+  `skill://conscio-relay/SKILL.md`); each entry carries the skill's YAML
+  frontmatter verbatim (as parsed JSON) and a complete `{uri, digest, size}`
+  manifest with `sha256:` digests.
+- `skills/get` — one entry by its `skill://.../SKILL.md` URI; unknown URIs
+  are `-32602`.
+- `resources/read` — any file of a skill, e.g. `skill://conscio/SKILL.md`;
+  a directory URI or an unknown skill is `-32602`. Non-UTF-8 files come back
+  as `blob` (base64).
+- `resources/directory/read` — direct children of a skill directory, e.g.
+  `skill://conscio`; files carry their `mimeType`, subdirectories
+  `inode/directory`. Unknown URIs and file URIs are `-32602`.
+
+Gate off (the default): `skills/list`, `skills/get` and
+`resources/directory/read` answer `MethodNotFound`, `initialize` declares no
+extension, and `resources/read` of a `skill://` URI is `-32602`. Nothing
+changes in `tools/list` or `resources/list`. Limits per skill: 512 files and
+16 MiB total; a skill that breaks either, or whose frontmatter is invalid, is
+excluded at load (logged to stderr) and the server still starts. No
+`ttlMs`/`cacheScope`: the declared protocol is at most `2025-06-18`.
 
 ## The Event schema
 
