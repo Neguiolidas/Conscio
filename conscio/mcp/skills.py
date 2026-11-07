@@ -12,9 +12,12 @@ re-reading disk, so a listing entry and a later read can never disagree.
 Limits (SEP-2640, Limits): at most 512 files per skill (``SKILL.md``
 included) and at most 16 MiB (16,777,216 bytes) total per skill. The
 limits are pre-checked with stat() (file count via rglob over names only
-plus the sum of st_size) before any content is read, so a skill that
-breaks either is excluded without its bytes ever entering RAM. A skill
-that breaks either is excluded at load with a line on stderr.
+plus the sum of st_size) before any content is read, except ``SKILL.md``
+itself, which is read first to parse the frontmatter: a skill that
+breaks either limit is excluded without any other file's bytes ever
+entering RAM, and a ``SKILL.md`` that alone exceeds the 16 MiB cap is
+excluded by stat() without being read at all. A skill that breaks either
+limit is excluded at load with a line on stderr.
 
 Frontmatter is the ``SKILL.md`` YAML frontmatter parsed with
 ``yaml.safe_load`` and returned verbatim as a dict (SEP-2640, Frontmatter:
@@ -42,6 +45,7 @@ no ``ttlMs``/``cacheScope`` (those arrive with 2026-07-28, SEP-2549).
 from __future__ import annotations
 
 import hashlib
+import math
 import mimetypes
 import re
 import sys
@@ -60,6 +64,8 @@ SKILLS_ROOT: Path = (Path(__file__).resolve().parent.parent / "integrations"
 NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,63}$")
 MAX_FILES_PER_SKILL = 512
 MAX_BYTES_PER_SKILL = 16_777_216
+# The frontmatter block itself is capped before parsing (cycle-2 item 12).
+MAX_FRONTMATTER_BYTES = 65_536
 
 # Fallback map: these suffixes keep their SEP-2640 MIME types even where
 # the stdlib would guess differently (notably .yaml/.yml -> text/plain).
@@ -84,13 +90,28 @@ def _digest(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
+def _inside_root(path: Path, resolved_dir: Path) -> bool:
+    """Same escape check as the load phase: the resolved path must stay
+    inside the skill directory. Unresolvable paths (e.g. a symlink loop)
+    count as escaping."""
+    try:
+        return path.resolve().is_relative_to(resolved_dir)
+    except (OSError, RuntimeError):
+        return False
+
+
 def _is_json_value(value: object) -> bool:
     """True when value belongs to the JSON subset: str/int/float/bool/None,
     or a list/dict (with string keys) of those, recursively. Anything
     yaml.safe_load can produce outside this (datetime.date, bytes, set,
-    ...) is not json.dumps-able and must never reach the dispatcher."""
-    if value is None or isinstance(value, (str, bool, int, float)):
+    ...) is not json.dumps-able and must never reach the dispatcher.
+    Non-finite floats (nan/inf, e.g. ``.nan`` / ``.inf`` / ``1.0e+999``)
+    are out too: json.dumps would emit them as NaN/Infinity, which is
+    not valid JSON on the wire."""
+    if value is None or isinstance(value, (str, bool, int)):
         return True
+    if isinstance(value, float):
+        return math.isfinite(value)
     if isinstance(value, list):
         return all(_is_json_value(v) for v in value)
     if isinstance(value, dict):
@@ -145,6 +166,17 @@ class SkillsCatalog:
                   f"escapes the skill directory", file=sys.stderr)
             return None
         try:
+            skill_md_size = skill_md.stat().st_size
+        except OSError as exc:
+            print(f"[conscio-mcp] skills: skipping {name}: cannot stat "
+                  f"SKILL.md ({exc})", file=sys.stderr)
+            return None
+        if skill_md_size > MAX_BYTES_PER_SKILL:
+            print(f"[conscio-mcp] skills: skipping {name}: SKILL.md alone "
+                  f"is {skill_md_size} bytes > {MAX_BYTES_PER_SKILL}",
+                  file=sys.stderr)
+            return None
+        try:
             raw = skill_md.read_bytes()
         except OSError as exc:
             print(f"[conscio-mcp] skills: skipping {name}: cannot read "
@@ -170,9 +202,17 @@ class SkillsCatalog:
             return None
         # Pre-check the limits by stat() before reading any content:
         # file count via rglob over names only, plus the sum of st_size.
-        candidates = [p for p in
-                      sorted(directory.rglob("*"), key=lambda p: str(p))
-                      if p.is_file()]
+        # Symlinks escaping the skill directory are dropped from the
+        # manifest by the read phase below, so they are not counted here
+        # either (same resolve() + is_relative_to check). Directories
+        # (including empty ones) are recorded in the snapshot too, so
+        # directory_read can list them.
+        all_paths = sorted(directory.rglob("*"), key=lambda p: str(p))
+        candidates = [p for p in all_paths
+                      if p.is_file() and _inside_root(p, resolved_dir)]
+        dirs = sorted({p.relative_to(directory).as_posix()
+                       for p in all_paths
+                       if p.is_dir() and _inside_root(p, resolved_dir)})
         if len(candidates) > MAX_FILES_PER_SKILL:
             print(f"[conscio-mcp] skills: skipping {name}: "
                   f"{len(candidates)} files > {MAX_FILES_PER_SKILL}",
@@ -217,7 +257,8 @@ class SkillsCatalog:
                      for rel, data in sorted(files.items())]
         entry = {"uri": uri, "frontmatter": frontmatter,
                  "resources": resources}
-        return {"entry": entry, "dir": directory, "files": files}
+        return {"entry": entry, "dir": directory, "files": files,
+                "dirs": dirs}
 
     # ------------------------------------------------------------- public API
 
@@ -251,6 +292,7 @@ class SkillsCatalog:
         if skill is None:
             raise InvalidParams(f"unknown resource '{uri}'")
         prefix = "/".join(rest)
+        dirs = set(skill["dirs"])
         children: dict[str, tuple[str, str | None]] = {}
         for rel in skill["files"]:
             if prefix:
@@ -266,7 +308,18 @@ class SkillsCatalog:
                 children.setdefault(first, ("dir", None))
             else:
                 children[first] = ("file", rel)
-        if prefix and not children:
+        for rel in dirs:
+            if prefix:
+                if rel == prefix:
+                    continue  # the directory itself, not one of its children
+                if not rel.startswith(prefix + "/"):
+                    continue
+                remainder = rel[len(prefix) + 1:]
+            else:
+                remainder = rel
+            first, _, _rest = remainder.partition("/")
+            children.setdefault(first, ("dir", None))
+        if prefix and not children and prefix not in dirs:
             raise InvalidParams(f"unknown resource '{uri}'")
         base = f"skill://{name}/" + (f"{prefix}/" if prefix else "")
         out = []
@@ -302,7 +355,12 @@ class SkillsCatalog:
         filesystem."""
         if not isinstance(uri, str) or not uri or "\x00" in uri:
             raise InvalidParams(f"unknown resource '{uri}'")
-        parsed = urlparse(unquote(uri))
+        try:
+            parsed = urlparse(unquote(uri))
+        except ValueError:
+            # Malformed URI (e.g. an unterminated IPv6 literal in the
+            # authority): InvalidParams, never a leaked -32603.
+            raise InvalidParams(f"unknown resource '{uri}'")
         if parsed.scheme != "skill" or not parsed.netloc \
                 or parsed.query or parsed.fragment:
             raise InvalidParams(f"unknown resource '{uri}'")
@@ -349,7 +407,7 @@ def _parse_frontmatter(raw: bytes) -> tuple[dict | None, bool, str]:
     The block must be a YAML dict in the JSON subset (see _is_json_value)
     with a valid ``name`` equal to the directory name and a non-empty
     ``description`` of at most 1024 chars. Extra fields pass through
-    verbatim. YAML lossy coercions (``flag: yes`` -> True, ``1.10`` ->
+    verbatim. The block itself is capped at 64 KiB before parsing. YAML lossy coercions (``flag: yes`` -> True, ``1.10`` ->
     1.1, duplicate keys last-wins) are judged on the parsed value, not
     recovered."""
     try:
@@ -366,8 +424,11 @@ def _parse_frontmatter(raw: bytes) -> tuple[dict | None, bool, str]:
                    if line.strip() == "---")
     except StopIteration:
         return None, False, "missing closing '---'"
+    block = "\n".join(lines[1:end])
+    if len(block.encode("utf-8")) > MAX_FRONTMATTER_BYTES:
+        return None, False, "frontmatter block exceeds 64 KiB"
     try:
-        parsed = yaml.safe_load("\n".join(lines[1:end]))
+        parsed = yaml.safe_load(block)
     except Exception as exc:
         # yaml.YAMLError is the expected failure; anything else (e.g.
         # RecursionError on deeply nested frontmatter) is still a bad
