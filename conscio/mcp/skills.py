@@ -6,18 +6,35 @@ Source of truth is the Claude Code plugin assets, NOT
 ``conscio/agency/skills.py`` (SkillLibrary: procedural memory, a different
 concept). The catalog is a snapshot built once per process from disk:
 ``load()`` constructs the whole dict and only then publishes it, and
-``read_file`` serves bytes from the snapshot, never re-reading disk, so a
-listing entry and a later read can never disagree.
+``read_file`` and ``directory_read`` serve from the snapshot, never
+re-reading disk, so a listing entry and a later read can never disagree.
 
 Limits (SEP-2640, Limits): at most 512 files per skill (``SKILL.md``
-included) and at most 16 MiB (16,777,216 bytes) total per skill. A skill
+included) and at most 16 MiB (16,777,216 bytes) total per skill. The
+limits are pre-checked with stat() (file count via rglob over names only
+plus the sum of st_size) before any content is read, so a skill that
+breaks either is excluded without its bytes ever entering RAM. A skill
 that breaks either is excluded at load with a line on stderr.
 
 Frontmatter is the ``SKILL.md`` YAML frontmatter parsed with
 ``yaml.safe_load`` and returned verbatim as a dict (SEP-2640, Frontmatter:
 "identical in content"; key order, quoting and line folding are NOT
-preserved, which the SEP accepts). Duplicate YAML keys take the parser's
-behaviour (last wins).
+preserved, which the SEP accepts). The parsed value must belong to the
+JSON subset (dict with string keys, values only str/int/float/bool/None/
+list/dict of those): anything else (a YAML date, bytes, a set, ...) is
+not JSON-serializable and would kill the process when the dispatcher
+serializes the response, so the skill is excluded with a log line, like
+invalid frontmatter. Note the YAML coercions this validation accepts
+as-is: ``flag: yes`` becomes True, ``1.10`` becomes 1.1, duplicate keys
+take the parser's behaviour (last wins) — the subset check judges the
+parsed value, it does not recover the original YAML spelling.
+
+A skill directory that is a symlink escaping SKILLS_ROOT is excluded,
+and so is any file inside a skill whose resolved path escapes the skill
+directory (the file is dropped from the manifest with a log line, except
+SKILL.md, whose escape excludes the whole skill). Files that cannot be
+read are not silently dropped: an unreadable manifest file excludes the
+whole skill with a log line.
 
 The declared protocol version is at most 2025-06-18, so list results carry
 no ``ttlMs``/``cacheScope`` (those arrive with 2026-07-28, SEP-2549).
@@ -25,6 +42,7 @@ no ``ttlMs``/``cacheScope`` (those arrive with 2026-07-28, SEP-2549).
 from __future__ import annotations
 
 import hashlib
+import mimetypes
 import re
 import sys
 from pathlib import Path
@@ -43,6 +61,8 @@ NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,63}$")
 MAX_FILES_PER_SKILL = 512
 MAX_BYTES_PER_SKILL = 16_777_216
 
+# Fallback map: these suffixes keep their SEP-2640 MIME types even where
+# the stdlib would guess differently (notably .yaml/.yml -> text/plain).
 _MIME_BY_SUFFIX = {
     ".md": "text/markdown",
     ".json": "application/json",
@@ -53,11 +73,30 @@ _MIME_BY_SUFFIX = {
 
 
 def mime_for(path: Path) -> str:
-    return _MIME_BY_SUFFIX.get(path.suffix.lower(), "application/octet-stream")
+    suffix = path.suffix.lower()
+    if suffix in _MIME_BY_SUFFIX:
+        return _MIME_BY_SUFFIX[suffix]
+    guessed, _ = mimetypes.guess_type("file" + suffix)
+    return guessed or "application/octet-stream"
 
 
 def _digest(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def _is_json_value(value: object) -> bool:
+    """True when value belongs to the JSON subset: str/int/float/bool/None,
+    or a list/dict (with string keys) of those, recursively. Anything
+    yaml.safe_load can produce outside this (datetime.date, bytes, set,
+    ...) is not json.dumps-able and must never reach the dispatcher."""
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return True
+    if isinstance(value, list):
+        return all(_is_json_value(v) for v in value)
+    if isinstance(value, dict):
+        return all(isinstance(k, str) and _is_json_value(v)
+                   for k, v in value.items())
+    return False
 
 
 class SkillsCatalog:
@@ -74,8 +113,14 @@ class SkillsCatalog:
     def load(self) -> None:
         skills: dict[str, dict] = {}
         if self.root.is_dir():
+            root_resolved = self.root.resolve()
             for child in sorted(self.root.iterdir(), key=lambda p: p.name):
                 if not child.is_dir():
+                    continue
+                if not child.resolve().is_relative_to(root_resolved):
+                    print(f"[conscio-mcp] skills: skipping {child.name}: "
+                          f"skill directory escapes skills root",
+                          file=sys.stderr)
                     continue
                 entry = self._load_skill(child)
                 if entry is not None:
@@ -93,13 +138,27 @@ class SkillsCatalog:
         skill_md = directory / "SKILL.md"
         if not skill_md.is_file():
             return None
+        resolved_dir = directory.resolve()
+        if skill_md.is_symlink() and not skill_md.resolve().is_relative_to(
+                resolved_dir):
+            print(f"[conscio-mcp] skills: skipping {name}: SKILL.md "
+                  f"escapes the skill directory", file=sys.stderr)
+            return None
         try:
             raw = skill_md.read_bytes()
         except OSError as exc:
             print(f"[conscio-mcp] skills: skipping {name}: cannot read "
                   f"SKILL.md ({exc})", file=sys.stderr)
             return None
-        frontmatter, ok, reason = _parse_frontmatter(raw)
+        try:
+            frontmatter, ok, reason = _parse_frontmatter(raw)
+        except Exception as exc:
+            # Any non-YAML exception from the parse (e.g. RecursionError on
+            # deeply nested frontmatter) must poison only this skill, never
+            # the whole catalog: same treatment as OSError in the SKILL.md.
+            print(f"[conscio-mcp] skills: skipping {name}: frontmatter "
+                  f"unreadable ({type(exc).__name__}: {exc})", file=sys.stderr)
+            return None
         if not ok:
             print(f"[conscio-mcp] skills: skipping {name}: {reason}",
                   file=sys.stderr)
@@ -109,28 +168,49 @@ class SkillsCatalog:
                   f"name {frontmatter['name']!r} != directory name",
                   file=sys.stderr)
             return None
+        # Pre-check the limits by stat() before reading any content:
+        # file count via rglob over names only, plus the sum of st_size.
+        candidates = [p for p in
+                      sorted(directory.rglob("*"), key=lambda p: str(p))
+                      if p.is_file()]
+        if len(candidates) > MAX_FILES_PER_SKILL:
+            print(f"[conscio-mcp] skills: skipping {name}: "
+                  f"{len(candidates)} files > {MAX_FILES_PER_SKILL}",
+                  file=sys.stderr)
+            return None
+        total_stat = 0
+        for path in candidates:
+            try:
+                total_stat += path.stat().st_size
+            except OSError:
+                continue  # the read phase below logs and excludes the skill
+        if total_stat > MAX_BYTES_PER_SKILL:
+            print(f"[conscio-mcp] skills: skipping {name}: "
+                  f"{total_stat} bytes > {MAX_BYTES_PER_SKILL}",
+                  file=sys.stderr)
+            return None
         files: dict[str, bytes] = {}
-        total = 0
-        for path in sorted(directory.rglob("*"), key=lambda p: str(p)):
-            if not path.is_file():
+        for path in candidates:
+            rel = path.relative_to(directory).as_posix()
+            if not path.resolve().is_relative_to(resolved_dir):
+                if rel == "SKILL.md":
+                    print(f"[conscio-mcp] skills: skipping {name}: "
+                          f"SKILL.md escapes the skill directory",
+                          file=sys.stderr)
+                    return None
+                print(f"[conscio-mcp] skills: dropping {name}/{rel}: "
+                      f"symlink escapes the skill directory", file=sys.stderr)
                 continue
             try:
                 data = path.read_bytes()
-            except OSError:
-                continue
-            rel = path.relative_to(directory).as_posix()
+            except OSError as exc:
+                # An unreadable manifest file excludes the whole skill:
+                # silently dropping it would serve a listing the disk
+                # cannot back.
+                print(f"[conscio-mcp] skills: skipping {name}: cannot "
+                      f"read {rel} ({exc})", file=sys.stderr)
+                return None
             files[rel] = data
-            total += len(data)
-        if len(files) > MAX_FILES_PER_SKILL:
-            print(f"[conscio-mcp] skills: skipping {name}: "
-                  f"{len(files)} files > {MAX_FILES_PER_SKILL}",
-                  file=sys.stderr)
-            return None
-        if total > MAX_BYTES_PER_SKILL:
-            print(f"[conscio-mcp] skills: skipping {name}: "
-                  f"{total} bytes > {MAX_BYTES_PER_SKILL}",
-                  file=sys.stderr)
-            return None
         uri = f"skill://{name}/SKILL.md"
         resources = [{"uri": f"skill://{name}/{rel}",
                       "digest": _digest(data), "size": len(data)}
@@ -151,8 +231,9 @@ class SkillsCatalog:
                                   key=lambda s: s["entry"]["uri"])]}
 
     def get_skill(self, uri: str) -> dict:
-        """SEP-2640 §4.2. Lookup is by URI in the catalog, so a skill
-        answers even if it never appeared in a listing."""
+        """SEP-2640 §4.2. Lookup is by URI in the single-page catalog, so a
+        skill answers by direct URI lookup whether or not a listing was
+        ever requested."""
         self._ensure_loaded()
         for skill in self._skills.values():
             if skill["entry"]["uri"] == uri:
@@ -160,23 +241,45 @@ class SkillsCatalog:
         raise InvalidParams(f"unknown skill '{uri}'")
 
     def directory_read(self, uri: str, cursor: str | None = None) -> dict:
-        """SEP-2640 §Directory Listing: direct children only."""
+        """SEP-2640 §Directory Listing: direct children only, served from
+        the snapshot, never from disk, so the listing can never disagree
+        with skills/list or a later resources/read."""
         self._ensure_loaded()
         _check_cursor(cursor)
-        name, directory, root = self._resolve_dir(uri)
-        children = []
-        for child in sorted(directory.iterdir(), key=lambda p: p.name):
-            # Paths are lexical under the resolved root; no resolve() here
-            # so a symlink child keeps its own name in the listing.
-            rel = child.relative_to(root).as_posix()
-            child_uri = f"skill://{name}/{rel}"
-            if child.is_dir():
-                children.append({"uri": child_uri, "name": child.name,
-                                 "mimeType": "inode/directory"})
-            elif child.is_file() or child.is_symlink():
-                children.append({"uri": child_uri, "name": child.name,
-                                 "mimeType": mime_for(child)})
-        return {"resultType": "complete", "resources": children}
+        name, rest = self._parse_uri(uri)
+        skill = self._skills.get(name)
+        if skill is None:
+            raise InvalidParams(f"unknown resource '{uri}'")
+        prefix = "/".join(rest)
+        children: dict[str, tuple[str, str | None]] = {}
+        for rel in skill["files"]:
+            if prefix:
+                if rel == prefix:
+                    raise InvalidParams(f"unknown resource '{uri}'")
+                if not rel.startswith(prefix + "/"):
+                    continue
+                remainder = rel[len(prefix) + 1:]
+            else:
+                remainder = rel
+            first, _, _rest = remainder.partition("/")
+            if _rest:
+                children.setdefault(first, ("dir", None))
+            else:
+                children[first] = ("file", rel)
+        if prefix and not children:
+            raise InvalidParams(f"unknown resource '{uri}'")
+        base = f"skill://{name}/" + (f"{prefix}/" if prefix else "")
+        out = []
+        for child_name in sorted(children):
+            kind, rel = children[child_name]
+            if kind == "dir":
+                out.append({"uri": base + child_name, "name": child_name,
+                            "mimeType": "inode/directory"})
+            else:
+                assert rel is not None
+                out.append({"uri": base + child_name, "name": child_name,
+                            "mimeType": mime_for(Path(rel))})
+        return {"resultType": "complete", "resources": out}
 
     def read_file(self, uri: str) -> tuple[bytes, str]:
         """Bytes + mimeType from the snapshot. Raises InvalidParams for
@@ -191,29 +294,21 @@ class SkillsCatalog:
 
     # -------------------------------------------------------------- internals
 
-    def _resolve_dir(self, uri: str) -> tuple[str, Path, Path]:
-        name, rest = self._parse_uri(uri)
-        skill = self._skills.get(name)
-        if skill is None:
-            raise InvalidParams(f"unknown resource '{uri}'")
-        root = skill["dir"].resolve()
-        target = (root / Path(*rest)).resolve() if rest else root
-        if not target.is_relative_to(root) or not target.is_dir():
-            raise InvalidParams(f"unknown resource '{uri}'")
-        return name, target, root
-
     def _parse_uri(self, uri: str) -> tuple[str, tuple[str, ...]]:
         """Strict URI split: scheme ``skill``, first segment is the skill
         name, the rest is the path inside the skill. Any ``..``, ``.``,
-        empty segment (double slash / trailing slash), query or fragment
-        is rejected before touching the filesystem."""
-        if not isinstance(uri, str) or not uri:
+        empty segment (double slash / trailing slash), query, fragment or
+        NUL byte (literal or %00-encoded) is rejected before touching the
+        filesystem."""
+        if not isinstance(uri, str) or not uri or "\x00" in uri:
             raise InvalidParams(f"unknown resource '{uri}'")
         parsed = urlparse(unquote(uri))
         if parsed.scheme != "skill" or not parsed.netloc \
                 or parsed.query or parsed.fragment:
             raise InvalidParams(f"unknown resource '{uri}'")
         raw = f"{parsed.netloc}{parsed.path}"
+        if "\x00" in raw:
+            raise InvalidParams(f"unknown resource '{uri}'")
         if raw.endswith("/"):
             raise InvalidParams(f"unknown resource '{uri}'")
         segments = raw.split("/")
@@ -222,17 +317,20 @@ class SkillsCatalog:
         return segments[0], tuple(segments[1:])
 
     def _resolve_file(self, uri: str) -> tuple[Path, str]:
+        # Snapshot-only: the files dict is the authority, never the disk.
+        # _parse_uri already rejects ".." / "." / empty segments, and only
+        # files that passed the load-time escape check are in the snapshot,
+        # so membership here is the whole traversal/symlink defence.
         name, rest = self._parse_uri(uri)
         if not rest:
             raise InvalidParams(f"unknown resource '{uri}'")
         skill = self._skills.get(name)
         if skill is None:
             raise InvalidParams(f"unknown resource '{uri}'")
-        root = skill["dir"].resolve()
-        target = (skill["dir"] / Path(*rest)).resolve()
-        if not target.is_relative_to(root) or not target.is_file():
+        rel = Path(*rest).as_posix()
+        if rel not in skill["files"]:
             raise InvalidParams(f"unknown resource '{uri}'")
-        return skill["dir"], Path(*rest).as_posix()
+        return skill["dir"], rel
 
 
 def _check_cursor(cursor: str | None) -> None:
@@ -245,17 +343,22 @@ def _check_cursor(cursor: str | None) -> None:
 
 
 def _parse_frontmatter(raw: bytes) -> tuple[dict | None, bool, str]:
-    """Returns (frontmatter, ok, reason). BOM is stripped, CRLF handled
-    by splitlines; the block must be a YAML dict with a valid ``name``
-    equal to the directory name and a non-empty ``description`` of at
-    most 1024 chars. Extra fields pass through verbatim."""
+    """Returns (frontmatter, ok, reason). BOM is stripped, CRLF is
+    normalized to LF explicitly (``\\r\\n`` -> ``\\n``; splitlines() is
+    NOT used: it also splits on \\x0b, \\x0c, \\x85, \\u2028 and \\u2029).
+    The block must be a YAML dict in the JSON subset (see _is_json_value)
+    with a valid ``name`` equal to the directory name and a non-empty
+    ``description`` of at most 1024 chars. Extra fields pass through
+    verbatim. YAML lossy coercions (``flag: yes`` -> True, ``1.10`` ->
+    1.1, duplicate keys last-wins) are judged on the parsed value, not
+    recovered."""
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         return None, False, "SKILL.md is not valid UTF-8"
     if text.startswith("\ufeff"):
         text = text[1:]
-    lines = text.splitlines()
+    lines = text.replace("\r\n", "\n").split("\n")
     if not lines or lines[0].strip() != "---":
         return None, False, "missing opening '---'"
     try:
@@ -265,10 +368,17 @@ def _parse_frontmatter(raw: bytes) -> tuple[dict | None, bool, str]:
         return None, False, "missing closing '---'"
     try:
         parsed = yaml.safe_load("\n".join(lines[1:end]))
-    except yaml.YAMLError as exc:
-        return None, False, f"invalid YAML frontmatter ({exc})"
+    except Exception as exc:
+        # yaml.YAMLError is the expected failure; anything else (e.g.
+        # RecursionError on deeply nested frontmatter) is still a bad
+        # frontmatter, not a reason to poison the catalog.
+        return None, False, (f"invalid YAML frontmatter "
+                             f"({type(exc).__name__}: {exc})")
     if not isinstance(parsed, dict):
         return None, False, "frontmatter is not a mapping"
+    if not _is_json_value(parsed):
+        return None, False, ("frontmatter value outside the JSON subset "
+                             "(e.g. date, bytes, set)")
     name = parsed.get("name")
     if not isinstance(name, str) or not NAME_RE.match(name):
         return None, False, f"invalid name {name!r}"

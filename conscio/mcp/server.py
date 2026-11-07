@@ -1594,6 +1594,11 @@ class Bindings:
 
     # ── resources ──
     def read_resource(self, uri: str) -> dict:
+        # A non-string uri (or one carrying a NUL byte) is InvalidParams
+        # (-32602), not an InternalError: urlparse would raise TypeError /
+        # ValueError on it, and the dispatcher would answer -32603.
+        if not isinstance(uri, str) or "\x00" in uri:
+            raise j.InvalidParams(f"unknown resource '{uri}'")
         parsed = urlparse(uri)
         base = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
         if base == "conscio://advisory":
@@ -1616,9 +1621,11 @@ class Bindings:
             try:
                 text = data.decode("utf-8")
             except UnicodeDecodeError:
-                # MCP ReadResourceResult: binary content rides in "blob"
-                # (base64) instead of "text"; no local schema defines it,
-                # it is the base-protocol shape.
+                # MCP ReadResourceResult shape for binary content (base
+                # protocol, BlobResourceContents): {"uri", "mimeType",
+                # "blob"} with "blob" the base64 of the raw bytes, in
+                # place of "text". The trigger stays UTF-8-or-blob: bytes
+                # that decode as UTF-8 ride in "text", the rest in "blob".
                 return {"contents": [{"uri": uri, "mimeType": mime,
                                       "blob": base64.b64encode(data).decode(
                                           "ascii")}]}

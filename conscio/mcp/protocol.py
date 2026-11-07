@@ -74,8 +74,11 @@ class Dispatcher:
     def _route(self, method: str, params: dict) -> dict:
         # handle() only normalises falsy params; a truthy non-dict (e.g. a
         # string) would make every params.get below an AttributeError.
-        # Coerce once, here, so no handler can raise it.
-        if not isinstance(params, dict):
+        # Coerce once, here, so no handler can raise it — except the
+        # SEP-2640 skills methods, which reject non-dict params with
+        # InvalidParams (-32602) instead of silently succeeding.
+        params_is_dict = isinstance(params, dict)
+        if not params_is_dict:
             params = {}
         if method == "tools/list":
             return {"tools": self.b.tool_defs()}
@@ -104,13 +107,20 @@ class Dispatcher:
         # self.skills_enabled, as the initialize advertisement); _route
         # only delegates, so a disabled gate surfaces as MethodNotFound.
         if method == "skills/list":
+            if not params_is_dict:
+                raise InvalidParams("skills/list params must be an object")
             return self.b.skills_list(params.get("cursor"))
         if method == "skills/get":
+            if not params_is_dict:
+                raise InvalidParams("skills/get params must be an object")
             uri = params.get("uri")
             if not isinstance(uri, str) or not uri:
                 raise InvalidParams("missing skill uri")
             return self.b.skills_get(uri)
         if method == "resources/directory/read":
+            if not params_is_dict:
+                raise InvalidParams(
+                    "resources/directory/read params must be an object")
             uri = params.get("uri")
             if not isinstance(uri, str) or not uri:
                 raise InvalidParams("missing resource uri")
