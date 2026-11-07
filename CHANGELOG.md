@@ -45,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at load (logged to stderr) and the server still starts.
   No output frame cap: input frames are capped, output frames are not
   (known asymmetry — a huge skill entry serializes whole).
+  Known limitations: anchor expansion ("billion laughs") is NOT bounded
+  by a node count — in PyYAML 6.0.3 aliases resolve to shared references,
+  so a loader-side construct count sees ~100 nodes for a document whose
+  traversal expands to hundreds of millions (measured: `_is_json_value`
+  takes ~9x longer per added level, 0.016 s at 5 levels to 1.31 s at 7);
+  the count was not shipped as a false guard. The 64 KiB frontmatter cap
+  above still bounds the raw input. A hardlink to a file outside the
+  skill directory is served as if it were inside: skill directories are
+  trusted local package assets, so only symlinks are escape-checked. The
+  gate-persistence test covers `resolve_capability` + `Bindings` wiring,
+  not the real boot path in `main()` (verified by reading `server.py`).
 
 ### Fixed
 - **MCP Skills extension (SEP-2640): hostile-review fixes.** Frontmatter
@@ -63,9 +74,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   512-file / 16 MiB limits are pre-checked with `stat()` before any
   content is read. An unreadable manifest file excludes the whole skill
   with a log instead of vanishing silently. MIME types come from the
-  stdlib `mimetypes` module with the original 5-suffix map as fallback.
+  original 5-suffix map first (`.md`, `.json`, `.txt`, `.yaml`, `.yml`),
+  with the stdlib `mimetypes` module as fallback for other suffixes.
   `skills/get` docstring corrected: the lookup is by URI in the
   single-page catalog, not "even if it never appeared in a listing".
+- **MCP Skills extension (SEP-2640): hostile-review fixes, cycle 2.**
+  Non-finite frontmatter floats (`.nan`, `.inf`, `1.0e+999`) exclude the
+  skill instead of reaching the wire as invalid JSON (`NaN`/`Infinity`).
+  A malformed URI (`skill://[::1/x`) answers `-32602` from both
+  `resources/read` and `resources/directory/read` instead of leaking a
+  `urlparse` `ValueError` as `-32603`. Falsy non-dict params (`[]`, `""`,
+  `0`) are rejected with `-32602` by the skills methods; params-absent
+  requests (`ping`, `initialize`, `skills/list`) still work. A `SKILL.md`
+  that alone exceeds the 16 MiB cap is excluded by `stat()` without being
+  read. The limits pre-check no longer counts symlinks escaping the skill
+  directory. Empty directories are recorded in the snapshot and listed by
+  `resources/directory/read` (`inode/directory`); reading one answers an
+  empty list. The frontmatter block is capped at 64 KiB before parsing.
+  Line endings: only CRLF and LF split frontmatter lines — a lone CR is
+  not a line break, so a CR-only `SKILL.md` fails frontmatter parsing and
+  the skill is excluded (documented behaviour, not a regression). Tests:
+  the chmod-000 test skips under root; the MIME test pins only the
+  5-suffix map; the digest-test comment is corrected.
 
 ## [4.11.0] - 2026-10-24 — The Council stops rubber-stamping
 
