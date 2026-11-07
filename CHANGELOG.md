@@ -30,12 +30,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are addressable via `resources/read` (SEP-2640 §3, §6). No `ttlMs` or
   `cacheScope`: the declared protocol is at most `2025-06-18` (those arrive
   with `2026-07-28`, SEP-2549).
+  `initialize` keeps its pre-existing leniency (non-dict params are treated
+  as `{}`); only the three skills methods reject non-dict params with
+  `-32602`. Frontmatter: a BOM is stripped and CRLF is accepted (explicit
+  `\r\n` -> `\n` normalization, not `splitlines()`), the skill stays
+  valid. Binary skill files ride in `ReadResourceResult` as
+  `BlobResourceContents` (`{"uri", "mimeType", "blob"}` with base64);
+  bytes that decode as UTF-8 ride in `"text"`.
 - Known debts: `skills/list` is single-page (no `nextCursor`; an unknown
   cursor is `-32602`) — paginate by offset when a third skill arrives or
   the catalog passes 10. No file watching: editing a `SKILL.md` needs a
   server restart. Per-skill limits are the SEP's: 512 files and 16 MiB
   total; a skill breaking either, or with invalid frontmatter, is excluded
   at load (logged to stderr) and the server still starts.
+  No output frame cap: input frames are capped, output frames are not
+  (known asymmetry — a huge skill entry serializes whole).
+
+### Fixed
+- **MCP Skills extension (SEP-2640): hostile-review fixes.** Frontmatter
+  outside the JSON subset (YAML date, bytes, ...) no longer kills the
+  process in response serialization: the skill is excluded at load with
+  a log line. A frontmatter parse raising outside `yaml.YAMLError`
+  (e.g. `RecursionError` on 2000 nested levels) now poisons only that
+  skill. `resources/read` of a NUL (`%00` / literal) or non-string URI
+  answers `-32602`, not `-32603`. `skills/list`, `skills/get` and
+  `resources/directory/read` reject non-dict params with `-32602`.
+  Symlinks escaping the skill directory no longer enter the manifest
+  (the file is dropped with a log; `SKILL.md` escaping excludes the
+  skill), and a skill directory symlink escaping the skills root is
+  excluded; `directory_read` is served from the snapshot, never the
+  disk, and `read_file` resolves URIs against the snapshot too. The
+  512-file / 16 MiB limits are pre-checked with `stat()` before any
+  content is read. An unreadable manifest file excludes the whole skill
+  with a log instead of vanishing silently. MIME types come from the
+  stdlib `mimetypes` module with the original 5-suffix map as fallback.
+  `skills/get` docstring corrected: the lookup is by URI in the
+  single-page catalog, not "even if it never appeared in a listing".
 
 ## [4.11.0] - 2026-10-24 — The Council stops rubber-stamping
 
