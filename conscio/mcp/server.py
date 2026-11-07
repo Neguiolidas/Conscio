@@ -1599,7 +1599,12 @@ class Bindings:
         # ValueError on it, and the dispatcher would answer -32603.
         if not isinstance(uri, str) or "\x00" in uri:
             raise j.InvalidParams(f"unknown resource '{uri}'")
-        parsed = urlparse(uri)
+        try:
+            parsed = urlparse(uri)
+        except ValueError:
+            # Malformed URI (e.g. an unterminated IPv6 literal):
+            # InvalidParams, never a leaked -32603.
+            raise j.InvalidParams(f"unknown resource '{uri}'")
         base = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
         if base == "conscio://advisory":
             return self._json_resource(uri, self.engine.advisory())

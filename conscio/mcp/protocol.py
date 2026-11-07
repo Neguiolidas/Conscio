@@ -33,7 +33,12 @@ class Dispatcher:
             method = ""
         mid = msg.get("id")
         is_notification = "id" not in msg
-        params = msg.get("params") or {}
+        # Only an absent params (None) normalises to {}: a present
+        # non-dict — even a falsy one ([], "", 0) — reaches _route intact,
+        # so the skills methods can reject it with InvalidParams (-32602).
+        params = msg.get("params")
+        if params is None:
+            params = {}
 
         if method == "notifications/initialized":
             self.initialized = True
@@ -72,9 +77,9 @@ class Dispatcher:
         return None if is_notification else make_response(mid, result)
 
     def _route(self, method: str, params: dict) -> dict:
-        # handle() only normalises falsy params; a truthy non-dict (e.g. a
-        # string) would make every params.get below an AttributeError.
-        # Coerce once, here, so no handler can raise it — except the
+        # handle() normalises only an absent params (None) to {}; a
+        # present non-dict reaches here intact. Coerce once, here, so no
+        # handler can raise AttributeError on params.get — except the
         # SEP-2640 skills methods, which reject non-dict params with
         # InvalidParams (-32602) instead of silently succeeding.
         params_is_dict = isinstance(params, dict)
