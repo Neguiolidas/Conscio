@@ -9,6 +9,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -544,15 +545,16 @@ def test_catalog_binary_file_reads_as_blob(tmp_path):
     assert "text" not in c
 
 
-def test_mime_types_use_stdlib(tmp_path):
-    # Hostile review #9: the 5-suffix map is now a fallback; stdlib
-    # mimetypes answers the rest.
+def test_mime_types_map_suffixes(tmp_path):
+    # Cycle-2 item 10: only the 5-suffix map is pinned here. Anything
+    # else comes from the platform stdlib mimetypes (see CHANGELOG) and
+    # is deliberately not asserted: its answers vary by platform.
     from conscio.mcp.skills import mime_for
-    assert mime_for(Path("x.png")) == "image/png"
-    assert mime_for(Path("x.py")) == "text/x-python"
     assert mime_for(Path("x.md")) == "text/markdown"
+    assert mime_for(Path("x.json")) == "application/json"
+    assert mime_for(Path("x.txt")) == "text/plain"
     assert mime_for(Path("x.yaml")) == "text/plain"
-    assert mime_for(Path("x.unknownext")) == "application/octet-stream"
+    assert mime_for(Path("x.yml")) == "text/plain"
 
 
 def test_catalog_empty_root_lists_nothing(tmp_path):
@@ -574,7 +576,9 @@ def test_digest_is_sensitive_to_one_byte(tmp_path):
     assert before["uri"] == "skill://onebyte/SKILL.md"
     raw = (d / "SKILL.md").read_bytes()
     bad = bytearray(raw)
-    bad[-7] = ord("U")  # "# Title" -> "# Uitle": one ASCII byte, still valid
+    # bad[-7] is the space in "# Title": "# Title" -> "#UTitle",
+    # one ASCII byte, still valid.
+    bad[-7] = ord("U")
     (d / "SKILL.md").write_bytes(bytes(bad))
     cat2 = SkillsCatalog(root=root)
     after = cat2.list_skills()["skills"][0]["resources"][0]
@@ -656,6 +660,8 @@ def test_symlink_skill_md_and_skill_dir_escapes_excluded(tmp_path):
 def test_unreadable_file_excludes_skill(tmp_path):
     # Hostile review #8: a chmod-000 manifest file excludes the whole
     # skill (with a log), it does not vanish from the manifest silently.
+    if os.geteuid() == 0:
+        pytest.skip("root can read chmod-000 files")
     root = tmp_path / "skills"
     d = _skill_files(root, "locked", extra={"notes.txt": "secret\n"})
     _skill_files(root, "good")
@@ -700,3 +706,163 @@ def test_main_accepts_enable_skills_flag(tmp_path):
     args = _arg_parser().parse_args(["--enable-skills"])
     assert args.enable_skills is True
     assert _arg_parser().parse_args([]).enable_skills is False
+
+
+# ------------------------------------------------------- cycle-2 hostile review
+
+def test_catalog_excludes_non_finite_frontmatter(tmp_path):
+    # Cycle-2 item 1: .nan / .inf / 1.0e+999 parse to non-finite floats,
+    # which json.dumps would emit as NaN/Infinity (invalid JSON); the
+    # skill must be excluded. (Bare 1e999 parses as a string in PyYAML
+    # 6.0.3, so the overflow spelling is 1.0e+999.)
+    def build(root):
+        _skill_files(root, "good")
+        _skill_files(root, "nan", frontmatter={
+            "name": "nan", "description": "x", "v": float("nan")})
+        _skill_files(root, "inf", frontmatter={
+            "name": "inf", "description": "x", "v": float("inf")})
+        d = root / "overflow"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(
+            "---\nname: overflow\ndescription: x\nv: 1.0e+999\n---\n\n# T\n",
+            "utf-8")
+    cat = _catalog(tmp_path, build)
+    assert [s["uri"] for s in cat.list_skills()["skills"]] == [
+        "skill://good/SKILL.md"]
+
+
+def test_malformed_uri_is_invalid_params(tmp_path):
+    # Cycle-2 item 2: urlparse raises ValueError on a malformed URI
+    # (e.g. an unterminated IPv6 literal); the wire answer must be
+    # -32602, never -32603.
+    b, _, _ = _bindings(tmp_path)
+    res = _run(b, [INIT,
+                   _req(1, "resources/read", {"uri": "skill://[::1/x"}),
+                   _req(2, "resources/directory/read",
+                        {"uri": "skill://[::1/x"})])
+    for r in res[1:]:
+        assert r["error"]["code"] == j.INVALID_PARAMS, r
+
+
+def test_skills_methods_reject_falsy_non_dict_params(tmp_path):
+    # Cycle-2 item 3: falsy non-dict params ([], "", 0) must be -32602,
+    # not silently coerced to {} the way the old handle() did it.
+    b, _, _ = _bindings(tmp_path)
+    res = _run(b, [INIT,
+                   _req(1, "skills/list", []),
+                   _req(2, "skills/list", ""),
+                   _req(3, "skills/list", 0)])
+    for r in res[1:]:
+        assert r["error"]["code"] == j.INVALID_PARAMS, r
+    # ...while params-absent requests keep working: initialize and ping
+    # without params, and skills/list without params.
+    res = _run(b, [{"jsonrpc": "2.0", "id": 0, "method": "initialize"},
+                   _req(1, "ping"),
+                   _req(2, "skills/list")])
+    assert res[1]["result"] == {}
+    assert res[2]["result"]["skills"]
+
+
+def test_oversize_skill_md_not_read(tmp_path, monkeypatch):
+    # Cycle-2 item 4: a SKILL.md that alone exceeds the 16 MiB cap is
+    # excluded by stat() before any read_bytes on it.
+    from conscio.mcp.skills import MAX_BYTES_PER_SKILL
+    root = tmp_path / "skills"
+    d = _skill_files(root, "giant")
+    (d / "SKILL.md").write_bytes(b"x" * (MAX_BYTES_PER_SKILL + 1))
+    orig = Path.read_bytes
+    reads = []
+
+    def spy(self):
+        reads.append(str(self))
+        return orig(self)
+
+    monkeypatch.setattr(Path, "read_bytes", spy)
+    cat = SkillsCatalog(root=root)
+    assert cat.list_skills()["skills"] == []
+    assert not any(r.endswith("SKILL.md") for r in reads)
+
+
+def test_precheck_ignores_escaping_symlinks(tmp_path):
+    # Cycle-2 item 5: the limits pre-check must not count symlinks that
+    # escape the skill directory (the manifest drops them anyway).
+    root = tmp_path / "skills"
+    outside = tmp_path / "outside.bin"
+    with open(outside, "wb") as f:
+        f.truncate(17 * 1024 * 1024)  # sparse: st_size 17 MiB, ~no disk
+    d = _skill_files(root, "edge")
+    for i in range(511):
+        (d / f"f{i:03}.txt").write_text("", "utf-8")
+    (d / "escape.bin").symlink_to(outside)
+    cat = SkillsCatalog(root=root)
+    skills = cat.list_skills()["skills"]
+    assert [s["uri"] for s in skills] == ["skill://edge/SKILL.md"]
+    # 512 real files (SKILL.md + 511); the escaping symlink is in neither
+    # the count nor the byte sum, and not in the manifest.
+    assert len(skills[0]["resources"]) == 512
+
+
+def test_directory_read_lists_empty_subdirectory(tmp_path):
+    # Cycle-2 item 6: empty directories are recorded in the snapshot and
+    # listed (inode/directory); reading one answers an empty list.
+    root = tmp_path / "skills"
+    d = _skill_files(root, "multi", extra={"refs/guide.md": "# guide\n"})
+    (d / "empty").mkdir()
+    b, _, _ = _bindings(tmp_path, skills_root=root)
+    res = _run(b, [INIT,
+                   _req(1, "resources/directory/read",
+                        {"uri": "skill://multi"}),
+                   _req(2, "resources/directory/read",
+                        {"uri": "skill://multi/empty"})])
+    kids = {c["name"]: c for c in res[1]["result"]["resources"]}
+    assert set(kids) == {"SKILL.md", "refs", "empty"}
+    assert kids["empty"]["mimeType"] == "inode/directory"
+    assert kids["empty"]["uri"] == "skill://multi/empty"
+    assert res[2]["result"] == {"resultType": "complete", "resources": []}
+
+
+def test_lone_cr_frontmatter_rejected(tmp_path):
+    # Cycle-2 item 7 (documented behaviour): only CRLF and LF split
+    # frontmatter lines; a CR-only SKILL.md fails frontmatter parsing
+    # and the skill is excluded.
+    root = tmp_path / "skills"
+    d = root / "cronly"
+    d.mkdir(parents=True)
+    (d / "SKILL.md").write_bytes(
+        b"---\rname: cronly\rdescription: x\r---\r\r# T\r")
+    cat = SkillsCatalog(root=root)
+    assert cat.list_skills()["skills"] == []
+
+
+def test_catalog_excludes_cyclic_alias_frontmatter(tmp_path):
+    # Cycle-2 item 8: a cyclic alias parses to a self-referential dict,
+    # so _is_json_value raises RecursionError OUTSIDE the safe_load try
+    # in _parse_frontmatter; only _load_skill's outer wrapper saves the
+    # catalog. (The 2000-bracket input never reaches that wrapper.)
+    from conscio.mcp.skills import _parse_frontmatter
+    root = tmp_path / "skills"
+    d = root / "cyclic"
+    d.mkdir(parents=True)
+    raw = (b"---\nname: cyclic\ndescription: x\na: &x {b: *x}\n"
+           b"---\n\n# T\n")
+    (d / "SKILL.md").write_bytes(raw)
+    with pytest.raises(RecursionError):
+        _parse_frontmatter(raw)
+    _skill_files(root, "good")
+    cat = SkillsCatalog(root=root)
+    assert [s["uri"] for s in cat.list_skills()["skills"]] == [
+        "skill://good/SKILL.md"]
+
+
+def test_frontmatter_block_over_64kib_excluded(tmp_path):
+    # Cycle-2 item 12 (viable half): the frontmatter block itself is
+    # capped at 64 KiB before parsing.
+    root = tmp_path / "skills"
+    d = root / "hugefm"
+    d.mkdir(parents=True)
+    big = "x" * 70_000
+    (d / "SKILL.md").write_text(
+        f"---\nname: hugefm\ndescription: x\nbig: {big}\n---\n\n# T\n",
+        "utf-8")
+    cat = SkillsCatalog(root=root)
+    assert cat.list_skills()["skills"] == []
