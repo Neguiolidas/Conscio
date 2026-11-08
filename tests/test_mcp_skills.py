@@ -267,7 +267,8 @@ def test_directory_read_subdirectory(tmp_path):
     assert kids["scripts"]["mimeType"] == "inode/directory"
     assert kids["SKILL.md"]["mimeType"] == "text/markdown"
     assert [c["name"] for c in res[2]["result"]["resources"]] == ["guide.md"]
-    entry = res[3]["result"]["skills"][0]
+    by_uri = {s["uri"]: s for s in res[3]["result"]["skills"]}
+    entry = by_uri["skill://multi/SKILL.md"]
     assert len(entry["resources"]) == 3
     assert {r["uri"] for r in entry["resources"]} == {
         "skill://multi/SKILL.md", "skill://multi/refs/guide.md",
@@ -630,7 +631,8 @@ def test_symlink_file_dropped_from_manifest(tmp_path):
                         {"uri": "skill://linky"}),
                    _req(3, "resources/read",
                         {"uri": "skill://linky/escape.txt"})])
-    entry = res[1]["result"]["skills"][0]
+    by_uri = {s["uri"]: s for s in res[1]["result"]["skills"]}
+    entry = by_uri["skill://linky/SKILL.md"]
     assert {r["uri"] for r in entry["resources"]} == {
         "skill://linky/SKILL.md", "skill://linky/refs/real.md"}
     assert {c["name"] for c in res[2]["result"]["resources"]} == {
@@ -680,8 +682,9 @@ def test_wire_temp_catalog_mixed_valid_invalid(tmp_path):
     _skill_files(root, "bad", frontmatter={"name": "bad"})
     b, _, _ = _bindings(tmp_path, skills_root=root)
     res = _run(b, [INIT, _req(1, "skills/list")])
-    assert [s["uri"] for s in res[1]["result"]["skills"]] == \
-        ["skill://good/SKILL.md"]
+    assert [s["uri"] for s in res[1]["result"]["skills"]] == [
+        "skill://conscio-relay/SKILL.md", "skill://conscio/SKILL.md",
+        "skill://good/SKILL.md"]
 
 
 def test_conscio_meta_reports_skills_enabled(tmp_path):
@@ -865,3 +868,181 @@ def test_frontmatter_block_over_64kib_excluded(tmp_path):
         "utf-8")
     cat = SkillsCatalog(root=root)
     assert cat.list_skills()["skills"] == []
+
+
+# ------------------------------------------------------- --skills-root
+
+def test_user_root_unions_with_bundled(tmp_path):
+    root = tmp_path / "user-skills"
+    _skill_files(root, "mine", extra={"notes.txt": "hello\n"})
+    _skill_files(root, "other")
+    b, _, _ = _bindings(tmp_path, skills_root=root)
+    res = _run(b, [INIT, _req(1, "skills/list"),
+                   _req(2, "skills/get", {"uri": "skill://mine/SKILL.md"}),
+                   _req(3, "resources/read",
+                        {"uri": "skill://mine/notes.txt"})])
+    assert {s["uri"] for s in res[1]["result"]["skills"]} == {
+        "skill://conscio/SKILL.md", "skill://conscio-relay/SKILL.md",
+        "skill://mine/SKILL.md", "skill://other/SKILL.md"}
+    assert res[2]["result"]["skill"]["frontmatter"]["description"] == \
+        "Skill mine for tests."
+    assert res[3]["result"]["contents"][0]["text"] == "hello\n"
+
+
+def test_user_root_collision_user_wins_and_logs(tmp_path, capsys):
+    root = tmp_path / "user-skills"
+    _skill_files(root, "conscio", frontmatter={
+        "name": "conscio", "description": "User override of conscio."})
+    b, _, _ = _bindings(tmp_path, skills_root=root)
+    res = _run(b, [INIT, _req(1, "skills/list")])
+    by_uri = {s["uri"]: s for s in res[1]["result"]["skills"]}
+    assert by_uri["skill://conscio/SKILL.md"]["frontmatter"][
+        "description"] == "User override of conscio."
+    assert "skill://conscio-relay/SKILL.md" in by_uri
+    err = capsys.readouterr().err
+    assert "overriding skill 'conscio'" in err
+    assert str(root / "conscio") in err
+
+
+def test_user_root_invalid_frontmatter_excluded_and_logged(tmp_path, capsys):
+    root = tmp_path / "user-skills"
+    _skill_files(root, "good")
+    _skill_files(root, "bad", frontmatter={"name": "bad"})
+    _skill_files(root, "longdesc", frontmatter={
+        "name": "longdesc", "description": "y" * 1025})
+    b, _, _ = _bindings(tmp_path, skills_root=root)
+    res = _run(b, [INIT, _req(1, "skills/list")])
+    assert {s["uri"] for s in res[1]["result"]["skills"]} == {
+        "skill://conscio/SKILL.md", "skill://conscio-relay/SKILL.md",
+        "skill://good/SKILL.md"}
+    err = capsys.readouterr().err
+    assert "skipping bad" in err
+    assert "skipping longdesc" in err
+
+
+def test_user_root_escaping_symlinks_excluded(tmp_path, capsys):
+    root = tmp_path / "user-skills"
+    _skill_files(root, "good")
+    outside_md = tmp_path / "outside.md"
+    outside_md.write_text(
+        "---\nname: linkmd\ndescription: x\n---\n\n# T\n", "utf-8")
+    d = root / "linkmd"
+    d.mkdir()
+    (d / "SKILL.md").symlink_to(outside_md)
+    _skill_files(tmp_path, "ext")
+    (root / "ext").symlink_to(tmp_path / "ext", target_is_directory=True)
+    cat = SkillsCatalog(user_root=root)
+    assert [s["uri"] for s in cat.list_skills()["skills"]] == [
+        "skill://conscio-relay/SKILL.md", "skill://conscio/SKILL.md",
+        "skill://good/SKILL.md"]
+    assert "escapes" in capsys.readouterr().err
+
+
+def test_user_root_file_symlink_escape_dropped(tmp_path):
+    root = tmp_path / "user-skills"
+    outside = tmp_path / "secret.txt"
+    outside.write_text("do not serve", "utf-8")
+    d = _skill_files(root, "linky", extra={"refs/real.md": "# real\n"})
+    (d / "escape.txt").symlink_to(outside)
+    b, _, _ = _bindings(tmp_path, skills_root=root)
+    res = _run(b, [INIT, _req(1, "skills/list"),
+                   _req(2, "resources/read",
+                        {"uri": "skill://linky/escape.txt"})])
+    by_uri = {s["uri"]: s for s in res[1]["result"]["skills"]}
+    assert {r["uri"] for r in
+            by_uri["skill://linky/SKILL.md"]["resources"]} == {
+        "skill://linky/SKILL.md", "skill://linky/refs/real.md"}
+    assert res[2]["error"]["code"] == j.INVALID_PARAMS
+
+
+def test_user_root_traversal_rejected(tmp_path):
+    root = tmp_path / "user-skills"
+    _skill_files(root, "mine")
+    b, _, _ = _bindings(tmp_path, skills_root=root)
+    res = _run(b, [INIT,
+                   _req(1, "resources/read",
+                        {"uri": "skill://mine/../conscio/SKILL.md"}),
+                   _req(2, "resources/directory/read",
+                        {"uri": "skill://mine/.."}),
+                   _req(3, "resources/read",
+                        {"uri": "skill://mine/%2e%2e/conscio/SKILL.md"})])
+    for r in res[1:]:
+        assert r["error"]["code"] == j.INVALID_PARAMS, r
+
+
+def test_user_root_oversize_skill_excluded(tmp_path, capsys):
+    root = tmp_path / "user-skills"
+    _skill_files(root, "good")
+    d = _skill_files(root, "huge")
+    big = d / "big.bin"
+    with open(big, "wb") as f:
+        f.truncate(17 * 1024 * 1024)  # sparse: 17 MiB on stat, ~no disk
+    b, _, _ = _bindings(tmp_path, skills_root=root)
+    res = _run(b, [INIT, _req(1, "skills/list")])
+    assert {s["uri"] for s in res[1]["result"]["skills"]} == {
+        "skill://conscio/SKILL.md", "skill://conscio-relay/SKILL.md",
+        "skill://good/SKILL.md"}
+    assert "skipping huge" in capsys.readouterr().err
+
+
+def test_user_root_too_many_files_excluded(tmp_path, capsys):
+    root = tmp_path / "user-skills"
+    _skill_files(root, "good")
+    d = _skill_files(root, "many")
+    for i in range(512):
+        (d / f"f{i:03}.txt").write_text("", "utf-8")
+    cat = SkillsCatalog(user_root=root)
+    assert {s["uri"] for s in cat.list_skills()["skills"]} == {
+        "skill://conscio/SKILL.md", "skill://conscio-relay/SKILL.md",
+        "skill://good/SKILL.md"}
+    assert "skipping many" in capsys.readouterr().err
+
+
+def test_main_accepts_skills_root_flag(tmp_path):
+    from conscio.mcp.server import _arg_parser, _skills_root_or_error
+    args = _arg_parser().parse_args(
+        ["--enable-skills", "--skills-root", str(tmp_path)])
+    assert args.enable_skills is True
+    assert args.skills_root == str(tmp_path)
+    assert _arg_parser().parse_args([]).skills_root is None
+    assert _skills_root_or_error(None) is None
+    assert _skills_root_or_error(str(tmp_path)) == tmp_path
+    with pytest.raises(ValueError):
+        _skills_root_or_error(str(tmp_path / "no-such-dir"))
+    not_a_dir = tmp_path / "file.txt"
+    not_a_dir.write_text("x", "utf-8")
+    with pytest.raises(ValueError):
+        _skills_root_or_error(str(not_a_dir))
+
+
+def test_skills_root_gate_off_changes_nothing(tmp_path):
+    # Orthogonality: without --enable-skills the user root is inert —
+    # the lazy catalog is never loaded, even for a nonexistent root.
+    root = tmp_path / "user-skills"
+    _skill_files(root, "mine")
+    b, _, _ = _bindings(tmp_path, skills=False, skills_root=root)
+    assert b.skills_catalog._loaded is False
+    res = _run(b, [INIT, _req(1, "skills/list")])
+    assert res[1]["error"]["code"] == j.METHOD_NOT_FOUND
+    assert b.skills_catalog._loaded is False
+    b2, _, _ = _bindings(tmp_path, skills=False,
+                         skills_root=tmp_path / "no-such-dir")
+    assert b2.skills_catalog._loaded is False
+
+
+def test_catalog_user_root_param_unions(tmp_path):
+    # Direct catalog use: root keeps its single-root meaning, user_root
+    # unions with it; a user skill wins a name collision.
+    root = tmp_path / "primary"
+    _skill_files(root, "shared", frontmatter={
+        "name": "shared", "description": "Primary."})
+    user = tmp_path / "user"
+    _skill_files(user, "shared", frontmatter={
+        "name": "shared", "description": "User wins."})
+    _skill_files(user, "extra")
+    cat = SkillsCatalog(root=root, user_root=user)
+    skills = {s["uri"]: s for s in cat.list_skills()["skills"]}
+    assert set(skills) == {"skill://shared/SKILL.md",
+                           "skill://extra/SKILL.md"}
+    assert skills["skill://shared/SKILL.md"]["frontmatter"][
+        "description"] == "User wins."

@@ -107,9 +107,11 @@ class Bindings:
         self.relay_peers = tuple(relay_peers)
         # SEP-2640: skills extension gate. The catalog is lazy: load()
         # runs on the first skills method call, never at boot, and never
-        # with the gate off.
+        # with the gate off. skills_root is the USER root: it unions with
+        # the bundled root (a user skill wins a name collision), it never
+        # replaces it, and it never implies --enable-skills.
         self.skills_enabled = skills
-        self.skills_catalog = SkillsCatalog(root=skills_root)
+        self.skills_catalog = SkillsCatalog(user_root=skills_root)
         self.auto_review = auto_review        # v2.6.2: --auto-review
         self.last_auto_apply_ts = 0.0         # v2.6.3 #2: throttle clock
         self.mode = mode                      # v4.0: lite / balanced / ultra
@@ -1731,6 +1733,13 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="enable opt-in general cross-agent messaging")
     parser.add_argument("--enable-skills", action="store_true",
                         help="enable opt-in MCP skills extension (SEP-2640)")
+    parser.add_argument("--skills-root", default=None, metavar="DIR",
+                        help="directory of user skills (each subdirectory "
+                             "a skill with SKILL.md); unions with the "
+                             "bundled skills, a user skill wins a name "
+                             "collision; only takes effect with "
+                             "--enable-skills (or the persisted skills "
+                             "capability)")
     parser.add_argument("--relay-peer", action="append", default=[],
                         metavar="INSTANCE_ID",
                         help="trusted relay peer instance_id (repeatable); "
@@ -2012,6 +2021,22 @@ def resolve_full_identity(*, model: str, familia: str, runtime: str,
     return (m, f, r, p)
 
 
+def _skills_root_or_error(raw: str | None) -> Path | None:
+    """Fail-fast validation for --skills-root: the path must be an
+    existing directory. Raises ValueError with a clear message; main()
+    turns it into a refusal to start (exit 2) before serving anything.
+    Only called when the skills gate is on: with the gate off the root
+    is inert (the lazy catalog is never loaded), so a bad path there
+    changes nothing."""
+    if raw is None:
+        return None
+    root = Path(raw)
+    if not root.is_dir():
+        raise ValueError(f"--skills-root {raw!r} is not an existing "
+                         f"directory")
+    return root
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
     from conscio.installer.binding import unexpanded_variable, validate_binding
@@ -2123,6 +2148,14 @@ def main(argv: list[str] | None = None) -> int:
                                                args.can_create_halls)
     skills_on = capabilities.resolve_capability(engine.storage, "skills",
                                                 args.enable_skills)
+    skills_root: Path | None = None
+    if skills_on and args.skills_root is not None:
+        try:
+            skills_root = _skills_root_or_error(args.skills_root)
+        except ValueError as exc:
+            print(f"conscio-mcp: {exc}; refusing to start",
+                  file=sys.stderr)
+            return 2
     self_instance_id, liaison_db = resolve_identity(
         engine.storage, hermes_review=args.enable_hermes_review,
         relay_on=relay_on, liaison_db_arg=args.liaison_db)
@@ -2142,7 +2175,8 @@ def main(argv: list[str] | None = None) -> int:
                         identity_runtime=ident[2],
                         identity_papel=ident[3],
                         can_create_halls=halls_on,
-                        skills=skills_on)
+                        skills=skills_on,
+                        skills_root=skills_root)
     mode = "act" if args.enable_act else "propose-only"
     if args.enable_hermes_review:
         if args.reviewer:

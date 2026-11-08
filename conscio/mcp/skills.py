@@ -41,6 +41,20 @@ whole skill with a log line.
 
 The declared protocol version is at most 2025-06-18, so list results carry
 no ``ttlMs``/``cacheScope`` (those arrive with 2026-07-28, SEP-2549).
+
+A second, user-supplied root (``--skills-root``) unions with the bundled
+root: bundled skills load first, user skills load second, and a user skill
+with the same ``name`` as a bundled one WINS (explicit user override),
+logged on stderr with the overridden path and the winner's path. Within
+one root the existing behaviour holds (sorted order, last wins, silent).
+Every per-skill validation in ``_load_skill`` (frontmatter, limits,
+traversal, symlinks, unreadable files) is reused unchanged for the user
+root, so a bad user skill is excluded with a log line and never takes
+the server down. A user root that is not an existing directory is skipped
+at load with a log line; the boot-time fail-fast for ``--skills-root``
+lives in ``conscio.mcp.server.main`` and only runs when the skills gate
+is on (with the gate off the lazy catalog is never loaded, so the root
+is inert).
 """
 from __future__ import annotations
 
@@ -121,10 +135,27 @@ def _is_json_value(value: object) -> bool:
 
 
 class SkillsCatalog:
-    """Snapshot catalog of the skills under ``root``."""
+    """Snapshot catalog of the skills under ``root`` plus, when given,
+    ``user_root``.
 
-    def __init__(self, root: Path | None = None) -> None:
+    ``root`` is the primary root (default: the bundled plugin skills).
+    ``user_root`` is a second root whose skills union with the primary
+    ones; a user skill with the same name as a primary one WINS (explicit
+    user override), logged on stderr. Within one root, sorted order wins
+    silently, as before. Without ``user_root`` the behaviour is identical
+    to a single-root catalog.
+    """
+
+    def __init__(self, root: Path | None = None,
+                 user_root: Path | None = None) -> None:
         self.root = Path(root) if root is not None else SKILLS_ROOT
+        self.user_root = (Path(user_root) if user_root is not None else None)
+        if self.user_root is not None and self.user_root.resolve() == \
+                self.root.resolve():
+            # Same directory twice: load once, no spurious override logs.
+            self.user_root = None
+        self._roots = [self.root] + ([self.user_root]
+                                     if self.user_root is not None else [])
         self._loaded = False
         # name -> {"entry": dict, "dir": Path, "files": {rel_posix: bytes}}
         self._skills: dict[str, dict] = {}
@@ -133,22 +164,43 @@ class SkillsCatalog:
 
     def load(self) -> None:
         skills: dict[str, dict] = {}
-        if self.root.is_dir():
-            root_resolved = self.root.resolve()
-            for child in sorted(self.root.iterdir(), key=lambda p: p.name):
-                if not child.is_dir():
-                    continue
-                if not child.resolve().is_relative_to(root_resolved):
-                    print(f"[conscio-mcp] skills: skipping {child.name}: "
-                          f"skill directory escapes skills root",
+        for root in self._roots:
+            if not root.is_dir():
+                if root is self.user_root:
+                    print(f"[conscio-mcp] skills: skipping user root "
+                          f"{root}: not an existing directory",
                           file=sys.stderr)
-                    continue
-                entry = self._load_skill(child)
-                if entry is not None:
-                    skills[entry["entry"]["frontmatter"]["name"]] = entry
+                continue
+            per_root = self._load_root(root)
+            for name, entry in per_root.items():
+                if name in skills:
+                    print(f"[conscio-mcp] skills: overriding skill "
+                          f"{name!r} from {skills[name]['dir']} with "
+                          f"{entry['dir']} (user root wins)",
+                          file=sys.stderr)
+                skills[name] = entry
         # Publish atomically: readers never see a half-built catalog.
         self._skills = skills
         self._loaded = True
+
+    def _load_root(self, root: Path) -> dict[str, dict]:
+        """Load one root into a name -> entry dict. Within a root, sorted
+        order wins silently, as before; every per-skill validation lives
+        in _load_skill(), reused unchanged for the user root."""
+        skills: dict[str, dict] = {}
+        root_resolved = root.resolve()
+        for child in sorted(root.iterdir(), key=lambda p: p.name):
+            if not child.is_dir():
+                continue
+            if not child.resolve().is_relative_to(root_resolved):
+                print(f"[conscio-mcp] skills: skipping {child.name}: "
+                      f"skill directory escapes skills root",
+                      file=sys.stderr)
+                continue
+            entry = self._load_skill(child)
+            if entry is not None:
+                skills[entry["entry"]["frontmatter"]["name"]] = entry
+        return skills
 
     def _ensure_loaded(self) -> None:
         if not self._loaded:
