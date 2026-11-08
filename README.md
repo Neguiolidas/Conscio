@@ -319,6 +319,18 @@ The base surface is **propose-only** (perceive / reflect / recall / audit); opt-
 `--enable-act` adds host-executed, ledgered, gated `act` — Conscio signs and audits the
 intent, the host pulls the trigger. See [the MCP guide](docs/guides/mcp.md).
 
+**MCP Skills (SEP-2640, opt-in).** Behind `--enable-skills` the server
+declares the `io.modelcontextprotocol/skills` extension and serves the
+plugin's skills as `skill://` resources (`skills/list`, `skills/get`,
+`resources/read`, `resources/directory/read`) — protocol-level methods, not
+tools, so `tools/list` is unchanged. `--skills-root <dir>` unions a directory
+of user skills with the bundled ones; a user skill wins a name collision. A
+`--skills-root` that is not an existing directory refuses to start (exit 2)
+only with the skills gate on; with the gate off the flag is inert. This is
+the MCP extension, not the SkillLibrary / noosphere procedural skills, and
+not the bench `--skills N` acquisition curve. See [the MCP
+guide](docs/guides/mcp.md#skills-sep-2640-opt-in---enable-skills).
+
 ### Live mode — daemon, sensors & Awake Mode
 
 Conscio can run as a **living process** that perceives the world each cycle and acts

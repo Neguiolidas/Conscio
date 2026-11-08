@@ -23,6 +23,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   manifest with `sha256:` digests. Gate off (the default): the three methods
   answer `MethodNotFound`, `initialize` declares no extension, and
   `resources/read` of a `skill://` URI is `-32602`, as before.
+- **MCP Skills extension (SEP-2640): `--skills-root <dir>` unions user skills
+  with the bundled ones.** Each subdirectory of the given directory is one
+  skill (`SKILL.md` with YAML frontmatter, `name` equal to the directory
+  name); bundled skills load first, user skills second, and a user skill with
+  the same `name` wins the collision, logged on stderr with both paths
+  (`[conscio-mcp] skills: overriding skill 'X' from <bundled dir> with <user
+  dir> (user root wins)`). Within one root the earlier behaviour holds
+  (sorted order, last wins, silent); a user root equal to the bundled root
+  loads once, with no override log. Every per-skill validation is reused
+  unchanged for user skills, so a bad user skill is excluded at load with a
+  log line and the server still starts. Fail-fast, gate-gated: with the
+  skills gate on (`--enable-skills` or the persisted `skills` capability), a
+  `--skills-root` that is not an existing directory refuses to start (exit
+  2, `conscio-mcp: --skills-root '...' is not an existing directory;
+  refusing to start`); with the gate off the flag is inert — the lazy
+  catalog is never loaded, so a bad path changes nothing. `--skills-root`
+  never implies `--enable-skills`. Tests: 11 new in
+  `tests/test_mcp_skills.py` (60 total); MCP battery green (235 passed).
 - Decisions (explicit, not omissions): a single gate — `directoryRead` is
   always `true` when the extension is declared, there is no state with
   skills on and directory read off; splitting them needs a second flag.
@@ -96,6 +114,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the skill is excluded (documented behaviour, not a regression). Tests:
   the chmod-000 test skips under root; the MIME test pins only the
   5-suffix map; the digest-test comment is corrected.
+- **CI (SEP-2640): ruff + pyright clean (`f2900d4`).** Ruff: BOM strip via
+  `removeprefix`, import order in `tests/test_mcp_skills.py`
+  (`test_mcp_protocol` import moved up), unused `sys` import removed,
+  `re.DOTALL` for `re.S`. Pyright: `frontmatter is None` guard alongside
+  `not ok` in `SkillsCatalog._load_skill`.
 
 ## [4.11.0] - 2026-10-24 — The Council stops rubber-stamping
 

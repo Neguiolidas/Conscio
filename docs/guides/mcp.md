@@ -45,6 +45,11 @@ command:
 - `--enable-skills` — enable the MCP Skills extension (SEP-2640): serve the
   plugin's `conscio` and `conscio-relay` skills as `skill://` resources (see
   [Skills](#skills-sep-2640-opt-in---enable-skills)).
+- `--skills-root <dir>` — directory of user skills; unions with the bundled
+  skills, a user skill wins a name collision (see
+  [Skills](#skills-sep-2640-opt-in---enable-skills)). Only takes effect with
+  `--enable-skills` (or the persisted `skills` capability); it never implies
+  `--enable-skills`.
 - `--liaison-db <path>` — mailbox path (default `$HERMES_HOME/liaison.db`).
 - `--max-frame-bytes` (default `1048576`), `--seen-max-rows` (default `10000`),
   `--seen-max-age-days` (default `30`).
@@ -443,11 +448,11 @@ surfaced by relay. Payload cap: 64KB. Retention: 7 days after read.
 
 With `--enable-skills`, the server declares the
 `io.modelcontextprotocol/skills` extension in `initialize`
-(`{"directoryRead": true}`) and serves the two canonical plugin skills as
-`skill://` resources:
+(`{"directoryRead": true}`) and serves the plugin's skills as `skill://`
+resources — by default the two canonical ones (`conscio`, `conscio-relay`):
 
-- `skills/list` — the catalog (currently `skill://conscio/SKILL.md` and
-  `skill://conscio-relay/SKILL.md`); each entry carries the skill's YAML
+- `skills/list` — the catalog (by default `skill://conscio/SKILL.md` and
+  `skill://conscio-relay/SKILL.md`; more with `--skills-root`, below); each entry carries the skill's YAML
   frontmatter verbatim (as parsed JSON) and a complete `{uri, digest, size}`
   manifest with `sha256:` digests.
 - `skills/get` — one entry by its `skill://.../SKILL.md` URI; unknown URIs
@@ -466,6 +471,41 @@ changes in `tools/list` or `resources/list`. Limits per skill: 512 files and
 16 MiB total; a skill that breaks either, or whose frontmatter is invalid, is
 excluded at load (logged to stderr) and the server still starts. No
 `ttlMs`/`cacheScope`: the declared protocol is at most `2025-06-18`.
+
+### User skills (`--skills-root <dir>`)
+
+`--skills-root` points at a directory of user skills: each subdirectory is
+one skill and must carry a `SKILL.md` with YAML frontmatter (`name` equal to
+the directory name, 1–64 chars; non-empty `description`, at most 1024 chars).
+The catalog is the union of the bundled root
+(`conscio/integrations/claude_code/assets/skills`) and the user root:
+bundled skills load first, user skills second, and a user skill with the same
+`name` as a bundled one wins the collision, logged on stderr:
+
+```
+[conscio-mcp] skills: overriding skill 'conscio' from <bundled dir> with <user dir> (user root wins)
+```
+
+Within one root the earlier behaviour holds (sorted order, last wins,
+silent). A user root that is the same directory as the bundled root is
+loaded once, with no override log. Every per-skill validation is reused
+unchanged for user skills (frontmatter, 512 files / 16 MiB per skill,
+traversal, symlinks escaping the skill directory, unreadable files): a bad
+user skill is excluded at load with a log line and the server still starts.
+The catalog is a snapshot built lazily on the first skills call, never at
+boot.
+
+Fail-fast, gate-gated: with the skills gate on (`--enable-skills` or the
+persisted `skills` capability), a `--skills-root` that is not an existing
+directory refuses to start (exit 2):
+
+```
+conscio-mcp: --skills-root '/bad/dir' is not an existing directory; refusing to start
+```
+
+With the gate off, `--skills-root` is inert: the lazy catalog is never
+loaded, so a bad path changes nothing. The two flags are orthogonal:
+`--skills-root` never implies `--enable-skills`.
 
 ## The Event schema
 
