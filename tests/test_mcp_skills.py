@@ -1087,6 +1087,33 @@ def test_user_root_unreadable_subdir_excludes_skill(tmp_path, capsys):
     assert "cannot list skill directory" in err
 
 
+def test_user_root_unreadable_skill_dir_skipped_bundled_survive(tmp_path, capsys):
+    # B1: a direct child directory of the root that is inaccessible
+    # (chmod 000) must be skipped with a log line, not fail the whole
+    # skills/list with -32603. pathlib is_file() re-raises PermissionError
+    # (only ENOENT/ENOTDIR are swallowed), so the EACCES from stat()
+    # inside the locked directory used to propagate out of _load_skill.
+    if os.geteuid() == 0:
+        pytest.skip("chmod 000 does not block uid 0")
+    root = tmp_path / "user-skills"
+    _skill_files(root, "good")
+    d = _skill_files(root, "locked")
+    os.chmod(d, 0)
+    try:
+        b, _, _ = _bindings(tmp_path, skills_root=root)
+        res = _run(b, [INIT, _req(1, "skills/list")])
+    finally:
+        os.chmod(d, 0o755)
+    assert {s["uri"] for s in res[1]["result"]["skills"]} == {
+        "skill://conscio/SKILL.md",
+        "skill://conscio-relay/SKILL.md",
+        "skill://good/SKILL.md",
+    }
+    err = capsys.readouterr().err
+    assert "skipping locked" in err
+    assert "cannot access" in err
+
+
 def test_main_accepts_skills_root_flag(tmp_path):
     from conscio.mcp.server import _arg_parser, _skills_root_or_error
 

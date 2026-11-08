@@ -237,11 +237,18 @@ class SkillsCatalog:
             )
             return {}
         for child in children:
-            if not child.is_dir():
-                continue
-            if not child.resolve().is_relative_to(root_resolved):
+            try:
+                if not child.is_dir():
+                    continue
+                if not child.resolve().is_relative_to(root_resolved):
+                    print(
+                        f"[conscio-mcp] skills: skipping {child}: skill directory escapes skills root",
+                        file=sys.stderr,
+                    )
+                    continue
+            except OSError as exc:
                 print(
-                    f"[conscio-mcp] skills: skipping {child}: skill directory escapes skills root",
+                    f"[conscio-mcp] skills: skipping {child}: cannot access ({exc})",
                     file=sys.stderr,
                 )
                 continue
@@ -257,7 +264,15 @@ class SkillsCatalog:
     def _load_skill(self, directory: Path) -> dict | None:
         name = directory.name
         skill_md = directory / "SKILL.md"
-        if not skill_md.is_file():
+        try:
+            has_skill_md = skill_md.is_file()
+        except OSError as exc:
+            print(
+                f"[conscio-mcp] skills: skipping {name} ({directory}): cannot access SKILL.md ({exc})",
+                file=sys.stderr,
+            )
+            return None
+        if not has_skill_md:
             print(
                 f"[conscio-mcp] skills: skipping {name} ({directory}): no SKILL.md", file=sys.stderr
             )
