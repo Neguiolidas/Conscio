@@ -493,12 +493,21 @@ between the two roots, and the user root wins with a log line. A user root
 that is the same directory as the bundled root is loaded once, with no
 override log. Every per-skill validation is reused unchanged for user
 skills (frontmatter, 512 files / 16 MiB per skill, traversal, symlinks
-escaping the skill directory, unreadable files): a bad user skill is
-excluded at load with a log line and the server still starts. A user root
-that cannot be listed (e.g. unreadable) is likewise skipped at load with
-a log line and the bundled skills still load; a directory without a
-`SKILL.md` is skipped with a log line too. The catalog is a snapshot
-built lazily on the first skills call, never at boot.
+escaping the skill directory): a bad user skill is excluded at load with
+a log line and the server still starts. An inaccessible skill directory
+(unreadable `SKILL.md`, unreadable manifest file, unreadable
+subdirectory) is not left broken in the root: it is moved at load to
+`<root>/.quarantine/<name>-<timestamp>/` (nothing is deleted), the rest
+of the catalog loads normally, and the next invocation of that skill
+(`skills/get`, `resources/directory/read`, `resources/read`) attempts a
+lazy repair (restoring 0o755 on directories and 0o644 on files, then
+moving it back). A failed repair keeps the skill quarantined and answers
+with a clear error; a name collision on the way back keeps it quarantined
+too. A user root that cannot be listed (e.g. unreadable) is likewise
+skipped at load with a log line and the bundled skills still load; a
+directory without a `SKILL.md` is skipped with a log line too. The
+catalog is a snapshot built lazily on the first skills call, never at
+boot.
 
 Fail-fast, gate-gated: with the skills gate on (`--enable-skills` or the
 persisted `skills` capability), a `--skills-root` that is not an existing

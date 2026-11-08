@@ -88,6 +88,21 @@ def _skill_files(root: Path, name: str, *, frontmatter=None, extra=None):
     return d
 
 
+def _restore_locked(root: Path, *paths: Path) -> None:
+    """Restore readable perms on a locked skill dir wherever it ended up
+    (still in place, or moved to <root>/.quarantine), so tmp_path
+    cleanup can remove it. Best-effort: a missing path is ignored."""
+    qdir = root / ".quarantine"
+    candidates = list(paths)
+    if qdir.is_dir():
+        candidates += list(qdir.iterdir())
+    for p in candidates:
+        try:
+            os.chmod(p, 0o755)
+        except OSError:
+            pass
+
+
 # ---------------------------------------------------------------- catalog wire
 
 def test_list_returns_both_canonical_skills_complete(tmp_path):
@@ -660,9 +675,11 @@ def test_symlink_skill_md_and_skill_dir_escapes_excluded(tmp_path):
         ["skill://good/SKILL.md"]
 
 
-def test_unreadable_file_excludes_skill(tmp_path):
+def test_unreadable_file_quarantines_skill(tmp_path, capsys):
     # Hostile review #8: a chmod-000 manifest file excludes the whole
-    # skill (with a log), it does not vanish from the manifest silently.
+    # skill from the listing, it does not vanish from the manifest
+    # silently. It is an access failure, so the skill is quarantined
+    # (and repairs lazily on its next invocation).
     if os.geteuid() == 0:
         pytest.skip("root can read chmod-000 files")
     root = tmp_path / "skills"
@@ -675,7 +692,10 @@ def test_unreadable_file_excludes_skill(tmp_path):
         assert [s["uri"] for s in cat.list_skills()["skills"]] == \
             ["skill://good/SKILL.md"]
     finally:
-        locked.chmod(0o644)
+        _restore_locked(root, d)
+    assert "quarantined 'locked'" in capsys.readouterr().err
+    assert not (root / "locked").exists()
+    assert len(list((root / ".quarantine").iterdir())) == 1
 
 
 def test_wire_temp_catalog_mixed_valid_invalid(tmp_path):
@@ -1065,7 +1085,10 @@ def test_user_root_unreadable_skipped_bundled_survive(tmp_path, capsys):
     assert str(root) in err
 
 
-def test_user_root_unreadable_subdir_excludes_skill(tmp_path, capsys):
+def test_user_root_unreadable_subdir_quarantined(tmp_path, capsys):
+    # A skill with an inaccessible subdirectory is an access failure, so
+    # it is quarantined (not just excluded): the repair restores the
+    # permissions on the whole tree.
     if os.geteuid() == 0:
         pytest.skip("chmod 000 does not block uid 0")
     root = tmp_path / "user-skills"
@@ -1076,23 +1099,26 @@ def test_user_root_unreadable_subdir_excludes_skill(tmp_path, capsys):
         b, _, _ = _bindings(tmp_path, skills_root=root)
         res = _run(b, [INIT, _req(1, "skills/list")])
     finally:
-        os.chmod(d / "sub", 0o755)
+        _restore_locked(root, d)
     assert {s["uri"] for s in res[1]["result"]["skills"]} == {
         "skill://conscio/SKILL.md",
         "skill://conscio-relay/SKILL.md",
         "skill://good/SKILL.md",
     }
     err = capsys.readouterr().err
-    assert "skipping locked" in err
-    assert "cannot list skill directory" in err
+    assert "quarantined 'locked'" in err
+    assert not (root / "locked").exists()
+    assert len(list((root / ".quarantine").iterdir())) == 1
 
 
-def test_user_root_unreadable_skill_dir_skipped_bundled_survive(tmp_path, capsys):
-    # B1: a direct child directory of the root that is inaccessible
-    # (chmod 000) must be skipped with a log line, not fail the whole
-    # skills/list with -32603. pathlib is_file() re-raises PermissionError
-    # (only ENOENT/ENOTDIR are swallowed), so the EACCES from stat()
-    # inside the locked directory used to propagate out of _load_skill.
+def test_user_root_unreadable_skill_dir_quarantined_bundled_survive(tmp_path, capsys):
+    # B1 successor: a direct child directory of the root that is
+    # inaccessible (chmod 000) is quarantined, not left in place and not
+    # deleted: it moves to <root>/.quarantine/<name>-<timestamp>/, the
+    # other skills still list, and the skill repairs lazily on its next
+    # invocation. pathlib is_file() re-raises PermissionError (only
+    # ENOENT/ENOTDIR are swallowed), so the EACCES from stat() inside
+    # the locked directory used to propagate out of _load_skill as -32603.
     if os.geteuid() == 0:
         pytest.skip("chmod 000 does not block uid 0")
     root = tmp_path / "user-skills"
@@ -1103,15 +1129,155 @@ def test_user_root_unreadable_skill_dir_skipped_bundled_survive(tmp_path, capsys
         b, _, _ = _bindings(tmp_path, skills_root=root)
         res = _run(b, [INIT, _req(1, "skills/list")])
     finally:
-        os.chmod(d, 0o755)
+        _restore_locked(root, d)
     assert {s["uri"] for s in res[1]["result"]["skills"]} == {
         "skill://conscio/SKILL.md",
         "skill://conscio-relay/SKILL.md",
         "skill://good/SKILL.md",
     }
     err = capsys.readouterr().err
-    assert "skipping locked" in err
-    assert "cannot access" in err
+    assert "quarantined 'locked'" in err
+    assert not (root / "locked").exists()
+    qdir = root / ".quarantine"
+    assert qdir.is_dir()
+    moved = list(qdir.iterdir())
+    assert len(moved) == 1 and moved[0].name.startswith("locked-")
+    # A fresh load on the same root never treats .quarantine as a skill.
+    b2, _, _ = _bindings(tmp_path, skills_root=root)
+    res2 = _run(b2, [INIT, _req(1, "skills/list")])
+    assert {s["uri"] for s in res2[1]["result"]["skills"]} == {
+        "skill://conscio/SKILL.md",
+        "skill://conscio-relay/SKILL.md",
+        "skill://good/SKILL.md",
+    }
+
+
+def test_quarantined_skill_repairs_on_get(tmp_path, capsys):
+    # Quarantine + lazy auto-repair: a locked skill dir is moved to
+    # .quarantine at load, and the next skills/get repairs it (move back,
+    # restore permissions, re-validate) and serves it; it then lists, and
+    # resources/read serves it too.
+    if os.geteuid() == 0:
+        pytest.skip("chmod 000 does not block uid 0")
+    root = tmp_path / "user-skills"
+    _skill_files(root, "good")
+    d = _skill_files(root, "locked")
+    os.chmod(d, 0)
+    try:
+        b, _, _ = _bindings(tmp_path, skills_root=root)
+        res = _run(b, [INIT,
+                       _req(1, "skills/list"),
+                       _req(2, "skills/get",
+                            {"uri": "skill://locked/SKILL.md"}),
+                       _req(3, "skills/list"),
+                       _req(4, "resources/read",
+                            {"uri": "skill://locked/SKILL.md"})])
+    finally:
+        _restore_locked(root, d)
+    assert "skill://locked/SKILL.md" not in {
+        s["uri"] for s in res[1]["result"]["skills"]}
+    assert res[2]["result"]["resultType"] == "complete"
+    assert res[2]["result"]["skill"]["uri"] == "skill://locked/SKILL.md"
+    assert "skill://locked/SKILL.md" in {
+        s["uri"] for s in res[3]["result"]["skills"]}
+    assert res[4]["result"]["contents"][0]["uri"] == "skill://locked/SKILL.md"
+    assert (root / "locked" / "SKILL.md").is_file()
+    assert not list((root / ".quarantine").iterdir())
+    err = capsys.readouterr().err
+    assert "quarantined 'locked'" in err
+    assert "repaired 'locked'" in err
+
+
+def test_quarantined_skill_repairs_on_resources_read(tmp_path, capsys):
+    # The lazy repair is triggered by resources/read too, not just
+    # skills/get: a fresh quarantine repairs on the first read_file.
+    if os.geteuid() == 0:
+        pytest.skip("chmod 000 does not block uid 0")
+
+    def build(r):
+        _skill_files(r, "locked")
+
+    cat = _catalog(tmp_path, build)
+    root = tmp_path / "skills"
+    d = root / "locked"
+    os.chmod(d, 0)
+    try:
+        assert cat.list_skills()["skills"] == []
+        assert not (root / "locked").exists()
+        data, mime = cat.read_file("skill://locked/SKILL.md")
+        assert mime == "text/markdown"
+        assert b"locked" in data
+        assert (root / "locked" / "SKILL.md").is_file()
+        assert [s["uri"] for s in cat.list_skills()["skills"]] == [
+            "skill://locked/SKILL.md"]
+    finally:
+        _restore_locked(root, d)
+    assert "repaired 'locked'" in capsys.readouterr().err
+
+
+def test_quarantined_skill_repair_collision_keeps_quarantine(tmp_path, capsys):
+    # A repair never overwrites a skill that now exists in the root: the
+    # quarantined copy stays quarantined and the call answers -32602.
+    if os.geteuid() == 0:
+        pytest.skip("chmod 000 does not block uid 0")
+
+    def build(r):
+        _skill_files(r, "locked")
+
+    cat = _catalog(tmp_path, build)
+    root = tmp_path / "skills"
+    d = root / "locked"
+    os.chmod(d, 0)
+    try:
+        assert cat.list_skills()["skills"] == []
+        qdir = root / ".quarantine"
+        assert len(list(qdir.iterdir())) == 1
+        # A new, valid skill with the same name appears in the root.
+        _skill_files(root, "locked")
+        with pytest.raises(j.InvalidParams):
+            cat.get_skill("skill://locked/SKILL.md")
+        # Neither copy was touched: the new one is intact, the old one is
+        # still quarantined, and the snapshot still lists nothing.
+        assert (root / "locked" / "SKILL.md").is_file()
+        assert len(list(qdir.iterdir())) == 1
+        assert cat.list_skills()["skills"] == []
+    finally:
+        _restore_locked(root, d)
+    assert "already exists" in capsys.readouterr().err
+
+
+def test_quarantined_skill_repair_failure_stays_quarantined(tmp_path, capsys):
+    # When the move back fails (here the root is read-only), the skill
+    # stays quarantined and the call answers -32602.
+    if os.geteuid() == 0:
+        pytest.skip("chmod 000 does not block uid 0")
+
+    def build(r):
+        _skill_files(r, "locked")
+
+    cat = _catalog(tmp_path, build)
+    root = tmp_path / "skills"
+    d = root / "locked"
+    os.chmod(d, 0)
+    try:
+        assert cat.list_skills()["skills"] == []
+        qdir = root / ".quarantine"
+        assert len(list(qdir.iterdir())) == 1
+        os.chmod(root, 0o555)
+        try:
+            with pytest.raises(j.InvalidParams):
+                cat.get_skill("skill://locked/SKILL.md")
+        finally:
+            os.chmod(root, 0o755)
+        assert len(list(qdir.iterdir())) == 1
+        assert not (root / "locked").exists()
+    finally:
+        _restore_locked(root, d)
+        try:
+            os.chmod(root, 0o755)
+        except OSError:
+            pass
+    assert "cannot repair 'locked'" in capsys.readouterr().err
 
 
 def test_main_accepts_skills_root_flag(tmp_path):

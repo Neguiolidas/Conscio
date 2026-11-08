@@ -52,7 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   user root equal to the bundled root loads once, with no override log.
   Every per-skill validation is reused
   unchanged for user skills, so a bad user skill is excluded at load with a
-  log line and the server still starts. Fail-fast, gate-gated: with the
+  log line and the server still starts (content failures; an inaccessible
+  skill directory is quarantined instead — see the quarantine bullet
+  below). Fail-fast, gate-gated: with the
   skills gate on (`--enable-skills` or the persisted `skills` capability), a
   `--skills-root` that is not an existing directory refuses to start (exit
   2, `conscio-mcp: --skills-root '...' does not exist;
@@ -62,7 +64,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/test_mcp_skills.py` (60 total); MCP battery green (235 passed).
   (Follow-up, still unreleased: 5 more tests in `tests/test_mcp_skills.py`
   — unreadable root/subdirectory, missing `SKILL.md`, and the fail-fast
-  through real `main()` — 65 total; MCP battery 240 passed.)
+  through real `main()` — 70 total (1 for the B1 fix + 4 for the quarantine,
+  see below); MCP battery 240 passed.)
+- **MCP Skills: inaccessible skill directories are quarantined, not
+  skipped.** An unreadable skill directory (chmod 000 on the directory,
+  its `SKILL.md`, a manifest file, or a subdirectory) is moved at load to
+  `<root>/.quarantine/<name>-<timestamp>/` (nothing is deleted), the rest
+  of the catalog loads normally, and the next invocation of that skill
+  (`skills/get`, `resources/directory/read`, `resources/read`) attempts a
+  lazy repair: restore 0o755 on directories and 0o644 on files, then move
+  it back. A repair that fails (e.g. the root is read-only, or the skill
+  is now invalid) keeps the skill quarantined and answers with a clear
+  error; a name collision on the way back keeps it quarantined too.
+  Content failures (invalid frontmatter, limits, bad name) are still
+  excluded at load with a log line. Renaming a directory to a different
+  parent updates its `..` entry, so the quarantine move chmods the
+  directory to 0o755 first (a symlink needs no chmod). Tests: 4 new in
+  `tests/test_mcp_skills.py` (70 total); 5-file MCP battery 117 passed;
+  full suite 5,297 passed, 22 skipped, 7 xfailed, 0 failures.
 - Decisions (explicit, not omissions): a single gate — `directoryRead` is
   always `true` when the extension is declared, there is no state with
   skills on and directory read off; splitting them needs a second flag.
@@ -112,8 +131,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   excluded; `directory_read` is served from the snapshot, never the
   disk, and `read_file` resolves URIs against the snapshot too. The
   512-file / 16 MiB limits are pre-checked with `stat()` before any
-  content is read. An unreadable manifest file excludes the whole skill
-  with a log instead of vanishing silently. MIME types come from the
+  content is read. An unreadable manifest file quarantines the whole skill
+  (see the quarantine bullet above) instead of vanishing silently. MIME
+  types come from the
   original 5-suffix map first (`.md`, `.json`, `.txt`, `.yaml`, `.yml`),
   with the stdlib `mimetypes` module as fallback for other suffixes.
   `skills/get` docstring corrected: the lookup is by URI in the

@@ -60,6 +60,19 @@ boot-time fail-fast for ``--skills-root`` lives in
 the gate off the lazy catalog is never loaded, so the root is inert),
 and runs before any capability is persisted, so a refused boot leaves
 no ``skills`` capability behind.
+
+A skill that cannot be read at load (OSError on access: an inaccessible
+directory, SKILL.md, subdirectory or manifest file) is not left in place
+and not deleted: it is moved to ``<root>/.quarantine/<name>-<timestamp>/``,
+logged, and the other skills still load. A skill that was read and is
+invalid (bad frontmatter, wrong name, over the limits, ...) is excluded
+with a log line instead. On the quarantined skill's next invocation
+(skills/get, resources/read, resources/directory/read) the catalog
+attempts a lazy auto-repair: move it back, restore readable permissions
+(directories 0o755, files 0o644), re-validate it, and serve it when the
+repair succeeds. A repair that fails leaves the skill quarantined and the
+call answers -32602; a repair never overwrites a skill that now exists in
+the root and never deletes data.
 """
 from __future__ import annotations
 
@@ -69,6 +82,7 @@ import mimetypes
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -86,6 +100,19 @@ MAX_FILES_PER_SKILL = 512
 MAX_BYTES_PER_SKILL = 16_777_216
 # The frontmatter block itself is capped before parsing (cycle-2 item 12).
 MAX_FRONTMATTER_BYTES = 65_536
+# Quarantine for inaccessible skill directories: a direct child of a
+# skills root that cannot be accessed is moved here, never deleted, and
+# repaired lazily on its next invocation. ".quarantine" cannot be a
+# skill name (NAME_RE has no leading dot), so the scanner skips it.
+QUARANTINE_DIRNAME = ".quarantine"
+
+
+class _SkillInaccessible(Exception):
+    """A skill that cannot be read (OSError on access), as opposed to a
+    skill that was read and is invalid. _load_skill raises it; _load_root
+    quarantines the directory and _maybe_repair re-quarantines on a
+    failed repair. Content failures (bad frontmatter, wrong name, over
+    limits, ...) still return None with a log line."""
 
 # Fallback map: these suffixes keep their SEP-2640 MIME types even where
 # the stdlib would guess differently (notably .yaml/.yml -> text/plain).
@@ -191,11 +218,16 @@ class SkillsCatalog:
         self._loaded = False
         # name -> {"entry": dict, "dir": Path, "files": {rel_posix: bytes}}
         self._skills: dict[str, dict] = {}
+        # name -> {"root": Path, "path": Path, "reason": str}: skill
+        # directories moved to <root>/.quarantine at load because they
+        # could not be accessed; repaired lazily on next invocation.
+        self._quarantined: dict[str, dict] = {}
 
     # ------------------------------------------------------------------ load
 
     def load(self) -> None:
         skills: dict[str, dict] = {}
+        quarantined: dict[str, dict] = {}
         for root in self._roots:
             if not root.is_dir():
                 if root is self.user_root:
@@ -204,7 +236,7 @@ class SkillsCatalog:
                         f"[conscio-mcp] skills: skipping user root {root}: {why}", file=sys.stderr
                     )
                 continue
-            per_root = self._load_root(root)
+            per_root, per_quarantined = self._load_root(root)
             for name, entry in per_root.items():
                 if name in skills:
                     print(
@@ -214,19 +246,39 @@ class SkillsCatalog:
                         file=sys.stderr,
                     )
                 skills[name] = entry
+            quarantined.update(per_quarantined)
+        # A quarantined name that loaded from the other root is served
+        # from there; its broken copy stays preserved in quarantine, but
+        # there is nothing to repair on invocation.
+        for name in list(quarantined):
+            if name in skills:
+                print(
+                    f"[conscio-mcp] skills: {name!r} is quarantined at "
+                    f"{quarantined[name]['path']} but loads from "
+                    f"{skills[name]['dir']}",
+                    file=sys.stderr,
+                )
+                del quarantined[name]
         # Publish atomically: readers never see a half-built catalog.
         self._skills = skills
+        self._quarantined = quarantined
         self._loaded = True
 
-    def _load_root(self, root: Path) -> dict[str, dict]:
-        """Load one root into a name -> entry dict. Within a root there is
-        no collision to resolve (a skill's name must equal its directory
-        name, and directory names are unique within a root); every
-        per-skill validation lives in _load_skill(), reused unchanged for
-        the user root. A root that cannot be listed (e.g. unreadable) is
-        skipped with a log line and an empty dict, so the other root
-        still loads: a bad root must never poison the whole catalog."""
+    def _load_root(self, root: Path) -> tuple[dict[str, dict], dict[str, dict]]:
+        """Load one root into (name -> entry, name -> quarantine record).
+        Within a root there is no collision to resolve (a skill's name
+        must equal its directory name, and directory names are unique
+        within a root); every per-skill validation lives in _load_skill(),
+        reused unchanged for the user root. A root that cannot be listed
+        (e.g. unreadable) is skipped with a log line and empty dicts, so
+        the other root still loads: a bad root must never poison the whole
+        catalog. A direct child that cannot be accessed is moved to
+        <root>/.quarantine/<name>-<timestamp>/ (never deleted) and
+        recorded for lazy repair on its next invocation; a move that
+        fails falls back to skip-with-log. The .quarantine directory
+        itself is never treated as a skill."""
         skills: dict[str, dict] = {}
+        quarantined: dict[str, dict] = {}
         try:
             root_resolved = root.resolve()
             children = sorted(root.iterdir(), key=lambda p: p.name)
@@ -235,8 +287,10 @@ class SkillsCatalog:
                 f"[conscio-mcp] skills: skipping skills root {root}: cannot list directory ({exc})",
                 file=sys.stderr,
             )
-            return {}
+            return {}, {}
         for child in children:
+            if child.name == QUARANTINE_DIRNAME:
+                continue
             try:
                 if not child.is_dir():
                     continue
@@ -247,15 +301,68 @@ class SkillsCatalog:
                     )
                     continue
             except OSError as exc:
-                print(
-                    f"[conscio-mcp] skills: skipping {child}: cannot access ({exc})",
-                    file=sys.stderr,
-                )
+                self._quarantine_or_skip(root, child, exc, quarantined)
                 continue
-            entry = self._load_skill(child)
+            try:
+                entry = self._load_skill(child)
+            except _SkillInaccessible as exc:
+                self._quarantine_or_skip(root, child, exc, quarantined)
+                continue
             if entry is not None:
                 skills[entry["entry"]["frontmatter"]["name"]] = entry
-        return skills
+        return skills, quarantined
+
+    def _quarantine_or_skip(self, root: Path, child: Path, exc: Exception,
+                            quarantined: dict[str, dict]) -> None:
+        """Quarantine an inaccessible child (move + record + log), falling
+        back to skip-with-log when the move fails. A failed quarantine
+        must never poison the catalog."""
+        record = self._quarantine_child(root, child, exc)
+        if record is not None:
+            quarantined[child.name] = record
+            print(
+                f"[conscio-mcp] skills: quarantined {child.name!r} "
+                f"-> {record['path']} ({exc})",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[conscio-mcp] skills: skipping {child}: {exc}",
+                file=sys.stderr,
+            )
+
+    def _quarantine_child(self, root: Path, child: Path, exc: Exception) -> dict | None:
+        """Move an inaccessible direct child of a skills root to
+        ``<root>/.quarantine/<name>-<timestamp>/`` and return its record
+        (``{"root", "path", "reason"}``). Returns None when the move
+        fails, and the caller falls back to skip-with-log: a failed
+        quarantine must never poison the catalog. The data is never
+        deleted; repair on next invocation moves it back. Renaming a
+        directory to a different parent updates its ".." entry, which
+        needs write permission on the directory itself, so a chmod 000
+        directory is chmodded to 0o755 first (a symlink needs no chmod:
+        renaming a link never touches its target)."""
+        qdir = root / QUARANTINE_DIRNAME
+        try:
+            qdir.mkdir(exist_ok=True)
+        except OSError:
+            return None
+        if not child.is_symlink():
+            try:
+                os.chmod(child, 0o755)
+            except OSError:
+                return None
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        target = qdir / f"{child.name}-{stamp}"
+        n = 2
+        while target.exists():
+            target = qdir / f"{child.name}-{stamp}-{n}"
+            n += 1
+        try:
+            os.rename(child, target)
+        except OSError:
+            return None
+        return {"root": root, "path": target, "reason": str(exc)}
 
     def _ensure_loaded(self) -> None:
         if not self._loaded:
@@ -267,11 +374,7 @@ class SkillsCatalog:
         try:
             has_skill_md = skill_md.is_file()
         except OSError as exc:
-            print(
-                f"[conscio-mcp] skills: skipping {name} ({directory}): cannot access SKILL.md ({exc})",
-                file=sys.stderr,
-            )
-            return None
+            raise _SkillInaccessible(f"cannot access SKILL.md ({exc})") from exc
         if not has_skill_md:
             print(
                 f"[conscio-mcp] skills: skipping {name} ({directory}): no SKILL.md", file=sys.stderr
@@ -288,12 +391,7 @@ class SkillsCatalog:
         try:
             skill_md_size = skill_md.stat().st_size
         except OSError as exc:
-            print(
-                f"[conscio-mcp] skills: skipping {name} ({directory}): cannot stat "
-                f"SKILL.md ({exc})",
-                file=sys.stderr,
-            )
-            return None
+            raise _SkillInaccessible(f"cannot stat SKILL.md ({exc})") from exc
         if skill_md_size > MAX_BYTES_PER_SKILL:
             print(
                 f"[conscio-mcp] skills: skipping {name} ({directory}): SKILL.md alone "
@@ -304,12 +402,7 @@ class SkillsCatalog:
         try:
             raw = skill_md.read_bytes()
         except OSError as exc:
-            print(
-                f"[conscio-mcp] skills: skipping {name} ({directory}): cannot read "
-                f"SKILL.md ({exc})",
-                file=sys.stderr,
-            )
-            return None
+            raise _SkillInaccessible(f"cannot read SKILL.md ({exc})") from exc
         try:
             frontmatter, ok, reason = _parse_frontmatter(raw)
         except Exception as exc:
@@ -342,12 +435,7 @@ class SkillsCatalog:
         try:
             all_paths = _list_skill_tree(directory)
         except OSError as exc:
-            print(
-                f"[conscio-mcp] skills: skipping {name} ({directory}): "
-                f"cannot list skill directory ({exc})",
-                file=sys.stderr,
-            )
-            return None
+            raise _SkillInaccessible(f"cannot list skill directory ({exc})") from exc
         candidates = [p for p in all_paths
                       if p.is_file() and _inside_root(p, resolved_dir)]
         dirs = sorted({p.relative_to(directory).as_posix()
@@ -390,15 +478,11 @@ class SkillsCatalog:
             try:
                 data = path.read_bytes()
             except OSError as exc:
-                # An unreadable manifest file excludes the whole skill:
+                # An unreadable manifest file makes the whole skill
+                # inaccessible (it is quarantined by the caller):
                 # silently dropping it would serve a listing the disk
                 # cannot back.
-                print(
-                    f"[conscio-mcp] skills: skipping {name} ({directory}): cannot "
-                    f"read {rel} ({exc})",
-                    file=sys.stderr,
-                )
-                return None
+                raise _SkillInaccessible(f"cannot read {rel} ({exc})") from exc
             files[rel] = data
         uri = f"skill://{name}/SKILL.md"
         resources = [{"uri": f"skill://{name}/{rel}",
@@ -408,6 +492,127 @@ class SkillsCatalog:
                  "resources": resources}
         return {"entry": entry, "dir": directory, "files": files,
                 "dirs": dirs}
+
+    def _maybe_repair(self, name: str) -> bool:
+        """Lazy auto-repair for a quarantined skill, attempted on its next
+        invocation (skills/get, resources/read, resources/directory/read).
+        Restores readable permissions on the quarantined copy
+        (directories 0o755, files 0o644, symlinks untouched), moves it
+        back into its root, and re-validates it with _load_skill. On
+        success the skill joins the catalog and the call proceeds. On
+        any failure the skill stays quarantined and the call answers
+        -32602. Never overwrites a skill that now exists in the root,
+        never deletes data."""
+        if name in self._skills:
+            return True
+        q = self._quarantined.get(name)
+        if q is None:
+            return False
+        root = q["root"]
+        target = root / name
+        if target.exists():
+            print(
+                f"[conscio-mcp] skills: cannot repair {name!r}: {target} "
+                f"already exists, keeping quarantined at {q['path']}",
+                file=sys.stderr,
+            )
+            return False
+        # Never repair (and never chmod) a quarantined path that escapes
+        # its root: the quarantine move happens before the escape check
+        # when resolve() itself raised, so re-check here.
+        try:
+            resolved = q["path"].resolve()
+            root_resolved = root.resolve()
+        except (OSError, RuntimeError):
+            print(
+                f"[conscio-mcp] skills: cannot repair {name!r}: cannot "
+                f"resolve quarantined path {q['path']}",
+                file=sys.stderr,
+            )
+            return False
+        if not resolved.is_relative_to(root_resolved):
+            print(
+                f"[conscio-mcp] skills: cannot repair {name!r}: "
+                f"quarantined path {q['path']} escapes its root",
+                file=sys.stderr,
+            )
+            return False
+        # Restore readable permissions while the copy is still in
+        # quarantine, so a failure here leaves it quarantined instead of
+        # landing a locked directory in the root.
+        try:
+            os.chmod(q["path"], 0o755)
+        except OSError as exc:
+            print(
+                f"[conscio-mcp] skills: cannot repair {name!r}: cannot "
+                f"restore permissions in quarantine ({exc})",
+                file=sys.stderr,
+            )
+            return False
+        for dirpath, dirnames, filenames in os.walk(q["path"]):
+            try:
+                os.chmod(dirpath, 0o755)
+            except OSError:
+                pass
+            for sub in dirnames:
+                p = Path(dirpath) / sub
+                if p.is_symlink():
+                    continue
+                try:
+                    os.chmod(p, 0o755)
+                except OSError:
+                    pass
+            for fn in filenames:
+                p = Path(dirpath) / fn
+                if p.is_symlink():
+                    continue
+                try:
+                    os.chmod(p, 0o644)
+                except OSError:
+                    pass
+        try:
+            os.rename(q["path"], target)
+        except OSError as exc:
+            print(
+                f"[conscio-mcp] skills: cannot repair {name!r}: cannot move "
+                f"back from quarantine ({exc})",
+                file=sys.stderr,
+            )
+            return False
+        try:
+            entry = self._load_skill(target)
+        except _SkillInaccessible as exc:
+            # Back in the root but still unreadable: re-quarantine it
+            # instead of leaving a locked directory in the root.
+            record = self._quarantine_child(root, target, exc)
+            if record is not None:
+                self._quarantined[name] = record
+                print(
+                    f"[conscio-mcp] skills: re-quarantined {name!r} "
+                    f"-> {record['path']} ({exc})",
+                    file=sys.stderr,
+                )
+            else:
+                del self._quarantined[name]
+                print(
+                    f"[conscio-mcp] skills: cannot repair {name!r}: "
+                    f"re-quarantine failed ({exc})",
+                    file=sys.stderr,
+                )
+            return False
+        if entry is None:
+            # Back in the root but still invalid: it is now an ordinary
+            # excluded skill (logged by _load_skill), not a quarantined one.
+            del self._quarantined[name]
+            return False
+        self._skills[name] = entry
+        del self._quarantined[name]
+        print(
+            f"[conscio-mcp] skills: repaired {name!r} from quarantine "
+            f"({q['path']})",
+            file=sys.stderr,
+        )
+        return True
 
     # ------------------------------------------------------------- public API
 
@@ -423,8 +628,15 @@ class SkillsCatalog:
     def get_skill(self, uri: str) -> dict:
         """SEP-2640 §4.2. Lookup is by URI in the single-page catalog, so a
         skill answers by direct URI lookup whether or not a listing was
-        ever requested."""
+        ever requested. A quarantined skill is repaired lazily on this
+        call (see _maybe_repair) and answers when the repair succeeds."""
         self._ensure_loaded()
+        try:
+            name, _rest = self._parse_uri(uri)
+        except InvalidParams:
+            name = None
+        if name is not None:
+            self._maybe_repair(name)
         for skill in self._skills.values():
             if skill["entry"]["uri"] == uri:
                 return {"resultType": "complete", "skill": skill["entry"]}
@@ -437,6 +649,7 @@ class SkillsCatalog:
         self._ensure_loaded()
         _check_cursor(cursor)
         name, rest = self._parse_uri(uri)
+        self._maybe_repair(name)
         skill = self._skills.get(name)
         if skill is None:
             raise InvalidParams(f"unknown resource '{uri}'")
@@ -531,6 +744,7 @@ class SkillsCatalog:
         name, rest = self._parse_uri(uri)
         if not rest:
             raise InvalidParams(f"unknown resource '{uri}'")
+        self._maybe_repair(name)
         skill = self._skills.get(name)
         if skill is None:
             raise InvalidParams(f"unknown resource '{uri}'")
