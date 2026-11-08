@@ -12,6 +12,11 @@ requires-python = ">=3.10"
 dependencies = [
  "numpy>=1.24",
  "cryptography>=42",  # v4.9.2: noosphere Ed25519 signing (publish signs, import verifies)
+ # v4.12.0: the MCP Skills extension (SEP-2640) parses SKILL.md frontmatter
+ # with yaml.safe_load. It is a RUNTIME import (conscio/mcp/skills.py), not a
+ # test-only one: shipping it in [dev] alone published a wheel whose import
+ # raised ModuleNotFoundError on first use.
+ "pyyaml>=6.0",
 ]
 authors = [
  {name = "Neguiolidas", email = "neguitech@proton.me"},
