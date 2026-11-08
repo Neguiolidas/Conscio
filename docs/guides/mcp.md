@@ -500,14 +500,15 @@ subdirectory) is not left broken in the root: it is moved at load to
 `<root>/.quarantine/<name>-<timestamp>/` (nothing is deleted), the rest
 of the catalog loads normally, and the next invocation of that skill
 (`skills/get`, `resources/directory/read`, `resources/read`) attempts a
-lazy repair (restoring 0o755 on directories and 0o644 on files, then
+lazy repair (restoring 0o700 on directories and 0o644 on files, then
 moving it back). A failed repair keeps the skill quarantined and answers
-with a clear error; a name collision on the way back keeps it quarantined
-too. A user root that cannot be listed (e.g. unreadable) is likewise
-skipped at load with a log line and the bundled skills still load; a
-directory without a `SKILL.md` is skipped with a log line too. The
-catalog is a snapshot built lazily on the first skills call, never at
-boot.
+with a clear error; a name collision on the way back loads the existing
+skill into the snapshot instead (when valid), so the call proceeds with
+the current skill. A user root that cannot be listed (e.g. unreadable)
+is likewise skipped at load with a log line and the bundled skills still
+load; a directory without a `SKILL.md` is skipped with a log line too.
+The catalog is a snapshot built lazily on the first skills call, never
+at boot.
 
 Fail-fast, gate-gated: with the skills gate on (`--enable-skills` or the
 persisted `skills` capability), a `--skills-root` that is not an existing

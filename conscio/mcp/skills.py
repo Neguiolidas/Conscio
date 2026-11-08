@@ -69,7 +69,7 @@ invalid (bad frontmatter, wrong name, over the limits, ...) is excluded
 with a log line instead. On the quarantined skill's next invocation
 (skills/get, resources/read, resources/directory/read) the catalog
 attempts a lazy auto-repair: move it back, restore readable permissions
-(directories 0o755, files 0o644), re-validate it, and serve it when the
+(directories 0o700, files 0o644), re-validate it, and serve it when the
 repair succeeds. A repair that fails leaves the skill quarantined and the
 call answers -32602; a repair never overwrites a skill that now exists in
 the root and never deletes data.
@@ -340,7 +340,7 @@ class SkillsCatalog:
         deleted; repair on next invocation moves it back. Renaming a
         directory to a different parent updates its ".." entry, which
         needs write permission on the directory itself, so a chmod 000
-        directory is chmodded to 0o755 first (a symlink needs no chmod:
+        directory is chmodded to 0o700 first (a symlink needs no chmod:
         renaming a link never touches its target)."""
         qdir = root / QUARANTINE_DIRNAME
         try:
@@ -349,7 +349,7 @@ class SkillsCatalog:
             return None
         if not child.is_symlink():
             try:
-                os.chmod(child, 0o755)
+                os.chmod(child, 0o700)
             except OSError:
                 return None
         stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
@@ -497,12 +497,16 @@ class SkillsCatalog:
         """Lazy auto-repair for a quarantined skill, attempted on its next
         invocation (skills/get, resources/read, resources/directory/read).
         Restores readable permissions on the quarantined copy
-        (directories 0o755, files 0o644, symlinks untouched), moves it
+        (directories 0o700, files 0o644, symlinks untouched), moves it
         back into its root, and re-validates it with _load_skill. On
         success the skill joins the catalog and the call proceeds. On
         any failure the skill stays quarantined and the call answers
         -32602. Never overwrites a skill that now exists in the root,
-        never deletes data."""
+        never deletes data. Directories are restored to 0o700 (least
+        privilege: only the owner needs to read/traverse), which keeps
+        the repair bandit-clean. When the name collides with an existing
+        skill, the existing skill is loaded into the snapshot instead
+        (when valid), so the call proceeds with the current skill."""
         if name in self._skills:
             return True
         q = self._quarantined.get(name)
@@ -511,9 +515,24 @@ class SkillsCatalog:
         root = q["root"]
         target = root / name
         if target.exists():
+            # A skill with this name now exists in the root: it wins.
+            # Load it into the snapshot so the call proceeds with the
+            # current skill instead of failing until the next load
+            # (the snapshot is otherwise only rebuilt at load).
+            try:
+                entry = self._load_skill(target)
+            except _SkillInaccessible:
+                # Inaccessible: leave it for the next load to
+                # quarantine; keep the original quarantined.
+                return False
+            if entry is not None:
+                self._skills[entry["entry"]["frontmatter"]["name"]] = entry
+                return True
+            # Invalid content (already logged by _load_skill): keep the
+            # original quarantined.
             print(
                 f"[conscio-mcp] skills: cannot repair {name!r}: {target} "
-                f"already exists, keeping quarantined at {q['path']}",
+                f"already exists but is invalid, keeping quarantined at {q['path']}",
                 file=sys.stderr,
             )
             return False
@@ -541,7 +560,7 @@ class SkillsCatalog:
         # quarantine, so a failure here leaves it quarantined instead of
         # landing a locked directory in the root.
         try:
-            os.chmod(q["path"], 0o755)
+            os.chmod(q["path"], 0o700)
         except OSError as exc:
             print(
                 f"[conscio-mcp] skills: cannot repair {name!r}: cannot "
@@ -551,7 +570,7 @@ class SkillsCatalog:
             return False
         for dirpath, dirnames, filenames in os.walk(q["path"]):
             try:
-                os.chmod(dirpath, 0o755)
+                os.chmod(dirpath, 0o700)
             except OSError:
                 pass
             for sub in dirnames:
@@ -559,7 +578,7 @@ class SkillsCatalog:
                 if p.is_symlink():
                     continue
                 try:
-                    os.chmod(p, 0o755)
+                    os.chmod(p, 0o700)
                 except OSError:
                     pass
             for fn in filenames:

@@ -91,14 +91,38 @@ def _skill_files(root: Path, name: str, *, frontmatter=None, extra=None):
 def _restore_locked(root: Path, *paths: Path) -> None:
     """Restore readable perms on a locked skill dir wherever it ended up
     (still in place, or moved to <root>/.quarantine), so tmp_path
-    cleanup can remove it. Best-effort: a missing path is ignored."""
+    cleanup can remove it. Recurses: a chmod-000 subdirectory is
+    restored before descending into it, or its contents survive and
+    pytest cleanup warns (rm_rf "Directory not empty").
+    Best-effort: a missing path is ignored."""
     qdir = root / ".quarantine"
     candidates = list(paths)
     if qdir.is_dir():
         candidates += list(qdir.iterdir())
     for p in candidates:
+        _chmod_tree(p)
+
+
+def _chmod_tree(path: Path) -> None:
+    """Recursively chmod a tree to 0o755 (dirs) / 0o644 (files),
+    restoring a chmod-000 directory before listing it. Symlinks are
+    left alone. Best-effort: errors are ignored."""
+    if path.is_symlink():
+        return
+    if path.is_dir():
         try:
-            os.chmod(p, 0o755)
+            os.chmod(path, 0o755)
+        except OSError:
+            pass
+        try:
+            entries = list(path.iterdir())
+        except OSError:
+            return
+        for entry in entries:
+            _chmod_tree(entry)
+    else:
+        try:
+            os.chmod(path, 0o644)
         except OSError:
             pass
 
@@ -1215,9 +1239,12 @@ def test_quarantined_skill_repairs_on_resources_read(tmp_path, capsys):
     assert "repaired 'locked'" in capsys.readouterr().err
 
 
-def test_quarantined_skill_repair_collision_keeps_quarantine(tmp_path, capsys):
-    # A repair never overwrites a skill that now exists in the root: the
-    # quarantined copy stays quarantined and the call answers -32602.
+def test_quarantined_skill_collision_loads_existing_skill(tmp_path, capsys):
+    # A repair never overwrites a skill that now exists in the root.
+    # Instead the existing skill is loaded into the snapshot, so the
+    # call proceeds with the current skill (no longer stranded until
+    # the next load): the quarantined copy stays quarantined, never
+    # deleted, and the new skill wins.
     if os.geteuid() == 0:
         pytest.skip("chmod 000 does not block uid 0")
 
@@ -1233,17 +1260,20 @@ def test_quarantined_skill_repair_collision_keeps_quarantine(tmp_path, capsys):
         qdir = root / ".quarantine"
         assert len(list(qdir.iterdir())) == 1
         # A new, valid skill with the same name appears in the root.
-        _skill_files(root, "locked")
-        with pytest.raises(j.InvalidParams):
-            cat.get_skill("skill://locked/SKILL.md")
-        # Neither copy was touched: the new one is intact, the old one is
-        # still quarantined, and the snapshot still lists nothing.
+        _skill_files(root, "locked",
+                     frontmatter={"name": "locked", "description": "replacement"})
+        got = cat.get_skill("skill://locked/SKILL.md")
+        assert got["resultType"] == "complete"
+        assert got["skill"]["uri"] == "skill://locked/SKILL.md"
+        assert got["skill"]["frontmatter"]["description"] == "replacement"
+        # The new skill is intact and now listed; the old one is still
+        # quarantined (never deleted).
         assert (root / "locked" / "SKILL.md").is_file()
         assert len(list(qdir.iterdir())) == 1
-        assert cat.list_skills()["skills"] == []
+        assert [s["uri"] for s in cat.list_skills()["skills"]] == [
+            "skill://locked/SKILL.md"]
     finally:
         _restore_locked(root, d)
-    assert "already exists" in capsys.readouterr().err
 
 
 def test_quarantined_skill_repair_failure_stays_quarantined(tmp_path, capsys):

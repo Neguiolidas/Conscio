@@ -72,16 +72,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `<root>/.quarantine/<name>-<timestamp>/` (nothing is deleted), the rest
   of the catalog loads normally, and the next invocation of that skill
   (`skills/get`, `resources/directory/read`, `resources/read`) attempts a
-  lazy repair: restore 0o755 on directories and 0o644 on files, then move
+  lazy repair: restore 0o700 on directories and 0o644 on files, then move
   it back. A repair that fails (e.g. the root is read-only, or the skill
   is now invalid) keeps the skill quarantined and answers with a clear
-  error; a name collision on the way back keeps it quarantined too.
-  Content failures (invalid frontmatter, limits, bad name) are still
-  excluded at load with a log line. Renaming a directory to a different
-  parent updates its `..` entry, so the quarantine move chmods the
-  directory to 0o755 first (a symlink needs no chmod). Tests: 4 new in
-  `tests/test_mcp_skills.py` (70 total); 5-file MCP battery 117 passed;
-  full suite 5,297 passed, 22 skipped, 7 xfailed, 0 failures.
+  error; a name collision on the way back loads the existing skill into
+  the snapshot instead (when valid), so the call proceeds with the
+  current skill — an invalid or inaccessible collision keeps it
+  quarantined. Directories are restored to 0o700 (least privilege: only
+  the owner needs to read/traverse), which keeps the repair bandit-clean
+  (no B103). Content failures (invalid frontmatter, limits, bad name)
+  are still excluded at load with a log line. Renaming a directory to a
+  different parent updates its `..` entry, so the quarantine move chmods
+  the directory to 0o700 first (a symlink needs no chmod). Tests: 4 new
+  in `tests/test_mcp_skills.py` (70 total, the collision test now
+  asserts the load-on-collision behavior); 5-file MCP battery 117
+  passed; full suite 5,297 passed, 22 skipped, 7 xfailed, 0 failures.
+  (Review v5 follow-up: the pytest cleanup warnings are gone — the
+  test helper now restores permissions recursively, including chmod-000
+  subdirectories.)
 - Decisions (explicit, not omissions): a single gate — `directoryRead` is
   always `true` when the extension is declared, there is no state with
   skills on and directory read off; splitting them needs a second flag.
