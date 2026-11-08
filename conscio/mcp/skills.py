@@ -46,21 +46,27 @@ A second, user-supplied root (``--skills-root``) unions with the bundled
 root: bundled skills load first, user skills load second, and a user skill
 with the same ``name`` as a bundled one WINS (explicit user override),
 logged on stderr with the overridden path and the winner's path. Within
-one root the existing behaviour holds (sorted order, last wins, silent).
-Every per-skill validation in ``_load_skill`` (frontmatter, limits,
-traversal, symlinks, unreadable files) is reused unchanged for the user
-root, so a bad user skill is excluded with a log line and never takes
-the server down. A user root that is not an existing directory is skipped
-at load with a log line; the boot-time fail-fast for ``--skills-root``
-lives in ``conscio.mcp.server.main`` and only runs when the skills gate
-is on (with the gate off the lazy catalog is never loaded, so the root
-is inert).
+one root no collision is possible: a skill's ``name`` must equal its
+directory name, and directory names are unique within a root, so two
+entries from the same root can never share a name; only collisions
+between the two roots exist, and those are logged. Every per-skill
+validation in ``_load_skill`` (frontmatter, limits, traversal, symlinks,
+unreadable files) is reused unchanged for the user root, so a bad user
+skill is excluded with a log line and never takes the server down. A
+user root that is not an existing directory, or that cannot be listed,
+is skipped at load with a log line and the other root still loads; the
+boot-time fail-fast for ``--skills-root`` lives in
+``conscio.mcp.server.main``, only runs when the skills gate is on (with
+the gate off the lazy catalog is never loaded, so the root is inert),
+and runs before any capability is persisted, so a refused boot leaves
+no ``skills`` capability behind.
 """
 from __future__ import annotations
 
 import hashlib
 import math
 import mimetypes
+import os
 import re
 import sys
 from pathlib import Path
@@ -134,6 +140,33 @@ def _is_json_value(value: object) -> bool:
     return False
 
 
+def _list_skill_tree(directory: Path) -> list[Path]:
+    """Every path under a skill directory, sorted like ``rglob("*")``.
+
+    ``Path.rglob`` swallows ``scandir`` errors (probed: an unreadable
+    subdirectory is silently skipped, its files vanishing from the
+    manifest with no log), so the walk is explicit and an ``OSError``
+    propagates to the caller, which excludes the skill with a log line.
+    Symlinked directories are listed but never descended, as with
+    ``rglob`` (``recurse_symlinks=False``)."""
+    found: list[Path] = []
+    stack = [directory]
+    while stack:
+        current = stack.pop()
+        with os.scandir(current) as it:
+            entries = list(it)
+        for entry in entries:
+            path = Path(entry.path)
+            found.append(path)
+            try:
+                is_dir = entry.is_dir(follow_symlinks=False)
+            except OSError:
+                is_dir = False
+            if is_dir:
+                stack.append(path)
+    return sorted(found, key=lambda p: str(p))
+
+
 class SkillsCatalog:
     """Snapshot catalog of the skills under ``root`` plus, when given,
     ``user_root``.
@@ -141,21 +174,20 @@ class SkillsCatalog:
     ``root`` is the primary root (default: the bundled plugin skills).
     ``user_root`` is a second root whose skills union with the primary
     ones; a user skill with the same name as a primary one WINS (explicit
-    user override), logged on stderr. Within one root, sorted order wins
-    silently, as before. Without ``user_root`` the behaviour is identical
-    to a single-root catalog.
+    user override), logged on stderr. Within one root no collision is
+    possible (a skill's name must equal its directory name, and directory
+    names are unique within a root); only collisions between the two
+    roots exist, and those are logged. Without ``user_root`` the behaviour
+    is identical to a single-root catalog.
     """
 
-    def __init__(self, root: Path | None = None,
-                 user_root: Path | None = None) -> None:
+    def __init__(self, root: Path | None = None, user_root: Path | None = None) -> None:
         self.root = Path(root) if root is not None else SKILLS_ROOT
-        self.user_root = (Path(user_root) if user_root is not None else None)
-        if self.user_root is not None and self.user_root.resolve() == \
-                self.root.resolve():
+        self.user_root = Path(user_root) if user_root is not None else None
+        if self.user_root is not None and self.user_root.resolve() == self.root.resolve():
             # Same directory twice: load once, no spurious override logs.
             self.user_root = None
-        self._roots = [self.root] + ([self.user_root]
-                                     if self.user_root is not None else [])
+        self._roots = [self.root] + ([self.user_root] if self.user_root is not None else [])
         self._loaded = False
         # name -> {"entry": dict, "dir": Path, "files": {rel_posix: bytes}}
         self._skills: dict[str, dict] = {}
@@ -167,35 +199,51 @@ class SkillsCatalog:
         for root in self._roots:
             if not root.is_dir():
                 if root is self.user_root:
-                    print(f"[conscio-mcp] skills: skipping user root "
-                          f"{root}: not an existing directory",
-                          file=sys.stderr)
+                    why = "is not a directory" if root.exists() else "does not exist"
+                    print(
+                        f"[conscio-mcp] skills: skipping user root {root}: {why}", file=sys.stderr
+                    )
                 continue
             per_root = self._load_root(root)
             for name, entry in per_root.items():
                 if name in skills:
-                    print(f"[conscio-mcp] skills: overriding skill "
-                          f"{name!r} from {skills[name]['dir']} with "
-                          f"{entry['dir']} (user root wins)",
-                          file=sys.stderr)
+                    print(
+                        f"[conscio-mcp] skills: overriding skill "
+                        f"{name!r} from {skills[name]['dir']} with "
+                        f"{entry['dir']} (user root wins)",
+                        file=sys.stderr,
+                    )
                 skills[name] = entry
         # Publish atomically: readers never see a half-built catalog.
         self._skills = skills
         self._loaded = True
 
     def _load_root(self, root: Path) -> dict[str, dict]:
-        """Load one root into a name -> entry dict. Within a root, sorted
-        order wins silently, as before; every per-skill validation lives
-        in _load_skill(), reused unchanged for the user root."""
+        """Load one root into a name -> entry dict. Within a root there is
+        no collision to resolve (a skill's name must equal its directory
+        name, and directory names are unique within a root); every
+        per-skill validation lives in _load_skill(), reused unchanged for
+        the user root. A root that cannot be listed (e.g. unreadable) is
+        skipped with a log line and an empty dict, so the other root
+        still loads: a bad root must never poison the whole catalog."""
         skills: dict[str, dict] = {}
-        root_resolved = root.resolve()
-        for child in sorted(root.iterdir(), key=lambda p: p.name):
+        try:
+            root_resolved = root.resolve()
+            children = sorted(root.iterdir(), key=lambda p: p.name)
+        except OSError as exc:
+            print(
+                f"[conscio-mcp] skills: skipping skills root {root}: cannot list directory ({exc})",
+                file=sys.stderr,
+            )
+            return {}
+        for child in children:
             if not child.is_dir():
                 continue
             if not child.resolve().is_relative_to(root_resolved):
-                print(f"[conscio-mcp] skills: skipping {child.name}: "
-                      f"skill directory escapes skills root",
-                      file=sys.stderr)
+                print(
+                    f"[conscio-mcp] skills: skipping {child}: skill directory escapes skills root",
+                    file=sys.stderr,
+                )
                 continue
             entry = self._load_skill(child)
             if entry is not None:
@@ -210,29 +258,42 @@ class SkillsCatalog:
         name = directory.name
         skill_md = directory / "SKILL.md"
         if not skill_md.is_file():
+            print(
+                f"[conscio-mcp] skills: skipping {name} ({directory}): no SKILL.md", file=sys.stderr
+            )
             return None
         resolved_dir = directory.resolve()
-        if skill_md.is_symlink() and not skill_md.resolve().is_relative_to(
-                resolved_dir):
-            print(f"[conscio-mcp] skills: skipping {name}: SKILL.md "
-                  f"escapes the skill directory", file=sys.stderr)
+        if skill_md.is_symlink() and not skill_md.resolve().is_relative_to(resolved_dir):
+            print(
+                f"[conscio-mcp] skills: skipping {name} ({directory}): SKILL.md "
+                f"escapes the skill directory",
+                file=sys.stderr,
+            )
             return None
         try:
             skill_md_size = skill_md.stat().st_size
         except OSError as exc:
-            print(f"[conscio-mcp] skills: skipping {name}: cannot stat "
-                  f"SKILL.md ({exc})", file=sys.stderr)
+            print(
+                f"[conscio-mcp] skills: skipping {name} ({directory}): cannot stat "
+                f"SKILL.md ({exc})",
+                file=sys.stderr,
+            )
             return None
         if skill_md_size > MAX_BYTES_PER_SKILL:
-            print(f"[conscio-mcp] skills: skipping {name}: SKILL.md alone "
-                  f"is {skill_md_size} bytes > {MAX_BYTES_PER_SKILL}",
-                  file=sys.stderr)
+            print(
+                f"[conscio-mcp] skills: skipping {name} ({directory}): SKILL.md alone "
+                f"is {skill_md_size} bytes > {MAX_BYTES_PER_SKILL}",
+                file=sys.stderr,
+            )
             return None
         try:
             raw = skill_md.read_bytes()
         except OSError as exc:
-            print(f"[conscio-mcp] skills: skipping {name}: cannot read "
-                  f"SKILL.md ({exc})", file=sys.stderr)
+            print(
+                f"[conscio-mcp] skills: skipping {name} ({directory}): cannot read "
+                f"SKILL.md ({exc})",
+                file=sys.stderr,
+            )
             return None
         try:
             frontmatter, ok, reason = _parse_frontmatter(raw)
@@ -240,17 +301,21 @@ class SkillsCatalog:
             # Any non-YAML exception from the parse (e.g. RecursionError on
             # deeply nested frontmatter) must poison only this skill, never
             # the whole catalog: same treatment as OSError in the SKILL.md.
-            print(f"[conscio-mcp] skills: skipping {name}: frontmatter "
-                  f"unreadable ({type(exc).__name__}: {exc})", file=sys.stderr)
+            print(
+                f"[conscio-mcp] skills: skipping {name} ({directory}): frontmatter "
+                f"unreadable ({type(exc).__name__}: {exc})",
+                file=sys.stderr,
+            )
             return None
         if not ok or frontmatter is None:
-            print(f"[conscio-mcp] skills: skipping {name}: {reason}",
-                  file=sys.stderr)
+            print(f"[conscio-mcp] skills: skipping {name} ({directory}): {reason}", file=sys.stderr)
             return None
         if frontmatter["name"] != name:
-            print(f"[conscio-mcp] skills: skipping {name}: frontmatter "
-                  f"name {frontmatter['name']!r} != directory name",
-                  file=sys.stderr)
+            print(
+                f"[conscio-mcp] skills: skipping {name} ({directory}): frontmatter "
+                f"name {frontmatter['name']!r} != directory name",
+                file=sys.stderr,
+            )
             return None
         # Pre-check the limits by stat() before reading any content:
         # file count via rglob over names only, plus the sum of st_size.
@@ -259,16 +324,26 @@ class SkillsCatalog:
         # either (same resolve() + is_relative_to check). Directories
         # (including empty ones) are recorded in the snapshot too, so
         # directory_read can list them.
-        all_paths = sorted(directory.rglob("*"), key=lambda p: str(p))
+        try:
+            all_paths = _list_skill_tree(directory)
+        except OSError as exc:
+            print(
+                f"[conscio-mcp] skills: skipping {name} ({directory}): "
+                f"cannot list skill directory ({exc})",
+                file=sys.stderr,
+            )
+            return None
         candidates = [p for p in all_paths
                       if p.is_file() and _inside_root(p, resolved_dir)]
         dirs = sorted({p.relative_to(directory).as_posix()
                        for p in all_paths
                        if p.is_dir() and _inside_root(p, resolved_dir)})
         if len(candidates) > MAX_FILES_PER_SKILL:
-            print(f"[conscio-mcp] skills: skipping {name}: "
-                  f"{len(candidates)} files > {MAX_FILES_PER_SKILL}",
-                  file=sys.stderr)
+            print(
+                f"[conscio-mcp] skills: skipping {name} ({directory}): "
+                f"{len(candidates)} files > {MAX_FILES_PER_SKILL}",
+                file=sys.stderr,
+            )
             return None
         total_stat = 0
         for path in candidates:
@@ -277,18 +352,22 @@ class SkillsCatalog:
             except OSError:
                 continue  # the read phase below logs and excludes the skill
         if total_stat > MAX_BYTES_PER_SKILL:
-            print(f"[conscio-mcp] skills: skipping {name}: "
-                  f"{total_stat} bytes > {MAX_BYTES_PER_SKILL}",
-                  file=sys.stderr)
+            print(
+                f"[conscio-mcp] skills: skipping {name} ({directory}): "
+                f"{total_stat} bytes > {MAX_BYTES_PER_SKILL}",
+                file=sys.stderr,
+            )
             return None
         files: dict[str, bytes] = {}
         for path in candidates:
             rel = path.relative_to(directory).as_posix()
             if not path.resolve().is_relative_to(resolved_dir):
                 if rel == "SKILL.md":
-                    print(f"[conscio-mcp] skills: skipping {name}: "
-                          f"SKILL.md escapes the skill directory",
-                          file=sys.stderr)
+                    print(
+                        f"[conscio-mcp] skills: skipping {name} ({directory}): "
+                        f"SKILL.md escapes the skill directory",
+                        file=sys.stderr,
+                    )
                     return None
                 print(f"[conscio-mcp] skills: dropping {name}/{rel}: "
                       f"symlink escapes the skill directory", file=sys.stderr)
@@ -299,8 +378,11 @@ class SkillsCatalog:
                 # An unreadable manifest file excludes the whole skill:
                 # silently dropping it would serve a listing the disk
                 # cannot back.
-                print(f"[conscio-mcp] skills: skipping {name}: cannot "
-                      f"read {rel} ({exc})", file=sys.stderr)
+                print(
+                    f"[conscio-mcp] skills: skipping {name} ({directory}): cannot "
+                    f"read {rel} ({exc})",
+                    file=sys.stderr,
+                )
                 return None
             files[rel] = data
         uri = f"skill://{name}/SKILL.md"

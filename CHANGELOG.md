@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **MCP Skills `--skills-root` (SEP-2640 follow-up).** An unreadable user
+  root no longer poisons the catalog: it is skipped at load with a log
+  line and the bundled skills still load. Empty `--skills-root` is
+  refused; nonexistent vs. existing-non-directory roots fail with
+  distinct messages (`does not exist` / `is not a directory`). The
+  fail-fast now runs before any capability is persisted, so a refused
+  boot leaves no `skills` capability behind. A directory without
+  `SKILL.md` is skipped with a log line, skip logs now carry the skill
+  directory path, and the within-one-root collision claim is corrected
+  (no collision is possible within a root). `--skills-root` survives
+  `conscio init --repair` (recovered from the old entry like `--model`);
+  a plugin update still drops a hand-added flag from the recreated
+  `.mcp.json` — see the Skills guide.
+
 ## [4.12.0] - 2026-11-07 — MCP Skills serve user skills
 
 ### Added
@@ -31,18 +46,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name); bundled skills load first, user skills second, and a user skill with
   the same `name` wins the collision, logged on stderr with both paths
   (`[conscio-mcp] skills: overriding skill 'X' from <bundled dir> with <user
-  dir> (user root wins)`). Within one root the earlier behaviour holds
-  (sorted order, last wins, silent); a user root equal to the bundled root
-  loads once, with no override log. Every per-skill validation is reused
+  dir> (user root wins)`). Within one root no collision is possible (a
+  skill's `name` must equal its directory name, and directory names are
+  unique within a root); only collisions between the two roots exist. A
+  user root equal to the bundled root loads once, with no override log.
+  Every per-skill validation is reused
   unchanged for user skills, so a bad user skill is excluded at load with a
   log line and the server still starts. Fail-fast, gate-gated: with the
   skills gate on (`--enable-skills` or the persisted `skills` capability), a
   `--skills-root` that is not an existing directory refuses to start (exit
-  2, `conscio-mcp: --skills-root '...' is not an existing directory;
+  2, `conscio-mcp: --skills-root '...' does not exist;
   refusing to start`); with the gate off the flag is inert — the lazy
   catalog is never loaded, so a bad path changes nothing. `--skills-root`
   never implies `--enable-skills`. Tests: 11 new in
   `tests/test_mcp_skills.py` (60 total); MCP battery green (235 passed).
+  (Follow-up, still unreleased: 5 more tests in `tests/test_mcp_skills.py`
+  — unreadable root/subdirectory, missing `SKILL.md`, and the fail-fast
+  through real `main()` — 65 total; MCP battery 240 passed.)
 - Decisions (explicit, not omissions): a single gate — `directoryRead` is
   always `true` when the extension is declared, there is no state with
   skills on and directory read off; splitting them needs a second flag.

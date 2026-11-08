@@ -486,26 +486,45 @@ bundled skills load first, user skills second, and a user skill with the same
 [conscio-mcp] skills: overriding skill 'conscio' from <bundled dir> with <user dir> (user root wins)
 ```
 
-Within one root the earlier behaviour holds (sorted order, last wins,
-silent). A user root that is the same directory as the bundled root is
-loaded once, with no override log. Every per-skill validation is reused
-unchanged for user skills (frontmatter, 512 files / 16 MiB per skill,
-traversal, symlinks escaping the skill directory, unreadable files): a bad
-user skill is excluded at load with a log line and the server still starts.
-The catalog is a snapshot built lazily on the first skills call, never at
-boot.
+Within one root no collision is possible: a skill's `name` must equal its
+directory name and directory names are unique within a root, so two
+entries from the same root can never share a name; collisions exist only
+between the two roots, and the user root wins with a log line. A user root
+that is the same directory as the bundled root is loaded once, with no
+override log. Every per-skill validation is reused unchanged for user
+skills (frontmatter, 512 files / 16 MiB per skill, traversal, symlinks
+escaping the skill directory, unreadable files): a bad user skill is
+excluded at load with a log line and the server still starts. A user root
+that cannot be listed (e.g. unreadable) is likewise skipped at load with
+a log line and the bundled skills still load; a directory without a
+`SKILL.md` is skipped with a log line too. The catalog is a snapshot
+built lazily on the first skills call, never at boot.
 
 Fail-fast, gate-gated: with the skills gate on (`--enable-skills` or the
 persisted `skills` capability), a `--skills-root` that is not an existing
 directory refuses to start (exit 2):
 
 ```
-conscio-mcp: --skills-root '/bad/dir' is not an existing directory; refusing to start
+conscio-mcp: --skills-root '/bad/dir' does not exist; refusing to start
 ```
 
-With the gate off, `--skills-root` is inert: the lazy catalog is never
-loaded, so a bad path changes nothing. The two flags are orthogonal:
-`--skills-root` never implies `--enable-skills`.
+An existing path that is not a directory is refused as `is not a
+directory`, and an empty `--skills-root` as `must not be empty`. The
+check runs before any capability is persisted, so a refused boot leaves
+no `skills` capability behind in the space. With the gate off,
+`--skills-root` is inert: the lazy catalog is never loaded, so a bad path
+changes nothing. The two flags are orthogonal: `--skills-root` never
+implies `--enable-skills`.
+
+Persistence of the flag itself: `--skills-root` lives in the host's MCP
+launch args (the `.mcp.json` entry), not in the space — only the `skills`
+gate is a persisted capability, and that one survives a plugin update. A
+plugin update recreates the cached `.mcp.json` from the asset and drops a
+hand-added `--skills-root`; `conscio init --repair` recovers a previously
+configured path from the old entry and re-emits it (like `--model`), so
+re-run it after an update, or re-add the flag by hand. The Claude Code
+plugin's own entry comes from the plugin asset, so there the flag must be
+re-added by hand after an update.
 
 ## The Event schema
 

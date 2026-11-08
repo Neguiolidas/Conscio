@@ -2027,14 +2027,21 @@ def _skills_root_or_error(raw: str | None) -> Path | None:
     turns it into a refusal to start (exit 2) before serving anything.
     Only called when the skills gate is on: with the gate off the root
     is inert (the lazy catalog is never loaded), so a bad path there
-    changes nothing."""
+    changes nothing. An empty (or whitespace-only) value is rejected
+    outright: Path("") is the current directory, which must never
+    silently become the user root. A nonexistent path and an existing
+    non-directory fail with different messages, so the refusal says
+    what is actually wrong."""
     if raw is None:
         return None
+    if not raw.strip():
+        raise ValueError(f"--skills-root {raw!r} must not be empty")
     root = Path(raw)
-    if not root.is_dir():
-        raise ValueError(f"--skills-root {raw!r} is not an existing "
-                         f"directory")
-    return root
+    if root.is_dir():
+        return root
+    if root.exists():
+        raise ValueError(f"--skills-root {raw!r} is not a directory")
+    raise ValueError(f"--skills-root {raw!r} does not exist")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2142,20 +2149,27 @@ def main(argv: list[str] | None = None) -> int:
     # v4.6.6: a capacidade resolvida decide, nao a flag. O caminho do
     # marketplace nao carrega --enable-relay: o consentimento mora no espaco
     # desde a v4.6.5, e a identidade tinha ficado presa na flag.
+    # The --skills-root fail-fast runs BEFORE any resolve_capability
+    # write-through: a refused boot must not leave a persisted
+    # capability behind. The gate is probed read-only here (the flag,
+    # or the persisted set); the resolving calls below still decide
+    # the final values.
+    skills_gate_on = args.enable_skills or "skills" in capabilities.read_capabilities(
+        engine.storage
+    )
+    skills_root: Path | None = None
+    if skills_gate_on and args.skills_root is not None:
+        try:
+            skills_root = _skills_root_or_error(args.skills_root)
+        except ValueError as exc:
+            print(f"conscio-mcp: {exc}; refusing to start", file=sys.stderr)
+            return 2
     relay_on = capabilities.resolve_capability(engine.storage, "relay",
                                                args.enable_relay)
     halls_on = capabilities.resolve_capability(engine.storage, "halls",
                                                args.can_create_halls)
     skills_on = capabilities.resolve_capability(engine.storage, "skills",
                                                 args.enable_skills)
-    skills_root: Path | None = None
-    if skills_on and args.skills_root is not None:
-        try:
-            skills_root = _skills_root_or_error(args.skills_root)
-        except ValueError as exc:
-            print(f"conscio-mcp: {exc}; refusing to start",
-                  file=sys.stderr)
-            return 2
     self_instance_id, liaison_db = resolve_identity(
         engine.storage, hermes_review=args.enable_hermes_review,
         relay_on=relay_on, liaison_db_arg=args.liaison_db)
