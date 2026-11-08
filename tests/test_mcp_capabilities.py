@@ -24,6 +24,20 @@ def test_an_unknown_capability_is_rejected(tmp_path):
         caps.write_capabilities(tmp_path, ["telepatia"])
 
 
+def test_skills_is_a_known_capability(tmp_path):
+    """SEP-2640: "skills" joins the CAPABILITIES tuple, so
+    `conscio capabilities` accepts it and the flag persists like relay's."""
+    caps.write_capabilities(tmp_path, ["skills"])
+    assert caps.resolve_capability(tmp_path, "skills", False) is True
+    assert caps.resolve_capability(tmp_path, "skills", True) is True
+
+
+def test_skills_flag_persists_without_dropping_others(tmp_path):
+    caps.write_capabilities(tmp_path, ["relay"])
+    caps.resolve_capability(tmp_path, "skills", True)
+    assert caps.read_capabilities(tmp_path) == {"relay", "skills"}
+
+
 def _server_with(tmp_path, relay):
     """Servidor de verdade (passa pelo __init__), formato de _real_server
     em tests/test_relay_plug_and_play.py:222 -- monta Bindings com relay=."""

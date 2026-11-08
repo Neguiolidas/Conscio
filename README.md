@@ -23,7 +23,7 @@ memory, self-judgment and procedural skill — and proves every claim by
 measurement, not assertion. Local-first with a small core
 (`numpy`, plus `cryptography` for signed noosphere artifacts; storage is stdlib `sqlite3`).
 
-**Latest release — `v4.11.0` "The Council stops rubber-stamping":** the deterministic Council used to approve everything: in a live audit every finding came back `proceed` with four clean voices, even questions whose own text carried the evidence against ("adopt host hugepages given no measured gain and one SIGBUS crash"). The trait table had no trigger for failure evidence or for a check declared missing, and one voice alone in hold could not hold the Council. The Council's voices now read failure evidence, missing checks, security exposure, procedure violations, data-loss risk, premature closure and pending steps — in English *and* PT-BR — and the Council decides on the summed voice score. The judged mode is unchanged; with the judge loaded, calibration still comes from the judge.
+**Latest release — `v4.12.0` "MCP Skills serve user skills":** the MCP Skills extension (SEP-2640) serves the plugin's skills over MCP as `skill://` resources behind `--enable-skills`, and `--skills-root <dir>` now unions a directory of user skills with the bundled ones: a user skill wins a name collision, every per-skill validation is reused for user skills, and a `--skills-root` that is not an existing directory refuses to start (exit 2) only with the skills gate on. The release also cleans up the SEP-2640 CI (ruff + pyright).
 
 See [CHANGELOG](CHANGELOG.md) for details.
 
@@ -318,6 +318,18 @@ surface added on top by `--enable-act`.
 The base surface is **propose-only** (perceive / reflect / recall / audit); opt-in
 `--enable-act` adds host-executed, ledgered, gated `act` — Conscio signs and audits the
 intent, the host pulls the trigger. See [the MCP guide](docs/guides/mcp.md).
+
+**MCP Skills (SEP-2640, opt-in).** Behind `--enable-skills` the server
+declares the `io.modelcontextprotocol/skills` extension and serves the
+plugin's skills as `skill://` resources (`skills/list`, `skills/get`,
+`resources/read`, `resources/directory/read`) — protocol-level methods, not
+tools, so `tools/list` is unchanged. `--skills-root <dir>` unions a directory
+of user skills with the bundled ones; a user skill wins a name collision. A
+`--skills-root` that is not an existing directory refuses to start (exit 2)
+only with the skills gate on; with the gate off the flag is inert. This is
+the MCP extension, not the SkillLibrary / noosphere procedural skills, and
+not the bench `--skills N` acquisition curve. See [the MCP
+guide](docs/guides/mcp.md#skills-sep-2640-opt-in---enable-skills).
 
 ### Live mode — daemon, sensors & Awake Mode
 

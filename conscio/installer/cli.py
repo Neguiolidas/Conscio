@@ -46,6 +46,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--repair", action="store_true",
                    help="revalidate/rewrite this host's binding only")
     p.add_argument("--model", default=None)
+    p.add_argument("--skills-root", default=None, metavar="DIR",
+                   help="directory of user skills; unions with the bundled "
+                        "skills (only with --enable-skills or the persisted "
+                        "skills capability)")
     p.add_argument("--remove-legacy", action="store_true",
                    help="move the old materialized claude-code install (hooks, "
                         "commands, skills, settings.json groups, MCP entry) "
@@ -67,5 +71,12 @@ def main(argv: list[str] | None = None) -> int:
             retire_previous_space=args.retire_previous_space,
             io=_TerminalIO())
     ts = time.strftime("%Y%m%d-%H%M%S")
-    return wizard.run_with(_TerminalIO(), host=args.host, repair=args.repair,
-                           model=args.model, ts=ts, label=args.label)
+    return wizard.run_with(
+        _TerminalIO(),
+        host=args.host,
+        repair=args.repair,
+        model=args.model,
+        ts=ts,
+        label=args.label,
+        skills_root=args.skills_root,
+    )

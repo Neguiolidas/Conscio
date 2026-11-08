@@ -303,3 +303,27 @@ def test_repair_recovers_hand_added_halls_flag(tmp_path):
         "command": "conscio-mcp",
         "args": ["--storage", "/s", "--can-create-halls"]}}}))
     assert hostcfg.existing_flags(cfgp).get("halls") is True
+
+
+def test_existing_skills_root_roundtrip(tmp_path):
+    cfgp = tmp_path / "c.json"
+    hostcfg.write_claude_code(
+        "h", flags={}, model=None, skills_root="/home/u/my-skills", config_path=cfgp, ts="T8"
+    )
+    assert hostcfg.existing_skills_root(cfgp) == "/home/u/my-skills"
+
+
+def test_existing_skills_root_absent_or_dangling(tmp_path):
+    assert hostcfg.existing_skills_root(tmp_path / "nope.json") is None
+    cfgp = tmp_path / "c.json"
+    cfgp.write_text(
+        json.dumps({"mcpServers": {"conscio": {"args": ["--skills-root"]}}})
+    )  # dangling value
+    assert hostcfg.existing_skills_root(cfgp) is None
+
+
+def test_mcp_server_entry_emits_skills_root():
+    e = hostcfg.mcp_server_entry("h", flags={}, model=None, skills_root="/home/u/my-skills")
+    assert e["args"][-2:] == ["--skills-root", "/home/u/my-skills"]
+    e2 = hostcfg.mcp_server_entry("h", flags={}, model=None)
+    assert "--skills-root" not in e2["args"]

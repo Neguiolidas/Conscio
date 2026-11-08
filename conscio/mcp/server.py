@@ -4,6 +4,7 @@ conscio-mcp CLI. stdout is the protocol channel; logging goes to stderr."""
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import sys
@@ -36,6 +37,7 @@ from .schemas import (
     validate_event,
 )
 from .seen import SeenStore
+from .skills import SkillsCatalog
 
 
 def _flatten(d: dict) -> dict:
@@ -87,7 +89,9 @@ class Bindings:
                  mode: str = modes.DEFAULT_MODE,
                  identity_model: str = "", identity_familia: str = "",
                  identity_runtime: str = "", identity_papel: str = "",
-                 can_create_halls: bool = False) -> None:
+                 can_create_halls: bool = False,
+                 skills: bool = False,
+                 skills_root: Path | None = None) -> None:
         self.engine = engine
         self.seen = seen
         self.adapter_name = adapter_name
@@ -101,6 +105,13 @@ class Bindings:
                                  else mailbox.default_db())
         self.relay = relay                   # v2.6.1: --enable-relay
         self.relay_peers = tuple(relay_peers)
+        # SEP-2640: skills extension gate. The catalog is lazy: load()
+        # runs on the first skills method call, never at boot, and never
+        # with the gate off. skills_root is the USER root: it unions with
+        # the bundled root (a user skill wins a name collision), it never
+        # replaces it, and it never implies --enable-skills.
+        self.skills_enabled = skills
+        self.skills_catalog = SkillsCatalog(user_root=skills_root)
         self.auto_review = auto_review        # v2.6.2: --auto-review
         self.last_auto_apply_ts = 0.0         # v2.6.3 #2: throttle clock
         self.mode = mode                      # v4.0: lite / balanced / ultra
@@ -187,8 +198,29 @@ class Bindings:
                 "reviewers_count": len(self.reviewers),
                 "relay_enabled": self.relay,
                 "relay_peers_count": len(self.relay_peers),
+                "skills_enabled": self.skills_enabled,
                 "auto_review_enabled": self.auto_review,
                 "supported_protocols": SUPPORTED_PROTOCOLS}
+
+    # ------------------------------------------------------- SEP-2640 skills
+    def skills_list(self, cursor: str | None = None) -> dict:
+        """skills/list. Gate checked here AND in _route's delegation:
+        one source (self.skills_enabled) for advertisement and dispatch,
+        so the two can never drift. Never touches the catalog gated off."""
+        if not self.skills_enabled:
+            raise j.MethodNotFound("skills are not enabled")
+        return self.skills_catalog.list_skills(cursor)
+
+    def skills_get(self, uri: str) -> dict:
+        if not self.skills_enabled:
+            raise j.MethodNotFound("skills are not enabled")
+        return self.skills_catalog.get_skill(uri)
+
+    def skills_directory_read(self, uri: str,
+                              cursor: str | None = None) -> dict:
+        if not self.skills_enabled:
+            raise j.MethodNotFound("skills are not enabled")
+        return self.skills_catalog.directory_read(uri, cursor)
 
     def tool_defs(self) -> list[dict]:
         defs = list(BASE_TOOL_DEFS)
@@ -1564,7 +1596,17 @@ class Bindings:
 
     # ── resources ──
     def read_resource(self, uri: str) -> dict:
-        parsed = urlparse(uri)
+        # A non-string uri (or one carrying a NUL byte) is InvalidParams
+        # (-32602), not an InternalError: urlparse would raise TypeError /
+        # ValueError on it, and the dispatcher would answer -32603.
+        if not isinstance(uri, str) or "\x00" in uri:
+            raise j.InvalidParams(f"unknown resource '{uri}'")
+        try:
+            parsed = urlparse(uri)
+        except ValueError:
+            # Malformed URI (e.g. an unterminated IPv6 literal):
+            # InvalidParams, never a leaked -32603.
+            raise j.InvalidParams(f"unknown resource '{uri}'")
         base = f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
         if base == "conscio://advisory":
             return self._json_resource(uri, self.engine.advisory())
@@ -1577,6 +1619,25 @@ class Bindings:
         if base == "conscio://handoff":
             return {"contents": [{"uri": uri, "mimeType": "text/markdown",
                                  "text": self._handoff_payload()}]}
+        if parsed.scheme == "skill":
+            # SEP-2640: skill files are ordinary resources. Gate off means
+            # the URI is unknown, exactly as before this extension existed.
+            if not self.skills_enabled:
+                raise j.InvalidParams(f"unknown resource '{uri}'")
+            data, mime = self.skills_catalog.read_file(uri)
+            try:
+                text = data.decode("utf-8")
+            except UnicodeDecodeError:
+                # MCP ReadResourceResult shape for binary content (base
+                # protocol, BlobResourceContents): {"uri", "mimeType",
+                # "blob"} with "blob" the base64 of the raw bytes, in
+                # place of "text". The trigger stays UTF-8-or-blob: bytes
+                # that decode as UTF-8 ride in "text", the rest in "blob".
+                return {"contents": [{"uri": uri, "mimeType": mime,
+                                      "blob": base64.b64encode(data).decode(
+                                          "ascii")}]}
+            return {"contents": [{"uri": uri, "mimeType": mime,
+                                  "text": text}]}
         raise j.InvalidParams(f"unknown resource '{uri}'")
 
     @staticmethod
@@ -1670,6 +1731,15 @@ def _arg_parser() -> argparse.ArgumentParser:
                         help="mailbox db path (default $CONSCIO_HOME/liaison.db)")
     parser.add_argument("--enable-relay", action="store_true",
                         help="enable opt-in general cross-agent messaging")
+    parser.add_argument("--enable-skills", action="store_true",
+                        help="enable opt-in MCP skills extension (SEP-2640)")
+    parser.add_argument("--skills-root", default=None, metavar="DIR",
+                        help="directory of user skills (each subdirectory "
+                             "a skill with SKILL.md); unions with the "
+                             "bundled skills, a user skill wins a name "
+                             "collision; only takes effect with "
+                             "--enable-skills (or the persisted skills "
+                             "capability)")
     parser.add_argument("--relay-peer", action="append", default=[],
                         metavar="INSTANCE_ID",
                         help="trusted relay peer instance_id (repeatable); "
@@ -1951,6 +2021,29 @@ def resolve_full_identity(*, model: str, familia: str, runtime: str,
     return (m, f, r, p)
 
 
+def _skills_root_or_error(raw: str | None) -> Path | None:
+    """Fail-fast validation for --skills-root: the path must be an
+    existing directory. Raises ValueError with a clear message; main()
+    turns it into a refusal to start (exit 2) before serving anything.
+    Only called when the skills gate is on: with the gate off the root
+    is inert (the lazy catalog is never loaded), so a bad path there
+    changes nothing. An empty (or whitespace-only) value is rejected
+    outright: Path("") is the current directory, which must never
+    silently become the user root. A nonexistent path and an existing
+    non-directory fail with different messages, so the refusal says
+    what is actually wrong."""
+    if raw is None:
+        return None
+    if not raw.strip():
+        raise ValueError(f"--skills-root {raw!r} must not be empty")
+    root = Path(raw)
+    if root.is_dir():
+        return root
+    if root.exists():
+        raise ValueError(f"--skills-root {raw!r} is not a directory")
+    raise ValueError(f"--skills-root {raw!r} does not exist")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _arg_parser().parse_args(argv)
     from conscio.installer.binding import unexpanded_variable, validate_binding
@@ -2056,10 +2149,27 @@ def main(argv: list[str] | None = None) -> int:
     # v4.6.6: a capacidade resolvida decide, nao a flag. O caminho do
     # marketplace nao carrega --enable-relay: o consentimento mora no espaco
     # desde a v4.6.5, e a identidade tinha ficado presa na flag.
+    # The --skills-root fail-fast runs BEFORE any resolve_capability
+    # write-through: a refused boot must not leave a persisted
+    # capability behind. The gate is probed read-only here (the flag,
+    # or the persisted set); the resolving calls below still decide
+    # the final values.
+    skills_gate_on = args.enable_skills or "skills" in capabilities.read_capabilities(
+        engine.storage
+    )
+    skills_root: Path | None = None
+    if skills_gate_on and args.skills_root is not None:
+        try:
+            skills_root = _skills_root_or_error(args.skills_root)
+        except ValueError as exc:
+            print(f"conscio-mcp: {exc}; refusing to start", file=sys.stderr)
+            return 2
     relay_on = capabilities.resolve_capability(engine.storage, "relay",
                                                args.enable_relay)
     halls_on = capabilities.resolve_capability(engine.storage, "halls",
                                                args.can_create_halls)
+    skills_on = capabilities.resolve_capability(engine.storage, "skills",
+                                                args.enable_skills)
     self_instance_id, liaison_db = resolve_identity(
         engine.storage, hermes_review=args.enable_hermes_review,
         relay_on=relay_on, liaison_db_arg=args.liaison_db)
@@ -2078,7 +2188,9 @@ def main(argv: list[str] | None = None) -> int:
                         identity_familia=ident[1],
                         identity_runtime=ident[2],
                         identity_papel=ident[3],
-                        can_create_halls=halls_on)
+                        can_create_halls=halls_on,
+                        skills=skills_on,
+                        skills_root=skills_root)
     mode = "act" if args.enable_act else "propose-only"
     if args.enable_hermes_review:
         if args.reviewer:

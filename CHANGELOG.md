@@ -7,6 +7,175 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **MCP Skills `--skills-root` (SEP-2640 follow-up).** An unreadable user
+  root no longer poisons the catalog: it is skipped at load with a log
+  line and the bundled skills still load. Empty `--skills-root` is
+  refused; nonexistent vs. existing-non-directory roots fail with
+  distinct messages (`does not exist` / `is not a directory`). The
+  fail-fast now runs before any capability is persisted, so a refused
+  boot leaves no `skills` capability behind. A directory without
+  `SKILL.md` is skipped with a log line, skip logs now carry the skill
+  directory path, and the within-one-root collision claim is corrected
+  (no collision is possible within a root). `--skills-root` survives
+  `conscio init --repair` (recovered from the old entry like `--model`);
+  a plugin update still drops a hand-added flag from the recreated
+  `.mcp.json` — see the Skills guide.
+
+## [4.12.0] - 2026-11-07 — MCP Skills serve user skills
+
+### Added
+- **MCP Skills extension (SEP-2640): serve the plugin's skills over MCP.**
+  With `--enable-skills` (persisted per space like `--enable-relay`, via the
+  `skills` capability), the server declares
+  `capabilities.extensions["io.modelcontextprotocol/skills"]` with
+  `{"directoryRead": true}` in `initialize` and implements `skills/list`,
+  `skills/get` and `resources/directory/read` as protocol-level methods —
+  not tools, so nothing new appears in `tools/list`. The two canonical
+  plugin skills (`conscio`, `conscio-relay`) are served as `skill://`
+  resources readable via `resources/read`; each entry carries its YAML
+  frontmatter verbatim (as parsed JSON) and a complete `{uri, digest, size}`
+  manifest with `sha256:` digests. Gate off (the default): the three methods
+  answer `MethodNotFound`, `initialize` declares no extension, and
+  `resources/read` of a `skill://` URI is `-32602`, as before.
+- **MCP Skills extension (SEP-2640): `--skills-root <dir>` unions user skills
+  with the bundled ones.** Each subdirectory of the given directory is one
+  skill (`SKILL.md` with YAML frontmatter, `name` equal to the directory
+  name); bundled skills load first, user skills second, and a user skill with
+  the same `name` wins the collision, logged on stderr with both paths
+  (`[conscio-mcp] skills: overriding skill 'X' from <bundled dir> with <user
+  dir> (user root wins)`). Within one root no collision is possible (a
+  skill's `name` must equal its directory name, and directory names are
+  unique within a root); only collisions between the two roots exist. A
+  user root equal to the bundled root loads once, with no override log.
+  Every per-skill validation is reused
+  unchanged for user skills, so a bad user skill is excluded at load with a
+  log line and the server still starts (content failures; an inaccessible
+  skill directory is quarantined instead — see the quarantine bullet
+  below). Fail-fast, gate-gated: with the
+  skills gate on (`--enable-skills` or the persisted `skills` capability), a
+  `--skills-root` that is not an existing directory refuses to start (exit
+  2, `conscio-mcp: --skills-root '...' does not exist;
+  refusing to start`); with the gate off the flag is inert — the lazy
+  catalog is never loaded, so a bad path changes nothing. `--skills-root`
+  never implies `--enable-skills`. Tests: 11 new in
+  `tests/test_mcp_skills.py` (60 total); MCP battery green (235 passed).
+  (Follow-up, still unreleased: 5 more tests in `tests/test_mcp_skills.py`
+  — unreadable root/subdirectory, missing `SKILL.md`, and the fail-fast
+  through real `main()` — 70 total (1 for the B1 fix + 4 for the quarantine,
+  see below); MCP battery 240 passed.)
+- **MCP Skills: inaccessible skill directories are quarantined, not
+  skipped.** An unreadable skill directory (chmod 000 on the directory,
+  its `SKILL.md`, a manifest file, or a subdirectory) is moved at load to
+  `<root>/.quarantine/<name>-<timestamp>/` (nothing is deleted), the rest
+  of the catalog loads normally, and the next invocation of that skill
+  (`skills/get`, `resources/directory/read`, `resources/read`) attempts a
+  lazy repair: restore 0o700 on directories and 0o644 on files, then move
+  it back. A repair that fails (e.g. the root is read-only, or the skill
+  is now invalid) keeps the skill quarantined and answers with a clear
+  error; a name collision on the way back loads the existing skill into
+  the snapshot instead (when valid), so the call proceeds with the
+  current skill — an invalid or inaccessible collision keeps it
+  quarantined. Directories are restored to 0o700 (least privilege: only
+  the owner needs to read/traverse), which keeps the repair bandit-clean
+  (no B103). Content failures (invalid frontmatter, limits, bad name)
+  are still excluded at load with a log line. Renaming a directory to a
+  different parent updates its `..` entry, so the quarantine move chmods
+  the directory to 0o700 first (a symlink needs no chmod). A skill
+  directory that is a symlink escaping the root is never served, on
+  any load path: the escape check lives in `_load_skill` (root as a
+  parameter), so the collision load and the repair path go through the
+  same gate as the initial load. Tests: 5 new in
+  `tests/test_mcp_skills.py` (71 total, including a pinning test that
+  an escaping symlink is not served via `skills/get`, `resources/read`
+  or `resources/directory/read` when a skill of the same name is
+  quarantined); 5-file MCP battery 118 passed; full suite 5,298 passed,
+  22 skipped, 7 xfailed, 0 failures, 0 warnings.
+  (Review v5 follow-up: the pytest cleanup warnings are gone — the
+  test helper now restores permissions recursively, including chmod-000
+  subdirectories.)
+- Decisions (explicit, not omissions): a single gate — `directoryRead` is
+  always `true` when the extension is declared, there is no state with
+  skills on and directory read off; splitting them needs a second flag.
+  `resources/list` is unchanged: discovery is via `skills/list` and files
+  are addressable via `resources/read` (SEP-2640 §3, §6). No `ttlMs` or
+  `cacheScope`: the declared protocol is at most `2025-06-18` (those arrive
+  with `2026-07-28`, SEP-2549).
+  `initialize` keeps its pre-existing leniency (non-dict params are treated
+  as `{}`); only the three skills methods reject non-dict params with
+  `-32602`. Frontmatter: a BOM is stripped and CRLF is accepted (explicit
+  `\r\n` -> `\n` normalization, not `splitlines()`), the skill stays
+  valid. Binary skill files ride in `ReadResourceResult` as
+  `BlobResourceContents` (`{"uri", "mimeType", "blob"}` with base64);
+  bytes that decode as UTF-8 ride in `"text"`.
+- Known debts: `skills/list` is single-page (no `nextCursor`; an unknown
+  cursor is `-32602`) — paginate by offset when a third skill arrives or
+  the catalog passes 10. No file watching: editing a `SKILL.md` needs a
+  server restart. Per-skill limits are the SEP's: 512 files and 16 MiB
+  total; a skill breaking either, or with invalid frontmatter, is excluded
+  at load (logged to stderr) and the server still starts.
+  No output frame cap: input frames are capped, output frames are not
+  (known asymmetry — a huge skill entry serializes whole).
+  Known limitations: anchor expansion ("billion laughs") is NOT bounded
+  by a node count — in PyYAML 6.0.3 aliases resolve to shared references,
+  so a loader-side construct count sees ~100 nodes for a document whose
+  traversal expands to hundreds of millions (measured: `_is_json_value`
+  takes ~9x longer per added level, 0.016 s at 5 levels to 1.31 s at 7);
+  the count was not shipped as a false guard. The 64 KiB frontmatter cap
+  above still bounds the raw input. A hardlink to a file outside the
+  skill directory is served as if it were inside: skill directories are
+  trusted local package assets, so only symlinks are escape-checked. The
+  gate-persistence test covers `resolve_capability` + `Bindings` wiring,
+  not the real boot path in `main()` (verified by reading `server.py`).
+
+### Fixed
+- **MCP Skills extension (SEP-2640): hostile-review fixes.** Frontmatter
+  outside the JSON subset (YAML date, bytes, ...) no longer kills the
+  process in response serialization: the skill is excluded at load with
+  a log line. A frontmatter parse raising outside `yaml.YAMLError`
+  (e.g. `RecursionError` on 2000 nested levels) now poisons only that
+  skill. `resources/read` of a NUL (`%00` / literal) or non-string URI
+  answers `-32602`, not `-32603`. `skills/list`, `skills/get` and
+  `resources/directory/read` reject non-dict params with `-32602`.
+  Symlinks escaping the skill directory no longer enter the manifest
+  (the file is dropped with a log; `SKILL.md` escaping excludes the
+  skill), and a skill directory symlink escaping the skills root is
+  excluded; `directory_read` is served from the snapshot, never the
+  disk, and `read_file` resolves URIs against the snapshot too. The
+  512-file / 16 MiB limits are pre-checked with `stat()` before any
+  content is read. An unreadable manifest file quarantines the whole skill
+  (see the quarantine bullet above) instead of vanishing silently. MIME
+  types come from the
+  original 5-suffix map first (`.md`, `.json`, `.txt`, `.yaml`, `.yml`),
+  with the stdlib `mimetypes` module as fallback for other suffixes.
+  `skills/get` docstring corrected: the lookup is by URI in the
+  single-page catalog, not "even if it never appeared in a listing".
+- **MCP Skills extension (SEP-2640): hostile-review fixes, cycle 2.**
+  Non-finite frontmatter floats (`.nan`, `.inf`, `1.0e+999`) exclude the
+  skill instead of reaching the wire as invalid JSON (`NaN`/`Infinity`).
+  A malformed URI (`skill://[::1/x`) answers `-32602` from both
+  `resources/read` and `resources/directory/read` instead of leaking a
+  `urlparse` `ValueError` as `-32603`. Falsy non-dict params (`[]`, `""`,
+  `0`) are rejected with `-32602` by the skills methods; params-absent
+  requests (`ping`, `initialize`, `skills/list`) still work. A `SKILL.md`
+  that alone exceeds the 16 MiB cap is excluded by `stat()` without being
+  read. The limits pre-check no longer counts symlinks escaping the skill
+  directory. Empty directories are recorded in the snapshot and listed by
+  `resources/directory/read` (`inode/directory`); reading one answers an
+  empty list. The frontmatter block is capped at 64 KiB before parsing.
+  Line endings: only CRLF and LF split frontmatter lines — a lone CR is
+  not a line break, so a CR-only `SKILL.md` fails frontmatter parsing and
+  the skill is excluded (documented behaviour, not a regression). Tests:
+  the chmod-000 test skips under root; the MIME test pins only the
+  5-suffix map; the digest-test comment is corrected.
+- **CI (SEP-2640): ruff + pyright clean (`f2900d4`).** Ruff: BOM strip via
+  `removeprefix`, import order in `tests/test_mcp_skills.py`
+  (`test_mcp_protocol` import moved up), unused `sys` import removed,
+  `re.DOTALL` for `re.S`. Pyright: `frontmatter is None` guard alongside
+  `not ok` in `SkillsCatalog._load_skill`.
+
 ## [4.11.0] - 2026-10-24 — The Council stops rubber-stamping
 
 ### Fixed

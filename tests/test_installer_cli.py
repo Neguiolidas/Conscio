@@ -217,5 +217,26 @@ def test_halls_consent_reaches_launch_config(tmp_path, monkeypatch):
                            model=None, ts="T7") == 0
     from conscio.installer import spaces
     from conscio.mcp import capabilities as caps
+
     granted = caps.read_capabilities(spaces.space_dir("cc"))
-    assert "halls" in granted and "relay" in granted   # consent chega (via espaco)
+    assert "halls" in granted and "relay" in granted  # consent chega (via espaco)
+
+
+def test_repair_recovers_skills_root(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    io = ScriptIO(answers=[], confirms=[False] * 7)
+    assert (
+        wizard.run_with(
+            io, host="verdent", repair=False, model=None, ts="T4", skills_root="/home/u/my-skills"
+        )
+        == 0
+    )
+    cfg = tmp_path / "home" / ".verdent" / "mcp.json"
+    args = json.loads(cfg.read_text())["mcpServers"]["conscio"]["args"]
+    assert args[args.index("--skills-root") + 1] == "/home/u/my-skills"
+    io2 = ScriptIO(answers=[], confirms=[])
+    assert wizard.run_with(io2, host="verdent", repair=True, model=None, ts="T5") == 0
+    args2 = json.loads(cfg.read_text())["mcpServers"]["conscio"]["args"]
+    assert args2[args2.index("--skills-root") + 1] == "/home/u/my-skills"
