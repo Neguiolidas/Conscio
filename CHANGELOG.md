@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.12.0] - 2026-11-07 — MCP Skills serve user skills
+
 ### Added
 - **MCP Skills extension (SEP-2640): serve the plugin's skills over MCP.**
   With `--enable-skills` (persisted per space like `--enable-relay`, via the
