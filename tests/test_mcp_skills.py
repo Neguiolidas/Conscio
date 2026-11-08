@@ -11,11 +11,11 @@ import io
 import json
 import os
 import re
-import sys
 from pathlib import Path
 
 import pytest
 import yaml
+from test_mcp_protocol import FakeBindings
 
 from conscio.agency import MockAdapter
 from conscio.engine import ConsciousnessEngine
@@ -24,7 +24,6 @@ from conscio.mcp.protocol import Dispatcher
 from conscio.mcp.seen import SeenStore
 from conscio.mcp.server import Bindings, serve
 from conscio.mcp.skills import SkillsCatalog
-from test_mcp_protocol import FakeBindings
 
 INIT = {"jsonrpc": "2.0", "id": 0, "method": "initialize",
         "params": {"protocolVersion": "2025-06-18"}}
@@ -64,7 +63,7 @@ def _frontmatter(path: Path) -> dict:
     # the --- block (BOM + CRLF tolerated) and parse it. Sharing the
     # implementation's split primitive would let a split bug pass here.
     text = path.read_text("utf-8")
-    m = re.match(r"\ufeff?---\r?\n(.*?)\r?\n---(?:\r?\n|$)", text, re.S)
+    m = re.match(r"\ufeff?---\r?\n(.*?)\r?\n---(?:\r?\n|$)", text, re.DOTALL)
     assert m, f"no frontmatter in {path}"
     return yaml.safe_load(m.group(1))
 

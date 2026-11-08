@@ -191,7 +191,7 @@ class SkillsCatalog:
             print(f"[conscio-mcp] skills: skipping {name}: frontmatter "
                   f"unreadable ({type(exc).__name__}: {exc})", file=sys.stderr)
             return None
-        if not ok:
+        if not ok or frontmatter is None:
             print(f"[conscio-mcp] skills: skipping {name}: {reason}",
                   file=sys.stderr)
             return None
@@ -414,8 +414,7 @@ def _parse_frontmatter(raw: bytes) -> tuple[dict | None, bool, str]:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         return None, False, "SKILL.md is not valid UTF-8"
-    if text.startswith("\ufeff"):
-        text = text[1:]
+    text = text.removeprefix("\ufeff")
     lines = text.replace("\r\n", "\n").split("\n")
     if not lines or lines[0].strip() != "---":
         return None, False, "missing opening '---'"
