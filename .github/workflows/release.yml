@@ -86,8 +86,18 @@ jobs:
           # (pyproject.toml [dev]) and CI installs that extra, so a CI run
           # resolves whatever pip picks — keep the two in step deliberately.
           python -m pip install "pytest==9.0.2"
+          # The guard's conftest imports the package from the source tree, so
+          # the RUNTIME dependencies must be present here too. Without this the
+          # import chain dies on a missing runtime dep and the guard reports
+          # ERROR instead of judging the wheel — the v4.12.0 first attempt
+          # failed exactly there (yaml was declared in [dev] only; the wheel
+          # itself was fine). Install the artifact we just built: it is the
+          # same dependency set the published wheel pulls, which also proves
+          # the wheel's metadata is installable.
+          python -m pip install --upgrade pip
           wheel="$(ls dist/*.whl)"
           echo "guarding $wheel"
+          python -m pip install "$wheel"
           CONSCIO_WHEEL="$wheel" \
             python -m pytest tests/test_wheel_contents_guard.py -q --tb=short -p no:cacheprovider
 
