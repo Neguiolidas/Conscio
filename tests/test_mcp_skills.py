@@ -1276,6 +1276,52 @@ def test_quarantined_skill_collision_loads_existing_skill(tmp_path, capsys):
         _restore_locked(root, d)
 
 
+def test_quarantined_skill_collision_escaping_symlink_not_served(tmp_path, capsys):
+    # R1 pinning: a skill directory that is a symlink escaping the root
+    # is never served, even when a skill of the same name is quarantined
+    # (the collision load must not bypass the escape check). Covers
+    # skills/get, resources/read and resources/directory/read.
+    if os.geteuid() == 0:
+        pytest.skip("chmod 000 does not block uid 0")
+    root = tmp_path / "user-skills"
+    outside = tmp_path / "outside"
+    _skill_files(tmp_path, "outside",
+                 frontmatter={"name": "locked", "description": "OUTSIDE"},
+                 extra={"secret.txt": "OUTSIDE-SECRET\n"})
+    _skill_files(root, "good")
+    d = _skill_files(root, "locked")
+    os.chmod(d, 0)
+    try:
+        b, _, _ = _bindings(tmp_path, skills_root=root)
+        res = _run(b, [INIT, _req(1, "skills/list")])
+        assert "skill://locked/SKILL.md" not in {
+            s["uri"] for s in res[1]["result"]["skills"]}
+        # Symlink in the root pointing OUTSIDE, same name as quarantined.
+        os.symlink(outside, root / "locked")
+        res = _run(b, [INIT,
+                       _req(2, "skills/get",
+                            {"uri": "skill://locked/SKILL.md"}),
+                       _req(3, "resources/read",
+                            {"uri": "skill://locked/secret.txt"}),
+                       _req(4, "resources/directory/read",
+                            {"uri": "skill://locked"})])
+        for r in res[1:]:
+            assert r["error"]["code"] == j.INVALID_PARAMS, r
+            assert "OUTSIDE" not in json.dumps(r)
+            assert "OUTSIDE-SECRET" not in json.dumps(r)
+        # Nothing leaked, the quarantined copy is still there, and the
+        # skill is still not listed.
+        assert len(list((root / ".quarantine").iterdir())) == 1
+        res = _run(b, [INIT, _req(5, "skills/list")])
+        assert "skill://locked/SKILL.md" not in {
+            s["uri"] for s in res[1]["result"]["skills"]}
+    finally:
+        _restore_locked(root, d)
+        link = root / "locked"
+        if link.is_symlink():
+            link.unlink()
+
+
 def test_quarantined_skill_repair_failure_stays_quarantined(tmp_path, capsys):
     # When the move back fails (here the root is read-only), the skill
     # stays quarantined and the call answers -32602.

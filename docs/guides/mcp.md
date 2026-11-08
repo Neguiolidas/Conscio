@@ -504,7 +504,11 @@ lazy repair (restoring 0o700 on directories and 0o644 on files, then
 moving it back). A failed repair keeps the skill quarantined and answers
 with a clear error; a name collision on the way back loads the existing
 skill into the snapshot instead (when valid), so the call proceeds with
-the current skill. A user root that cannot be listed (e.g. unreadable)
+the current skill. A skill directory that is a symlink escaping the
+root is never served, on any load path: the escape check lives in the
+skill loader itself, so the collision load and the repair path go
+through the same gate as the initial load. A user root that cannot be
+listed (e.g. unreadable)
 is likewise skipped at load with a log line and the bundled skills still
 load; a directory without a `SKILL.md` is skipped with a log line too.
 The catalog is a snapshot built lazily on the first skills call, never

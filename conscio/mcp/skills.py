@@ -280,7 +280,6 @@ class SkillsCatalog:
         skills: dict[str, dict] = {}
         quarantined: dict[str, dict] = {}
         try:
-            root_resolved = root.resolve()
             children = sorted(root.iterdir(), key=lambda p: p.name)
         except OSError as exc:
             print(
@@ -294,17 +293,11 @@ class SkillsCatalog:
             try:
                 if not child.is_dir():
                     continue
-                if not child.resolve().is_relative_to(root_resolved):
-                    print(
-                        f"[conscio-mcp] skills: skipping {child}: skill directory escapes skills root",
-                        file=sys.stderr,
-                    )
-                    continue
             except OSError as exc:
                 self._quarantine_or_skip(root, child, exc, quarantined)
                 continue
             try:
-                entry = self._load_skill(child)
+                entry = self._load_skill(child, root)
             except _SkillInaccessible as exc:
                 self._quarantine_or_skip(root, child, exc, quarantined)
                 continue
@@ -368,8 +361,25 @@ class SkillsCatalog:
         if not self._loaded:
             self.load()
 
-    def _load_skill(self, directory: Path) -> dict | None:
+    def _load_skill(self, directory: Path, root: Path) -> dict | None:
         name = directory.name
+        # The directory (after resolving symlinks) must stay inside
+        # the skills root: a symlink escaping the root is excluded,
+        # never served. This is the single gate for every call site
+        # (load, collision load, repair); _load_root no longer
+        # checks escapes itself.
+        try:
+            resolved_dir = directory.resolve()
+            root_resolved = root.resolve()
+        except (OSError, RuntimeError) as exc:
+            raise _SkillInaccessible(
+                f"cannot resolve skill directory ({exc})") from exc
+        if not resolved_dir.is_relative_to(root_resolved):
+            print(
+                f"[conscio-mcp] skills: skipping {name} ({directory}): skill directory escapes skills root",
+                file=sys.stderr,
+            )
+            return None
         skill_md = directory / "SKILL.md"
         try:
             has_skill_md = skill_md.is_file()
@@ -380,7 +390,6 @@ class SkillsCatalog:
                 f"[conscio-mcp] skills: skipping {name} ({directory}): no SKILL.md", file=sys.stderr
             )
             return None
-        resolved_dir = directory.resolve()
         if skill_md.is_symlink() and not skill_md.resolve().is_relative_to(resolved_dir):
             print(
                 f"[conscio-mcp] skills: skipping {name} ({directory}): SKILL.md "
@@ -520,7 +529,7 @@ class SkillsCatalog:
             # current skill instead of failing until the next load
             # (the snapshot is otherwise only rebuilt at load).
             try:
-                entry = self._load_skill(target)
+                entry = self._load_skill(target, root)
             except _SkillInaccessible:
                 # Inaccessible: leave it for the next load to
                 # quarantine; keep the original quarantined.
@@ -599,7 +608,7 @@ class SkillsCatalog:
             )
             return False
         try:
-            entry = self._load_skill(target)
+            entry = self._load_skill(target, root)
         except _SkillInaccessible as exc:
             # Back in the root but still unreadable: re-quarantine it
             # instead of leaving a locked directory in the root.

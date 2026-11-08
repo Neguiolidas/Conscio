@@ -83,10 +83,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (no B103). Content failures (invalid frontmatter, limits, bad name)
   are still excluded at load with a log line. Renaming a directory to a
   different parent updates its `..` entry, so the quarantine move chmods
-  the directory to 0o700 first (a symlink needs no chmod). Tests: 4 new
-  in `tests/test_mcp_skills.py` (70 total, the collision test now
-  asserts the load-on-collision behavior); 5-file MCP battery 117
-  passed; full suite 5,297 passed, 22 skipped, 7 xfailed, 0 failures.
+  the directory to 0o700 first (a symlink needs no chmod). A skill
+  directory that is a symlink escaping the root is never served, on
+  any load path: the escape check lives in `_load_skill` (root as a
+  parameter), so the collision load and the repair path go through the
+  same gate as the initial load. Tests: 5 new in
+  `tests/test_mcp_skills.py` (71 total, including a pinning test that
+  an escaping symlink is not served via `skills/get`, `resources/read`
+  or `resources/directory/read` when a skill of the same name is
+  quarantined); 5-file MCP battery 118 passed; full suite 5,298 passed,
+  22 skipped, 7 xfailed, 0 failures, 0 warnings.
   (Review v5 follow-up: the pytest cleanup warnings are gone — the
   test helper now restores permissions recursively, including chmod-000
   subdirectories.)
