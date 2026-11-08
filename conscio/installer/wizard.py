@@ -36,8 +36,17 @@ class PromptIO(Protocol):
     def echo(self, msg: str) -> None: ...
 
 
-def _write_generic(io: PromptIO, slug: str, flags: dict, model, ts: str,
-                   *, repair: bool = False, host: str = "other") -> None:
+def _write_generic(
+    io: PromptIO,
+    slug: str,
+    flags: dict,
+    model,
+    ts: str,
+    *,
+    repair: bool = False,
+    host: str = "other",
+    skills_root: str | None = None,
+) -> None:
     known = _HOST_MCP_CONFIG.get(host, "")
     prompt = ("MCP config path" if known
               else "Antigravity/MCP config path (blank = print snippet)")
@@ -50,21 +59,33 @@ def _write_generic(io: PromptIO, slug: str, flags: dict, model, ts: str,
         use = {**flags, **hostcfg.existing_flags(p)} if repair else flags
         if repair:
             model = model or hostcfg.existing_model(p)
+            skills_root = skills_root or hostcfg.existing_skills_root(p)
             if use.get("initiate"):
                 io.echo("  note: initiate applies to the Awake daemon — start it "
                         "with `conscio daemon --awake --initiate`.")
         hostcfg.backup_then_write_json(
             p,
             mutate=lambda o: hostcfg.upsert_conscio_entry(
-                o, slug, flags=use, model=model),
-            verify=lambda o: "conscio" in o.get("mcpServers", {}), ts=ts)
+                o, slug, flags=use, model=model, skills_root=skills_root
+            ),
+            verify=lambda o: "conscio" in o.get("mcpServers", {}),
+            ts=ts,
+        )
         io.echo(f"wrote conscio MCP entry to {p}")
     else:
         io.echo(hostcfg.generic_snippet(slug, flags=flags, model=model))
 
 
-def run_with(io: PromptIO, *, host: str, repair: bool, model: str | None,
-             ts: str, label: str | None = None) -> int:
+def run_with(
+    io: PromptIO,
+    *,
+    host: str,
+    repair: bool,
+    model: str | None,
+    ts: str,
+    label: str | None = None,
+    skills_root: str | None = None,
+) -> int:
     if host == "claude-code":
         io.echo("/plugin marketplace add Neguiolidas/Conscio")
         io.echo("/plugin install conscio")
@@ -123,5 +144,5 @@ def run_with(io: PromptIO, *, host: str, repair: bool, model: str | None,
                     "later with `conscio daemon --awake --initiate`.")
 
     # emit host config
-    _write_generic(io, slug, flags, model, ts, repair=repair, host=host)
+    _write_generic(io, slug, flags, model, ts, repair=repair, host=host, skills_root=skills_root)
     return 0

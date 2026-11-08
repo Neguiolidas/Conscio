@@ -70,10 +70,14 @@ def mcp_command() -> str:
     return MCP_SCRIPT
 
 
-def mcp_server_entry(slug: str, *, flags: dict, model: str | None) -> dict:
+def mcp_server_entry(
+    slug: str, *, flags: dict, model: str | None, skills_root: str | None = None
+) -> dict:
     args = ["--storage", str(spaces.space_dir(slug))]
     if model:
         args += ["--model", model]
+    if skills_root:
+        args += ["--skills-root", skills_root]
     on = {k for k, v in flags.items() if v}
     on |= {_FLAG_REQUIRES[k] for k in on if k in _FLAG_REQUIRES}
     for key in list(flags) + sorted(on - set(flags)):   # asked first, then deps
@@ -84,8 +88,15 @@ def mcp_server_entry(slug: str, *, flags: dict, model: str | None) -> dict:
             "env": {"CONSCIO_VAULT_DIR": str(spaces.vault_dir(slug))}}
 
 
-def upsert_conscio_entry(o: dict, slug: str, *, flags: dict,
-                         model: str | None, self_instance_id: str = "") -> None:
+def upsert_conscio_entry(
+    o: dict,
+    slug: str,
+    *,
+    flags: dict,
+    model: str | None,
+    self_instance_id: str = "",
+    skills_root: str | None = None,
+) -> None:
     """Replace the conscio MCP entry, preserving user-added env keys on the
     old entry (ours win on conflict). Args are fully owned by the flags.
 
@@ -110,10 +121,10 @@ def upsert_conscio_entry(o: dict, slug: str, *, flags: dict,
     pedidas = {k for k, v in flags.items() if v and k in _caps.CAPABILITIES}
     pedidas |= {_FLAG_REQUIRES[k] for k in pedidas if k in _FLAG_REQUIRES}
     if pedidas:
-        _caps.write_capabilities(spaces.space_dir(slug),
-                                 _caps.read_capabilities(
-                                     spaces.space_dir(slug)) | pedidas)
-    entry = mcp_server_entry(slug, flags=flags, model=model)
+        _caps.write_capabilities(
+            spaces.space_dir(slug), _caps.read_capabilities(spaces.space_dir(slug)) | pedidas
+        )
+    entry = mcp_server_entry(slug, flags=flags, model=model, skills_root=skills_root)
     servers = o.setdefault("mcpServers", {})
     if not isinstance(servers, dict):      # corrupt shape: rebuild (backed up)
         servers = o["mcpServers"] = {}
@@ -156,6 +167,15 @@ def existing_model(config_path: Path) -> str | None:
     """Recover --model from an existing conscio entry — a --repair without
     --model must not strip the configured model. None when absent/corrupt."""
     return _arg_value(config_path, "--model")
+
+
+def existing_skills_root(config_path: Path) -> str | None:
+    """Recover --skills-root from an existing conscio entry — a --repair
+    without --skills-root must not strip the user-skills directory the
+    entry already pointed at. None when absent/corrupt/dangling. The
+    path is never validated here: the server's fail-fast still decides
+    at boot (gate on, existing directory, exit 2 otherwise)."""
+    return _arg_value(config_path, "--skills-root")
 
 
 def _prune_backups(path: Path) -> None:
@@ -202,17 +222,32 @@ def backup_then_write_json(path: Path, *, mutate: Callable[[dict], None],
     return backup
 
 
-def write_claude_code(slug: str, *, flags: dict, model: str | None,
-                      config_path: Path, ts: str) -> Path | None:
+def write_claude_code(
+    slug: str,
+    *,
+    flags: dict,
+    model: str | None,
+    config_path: Path,
+    ts: str,
+    skills_root: str | None = None,
+) -> Path | None:
     def mutate(o: dict) -> None:
-        upsert_conscio_entry(o, slug, flags=flags, model=model)
+        upsert_conscio_entry(o, slug, flags=flags, model=model, skills_root=skills_root)
+
     return backup_then_write_json(
         config_path, mutate=mutate,
         verify=lambda o: "conscio" in o.get("mcpServers", {}), ts=ts)
 
 
-def generic_snippet(slug: str, *, flags: dict, model: str | None) -> str:
+def generic_snippet(
+    slug: str, *, flags: dict, model: str | None, skills_root: str | None = None
+) -> str:
     return json.dumps(
-        {"mcpServers": {"conscio": mcp_server_entry(slug, flags=flags,
-                                                    model=model)}},
-        indent=2, sort_keys=True)
+        {
+            "mcpServers": {
+                "conscio": mcp_server_entry(slug, flags=flags, model=model, skills_root=skills_root)
+            }
+        },
+        indent=2,
+        sort_keys=True,
+    )
